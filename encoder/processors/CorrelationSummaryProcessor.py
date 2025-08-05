@@ -15,36 +15,37 @@ class CorrelationSummaryProcessor:
         device = patch.device
         out = torch.zeros((B, D, self.feature_dim), dtype=torch.float32, device=device)
 
-        for b in range(B):
-            x = patch[b]  # (T, D)
+        if D == 1:
+            out[:] = torch.tensor([0.0, 0.0, 1.0], device=device)
+            return out
 
-            if D == 1:
-                out[b, 0] = torch.tensor([0.0, 0.0, 1.0], device=device)
-                continue
+        # --- Step 1: Compute correlation matrices per batch ---
+        x = patch  # (B, T, D)
+        x_centered = x - x.mean(dim=1, keepdim=True)
+        std = x.std(dim=1, keepdim=True) + 1e-6  # (B, 1, D)
+        x_norm = x_centered / std  # (B, T, D)
+        corr = torch.matmul(x_norm.transpose(1, 2), x_norm) / (T - 1)  # (B, D, D)
+        corr = torch.nan_to_num(corr, nan=0.0)  # Clean up nans
 
-            # Compute correlation matrix (D, D)
-            x_centered = x - x.mean(dim=0, keepdim=True)
-            std = x.std(dim=0, keepdim=True) + 1e-6
-            x_norm = x_centered / std
-            corr = (x_norm.T @ x_norm) / (T - 1)
-            corr = torch.nan_to_num(corr, nan=0.0)
+        # --- Step 2: Mask diagonal to compute argmax/argmin ---
+        eye = torch.eye(D, device=device).unsqueeze(0)  # (1, D, D)
+        mask = ~eye.bool()  # (1, D, D), True where off-diagonal
+        corr_masked = corr.masked_fill(~mask, float('-inf'))  # For argmax
+        argmax_idx = torch.argmax(corr_masked, dim=-1).float()  # (B, D)
 
-            for d in range(D):
-                row = corr[d]  # (D,)
-                row_no_diag = row.clone()
-                row_no_diag[d] = -float('inf')
-                argmax_idx = torch.argmax(row_no_diag)
-                row_no_diag[d] = float('inf')
-                argmin_idx = torch.argmin(row_no_diag)
+        corr_masked = corr.masked_fill(~mask, float('inf'))  # For argmin
+        argmin_idx = torch.argmin(corr_masked, dim=-1).float()  # (B, D)
 
-                mask = torch.ones(D, dtype=torch.bool, device=device)
-                mask[d] = False
-                mean_corr = torch.mean(torch.abs(row[mask]))
+        # --- Step 3: Mean absolute correlation excluding diagonal ---
+        abs_corr = torch.abs(corr)
+        sum_corr = abs_corr.masked_fill(~mask, 0.0).sum(dim=-1)  # (B, D)
+        mean_corr = sum_corr / (D - 1)
 
-                out[b, d] = torch.tensor([
-                    argmax_idx.item() / D,
-                    argmin_idx.item() / D,
-                    mean_corr.item()
-                ], device=device)
+        # --- Step 4: Stack features ---
+        out = torch.stack([
+            argmax_idx / D,
+            argmin_idx / D,
+            mean_corr
+        ], dim=-1)  # (B, D, 3)
 
-        return out  # (B, D, 3)
+        return out

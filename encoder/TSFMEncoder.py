@@ -90,14 +90,14 @@ class TSFMEncoder(nn.Module):
         Returns:
             enriched_features: (B, P, D, F_raw + 4)
         """
-        stats = stats.permute(1, 2, 3, 0)  # (4, B, P, D) -> (B, P, D, 4)
+        stats = stats.permute(0, 2, 3, 1)  # (B, 4, P, D) -> (B, P, D, 4)
         return torch.cat([raw_features, stats], dim=-1)  # (B, P, D, F_raw + 4)
 
     def _compute_encodings(self, batch: Dict) -> torch.Tensor:
         """
         Args:
             batch["patches"]: (B, P, T, D)
-            batch["timestamps"]: List[List[datetime]] of shape (B, P)
+            batch["timestamps"]: List[List[np.datetime64]] of shape (B, P)
 
         Returns:
             projected_positional_encodings: (B, P, D, feature_dim)
@@ -117,12 +117,12 @@ class TSFMEncoder(nn.Module):
         log_patch_size = torch.log1p(torch.tensor(float(T), device=device)).expand(B, P, D)
         enc_size = SinusoidalEncoding.encode(log_patch_size, self.encoding_dim)  # (B, P, D, E)
 
-        # Timestamp encoding: (B, P) -> log1p(ms) -> (B, P, D)
-        timestamps = batch["timestamps"]
+        # Timestamp encoding: use np.timedelta64 for ms difference
+        timestamps = batch["timestamps"]  # List[List[np.datetime64]]
         epoch_ms = torch.tensor([
-            [(ts_i - ts_list[0]).total_seconds() * 1000 for ts_i in ts_list]
+            [(ts_i - ts_list[0]) / np.timedelta64(1, 'ms') for ts_i in ts_list]
             for ts_list in timestamps
-        ], device=device)  # (B, P)
+        ], dtype=torch.float32, device=device)  # (B, P)
         ts_log = torch.log1p(epoch_ms).unsqueeze(-1).expand(B, P, D)  # (B, P, D)
         enc_time = SinusoidalEncoding.encode(ts_log, self.encoding_dim)  # (B, P, D, E)
 
@@ -131,6 +131,7 @@ class TSFMEncoder(nn.Module):
 
         # Project to feature_dim
         return self.encoding_proj(all_enc)  # (B, P, D, feature_dim)
+
 
     def encode_batch(self, batch: Dict) -> Dict:
         """

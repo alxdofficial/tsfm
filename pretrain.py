@@ -15,7 +15,6 @@ from encoder.processors.StatisticalFeatureProcessor import StatisticalFeaturePro
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"[INFO] Using device: {device}")
 context_size = -1
-batch_size = 4
 llama_dim = 4096  # LLaMA tokenizer dim
 
 # --- Step 1: Convert raw HDF5 to episodes ---
@@ -49,6 +48,8 @@ encoder.to(device)
 
 # --- Step 5: Forward Pass ---
 for batch in dataloader:
+    torch.cuda.empty_cache()
+
     # Move tensors to GPU
     batch = {
         k: (v.to(device) if isinstance(v, torch.Tensor) else v)
@@ -57,7 +58,9 @@ for batch in dataloader:
 
     with torch.no_grad():
         out = encoder.encode_batch(batch)
-
     print(f"[DEBUG] Output features shape: {out['features'].shape}")  # (B, P, D, 4096)
     print(f"[DEBUG] Metadata: {out['metadata']}")
-    break  # Run just one batch for now
+    # del out
+    # torch.cuda.empty_cache()
+
+    # break  # Run just one batch for now

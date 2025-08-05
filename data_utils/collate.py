@@ -1,11 +1,6 @@
 import torch
 from torch.nn.utils.rnn import pad_sequence
 
-print(torch.cuda.is_available())            # True = GPU is available
-print(torch.cuda.device_count())            # Number of GPUs
-print(torch.cuda.current_device())          # Active device index
-print(torch.cuda.get_device_name(0))        # GPU name (if available)
-
 def pad_collate(batch):
     """
     Pads variable-length context windows to match the max length in batch.
