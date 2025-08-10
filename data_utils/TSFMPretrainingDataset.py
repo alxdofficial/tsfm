@@ -133,8 +133,6 @@ class TSFMPretrainingDataset(Dataset):
         else:
             start = max(0, patch_idx - self.context_size + 1)
 
-        context_len = patch_idx - start + 1
-
         patches = episode["patches"][start:patch_idx + 1]  # list of (T, D)
         means = episode["norm_means"][start:patch_idx + 1]
         stds = episode["norm_stds"][start:patch_idx + 1]
@@ -145,9 +143,8 @@ class TSFMPretrainingDataset(Dataset):
         patches_tensor = torch.tensor(np.stack(patches), dtype=torch.float32)  # (P, T, D)
         stats_tensor = torch.tensor(np.stack([means, stds, mins, maxs]), dtype=torch.float32)  # (4, P, D)
 
-        print(f"[DEBUG] idx={idx} epi={epi_idx} patch={patch_idx} "
-        f"-> patches.shape={patches_tensor.shape}, stats.shape={stats_tensor.shape}, "
-        f"timestamps=[{timestamps[0]}, ..., {timestamps[-1]}], total={len(timestamps)}")
+        # print(f"[DEBUG] idx={idx} epi={epi_idx} patch={patch_idx} "
+        # f"-> patches.shape={patches_tensor.shape}, stats.shape={stats_tensor.shape}, ")
 
 
         return {
@@ -161,8 +158,14 @@ class TSFMPretrainingDataset(Dataset):
             "target": None
         }
 
-    def unnormalize_patch(self, norm_patch: torch.Tensor, norm_mean: torch.Tensor, norm_std: torch.Tensor) -> torch.Tensor:
-        """Undo patch normalization."""
-        mean = norm_mean * torch.tensor(self.global_std_of_means) + torch.tensor(self.global_mean_of_means)
-        std = norm_std * torch.tensor(self.global_std_of_stds) + torch.tensor(self.global_mean_of_stds)
-        return norm_patch * std + mean
+    def unnormalize_patch(self, norm_patch: torch.Tensor,
+                      norm_mean: torch.Tensor, norm_std: torch.Tensor) -> torch.Tensor:
+        dev, dt = norm_patch.device, norm_patch.dtype
+        gm_means = torch.as_tensor(self.global_mean_of_means, device=dev, dtype=dt)
+        gs_means = torch.as_tensor(self.global_std_of_means,   device=dev, dtype=dt)
+        gm_stds  = torch.as_tensor(self.global_mean_of_stds,   device=dev, dtype=dt)
+        gs_stds  = torch.as_tensor(self.global_std_of_stds,    device=dev, dtype=dt)
+        mean = norm_mean * gs_means + gm_means      # (D,)
+        std  = norm_std  * gs_stds  + gm_stds       # (D,)
+        return norm_patch * std + mean              # (T,D)
+

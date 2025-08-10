@@ -28,3 +28,4 @@ venv/
 # Data or debug artifacts
 debug_plots/
 data
+checkpoints/
