@@ -1,5 +1,8 @@
 import torch
 import torch.nn as nn
+from encoder.processors.debug import _ensure_dir, _save_csv, _to_np, visualize_statistical_features
+import os
+
 
 class StatisticalFeatureProcessor:
     """
@@ -111,5 +114,11 @@ class StatisticalFeatureProcessor:
             1.0 - p_above_ma,     # 12
             trend_reversal        # 13
         ], dim=-1)
+
+        # visualize_statistical_features(
+        #     patch,
+        #     features,
+        #     out_dir=os.path.join("debug_out", "stat")
+        # )
 
         return self.norm(features)

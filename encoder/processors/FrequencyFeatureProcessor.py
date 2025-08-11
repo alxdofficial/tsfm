@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+from encoder.processors.debug import _ensure_dir, _save_csv, _to_np, visualize_frequency_features
+import os   
 
 def linear_interp_1d(x: torch.Tensor, xp: torch.Tensor, fp: torch.Tensor) -> torch.Tensor:
     """
@@ -68,4 +70,14 @@ class FrequencyFeatureProcessor:
 
         # --- Combine interpolated spectrum + error ---
         out = torch.cat([amp_interp, recon_error.unsqueeze(-1)], dim=-1)  # (B, D, fft_bins + 1)
+
+        # visualize_frequency_features(
+        #     patch.permute(0, 2, 1),  # back to (B,T,D)
+        #     out,
+        #     out_dir=os.path.join("debug_out", "freq"),
+        #     fft_bins=self.fft_bins,
+        #     keep_k=self.keep_k
+        # )
+        
+
         return self.norm(out)  # (B, D, feature_dim)

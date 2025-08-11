@@ -20,6 +20,8 @@ from encoder.processors.CorrelationSummaryProcessor import CorrelationSummaryPro
 from encoder.processors.FrequencyFeatureProcessor import FrequencyFeatureProcessor
 from encoder.processors.HistogramFeatureProcessor import HistogramFeatureProcessor
 from encoder.processors.StatisticalFeatureProcessor import StatisticalFeatureProcessor
+from encoder.debug_stats import DebugStats
+dbg = DebugStats(out_dir="debug_stats")
 
 # ------------------- Config -------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -30,7 +32,7 @@ torch.backends.cudnn.allow_tf32 = True
 
 context_size = 16
 llama_dim = 2048  # LLaMA tokenizer dim (F)
-batch_size = 16    # lower if OOM
+batch_size = 18    # lower if OOM
 num_workers = 4
 epochs = 100
 grad_clip = 1.0
@@ -101,6 +103,8 @@ last_num_channels = None
 loss_history = []       # all batch losses
 loss_labels = []        # "eX-bY" labels
 
+global_step = 0
+
 for epoch in range(1, epochs + 1):
     epoch_loss = 0.0
     t0 = time.time()
@@ -118,7 +122,20 @@ for epoch in range(1, epochs + 1):
             with torch.amp.autocast(device.type, enabled=(device.type == "cuda")):
                 loss, aux = encoder.masked_self_prediction(batch)
 
+            # debug only
+            dbg.set_step(global_step)  # 1) step
+            dbg.log_scalar("loss/batch", float(loss.item()))
+            lr_now = scheduler.get_last_lr()[0] if hasattr(scheduler, "get_last_lr") else lr
+            dbg.log_scalar("opt/lr", float(lr_now))
+
+
             scaler.scale(loss).backward()
+
+
+            # debug only
+            dbg.log_grads(encoder, groups=encoder.grad_groups())
+            dbg.save_plots()
+
 
             if grad_clip is not None:
                 scaler.unscale_(optimizer)
@@ -171,4 +188,5 @@ for epoch in range(1, epochs + 1):
     print(f"[EPOCH] {epoch} avg_loss={avg:.6f}  time={dur:.1f}s")
 
     # Save checkpoints at the end of each epoch
-    save_checkpoint(encoder, epoch=epoch, num_channels=last_num_channels, out_dir="checkpoints")
+    if (epoch + 1) % 10 == 0 or epoch == epochs:
+        save_checkpoint(encoder, epoch=epoch, num_channels=last_num_channels, out_dir="checkpoints")

@@ -93,6 +93,17 @@ class TSFMEncoder(nn.Module):
             else:
                 raise ValueError(f"Processor returned unexpected shape: {proc_out.shape}")
         return sum(dims)
+    
+    def grad_groups(self):
+        # group by *parameter-name prefixes*
+        return {
+            "mask_token":      ["mask_token"],
+            "linear_proj":     ["linear_proj."],
+            "encoding_proj":   ["encoding_proj."],
+            "transformer":     ["transformer."],
+            "recon_head":      ["recon_head."]  # may be absent early; handled by logger
+        }
+
 
     def _extract_features(self, patches: torch.Tensor) -> torch.Tensor:
         """
@@ -169,9 +180,9 @@ class TSFMEncoder(nn.Module):
                 valid_broadcast = valid_patch_mask.to(all_encodings.dtype).unsqueeze(-1).unsqueeze(-1)  # (B,P,1,1)
                 all_encodings = all_encodings * valid_broadcast
 
-            projected_encodings = self.encoding_proj(all_encodings)  # (B,P, D, semantic_dim)
-            # print(f"[ENCDBG] _compute_encodings -> {tuple(projected_encodings.shape)}  (B,P,D,F_sem)")
-            return projected_encodings
+        projected_encodings = self.encoding_proj(all_encodings)  # (B,P, D, semantic_dim)
+        # print(f"[ENCDBG] _compute_encodings -> {tuple(projected_encodings.shape)}  (B,P,D,F_sem)")
+        return projected_encodings
 
     # --------------- public forward APIs ----------------
     def encode_batch(self, batch: Dict) -> Dict:
@@ -185,7 +196,19 @@ class TSFMEncoder(nn.Module):
         # print(f"[ENCDBG] encode_batch() device={device}")
 
         per_channel_features = self._extract_features(batch["patches"])                       # (B,P,D,F_raw)
+
+        # ---- PAD-MASK HANDLING: zero features for padded patches before projection ----
+        valid_patch_mask = batch.get("pad_mask", None)  # (B,P) True=valid
+        if valid_patch_mask is not None:
+            valid_broadcast_BPD1 = valid_patch_mask.to(per_channel_features.dtype).unsqueeze(-1).unsqueeze(-1)  # (B,P,1,1)
+            per_channel_features = per_channel_features * valid_broadcast_BPD1
+
         small_features       = self._add_patch_statistics(per_channel_features, batch["patch_mean_std_min_max"])  # (B,P,D,K_small)
+
+        # (optional extra safety) zero small_features for pads too
+        if valid_patch_mask is not None:
+            small_features = small_features * valid_broadcast_BPD1
+
         projected_semantic_features    = self.linear_proj(small_features)                     # (B,P,D,semantic_dim)
         positional_semantic_features   = self._compute_encodings(batch)                      # (B,P,D,semantic_dim)
         fused_semantic_features        = projected_semantic_features + positional_semantic_features  # (B,P,D,semantic_dim)
@@ -230,9 +253,25 @@ class TSFMEncoder(nn.Module):
         device = batch["patches"].device
         print(f"[MSPDBG] masked_self_prediction() device={device} B={batch_size} P={num_patches} T={patch_len} D={num_channels}")
 
+        # debug only comment out later
+        from encoder.processors.debug import set_current_num_patches
+        set_current_num_patches(num_patches)  # num_patches == P for this batch
+
         # --- Build SMALL targets and pre-transformer tokens ---
         per_channel_features = self._extract_features(batch["patches"])                           # (B,P,D,F_raw)
+
+        # ---- PAD-MASK HANDLING: zero features for padded patches before projection ----
+        valid_patch_mask = batch.get("pad_mask", None)  # (B,P) True=valid
+        if valid_patch_mask is not None:
+            valid_broadcast_BPD1 = valid_patch_mask.to(per_channel_features.dtype).unsqueeze(-1).unsqueeze(-1)  # (B,P,1,1)
+            per_channel_features = per_channel_features * valid_broadcast_BPD1
+
         small_features       = self._add_patch_statistics(per_channel_features, batch["patch_mean_std_min_max"])  # (B,P,D,small_feature_dim)
+
+        # (optional extra safety) zero small_features for pads too
+        if valid_patch_mask is not None:
+            small_features = small_features * valid_broadcast_BPD1
+
         small_feature_dim    = small_features.size(-1)
         print(f"[MSPDBG] SMALL target dims K_small={small_feature_dim}")
 
@@ -254,6 +293,12 @@ class TSFMEncoder(nn.Module):
         # --- Build mixed mask over (P,D,semantic_dim) and token-level mask at (P,D) ---
         feature_mask = self._build_mixed_mask(batch_size, num_patches, num_channels, self.feature_dim, device)  # (B,P,D,F) bool
         masked_token_mask = feature_mask.any(dim=-1)                                                             # (B,P,D)     bool
+
+        # ---- PAD-MASK HANDLING: never supervise on padded patches ----
+        valid_patch_mask = batch.get("pad_mask", None)  # (B,P)
+        if valid_patch_mask is not None:
+            masked_token_mask = masked_token_mask & valid_patch_mask.unsqueeze(-1).expand_as(masked_token_mask)
+
         masked_feature_count = int(feature_mask.sum().item())
         total_feature_count  = batch_size * num_patches * num_channels * self.feature_dim
         print(f"[MSPDBG] mask feats: {masked_feature_count}/{total_feature_count} ({masked_feature_count/total_feature_count:.2%}); "
