@@ -12,7 +12,7 @@ class StatisticalFeatureProcessor:
         patch: (B, T, D)  -- assumed z-scored per patch already
 
     Output:
-        (B, D, 13) with LayerNorm across the 13 features.
+        (B, D, 13)
 
     Notes on invariance:
       - Zero-crossing counts are divided by (T-1)
@@ -21,7 +21,7 @@ class StatisticalFeatureProcessor:
     """
     def __init__(self):
         self.feature_dim = 13
-        self.norm = nn.LayerNorm(self.feature_dim)
+        # NOTE: removed LayerNorm. We keep semantic, patch-invariant normalizations only.
 
     def process(self, patch: torch.Tensor) -> torch.Tensor:
         """
@@ -33,9 +33,6 @@ class StatisticalFeatureProcessor:
         B, T, D = patch.shape
         device = patch.device
         x = patch  # (B, T, D)
-
-        # Move LN to the right device
-        self.norm = self.norm.to(device)
 
         # Basic slices (guard small T)
         x0      = x[:, 0:1, :]                        # (B, 1, D), T>=1 assumed
@@ -120,5 +117,4 @@ class StatisticalFeatureProcessor:
         #     features,
         #     out_dir=os.path.join("debug_out", "stat")
         # )
-
-        return self.norm(features)
+        return features

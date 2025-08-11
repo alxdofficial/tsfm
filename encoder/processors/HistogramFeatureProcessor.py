@@ -4,21 +4,22 @@ from encoder.processors.debug import _ensure_dir, _save_csv, _to_np, visualize_h
 import os
 
 class HistogramFeatureProcessor:
-    def __init__(self, num_bins=10):
+    def __init__(self, num_bins=10, eps: float = 1e-8):
         self.num_bins = num_bins
         self.feature_dim = num_bins + 1  # +1 for entropy
-        self.norm = nn.LayerNorm(self.feature_dim)
+        self.eps = eps
+        # NOTE: removed LayerNorm. We keep semantic normalizations below.
 
     def process(self, patch: torch.Tensor) -> torch.Tensor:
         """
         Args:
             patch: (B, T, D)
         Returns:
-            (B, D, num_bins + 1)
+            (B, D, num_bins + 1) where the first num_bins are proportions (sum=1),
+            and the last dim is entropy normalized to [0,1] by dividing by log2(num_bins).
         """
         B, T, D = patch.shape
         device = patch.device
-        self.norm = self.norm.to(device)
 
         # (B, T, D) → (B, D, T)
         x = patch.transpose(1, 2)  # (B, D, T)
@@ -42,16 +43,17 @@ class HistogramFeatureProcessor:
         hist = torch.zeros((B * D, self.num_bins), device=device)  # (B*D, bins)
         hist.scatter_add_(1, flat_bin, torch.ones_like(flat_bin, dtype=torch.float32))  # count bins
 
-        proportions = hist / T  # (B*D, bins)
+        proportions = hist / (T + self.eps)  # (B*D, bins), sum≈1
+        # Re-normalize for numerical safety (exactly sum to 1)
+        proportions = proportions / (proportions.sum(dim=1, keepdim=True) + self.eps)
 
-        # Compute entropy
-        probs = proportions.clone()
-        probs[probs == 0] = 1  # log(1) = 0 avoids NaNs
+        # Compute entropy and normalize to [0,1] by dividing by log2(num_bins)
+        probs = proportions.clamp_min(self.eps)
         entropy = -torch.sum(proportions * torch.log2(probs), dim=1, keepdim=True)  # (B*D, 1)
+        entropy = entropy / (torch.log2(torch.tensor(float(self.num_bins), device=device)) + self.eps)
 
         # Concatenate and reshape
         features = torch.cat([proportions, entropy], dim=1).view(B, D, -1)  # (B, D, num_bins + 1)
-        
 
         # visualize_histogram_features(
         #     patch,
@@ -59,5 +61,4 @@ class HistogramFeatureProcessor:
         #     out_dir=os.path.join("debug_out", "hist"),
         #     num_bins=self.num_bins
         # )
-        
-        return self.norm(features)
+        return features

@@ -25,31 +25,32 @@ def linear_interp_1d(x: torch.Tensor, xp: torch.Tensor, fp: torch.Tensor) -> tor
     return y0 + slope * (x - x0)
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 
 class FrequencyFeatureProcessor:
-    def __init__(self, fft_bins=16, keep_k=4):
+    def __init__(self, fft_bins=16, keep_k=4, eps: float = 1e-8):
         self.fft_bins = fft_bins
         self.keep_k = keep_k
         self.feature_dim = fft_bins + 1
-        self.norm = nn.LayerNorm(self.feature_dim)
+        self.eps = eps
+        # NOTE: removed LayerNorm. We keep intrinsic, dataset-agnostic scaling below.
 
     def process(self, patch: torch.Tensor) -> torch.Tensor:
         """
         Args:
             patch: (B, T, D)
         Returns:
-            features: (B, D, fft_bins + 1)
+            features: (B, D, fft_bins + 1) where the first fft_bins are
+                      energy proportions across frequency (sum≈1),
+                      and the final dim is a stabilized reconstruction error (log1p MSE).
         """
         B, T, D = patch.shape
         device = patch.device
-        self.norm = self.norm.to(device)
 
         # Transpose to (B, D, T) for FFT along time
-        patch = patch.permute(0, 2, 1)  # (B, D, T)
-        fft = torch.fft.rfft(patch, dim=-1)  # (B, D, F)
+        x = patch.permute(0, 2, 1)  # (B, D, T)
+        fft = torch.fft.rfft(x, dim=-1)  # (B, D, F)
         amp = torch.abs(fft)  # (B, D, F)
         F_fft = amp.shape[-1]
 
@@ -62,14 +63,21 @@ class FrequencyFeatureProcessor:
             align_corners=True
         ).view(B, D, self.fft_bins)  # (B, D, fft_bins)
 
+        # Convert amplitudes to proportions (energy shape), scale-invariant
+        amp_sum = amp_interp.sum(dim=-1, keepdim=True) + self.eps
+        amp_props = amp_interp / amp_sum  # (B, D, fft_bins), sums to ~1
+
         # --- Reconstruction error from low-passed FFT ---
         fft_low = torch.zeros_like(fft)
         fft_low[..., :self.keep_k] = fft[..., :self.keep_k]
         x_recon = torch.fft.irfft(fft_low, n=T, dim=-1)  # (B, D, T)
-        recon_error = F.mse_loss(x_recon, patch, reduction='none').mean(dim=-1)  # (B, D)
 
-        # --- Combine interpolated spectrum + error ---
-        out = torch.cat([amp_interp, recon_error.unsqueeze(-1)], dim=-1)  # (B, D, fft_bins + 1)
+        # MSE in time domain; stabilize heavy tails with log1p
+        recon_error = F.mse_loss(x_recon, x, reduction='none').mean(dim=-1)  # (B, D)
+        recon_error = torch.log1p(recon_error)  # stabilized scalar
+
+        # --- Combine interpolated spectrum proportions + stabilized error ---
+        out = torch.cat([amp_props, recon_error.unsqueeze(-1)], dim=-1)  # (B, D, fft_bins + 1)
 
         # visualize_frequency_features(
         #     patch.permute(0, 2, 1),  # back to (B,T,D)
@@ -78,6 +86,4 @@ class FrequencyFeatureProcessor:
         #     fft_bins=self.fft_bins,
         #     keep_k=self.keep_k
         # )
-        
-
-        return self.norm(out)  # (B, D, feature_dim)
+        return out  # (B, D, feature_dim)

@@ -152,7 +152,7 @@ class DebugStats:
             for name, sub in df.groupby("group"):
                 fig = plt.figure(figsize=(9,4))
                 ax = plt.gca()
-                ax.plot(sub["step"], sub["gnorm"], label="||g||2")
+                # ax.plot(sub["step"], sub["gnorm"], label="||g||2")
                 ax.plot(sub["step"], sub["gmean"], label="mean |g|", alpha=0.8)
                 ax.plot(sub["step"], sub["gmax"],  label="max |g|", alpha=0.6)
                 ax.set_title(f"grad mags: {name}")

@@ -133,6 +133,10 @@ class Transformer(nn.Module):
       - Self-attn on flattened data: (B, P*D, F)
       - Cross-attn Q=out, K/V=flattened -> updates out only
       - Self-attn on out: (B, P, F)
+
+    NOTE: If `output_tokens` is provided to forward(), it will be used directly (and is
+    expected to already include any desired positional encodings). Otherwise we fallback
+    to a simple noise/learned initialization (no positions).
     """
     def __init__(
         self,
@@ -153,7 +157,7 @@ class Transformer(nn.Module):
             FusionLayer(d_model, nhead, dropout, mlp_ratio) for _ in range(num_layers)
         ])
 
-        # Optional learned output seed of shape (1, P, F); P is dynamic, so we keep a tiny (1,1,F) and expand.
+        # Optional learned output seed of shape (1, 1, F) that is broadcast when used
         if learnable_output:
             self.output_seed = nn.Parameter(torch.zeros(1, 1, d_model))
             nn.init.normal_(self.output_seed, std=noise_std)
@@ -164,6 +168,7 @@ class Transformer(nn.Module):
         """
         Returns initial output stream tokens of shape (B, P, F).
         If learnable_output=True, broadcast a (1,1,F) parameter; else sample noise per batch.
+        (Used only as a fallback when the caller didn't pass an output stream.)
         """
         if self.learnable_output:
             # (1, 1, F) -> (B, P, F)
@@ -173,22 +178,24 @@ class Transformer(nn.Module):
 
     def forward(
         self,
-        per_patch_channel_tokens: torch.Tensor,                  # (B, P, D, F)
+        per_patch_channel_tokens: torch.Tensor,                  # (B, P, D, F)  (inputs already include positional encodings)
         output_key_padding_mask: Optional[torch.Tensor] = None,  # (B, P)   True = pad
         flattened_key_padding_mask: Optional[torch.Tensor] = None,  # (B, P*D) True = pad
+        output_tokens: Optional[torch.Tensor] = None,            # (B, P, F)  (prebuilt output stream, with pos)
     ) -> torch.Tensor:
         """
         Returns:
             output_tokens: (B, P, F)   - output stream tokens
         """
-        batch_size, num_patches, num_channels, hidden_dim = per_patch_channel_tokens.shape
+        B, P, D, F = per_patch_channel_tokens.shape
         device = per_patch_channel_tokens.device
 
         # Flatten data tokens across channels: (B, P*D, F)
-        flattened_tokens = per_patch_channel_tokens.reshape(batch_size, num_patches * num_channels, hidden_dim)  # (B, P·D, F)
+        flattened_tokens = per_patch_channel_tokens.reshape(B, P * D, F)  # (B, P·D, F)
 
-        # Initialize output stream of length P:
-        output_tokens = self.init_output_stream(batch_size, num_patches, device)  # (B, P, F)
+        # Use provided output stream if given; otherwise do the fallback init.
+        if output_tokens is None:
+            output_tokens = self.init_output_stream(B, P, device)  # (B, P, F)
 
         # Run stacked fusion layers
         for layer in self.layers:

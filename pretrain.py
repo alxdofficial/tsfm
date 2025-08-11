@@ -32,15 +32,15 @@ torch.backends.cudnn.allow_tf32 = True
 
 context_size = 16
 llama_dim = 2048  # LLaMA tokenizer dim (F)
-batch_size = 18    # lower if OOM
+batch_size = 16    # lower if OOM
 num_workers = 4
 epochs = 100
 grad_clip = 1.0
 lr = 2e-4
 weight_decay = 0.05
 mask_cfg = {
-    "ratio_feature": 0.20,  # mask 20% of (P,D,F)
-    "ratio_patch":   0.10,  # mask 10% patches fully
+    "ratio_patch": 0.05,        # ~5% patches masked
+    "keep_patch_ratio": 0.00,   # no “kept untouched” set; optional
 }
 
 # ------------------- Data ---------------------
@@ -121,12 +121,17 @@ for epoch in range(1, epochs + 1):
 
             with torch.amp.autocast(device.type, enabled=(device.type == "cuda")):
                 loss, aux = encoder.masked_self_prediction(batch)
+                # pick a stable b_idx (0) and let it auto-choose a masked patch
+                encoder.debug_plot_reconstruction(
+                    aux["targets_small"], aux["recon_small"], aux["token_mask"], b_idx=0, p_idx=None
+                )
+
 
             # debug only
             dbg.set_step(global_step)  # 1) step
-            dbg.log_scalar("loss/batch", float(loss.item()))
-            lr_now = scheduler.get_last_lr()[0] if hasattr(scheduler, "get_last_lr") else lr
-            dbg.log_scalar("opt/lr", float(lr_now))
+            # dbg.log_scalar("loss/batch", float(loss.item()))
+            # lr_now = scheduler.get_last_lr()[0] if hasattr(scheduler, "get_last_lr") else lr
+            # dbg.log_scalar("opt/lr", float(lr_now))
 
 
             scaler.scale(loss).backward()

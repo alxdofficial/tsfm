@@ -50,12 +50,9 @@ class CorrelationSummaryProcessor:
             mean_corr
         ], dim=-1)  # (B, D, 3)
 
-
         # visualize_correlation_summary(
         #     patch,
         #     out,
         #     out_dir=os.path.join("debug_out", "corr")
         # )
-        
-
         return out
