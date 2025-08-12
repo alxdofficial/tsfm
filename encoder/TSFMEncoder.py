@@ -19,10 +19,11 @@ class FeatureStandardizer(nn.Module):
         self.bn = nn.BatchNorm1d(num_features, eps=eps, momentum=momentum, affine=affine)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B, P, D, K = x.shape
-        y = x.reshape(B * P * D, K)
-        y = self.bn(y)
-        return y.view(B, P, D, K)
+        return x
+        # B, P, D, K = x.shape
+        # y = x.reshape(B * P * D, K)
+        # y = self.bn(y)
+        # return y.view(B, P, D, K)
 
 class SmallRecon(nn.Module):
     """
@@ -187,14 +188,47 @@ class TSFMEncoder(nn.Module):
 
     def _compute_encodings(self, batch: Dict) -> torch.Tensor:
         """
-        Build 4 sinusoidal encodings and project them to semantic_dim.
-        Padded positions are zeroed so they don't leak signal.
-        Returns: (B, P, D, semantic_dim)
+        Build 4 sinusoidal encodings (patch index, channel index, log patch size, log elapsed ms),
+        project EACH to semantic_dim independently, apply per-stream LayerNorm, then combine them
+        with learnable scalar gates and √n scaling for variance stability.
+        
+        Returns:
+            pos: (B, P, D, semantic_dim)
         """
         with torch.no_grad():
             B, P, T, D = batch["patches"].shape
             device = batch["patches"].device
 
+            # ---------- Lazily initialize per-encoding projections, norms, and gates ----------
+            # We create them on first call so you don't need to edit __init__.
+            if not hasattr(self, "enc_proj_patch"):
+                # Per-encoding linear projections E->F
+                self.enc_proj_patch   = nn.Linear(self.encoding_dim, self.feature_dim).to(device)
+                self.enc_proj_channel = nn.Linear(self.encoding_dim, self.feature_dim).to(device)
+                self.enc_proj_size    = nn.Linear(self.encoding_dim, self.feature_dim).to(device)
+                self.enc_proj_time    = nn.Linear(self.encoding_dim, self.feature_dim).to(device)
+
+                # Per-encoding norms (keeps each stream well-behaved before summation)
+                self.enc_norm_patch   = nn.LayerNorm(self.feature_dim).to(device)
+                self.enc_norm_channel = nn.LayerNorm(self.feature_dim).to(device)
+                self.enc_norm_size    = nn.LayerNorm(self.feature_dim).to(device)
+                self.enc_norm_time    = nn.LayerNorm(self.feature_dim).to(device)
+
+                # Learnable scalar gates (initialized to 1.0)
+                self.alpha_patch   = nn.Parameter(torch.tensor(1.0, device=device))
+                self.alpha_channel = nn.Parameter(torch.tensor(1.0, device=device))
+                self.alpha_size    = nn.Parameter(torch.tensor(1.0, device=device))
+                self.alpha_time    = nn.Parameter(torch.tensor(1.0, device=device))
+
+                if hasattr(self, "register_parameter"):
+                    self.register_parameter("alpha_patch",   self.alpha_patch)
+                    self.register_parameter("alpha_channel", self.alpha_channel)
+                    self.register_parameter("alpha_size",    self.alpha_size)
+                    self.register_parameter("alpha_time",    self.alpha_time)
+
+                print("[ENCDBG] Initialized per-encoding projections/norms and gates (α_i)")
+
+            # ---------- Build scalar fields (B,P,D) ----------
             # Prefer rel_ms from collate (fast path); fallback to list-of-datetimes if needed
             if "rel_ms" in batch and batch["rel_ms"] is not None:
                 elapsed_ms = batch["rel_ms"].to(device)                       # (B,P)
@@ -205,69 +239,127 @@ class TSFMEncoder(nn.Module):
                     for ts_list in timestamps
                 ], dtype=torch.float32, device=device)                        # (B,P)
 
-            # Encodings' scalar fields (B,P,D)
             patch_indices   = torch.arange(P, device=device).float().view(1, P, 1).expand(B, P, D)
             channel_indices = torch.arange(D, device=device).float().view(1, 1, D).expand(B, P, D)
             log_patch_size  = torch.log1p(torch.tensor(float(T), device=device)).expand(B, P, D)
             log_elapsed_ms  = torch.log1p(elapsed_ms).unsqueeze(-1).expand(B, P, D)
 
-            # Build 4 encodings → (B,P,D,E) each
-            enc_patch   = SinusoidalEncoding.encode(patch_indices,   self.encoding_dim)
-            enc_channel = SinusoidalEncoding.encode(channel_indices, self.encoding_dim)
-            enc_size    = SinusoidalEncoding.encode(log_patch_size,  self.encoding_dim)
-            enc_time    = SinusoidalEncoding.encode(log_elapsed_ms,  self.encoding_dim)
+            # ---------- Encode each scalar field to E-dim sinusoidal ----------
+            enc_patch   = SinusoidalEncoding.encode(patch_indices,   self.encoding_dim)  # (B,P,D,E)
+            enc_channel = SinusoidalEncoding.encode(channel_indices, self.encoding_dim)  # (B,P,D,E)
+            enc_size    = SinusoidalEncoding.encode(log_patch_size,  self.encoding_dim)  # (B,P,D,E)
+            enc_time    = SinusoidalEncoding.encode(log_elapsed_ms,  self.encoding_dim)  # (B,P,D,E)
 
-            # Concatenate → (B,P,D,4E)
-            all_encodings = torch.cat([enc_patch, enc_channel, enc_size, enc_time], dim=-1)  # (B,P,D,4E)
+        # Project EACH encoding to F and apply per-stream norm (no-grad above; proj/norm need grad)
+        pos_patch   = self.enc_norm_patch(  self.enc_proj_patch(enc_patch))       # (B,P,D,F)
+        pos_channel = self.enc_norm_channel(self.enc_proj_channel(enc_channel))   # (B,P,D,F)
+        pos_size    = self.enc_norm_size(   self.enc_proj_size(enc_size))         # (B,P,D,F)
+        pos_time    = self.enc_norm_time(   self.enc_proj_time(enc_time))         # (B,P,D,F)
 
-            # Zero-out encodings on padding positions to avoid leaking structure from pads
-            valid_patch_mask = batch.get("pad_mask", None)  # (B,P) True=valid
-            if valid_patch_mask is not None:
-                valid_broadcast = valid_patch_mask.to(all_encodings.dtype).unsqueeze(-1).unsqueeze(-1)  # (B,P,1,1)
-                all_encodings = all_encodings * valid_broadcast
+        # Combine with learnable gates and √n scaling for variance stability
+        n_streams = 4.0
+        pos = (
+            self.alpha_patch   * pos_patch +
+            self.alpha_channel * pos_channel +
+            self.alpha_size    * pos_size +
+            self.alpha_time    * pos_time
+        ) * (1.0 / n_streams**0.5)                                                # (B,P,D,F)
 
-        projected_encodings = self.encoding_proj(all_encodings)  # (B,P, D, semantic_dim)
-        # print(f"[ENCDBG] _compute_encodings -> {tuple(projected_encodings.shape)}  (B,P,D,F_sem)")
-        return projected_encodings
+        # Zero-out encodings on padding positions to avoid leaking structure from pads
+        valid_patch_mask = batch.get("pad_mask", None)  # (B,P) True=valid
+        if valid_patch_mask is not None:
+            valid_broadcast = valid_patch_mask.to(pos.dtype).unsqueeze(-1).unsqueeze(-1)  # (B,P,1,1)
+            pos = pos * valid_broadcast
+
+        return pos  # (B,P,D,F)
+
 
     def _compute_output_positional(self, batch: Dict) -> torch.Tensor:
         """
-        Build output-stream positional encodings using the SAME scheme as inputs,
-        but without channel variation (neutral channel=0). Returns (B,P,F).
+        Build output-stream positional encodings using the SAME per-encoding scheme as inputs:
+        - 4 scalar signals: patch index, neutral channel index (0), log patch size, log elapsed ms
+        - sinusoidal encode each to E
+        - project EACH to F with its own Linear + LayerNorm
+        - combine with learnable scalar gates α_i and √n scaling
+
+        Returns:
+            out_pos: (B, P, F)
         """
         with torch.no_grad():
             B, P, T, D = batch["patches"].shape
             device = batch["patches"].device
 
-            # Scalars (B,P)
+            # ---------- Ensure per-encoding layers/params exist (lazy init) ----------
+            if not hasattr(self, "enc_proj_patch"):
+                # (Mirror the init used in _compute_encodings)
+                self.enc_proj_patch   = nn.Linear(self.encoding_dim, self.feature_dim).to(device)
+                self.enc_proj_channel = nn.Linear(self.encoding_dim, self.feature_dim).to(device)
+                self.enc_proj_size    = nn.Linear(self.encoding_dim, self.feature_dim).to(device)
+                self.enc_proj_time    = nn.Linear(self.encoding_dim, self.feature_dim).to(device)
+
+                self.enc_norm_patch   = nn.LayerNorm(self.feature_dim).to(device)
+                self.enc_norm_channel = nn.LayerNorm(self.feature_dim).to(device)
+                self.enc_norm_size    = nn.LayerNorm(self.feature_dim).to(device)
+                self.enc_norm_time    = nn.LayerNorm(self.feature_dim).to(device)
+
+                self.alpha_patch   = nn.Parameter(torch.tensor(1.0, device=device))
+                self.alpha_channel = nn.Parameter(torch.tensor(1.0, device=device))
+                self.alpha_size    = nn.Parameter(torch.tensor(1.0, device=device))
+                self.alpha_time    = nn.Parameter(torch.tensor(1.0, device=device))
+
+                if hasattr(self, "register_parameter"):
+                    self.register_parameter("alpha_patch",   self.alpha_patch)
+                    self.register_parameter("alpha_channel", self.alpha_channel)
+                    self.register_parameter("alpha_size",    self.alpha_size)
+                    self.register_parameter("alpha_time",    self.alpha_time)
+
+                print("[ENCDBG] (output) Initialized per-encoding projections/norms and gates (α_i)")
+
+            # ---------- Scalars for the OUTPUT stream (B,P) ----------
+            # Prefer rel_ms from collate (fast path); fallback to datetimes
             if "rel_ms" in batch and batch["rel_ms"] is not None:
-                elapsed_ms = batch["rel_ms"].to(device)               # (B,P)
+                elapsed_ms = batch["rel_ms"].to(device)                       # (B,P)
             else:
                 timestamps = batch["timestamps"]
                 elapsed_ms = torch.tensor(
                     [[(ts_i - ts_list[0]) / np.timedelta64(1, 'ms') for ts_i in ts_list]
-                     for ts_list in timestamps],
+                    for ts_list in timestamps],
                     dtype=torch.float32, device=device
-                )                                                     # (B,P)
+                )                                                             # (B,P)
 
             patch_idx = torch.arange(P, device=device, dtype=torch.float32).view(1, P).expand(B, P)   # (B,P)
-            chan_idx  = torch.zeros_like(patch_idx)  # neutral channel for outputs
-            log_size  = torch.full_like(patch_idx, fill_value=torch.log1p(torch.tensor(float(T), device=device)))
-            log_time  = torch.log1p(elapsed_ms)  # (B,P)
+            chan_idx  = torch.zeros_like(patch_idx)                                                                # neutral channel
+            log_size  = torch.full_like(patch_idx, fill_value=torch.log1p(torch.tensor(float(T), device=device))) # (B,P)
+            log_time  = torch.log1p(elapsed_ms)                                                                    # (B,P)
 
-            # Encode each → (B,P,E), concat → (B,P,4E), project → (B,P,F)
-            enc_patch   = SinusoidalEncoding.encode(patch_idx, self.encoding_dim)
-            enc_chan    = SinusoidalEncoding.encode(chan_idx,  self.encoding_dim)
-            enc_size    = SinusoidalEncoding.encode(log_size,  self.encoding_dim)
-            enc_time    = SinusoidalEncoding.encode(log_time,  self.encoding_dim)
-            out_pos_all = torch.cat([enc_patch, enc_chan, enc_size, enc_time], dim=-1)  # (B,P,4E)
+            # ---------- Sinusoidal encode each to E ----------
+            enc_patch   = SinusoidalEncoding.encode(patch_idx, self.encoding_dim)    # (B,P,E)
+            enc_chan    = SinusoidalEncoding.encode(chan_idx,  self.encoding_dim)    # (B,P,E)
+            enc_size    = SinusoidalEncoding.encode(log_size,  self.encoding_dim)    # (B,P,E)
+            enc_time    = SinusoidalEncoding.encode(log_time,  self.encoding_dim)    # (B,P,E)
 
-            out_pos = self.encoding_proj(out_pos_all)  # reuse the SAME projection → F
-            # zero on pads
-            if batch.get("pad_mask", None) is not None:
-                valid = batch["pad_mask"].to(out_pos.dtype).unsqueeze(-1)                # (B,P,1)
-                out_pos = out_pos * valid
-            return out_pos  # (B,P,F)
+        # ---------- Project EACH to F, apply per-stream norm ----------
+        pos_patch   = self.enc_norm_patch(  self.enc_proj_patch(enc_patch))          # (B,P,F)
+        pos_channel = self.enc_norm_channel(self.enc_proj_channel(enc_chan))         # (B,P,F)
+        pos_size    = self.enc_norm_size(   self.enc_proj_size(enc_size))            # (B,P,F)
+        pos_time    = self.enc_norm_time(   self.enc_proj_time(enc_time))            # (B,P,F)
+
+        # ---------- Combine with learnable gates and √n scaling ----------
+        n_streams = 4.0
+        out_pos = (
+            self.alpha_patch   * pos_patch +
+            self.alpha_channel * pos_channel +
+            self.alpha_size    * pos_size +
+            self.alpha_time    * pos_time
+        ) * (1.0 / n_streams**0.5)                                                  # (B,P,F)
+
+        # Zero-out encodings on padding positions to avoid leaking structure from pads
+        if batch.get("pad_mask", None) is not None:
+            valid = batch["pad_mask"].to(out_pos.dtype).unsqueeze(-1)               # (B,P,1)
+            out_pos = out_pos * valid
+            
+        return out_pos  # (B,P,F)
+
 
     def _build_output_stream(self, corrupted_input: torch.Tensor, batch: Dict) -> torch.Tensor:
         """
@@ -475,10 +567,21 @@ class TSFMEncoder(nn.Module):
             "recon_small": recon_small,             # (B,P,D,small_feature_dim)
             "tokens": output_tokens,                # (B,P,semantic_dim)
         }
+
+        # # --- Debugging / visualization ---
+        # self.debug_plot_small_feature_stats_all_patches_labeled(
+        #     targets_small=aux["targets_small"],
+        #     recon_small=aux["recon_small"],
+        #     token_mask=aux["token_mask"],
+        #     pad_mask=batch.get("pad_mask", None),
+        #     b_idx=0,
+        #     out_dir="debug_stats/stats_all_patches_labeled"
+        # )
+
         return loss, aux
     
 
-
+    # ------------- debugging / visualization --------------
     def debug_plot_reconstruction(
         self,
         targets_small: torch.Tensor,   # (B,P,D,K)
@@ -548,3 +651,134 @@ class TSFMEncoder(nn.Module):
             plt.savefig(save_path, dpi=140)
             plt.close(fig)
             print(f"[RECONDBG] saved {save_path}")
+    def debug_plot_small_feature_stats_all_patches_labeled(
+        self,
+        targets_small: torch.Tensor,   # (B,P,D,K)
+        recon_small: torch.Tensor,     # (B,P,D,K)
+        token_mask: torch.Tensor,      # (B,P,D) bool   (True = masked)
+        pad_mask: torch.Tensor = None, # (B,P)   bool   (True = valid)
+        b_idx: int = 0,
+        out_dir: str = "debug_stats/stats_all_patches_labeled"
+    ):
+        """
+        For batch[b_idx], plots min/mean/median/max across D for each K,
+        overlaying targets vs recon on the same axes for *every patch*.
+        Also:
+        - labels padded patches,
+        - shows masked fraction per patch,
+        - draws a tiny 1xD heatmap indicating which channels were masked.
+
+        Saves one big figure: stats_all_patches_batch{b_idx}.png
+        """
+        os.makedirs(out_dir, exist_ok=True)
+
+        with torch.no_grad():
+            assert b_idx < targets_small.size(0), f"b_idx {b_idx} out of range"
+            tgt_b = targets_small[b_idx]   # (P,D,K)
+            rec_b = recon_small[b_idx]     # (P,D,K)
+            mask_b = token_mask[b_idx]     # (P,D)
+
+            P, D, K = tgt_b.shape
+
+            if pad_mask is not None:
+                valid_patches = pad_mask[b_idx]  # (P,) True=valid
+            else:
+                valid_patches = torch.ones(P, dtype=torch.bool, device=tgt_b.device)
+
+            # Layout: per patch -> 3 columns:
+            #   col0: overlay stats (targets vs recon)
+            #   col1: same, but only 'min' & 'max' to show range
+            #   col2: a 1xD mask heatmap (masked=1, unmasked=0)
+            fig, axes = plt.subplots(
+                P, 3, figsize=(16, 3*P),
+                gridspec_kw={"width_ratios": [3.2, 2.0, 0.6]},
+                squeeze=False
+            )
+
+            xs = np.arange(K)
+
+            def stats_np(x):  # x: (D,K) numpy
+                return {
+                    "min":    np.nanmin(x, axis=0),
+                    "mean":   np.nanmean(x, axis=0),
+                    "median": np.nanmedian(x, axis=0),
+                    "max":    np.nanmax(x, axis=0),
+                }
+
+            for p in range(P):
+                ax0, ax1, ax2 = axes[p]
+
+                # Titles, labels, colors depend on padding
+                is_valid = bool(valid_patches[p].item())
+                masked_frac = float(mask_b[p].float().mean().item()) if is_valid else 0.0
+
+                # Compute stats if valid; else fill with NaNs
+                if is_valid:
+                    tgt_np = tgt_b[p].detach().cpu().float().numpy()  # (D,K)
+                    rec_np = rec_b[p].detach().cpu().float().numpy()  # (D,K)
+                    tgt_stats = stats_np(tgt_np)
+                    rec_stats = stats_np(rec_np)
+                else:
+                    tgt_stats = {k: np.full((K,), np.nan) for k in ["min","mean","median","max"]}
+                    rec_stats = {k: np.full((K,), np.nan) for k in ["min","mean","median","max"]}
+
+                # Column 0: overlay all stats (targets solid, recon dashed)
+                for name in ["min","mean","median","max"]:
+                    ax0.plot(xs, tgt_stats[name], label=f"tgt {name}", linewidth=1.1)
+                    ax0.plot(xs, rec_stats[name], linestyle="--", label=f"rec {name}", linewidth=1.1)
+                ax0.set_ylabel(f"patch {p}")
+                ax0.grid(True, alpha=0.3)
+
+                # Column 1: show just min/max envelopes for clarity
+                ax1.plot(xs, tgt_stats["min"],  label="tgt min",  linewidth=1.0)
+                ax1.plot(xs, tgt_stats["max"],  label="tgt max",  linewidth=1.0)
+                ax1.plot(xs, rec_stats["min"],  label="rec min",  linewidth=1.0, linestyle="--")
+                ax1.plot(xs, rec_stats["max"],  label="rec max",  linewidth=1.0, linestyle="--")
+                ax1.grid(True, alpha=0.3)
+
+                # Column 2: channel mask heatmap (1 x D)
+                # masked=1.0, unmasked=0.0; grey out if pad
+                if is_valid:
+                    mask_row = mask_b[p].detach().cpu().float().unsqueeze(0).numpy()  # (1,D)
+                else:
+                    mask_row = np.zeros((1, D), dtype=np.float32)
+                im = ax2.imshow(mask_row, aspect="auto", vmin=0.0, vmax=1.0)
+                ax2.set_yticks([])
+                ax2.set_xticks([])
+                ax2.set_title("mask (D)")
+
+                # Title with labels for PAD / masked %
+                if is_valid:
+                    ax0.set_title(f"Targets vs Recon (valid) — masked {masked_frac*100:.1f}%")
+                    ax1.set_title("Range (min/max)")
+                    # green-ish spines for valid
+                    for a in (ax0, ax1, ax2):
+                        for spine in a.spines.values():
+                            spine.set_edgecolor("#3a7")
+                            spine.set_linewidth(1.5)
+                else:
+                    ax0.set_title("[PAD] (ignored)")
+                    ax1.set_title("[PAD]")
+                    # grey out plots
+                    for a in (ax0, ax1):
+                        a.patch.set_alpha(0.1)
+                        for spine in a.spines.values():
+                            spine.set_edgecolor("#999")
+                            spine.set_linewidth(1.2)
+                    for spine in ax2.spines.values():
+                        spine.set_edgecolor("#999")
+                        spine.set_linewidth(1.2)
+
+            # Put a single legend for the first row, first column
+            handles, labels = axes[0,0].get_legend_handles_labels()
+            if handles:
+                fig.legend(handles, labels, loc="upper center", ncol=8, fontsize=9)
+
+            fig.suptitle(f"Per‑patch SMALL feature stats (batch {b_idx})\n"
+                        f"Left: all stats overlay | Middle: min/max envelopes | Right: masked channels (D)", y=1.02)
+
+            plt.tight_layout()
+            save_path = os.path.join(out_dir, f"stats_all_patches_batch{b_idx}.png")
+            plt.savefig(save_path, dpi=150, bbox_inches="tight")
+            plt.close(fig)
+            print(f"[STATSDBG] saved {save_path}")

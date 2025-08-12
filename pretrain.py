@@ -122,9 +122,10 @@ for epoch in range(1, epochs + 1):
             with torch.amp.autocast(device.type, enabled=(device.type == "cuda")):
                 loss, aux = encoder.masked_self_prediction(batch)
                 # pick a stable b_idx (0) and let it auto-choose a masked patch
-                encoder.debug_plot_reconstruction(
-                    aux["targets_small"], aux["recon_small"], aux["token_mask"], b_idx=0, p_idx=None
-                )
+                if global_step % 10 == 0:
+                    encoder.debug_plot_reconstruction(
+                        aux["targets_small"], aux["recon_small"], aux["token_mask"], b_idx=0, p_idx=None
+                    )
 
 
             # debug only
@@ -138,8 +139,8 @@ for epoch in range(1, epochs + 1):
 
 
             # debug only
-            dbg.log_grads(encoder, groups=encoder.grad_groups())
-            dbg.save_plots()
+            # dbg.log_grads(encoder, groups=encoder.grad_groups())
+            # dbg.save_plots()
 
 
             if grad_clip is not None:

@@ -4,55 +4,56 @@ import os
 
 class CorrelationSummaryProcessor:
     def __init__(self):
-        self.feature_dim = 3  # [argmax_idx/D, argmin_idx/D, mean_corr]
+        # [argmax_idx/(D-1), argmin_idx/(D-1), mean_abs_corr]
+        self.feature_dim = 3
 
     def process(self, patch: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            patch: Tensor of shape (B, T, D)
+            patch: (B, T, D)
         Returns:
-            Tensor of shape (B, D, 3)
+            (B, D, 3) with every feature in [0, 1]
         """
         B, T, D = patch.shape
         device = patch.device
         out = torch.zeros((B, D, self.feature_dim), dtype=torch.float32, device=device)
 
+        # Degenerate single-channel case
         if D == 1:
+            # idx terms collapse to 0, mean_corr=1 by definition (perfect self-corr)
             out[:] = torch.tensor([0.0, 0.0, 1.0], device=device)
             return out
 
-        # --- Step 1: Compute correlation matrices per batch ---
-        x = patch  # (B, T, D)
+        # --- Correlation ---
+        x = patch
         x_centered = x - x.mean(dim=1, keepdim=True)
-        std = x.std(dim=1, keepdim=True) + 1e-6  # (B, 1, D)
-        x_norm = x_centered / std  # (B, T, D)
-        corr = torch.matmul(x_norm.transpose(1, 2), x_norm) / (T - 1)  # (B, D, D)
-        corr = torch.nan_to_num(corr, nan=0.0)  # Clean up nans
+        std = x.std(dim=1, keepdim=True).clamp_min(1e-6)       # (B,1,D)
+        x_norm = x_centered / std                               # (B,T,D)
+        corr = (x_norm.transpose(1, 2) @ x_norm) / (T - 1)      # (B,D,D)
+        corr = torch.nan_to_num(corr, nan=0.0)
+        corr = corr.clamp(-1.0, 1.0)                            # <- numeric safety
 
-        # --- Step 2: Mask diagonal to compute argmax/argmin ---
-        eye = torch.eye(D, device=device).unsqueeze(0)  # (1, D, D)
-        mask = ~eye.bool()  # (1, D, D), True where off-diagonal
-        corr_masked = corr.masked_fill(~mask, float('-inf'))  # For argmax
-        argmax_idx = torch.argmax(corr_masked, dim=-1).float()  # (B, D)
+        # --- Off-diagonal mask ---
+        eye = torch.eye(D, dtype=torch.bool, device=device).unsqueeze(0)  # (1,D,D)
+        offdiag = ~eye
 
-        corr_masked = corr.masked_fill(~mask, float('inf'))  # For argmin
-        argmin_idx = torch.argmin(corr_masked, dim=-1).float()  # (B, D)
+        # --- Argmax/argmin of *signed* corr over off-diagonal ---
+        # use ±inf masking so arg* ignores diagonal
+        corr_for_max = corr.masked_fill(~offdiag, float('-inf'))
+        corr_for_min = corr.masked_fill(~offdiag, float('inf'))
+        argmax_idx = torch.argmax(corr_for_max, dim=-1).float()  # (B,D)
+        argmin_idx = torch.argmin(corr_for_min, dim=-1).float()  # (B,D)
 
-        # --- Step 3: Mean absolute correlation excluding diagonal ---
-        abs_corr = torch.abs(corr)
-        sum_corr = abs_corr.masked_fill(~mask, 0.0).sum(dim=-1)  # (B, D)
-        mean_corr = sum_corr / (D - 1)
+        # Normalize indices to [0,1]
+        denom = float(max(D - 1, 1))
+        idx_max_norm = (argmax_idx / denom).clamp(0.0, 1.0)
+        idx_min_norm = (argmin_idx / denom).clamp(0.0, 1.0)
 
-        # --- Step 4: Stack features ---
-        out = torch.stack([
-            argmax_idx / D,
-            argmin_idx / D,
-            mean_corr
-        ], dim=-1)  # (B, D, 3)
+        # --- Mean absolute correlation over off-diagonal ---
+        mean_abs_corr = (
+            corr.abs().masked_fill(~offdiag, 0.0).sum(dim=-1) / (D - 1)
+        ).clamp(0.0, 1.0)  # (B,D)
 
-        # visualize_correlation_summary(
-        #     patch,
-        #     out,
-        #     out_dir=os.path.join("debug_out", "corr")
-        # )
+        # --- Stack ---
+        out = torch.stack([idx_max_norm, idx_min_norm, mean_abs_corr], dim=-1)
         return out
