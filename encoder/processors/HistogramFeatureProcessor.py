@@ -55,10 +55,9 @@ class HistogramFeatureProcessor:
         # Concatenate and reshape
         features = torch.cat([proportions, entropy], dim=1).view(B, D, -1)  # (B, D, num_bins + 1)
 
+        # out_dir = os.path.join("debug_out", "hist")
+        # _ensure_dir(out_dir)
         # visualize_histogram_features(
-        #     patch,
-        #     features,
-        #     out_dir=os.path.join("debug_out", "hist"),
-        #     num_bins=self.num_bins
+        #     patch, features, out_dir=out_dir, num_bins=self.num_bins, title_prefix="hist"
         # )
         return features

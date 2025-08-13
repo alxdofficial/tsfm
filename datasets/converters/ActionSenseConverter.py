@@ -5,11 +5,10 @@ import pandas as pd
 from datetime import datetime
 from typing import List, Tuple, Dict
 
-
-class Sensor2TextConverter:
+class ActionSenseConverter:
     def __init__(
         self,
-        data_dir: str = "data/actionet",   # <-- now a directory, not a single file
+        data_dir: str = "data/actionsense",   # <-- now a directory, not a single file
         patch_size: int = 96,
         device: str = "xsens-joints",
         stream: str = "rotation_xzy_deg",
@@ -81,7 +80,7 @@ class Sensor2TextConverter:
 
         with h5py.File(hdf5_path, 'r') as f:
             # 1) Find activity segments
-            label_segments = self._get_activity_segments(f)
+            label_segments = self._get_activity_segments(f)  # [(start_s, end_s, activity_name)]
             print(f"[INFO] Found {len(label_segments)} valid activity segments in {os.path.basename(hdf5_path)}.")
 
             # 2) Read joint rotations
@@ -122,7 +121,7 @@ class Sensor2TextConverter:
                     }
 
             # 4) Slice episodes for each valid segment
-            for idx, (start_s, end_s) in enumerate(label_segments):
+            for idx, (start_s, end_s, activity_name) in enumerate(label_segments):
                 mask = (joint_time_s >= start_s) & (joint_time_s <= end_s)
                 n = int(mask.sum())
                 if n < 2:
@@ -134,16 +133,27 @@ class Sensor2TextConverter:
                     columns=[f"joint_{j}" for j in range(joint_data.shape[1])]
                 )
                 df.insert(0, "timestamp", pd.to_datetime(joint_time_s[mask], unit='s'))
+
+                # Attach activity label so the classification dataset can read it
+                df["__activity__"] = activity_name      # per-row constant
+                # (alternative would be: df.attrs["activity"] = activity_name)
+
                 episodes.append(df)
-                print(f"[INFO] Extracted episode {idx} with {len(df)} ticks from {os.path.basename(hdf5_path)}.")
+                print(f"[INFO] Extracted episode {idx} with {len(df)} ticks "
+                      f"({activity_name}) from {os.path.basename(hdf5_path)}.")
 
         return episodes, channel_meta
 
     # ----------------- labels → segments -----------------
-    def _get_activity_segments(self, f) -> List[Tuple[float, float]]:
+    def _get_activity_segments(self, f) -> List[Tuple[float, float, str]]:
         """
-        Returns a list of (start_time_s, end_time_s) tuples for valid episodes.
+        Returns a list of (start_time_s, end_time_s, activity_name) tuples for valid episodes.
         Drops segments labelled with 'Bad' or 'Maybe'. Requires matching Start/Stop pairs.
+
+        Heuristic for activity name:
+          - Prefer a non-empty string token that is not one of {'Start','Stop','Good','Bad','Maybe'}.
+          - If none found, use the last non-empty token on the row.
+          - Fallback to 'Unknown'.
         """
         label_dev = 'experiment-activities'
         label_stream = 'activities'
@@ -154,27 +164,42 @@ class Sensor2TextConverter:
         raw_times = np.squeeze(np.array(f[label_dev][label_stream]['time_s']))  # (N,)
 
         # decode bytes → str for each entry
-        raw_data = [[s.decode() for s in row] for row in raw_data]
+        rows = [[s.decode() if isinstance(s, (bytes, bytearray)) else str(s) for s in row] for row in raw_data]
 
-        start_times, end_times = [], []
-        skip_ratings = {'Bad', 'Maybe'}
-        for i, row in enumerate(raw_data):
-            # row schema (based on dataset docs): [subject, action, rating, note] or similar
-            if len(row) < 3:
+        BAD_RATINGS = {'Bad', 'Maybe'}
+        CONTROL_TOKENS = {'Start', 'Stop', 'Good', 'Bad', 'Maybe', ''}
+
+        def extract_activity_name(tokens: List[str]) -> str:
+            # Pick a meaningful token that isn't control metadata
+            cand = [t for t in tokens if t not in CONTROL_TOKENS]
+            if cand:
+                return cand[-1].strip()  # prefer last non-control token
+            return "Unknown"
+
+        starts: List[Tuple[float, str]] = []  # (time, activity)
+        ends:   List[float] = []
+
+        for i, row in enumerate(rows):
+            tokens = [t.strip() for t in row if isinstance(t, str)]
+            if len(tokens) < 2:
                 continue
-            _, action, rating, *_ = row
-            if rating in skip_ratings:
+
+            action = tokens[1]  # often 'Start' or 'Stop'
+            rating = tokens[2] if len(tokens) >= 3 else ""
+            if rating in BAD_RATINGS:
                 continue
+
             if action == 'Start':
-                start_times.append(raw_times[i])
+                act_name = extract_activity_name(tokens)
+                starts.append((raw_times[i], act_name))
             elif action == 'Stop':
-                end_times.append(raw_times[i])
+                ends.append(raw_times[i])
 
         # pair starts and stops in order; enforce minimum duration
-        segments = []
-        for s, e in zip(start_times, end_times):
-            if (e - s) > 1.0:
-                segments.append((s, e))
+        segments: List[Tuple[float, float, str]] = []
+        for (s_time, s_act), e_time in zip(starts, ends):
+            if (e_time - s_time) > 1.0:
+                segments.append((s_time, e_time, s_act))
         return segments
 
 
@@ -186,7 +211,8 @@ if __name__ == "__main__":
     output_dir = "debug_plots"
     os.makedirs(output_dir, exist_ok=True)
 
-    converter = Sensor2TextConverter(data_dir="data/actionet")
+    # Use ActionSenseConverter here
+    converter = ActionSenseConverter(data_dir="data/actionsense", patch_size=96)
     episodes, metadata = converter.convert()
 
     print(f"\n[DEBUG] Total episodes extracted: {len(episodes)}")
@@ -194,7 +220,8 @@ if __name__ == "__main__":
 
     # Preview a few episodes
     for i, df in enumerate(episodes[:5]):
-        print(f"\n[DEBUG] Episode {i} preview:")
+        act = df.get('__activity__', ['?'])[0] if '__activity__' in df else df.attrs.get('activity', '?')
+        print(f"\n[DEBUG] Episode {i} preview: activity={act}")
         print(df.head())
 
     # Plot a few episodes
@@ -203,7 +230,8 @@ if __name__ == "__main__":
         # plot up to 10 channels for visual sanity
         for j in range(min(10, df.shape[1] - 1)):  # skip timestamp at col 0
             plt.plot(df['timestamp'], df.iloc[:, j + 1], label=f"channel_{j}")
-        plt.title(f"Episode {i} - First 10 Joint Angles")
+        title_act = df.get('__activity__', ['?'])[0] if '__activity__' in df else df.attrs.get('activity', '?')
+        plt.title(f"Episode {i} - First 10 Joint Angles ({title_act})")
         plt.xlabel("Time")
         plt.ylabel("Rotation (degrees)")
         plt.legend(ncol=2)

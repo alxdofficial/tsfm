@@ -3,9 +3,10 @@ from encoder.processors.debug import _ensure_dir, _save_csv, _to_np, visualize_c
 import os
 
 class CorrelationSummaryProcessor:
-    def __init__(self):
-        # [argmax_idx/(D-1), argmin_idx/(D-1), mean_abs_corr]
-        self.feature_dim = 3
+    def __init__(self, debug: bool = False, debug_dir: str = "debug_out/corr"):
+        self.feature_dim = 3  # idx_max, idx_min, mean_abs_corr
+        self.debug_dir = debug_dir
+
 
     def process(self, patch: torch.Tensor) -> torch.Tensor:
         """
@@ -56,4 +57,11 @@ class CorrelationSummaryProcessor:
 
         # --- Stack ---
         out = torch.stack([idx_max_norm, idx_min_norm, mean_abs_corr], dim=-1)
+
+
+        # _ensure_dir(self.debug_dir)
+        # visualize_correlation_summary(
+        #     patch, out, out_dir=self.debug_dir, title_prefix="corr"
+        # )
+
         return out

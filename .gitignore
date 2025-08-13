@@ -30,4 +30,4 @@ debug_plots/
 data
 checkpoints/
 debug_stats
-debug_out
+debug

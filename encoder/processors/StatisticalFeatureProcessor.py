@@ -208,8 +208,12 @@ class StatisticalFeatureProcessor:
                               _to_np(sample))
                 except Exception as e:
                     print(f"[StatFP] Debug CSV save failed: {e}")
-
+                
                 # Optional visualization hook (commented out by default)
+        # _ensure_dir(self.debug_dir)
+        # visualize_statistical_features(
+        #     patch, features, out_dir=self.debug_dir, title_prefix="stat"
+        # )
                 # try:
                 #     visualize_statistical_features(
                 #         patch, features, out_dir=self.debug_dir

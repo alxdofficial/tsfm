@@ -79,11 +79,10 @@ class FrequencyFeatureProcessor:
         # --- Combine interpolated spectrum proportions + stabilized error ---
         out = torch.cat([amp_props, recon_error.unsqueeze(-1)], dim=-1)  # (B, D, fft_bins + 1)
 
+        # out_dir = os.path.join("debug_out", "freq")
+        # _ensure_dir(out_dir)
         # visualize_frequency_features(
-        #     patch.permute(0, 2, 1),  # back to (B,T,D)
-        #     out,
-        #     out_dir=os.path.join("debug_out", "freq"),
-        #     fft_bins=self.fft_bins,
-        #     keep_k=self.keep_k
+        #     patch, out, out_dir=out_dir,
+        #     fft_bins=self.fft_bins, keep_k=self.keep_k, title_prefix="freq"
         # )
         return out  # (B, D, feature_dim)
