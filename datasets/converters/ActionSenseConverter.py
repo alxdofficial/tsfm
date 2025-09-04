@@ -9,7 +9,7 @@ class ActionSenseConverter:
     def __init__(
         self,
         data_dir: str = "data/actionsense",   # <-- now a directory, not a single file
-        patch_size: int = 96,
+        patch_size: int = 48,
         device: str = "xsens-joints",
         stream: str = "rotation_xzy_deg",
     ):

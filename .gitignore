@@ -31,3 +31,5 @@ data
 checkpoints/
 debug_stats
 debug
+debug_eval
+comparison

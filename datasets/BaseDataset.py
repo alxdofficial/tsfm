@@ -1,4 +1,3 @@
-# datasets.py
 import torch
 from torch.utils.data import Dataset
 import pandas as pd
@@ -14,6 +13,11 @@ class BaseEpisodesDataset(Dataset):
       1) splits sensor episodes into fixed-size patches,
       2) returns raw patches (no episode-level normalization) and common fields,
       3) defers targets/labels to subclasses via get_target(...).
+
+    Train/Val split:
+      - Pass split="train" or split="val" to select which subset to load.
+      - val_ratio (default 0.30) and split_seed (default 42) control the split.
+      - Split happens at the **episode** level.
 
     Returned shapes (per item, before collate):
       patches:     (P, T, D)  # raw values
@@ -38,19 +42,55 @@ class BaseEpisodesDataset(Dataset):
         context_size: int = -1,
         debug: bool = True,
         store_episode_stats: bool = False,
+        # ---- NEW: split controls ----
+        split: str = "train",              # "train" or "val"
+        val_ratio: float = 0.30,
+        split_seed: int = 42,
     ):
+        assert split in ("train", "val"), "split must be 'train' or 'val'"
+        self.split = split
+        self.val_ratio = float(val_ratio)
+        self.split_seed = int(split_seed)
+
         self.patch_size = metadata["patch_size"]
         self.context_size = context_size
         self.metadata = metadata
         self.debug = debug
         self.store_episode_stats = store_episode_stats
 
+        # ---- NEW: deterministic train/val split on EPISODES ----
+        total_eps = len(episodes)
+        if total_eps == 0:
+            raise ValueError("No episodes provided to BaseEpisodesDataset.")
+        rng = np.random.RandomState(self.split_seed)
+        perm = rng.permutation(total_eps)
+
+        # size of train set
+        n_train = int(round((1.0 - self.val_ratio) * total_eps))
+        n_train = max(1, min(n_train, total_eps - 1)) if total_eps >= 2 else total_eps  # keep both sets non-empty when possible
+
+        train_idx = perm[:n_train]
+        val_idx   = perm[n_train:]
+
+        if self.split == "train":
+            chosen = train_idx
+        else:
+            chosen = val_idx
+
+        # Edge case: if total_eps == 1 and split == "val", val set would be empty.
+        # We'll allow an empty dataset (len==0) rather than raising; dataloader can handle it.
+        subset_eps = [episodes[i] for i in chosen]
+
         self.episodes: List[Dict[str, Any]] = []  # each: {"patches": [np(T,D)], "timestamps": [ts], optional stats/labels}
 
-        print(f"[INFO] Preprocessing {len(episodes)} episodes with patch size {self.patch_size}...")
-        self._precompute_episodes(episodes)
+        print(
+            f"[INFO] Preprocessing {len(subset_eps)} episodes (split={self.split}, "
+            f"train/val={n_train}/{total_eps-n_train}, total={total_eps}) "
+            f"with patch size {self.patch_size}..."
+        )
+        self._precompute_episodes(subset_eps)
 
-        # ---------- NEW: build index map with fixed window policy ----------
+        # ---------- build index map with fixed window policy ----------
         self.index_map: List[Tuple[int, int]] = []
         for epi_idx, epi in enumerate(self.episodes):
             num_patches = len(epi["patches"])
@@ -70,7 +110,7 @@ class BaseEpisodesDataset(Dataset):
                     # short episode: one sample covering the whole episode (shorter than cs)
                     self.index_map.append((epi_idx, num_patches - 1))  # central = last
 
-        print(f"[INFO] Dataset ready: {len(self.index_map)} samples from {len(self.episodes)} episodes.")
+        print(f"[INFO] Dataset ready (split={self.split}): {len(self.index_map)} samples from {len(self.episodes)} episodes.")
         if self.debug and len(self.episodes) > 0:
             D = self.episodes[0]["patches"][0].shape[-1]
             print(f"[DEBUG] No dataset-side normalization. Example D={D} channels.")
@@ -244,7 +284,12 @@ def tsfm_collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     Notes:
       - We preserve your original debug and dtype behavior.
+      - If you pass context_size larger than any sequence in the batch, we only pad
+        to the **largest present** sequence length (not to context_size).
     """
+    if len(batch) == 0:
+        return {}
+
     B = len(batch)
     # figure max P and (T,D)
     P_list = [item["patches"].shape[0] for item in batch]

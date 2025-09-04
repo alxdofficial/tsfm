@@ -18,6 +18,9 @@ class ActionSenseActivityClsDataset(BaseEpisodesDataset):
     Policy:
       - Use the label of the CENTRAL patch in the context window.
       - If the episode has no labels, raises a clear error at init (unless allow_unlabeled=True).
+
+    NEW:
+      - Supports episode-level train/val split via (split, val_ratio, split_seed).
     """
     def __init__(
         self,
@@ -27,6 +30,10 @@ class ActionSenseActivityClsDataset(BaseEpisodesDataset):
         debug: bool = True,
         store_episode_stats: bool = False,
         allow_unlabeled: bool = False,
+        # ---- NEW ----
+        split: str = "train",
+        val_ratio: float = 0.0,
+        split_seed: int = 42,
     ):
         self.allow_unlabeled = allow_unlabeled
         super().__init__(
@@ -35,8 +42,11 @@ class ActionSenseActivityClsDataset(BaseEpisodesDataset):
             context_size=context_size,
             debug=debug,
             store_episode_stats=store_episode_stats,
+            split=split,
+            val_ratio=val_ratio,
+            split_seed=split_seed,
         )
-        # Build activity_to_id from all patches that have labels
+        # Build activity_to_id from all patches that have labels in THIS SPLIT
         all_labels: List[str] = []
         for epi in self.episodes:
             if "__activity__" in epi:
@@ -44,18 +54,17 @@ class ActionSenseActivityClsDataset(BaseEpisodesDataset):
         unique = sorted(set(all_labels))
         if not unique and not allow_unlabeled:
             raise ValueError(
-                "No activity labels found in episodes. "
+                f"No activity labels found in episodes for split='{self.split}'. "
                 "Ensure your converter sets df['__activity__'] or df.attrs['activity'], "
                 "or initialize with allow_unlabeled=True for debugging."
             )
         self.activity_to_id: Dict[str, int] = {name: i for i, name in enumerate(unique)}
         self.num_classes: int = len(self.activity_to_id)
         if self.debug:
-            print(f"[DEBUG] ActivityClsDataset: discovered {self.num_classes} classes.")
+            print(f"[DEBUG] ActivityClsDataset(split={self.split}): discovered {self.num_classes} classes.")
 
         self.id_to_activity = [name for name,_ in sorted(self.activity_to_id.items(), key=lambda kv: kv[1])]
-        print("[DBG] classes:", self.id_to_activity)
-
+        print(f"[DBG][{self.split}] classes:", self.id_to_activity)
 
     def get_target(
         self,
@@ -83,6 +92,7 @@ class ActionSenseActivityClsDataset(BaseEpisodesDataset):
             raise KeyError(f"Unknown activity label '{central_label}' at episode {epi_idx}, patch {central_patch_idx}.")
         return {"activity_id": torch.tensor(cls_id, dtype=torch.long)}
 
+
 # =========================
 # MSPDataset (no targets)
 # =========================
@@ -91,7 +101,33 @@ class ActionSenseMSPDataset(BaseEpisodesDataset):
     Masked Self-Prediction pretraining dataset.
     - Inherits all base logic for slicing/stacking patches.
     - Returns no targets (encoder builds them internally).
+
+    NEW:
+      - Supports episode-level train/val split via (split, val_ratio, split_seed).
     """
+    def __init__(
+        self,
+        episodes: List[pd.DataFrame],
+        metadata: Dict,
+        context_size: int = -1,
+        debug: bool = True,
+        store_episode_stats: bool = False,
+        # ---- NEW ----
+        split: str = "train",
+        val_ratio: float = 0.30,
+        split_seed: int = 42,
+    ):
+        super().__init__(
+            episodes=episodes,
+            metadata=metadata,
+            context_size=context_size,
+            debug=debug,
+            store_episode_stats=store_episode_stats,
+            split=split,
+            val_ratio=val_ratio,
+            split_seed=split_seed,
+        )
+
     def get_target(
         self,
         epi_idx: int,

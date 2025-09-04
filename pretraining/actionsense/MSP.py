@@ -78,6 +78,7 @@ def build_dataloader(device: torch.device):
         episodes, metadata,
         context_size=CFG.context_size,
         debug=True,
+        split="train", val_ratio=0.30, split_seed=42,
         store_episode_stats=False,
     )
 

@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
+from typing import Optional, Tuple, Dict, Any, List
 
 # Data & Collate
 from datasets.converters.ActionSenseConverter import ActionSenseConverter
@@ -16,12 +17,6 @@ from datasets.ActionSensePretrainingDatasets import ActionSenseActivityClsDatase
 # Encoder & Head
 from encoder.TSFMEncoder import TSFMEncoder
 from pretraining.actionsense.cls_head import ActivityCLSHead  # expects (long_tokens, key_padding_mask) -> logits
-
-# Non-learnable feature processors
-from encoder.processors.CorrelationSummaryProcessor import CorrelationSummaryProcessor
-from encoder.processors.FrequencyFeatureProcessor import FrequencyFeatureProcessor
-from encoder.processors.HistogramFeatureProcessor import HistogramFeatureProcessor
-from encoder.processors.StatisticalFeatureProcessor import StatisticalFeatureProcessor
 
 # Debug
 from pretraining.actionsense.debug_stats import DebugStats
@@ -59,31 +54,12 @@ class Config:
 
 CFG = Config()
 
-# ------------------- Builders -------------------
-def build_dataloader(device: torch.device):
-    converter = ActionSenseConverter()  # default patch_size=96
-    episodes, metadata = converter.convert()
-
-    dataset = ActionSenseActivityClsDataset(
-        episodes, metadata,
-        context_size=CFG.context_size,
-        debug=True,
-        store_episode_stats=False,
-        allow_unlabeled=False,
-    )
-
-    dataloader = DataLoader(
-        dataset,
-        batch_size=CFG.batch_size,
-        shuffle=True,
-        num_workers=CFG.num_workers,
-        pin_memory=(device.type == "cuda"),
-        collate_fn=tsfm_collate,
-    )
-    return dataloader, metadata, dataset
-
-
+# ------------------- Builders (train + val) -------------------
 def build_processors():
+    from encoder.processors.CorrelationSummaryProcessor import CorrelationSummaryProcessor
+    from encoder.processors.FrequencyFeatureProcessor import FrequencyFeatureProcessor
+    from encoder.processors.HistogramFeatureProcessor import HistogramFeatureProcessor
+    from encoder.processors.StatisticalFeatureProcessor import StatisticalFeatureProcessor
     return [
         CorrelationSummaryProcessor(),
         FrequencyFeatureProcessor(),
@@ -120,6 +96,51 @@ def build_activity_head(num_classes: int, device: torch.device) -> nn.Module:
     return head
 
 
+def build_dataloaders(device: torch.device):
+    """
+    Build train/val datasets from the same converted episode list using an episode-level split.
+    We build TRAIN first (its label mapping is canonical), then VAL. At eval time we remap
+    val ids to train ids by name to avoid label-mapping bugs.
+    """
+    converter = ActionSenseConverter()  # default patch_size=96
+    episodes, metadata = converter.convert()
+
+    train_ds = ActionSenseActivityClsDataset(
+        episodes, metadata,
+        context_size=CFG.context_size,
+        debug=True,
+        split="train", val_ratio=0.20, split_seed=42,
+        store_episode_stats=False,
+        allow_unlabeled=False,
+    )
+    val_ds = ActionSenseActivityClsDataset(
+        episodes, metadata,
+        context_size=CFG.context_size,
+        debug=True,
+        split="val", val_ratio=0.20, split_seed=42,
+        store_episode_stats=False,
+        allow_unlabeled=False,
+    )
+
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=CFG.batch_size,
+        shuffle=True,
+        num_workers=CFG.num_workers,
+        pin_memory=(device.type == "cuda"),
+        collate_fn=tsfm_collate,
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=CFG.batch_size,
+        shuffle=False,
+        num_workers=CFG.num_workers,
+        pin_memory=(device.type == "cuda"),
+        collate_fn=tsfm_collate,
+    )
+    return train_loader, val_loader, metadata, train_ds, val_ds
+
+# ------------------- Plotting -------------------
 def plot_training_loss(loss_history, out_path="checkpoints/train_loss_cls.png"):
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     plt.figure(figsize=(10, 4))
@@ -134,6 +155,37 @@ def plot_training_loss(loss_history, out_path="checkpoints/train_loss_cls.png"):
     plt.close()
 
 
+def plot_val_history(val_hist: List[Dict[str, float]], out_path="checkpoints/val_metrics_cls.png"):
+    """
+    val_hist: list of dicts with keys {"epoch", "loss", "acc"}
+    """
+    if not val_hist:
+        return
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    epochs = [e["epoch"] for e in val_hist]
+    losses = [e["loss"] for e in val_hist]
+    accs   = [e["acc"]  for e in val_hist]
+
+    fig, ax1 = plt.subplots(figsize=(10, 4.8))
+    l1, = ax1.plot(epochs, losses, marker="o", label="Val Loss")
+    ax1.set_xlabel("Epoch")
+    ax1.set_ylabel("Loss")
+    ax1.grid(True, linestyle="--", alpha=0.6)
+
+    ax2 = ax1.twinx()
+    l2, = ax2.plot(epochs, accs, marker="s", linestyle="--", label="Val Acc", color="tab:green")
+    ax2.set_ylabel("Accuracy")
+
+    lines = [l1, l2]
+    labels = [ln.get_label() for ln in lines]
+    ax1.legend(lines, labels, loc="best")
+
+    plt.title("Validation over Epochs — Activity CLS")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+
+# ------------------- Checkpoint -------------------
 def save_ckpt(encoder, head, optimizer, scheduler, scaler, epoch, extra=None, out_dir="checkpoints"):
     os.makedirs(out_dir, exist_ok=True)
     state = {
@@ -151,22 +203,87 @@ def save_ckpt(encoder, head, optimizer, scheduler, scaler, epoch, extra=None, ou
     torch.save(state, path)
     print(f"[CKPT] Saved checkpoint → {path}")
 
+# ------------------- Evaluation (no-grad) -------------------
+@torch.no_grad()
+def evaluate(encoder: nn.Module, head: nn.Module, dataloader: DataLoader,
+             ce: nn.Module, device: torch.device,
+             id_remap: Optional[torch.Tensor]) -> Tuple[float, float]:
+    """
+    Returns: (avg_loss, accuracy) over valid (remappable) examples.
+
+    id_remap: Tensor of shape (val_num_classes,), mapping val ids -> train ids.
+              Unmapped classes have -1 and are ignored in metrics.
+    """
+    encoder.eval(); head.eval()
+    total_loss = 0.0
+    total_n = 0
+    correct = 0
+
+    for batch in dataloader:
+        if len(batch) == 0:
+            continue
+        batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v)
+                 for k, v in batch.items()}
+
+        if "activity_id" not in batch:
+            continue
+
+        out = encoder.encode_batch(batch)  # tokens: (B,P,D,F)
+        long_tokens = out["tokens"]
+
+        # Build flattened key_padding_mask (B,P*D), True=pad
+        flattened_key_padding_mask = None
+        if "pad_mask" in batch and batch["pad_mask"] is not None:
+            Bsz, P = batch["pad_mask"].shape
+            D = long_tokens.shape[2]
+            valid_flat = batch["pad_mask"].unsqueeze(-1).expand(Bsz, P, D).reshape(Bsz, P * D)
+            flattened_key_padding_mask = ~valid_flat
+
+        logits = head(long_tokens, flattened_key_padding_mask)  # (B,C_train)
+        targets_val_ids = batch["activity_id"].long()           # (B,)
+
+        if id_remap is not None:
+            vm = id_remap.clamp(min=-1)                         # safety
+            mapped = vm[targets_val_ids]                        # (B,) in [-1..C_train-1]
+            valid_mask = mapped.ge(0)
+            if valid_mask.any():
+                sel_logits = logits[valid_mask]
+                sel_targets = mapped[valid_mask]
+                loss = ce(sel_logits, sel_targets)
+                total_loss += loss.item() * sel_targets.numel()
+                total_n += sel_targets.numel()
+
+                pred = sel_logits.argmax(dim=-1)
+                correct += (pred == sel_targets).sum().item()
+            else:
+                continue
+        else:
+            loss = ce(logits, targets_val_ids)
+            total_loss += loss.item() * targets_val_ids.numel()
+            total_n += targets_val_ids.numel()
+            pred = logits.argmax(dim=-1)
+            correct += (pred == targets_val_ids).sum().item()
+
+    avg_loss = (total_loss / max(1, total_n))
+    acc = (correct / max(1, total_n))
+    return avg_loss, acc
 
 # ------------------- Train -------------------
 def train():
     device, amp_ctx, scaler = configure_device_and_amp()
 
-    dataloader, _, dataset = build_dataloader(device)
+    train_loader, val_loader, _, train_ds, val_ds = build_dataloaders(device)
     processors = build_processors()
 
     encoder = build_encoder(processors, device)
-    head = build_activity_head(num_classes=dataset.num_classes, device=device)
+    head = build_activity_head(num_classes=train_ds.num_classes, device=device)
 
     params = list(encoder.parameters()) + list(head.parameters())
+
     def param_groups(model, wd):
         no_decay = []
         decay = []
-        for n,p in model.named_parameters():
+        for n, p in model.named_parameters():
             if not p.requires_grad:
                 continue
             if p.ndim == 1 or n.endswith(".bias") or "norm" in n.lower():
@@ -187,26 +304,39 @@ def train():
         lr=enc_lr, weight_decay=CFG.weight_decay
     )
 
-    scheduler = build_warmup_cosine_scheduler(optimizer, epochs=CFG.epochs, steps_per_epoch=len(dataloader))
+    scheduler = build_warmup_cosine_scheduler(optimizer, epochs=CFG.epochs, steps_per_epoch=len(train_loader))
     sanity_check_optimizer(
         list(encoder.named_parameters()) + [("head."+n, p) for n, p in head.named_parameters()], optimizer
     )
 
+    # --------- Build VAL->TRAIN id remap (by class name) ---------
+    train_name_to_id = {name: i for name, i in train_ds.activity_to_id.items()}
+    val_id_to_name = {i: name for i, name in enumerate(val_ds.id_to_activity)}
+    remap_vec = torch.full((len(val_id_to_name),), -1, dtype=torch.long)
+    for vid, vname in val_id_to_name.items():
+        if vname in train_name_to_id:
+            remap_vec[vid] = train_name_to_id[vname]
+    id_remap_val2train = remap_vec.to(device)
+
     encoder.train(); head.train()
     global_step = 0
-    loss_history = []
+    loss_history: List[float] = []
+    val_history: List[Dict[str, float]] = []
     ce = nn.CrossEntropyLoss()
+    best_val_acc = -1.0
 
     for epoch in range(1, CFG.epochs + 1):
         epoch_loss = 0.0
         correct = 0
         total = 0
         t0 = time.time()
-        steps_this_epoch = len(dataloader)
+        steps_this_epoch = len(train_loader)
         print(f"\n[TRAIN-CLS] Epoch {epoch}/{CFG.epochs} - steps: {steps_this_epoch}")
 
+        encoder.train(); head.train()
+
         with tqdm(total=steps_this_epoch, desc=f"Epoch {epoch}/{CFG.epochs}", dynamic_ncols=True) as pbar:
-            for step, batch in enumerate(dataloader, start=1):
+            for step, batch in enumerate(train_loader, start=1):
                 batch = {k: (v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v)
                          for k, v in batch.items()}
 
@@ -229,7 +359,7 @@ def train():
                     # --- per-sample raw logits plot (only for b_idx=0) ---
                     head.debug_logits_bar(
                         logits, targets, b_idx=0,
-                        class_names=getattr(dataset, "id_to_activity", None),
+                        class_names=getattr(train_ds, "id_to_activity", None),
                         save_path="debug/logits_bar.png",
                         annotate_values=False
                     )
@@ -296,17 +426,34 @@ def train():
                     torch.cuda.empty_cache()
 
         dur = time.time() - t0
-        avg = epoch_loss / max(1, steps_this_epoch)
+        avg_train = epoch_loss / max(1, steps_this_epoch)
         acc_epoch = correct / max(1, total)
-        print(f"[EPOCH-CLS] {epoch} avg_loss={avg:.6f} acc={acc_epoch:.3f} time={dur:.1f}s")
+        print(f"[EPOCH-CLS] {epoch} train_loss={avg_train:.6f} train_acc={acc_epoch:.3f} time={dur:.1f}s")
 
-        # ---------- Save checkpoints every 25 epochs and at the end ----------
-        if (epoch % 25 == 0) or (epoch == CFG.epochs):
-            # include class mapping for convenience if present
+        # ---------- Validation every 5 epochs (and always at the very end) ----------
+        if len(val_loader) > 0 and (epoch % 2 == 0 or epoch == CFG.epochs):
+            val_loss, val_acc = evaluate(encoder, head, val_loader, ce, device, id_remap_val2train)
+            val_history.append({"epoch": float(epoch), "loss": float(val_loss), "acc": float(val_acc)})
+            print(f"[VAL-CLS]   {epoch}   val_loss={val_loss:.6f}   val_acc={val_acc:.3f}")
+            plot_val_history(val_history, out_path="checkpoints/val_metrics_cls.png")
+
+            # Keep best-by-accuracy checkpoint (optional but safe)
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                save_ckpt(
+                    encoder, head, optimizer, scheduler, scaler, epoch,
+                    extra={"best_by": "val_acc", "val_acc": float(best_val_acc),
+                           "id_to_activity": getattr(train_ds, "id_to_activity", None),
+                           "activity_to_id": getattr(train_ds, "activity_to_id", None)},
+                    out_dir="checkpoints/best"
+                )
+
+        # ---------- Periodic checkpoints ----------
+        if (epoch % 10 == 0) or (epoch == CFG.epochs):
             extra = {}
             try:
-                extra["id_to_activity"] = getattr(dataset, "id_to_activity", None)
-                extra["activity_to_id"] = getattr(dataset, "activity_to_id", None)
+                extra["id_to_activity"] = getattr(train_ds, "id_to_activity", None)
+                extra["activity_to_id"] = getattr(train_ds, "activity_to_id", None)
             except Exception:
                 pass
             save_ckpt(encoder, head, optimizer, scheduler, scaler, epoch, extra=extra, out_dir="checkpoints")

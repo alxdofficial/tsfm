@@ -88,14 +88,16 @@ class ActivityCLSHead(nn.Module):
         logits: torch.Tensor,            # (B,C)
         targets: torch.Tensor,           # (B,)
         b_idx: int = 0,
-        class_names: Optional[List[str]] = None,
+        class_names=None,                # list[str] OR dict[int,str] OR None
         save_path: Optional[str] = "debug/logits_bar.png",
         annotate_values: bool = False,
     ):
         """
-        Plot the raw logits for a single element in the batch as a bar chart.
-        - Preserves natural class index order (0..C-1)
-        - Highlights GT in orange; Pred has a black outline
+        Plot raw logits for one batch element. Accepts class_names as:
+          - list/tuple indexed by class id
+          - dict mapping {class_id: name}
+          - None (falls back to '0','1',...)
+        Safely handles missing/short mappings.
         """
         assert logits.dim() == 2, f"logits should be (B,C), got {tuple(logits.shape)}"
         B, C = logits.shape
@@ -105,40 +107,58 @@ class ActivityCLSHead(nn.Module):
         tgt = int(targets[b_idx])
         pred = int(np.argmax(vec))
 
-        if class_names is None:
-            class_names = [str(i) for i in range(C)]
+        # --- normalize class names into a dense list of length C ---
+        def _normalize_names(names, C):
+            if names is None:
+                return [str(i) for i in range(C)]
+            if isinstance(names, dict):
+                out = [str(i) for i in range(C)]
+                for k, v in names.items():
+                    try:
+                        ki = int(k)
+                    except Exception:
+                        continue
+                    if 0 <= ki < C:
+                        out[ki] = str(v)
+                return out
+            if isinstance(names, (list, tuple)):
+                lst = [str(x) for x in names]
+                if len(lst) < C:
+                    lst += [str(i) for i in range(len(lst), C)]
+                return lst[:C]
+            # unknown type -> fallback
+            return [str(i) for i in range(C)]
 
-        # Natural (unsorted) order
+        names = _normalize_names(class_names, C)
+
         order = np.arange(C)
         xs = np.arange(C)
-        labels = [class_names[i] for i in order]
+        labels = [names[i] for i in order]
         vals = vec[order]
 
         os.makedirs(os.path.dirname(save_path), exist_ok=True) if save_path else None
         plt.figure(figsize=(max(10, 0.18 * C + 6), 5))
 
-        # base bars
         bars = plt.bar(xs, vals)
 
-        # highlight GT (orange)
         if 0 <= tgt < C:
             bars[tgt].set_color("orange")
             bars[tgt].set_alpha(0.95)
 
-        # outline Pred (black edge)
         if 0 <= pred < C:
             bars[pred].set_edgecolor("black")
             bars[pred].set_linewidth(1.25)
             bars[pred].set_alpha(bars[pred].get_alpha() or 0.95)
 
-        plt.title(f"Raw logits (sample {b_idx})  |  GT={class_names[tgt]}  Pred={class_names[pred]}")
+        # Safe names for title
+        tgt_name = names[tgt] if 0 <= tgt < C else str(tgt)
+        pred_name = names[pred] if 0 <= pred < C else str(pred)
+
+        plt.title(f"Raw logits (sample {b_idx})  |  GT={tgt_name}  Pred={pred_name}")
         plt.xlabel("Class")
         plt.ylabel("Logit (unnormalized)")
-
-        # Tick labels: show all, but this can get crowded with many classes
         plt.xticks(xs, labels, rotation=90)
 
-        # Optional numeric annotations (only if not too crowded)
         if annotate_values and C <= 40:
             for i, v in enumerate(vals):
                 plt.text(i, v, f"{v:.2f}", ha="center", va="bottom", fontsize=8, rotation=90)

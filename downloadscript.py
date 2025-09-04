@@ -1,23 +1,52 @@
 #!/usr/bin/env python3
 import os
 import sys
-import time
-import math
 import requests
 from tqdm.auto import tqdm
 
 # ---- Where to put the files (relative to this script) ----
-DEST_DIR = os.path.join("data", "actionet")
+DEST_DIR = os.path.join("data", "actionsense")
 
-# ---- Files to download ----
+# ---- Files to download (ALL wearable sensor .hdf5 across S00–S09) ----
 URLS = [
+    # S00
+    "https://data.csail.mit.edu/ActionNet/wearable_data/2022-06-07_experiment_S00/2022-06-07_17-18-17_actionNet-wearables_S00/2022-06-07_17-18-46_streamLog_actionNet-wearables_S00.hdf5",
     "https://data.csail.mit.edu/ActionNet/wearable_data/2022-06-07_experiment_S00/2022-06-07_18-10-55_actionNet-wearables_S00/2022-06-07_18-11-37_streamLog_actionNet-wearables_S00.hdf5",
+
+    # S01
     "https://data.csail.mit.edu/ActionNet/wearable_data/2022-06-13_experiment_S01_recordingStopped/2022-06-13_18-13-12_actionNet-wearables_S01/2022-06-13_18-14-59_streamLog_actionNet-wearables_S01.hdf5",
+
+    # S02
+    "https://data.csail.mit.edu/ActionNet/wearable_data/2022-06-13_experiment_S02/2022-06-13_21-39-50_actionNet-wearables_S02/2022-06-13_21-40-16_streamLog_actionNet-wearables_S02.hdf5",
     "https://data.csail.mit.edu/ActionNet/wearable_data/2022-06-13_experiment_S02/2022-06-13_21-47-57_actionNet-wearables_S02/2022-06-13_21-48-24_streamLog_actionNet-wearables_S02.hdf5",
     "https://data.csail.mit.edu/ActionNet/wearable_data/2022-06-13_experiment_S02/2022-06-13_22-34-45_actionNet-wearables_S02/2022-06-13_22-35-11_streamLog_actionNet-wearables_S02.hdf5",
     "https://data.csail.mit.edu/ActionNet/wearable_data/2022-06-13_experiment_S02/2022-06-13_23-22-21_actionNet-wearables_S02/2022-06-13_23-22-44_streamLog_actionNet-wearables_S02.hdf5",
+
+    # S03
     "https://data.csail.mit.edu/ActionNet/wearable_data/2022-06-14_experiment_S03/2022-06-14_13-11-44_actionNet-wearables_S03/2022-06-14_13-12-07_streamLog_actionNet-wearables_S03.hdf5",
     "https://data.csail.mit.edu/ActionNet/wearable_data/2022-06-14_experiment_S03/2022-06-14_13-52-21_actionNet-wearables_S03/2022-06-14_13-52-57_streamLog_actionNet-wearables_S03.hdf5",
+
+    # S04
+    "https://data.csail.mit.edu/ActionNet/wearable_data/2022-06-14_experiment_S04/2022-06-14_16-38-18_actionNet-wearables_S04/2022-06-14_16-38-43_streamLog_actionNet-wearables_S04.hdf5",
+
+    # S05
+    "https://data.csail.mit.edu/ActionNet/wearable_data/2022-06-14_experiment_S05/2022-06-14_20-36-27_actionNet-wearables_S05/2022-06-14_20-36-54_streamLog_actionNet-wearables_S05.hdf5",
+    "https://data.csail.mit.edu/ActionNet/wearable_data/2022-06-14_experiment_S05/2022-06-14_20-45-43_actionNet-wearables_S05/2022-06-14_20-46-12_streamLog_actionNet-wearables_S05.hdf5",
+
+    # S06
+    "https://data.csail.mit.edu/ActionNet/wearable_data/2022-07-12_experiment_S06/2022-07-12_14-30-38_actionNet-wearables_S06/2022-07-12_14-31-04_streamLog_actionNet-wearables_S06.hdf5",
+    "https://data.csail.mit.edu/ActionNet/wearable_data/2022-07-12_experiment_S06/2022-07-12_15-07-50_actionNet-wearables_S06/2022-07-12_15-08-08_streamLog_actionNet-wearables_S06.hdf5",
+
+    # S07
+    "https://data.csail.mit.edu/ActionNet/wearable_data/2022-07-13_experiment_S07/2022-07-13_11-01-18_actionNet-wearables_S07/2022-07-13_11-02-03_streamLog_actionNet-wearables_S07.hdf5",
+
+    # S08
+    "https://data.csail.mit.edu/ActionNet/wearable_data/2022-07-13_experiment_S08/2022-07-13_14-15-03_actionNet-wearables_S08/2022-07-13_14-15-26_streamLog_actionNet-wearables_S08.hdf5",
+
+    # S09
+    "https://data.csail.mit.edu/ActionNet/wearable_data/2022-07-14_experiment_S09/2022-07-14_09-47-52_actionNet-wearables_S09/2022-07-14_09-48-44_streamLog_actionNet-wearables_S09.hdf5",
+    "https://data.csail.mit.edu/ActionNet/wearable_data/2022-07-14_experiment_S09/2022-07-14_09-58-40_actionNet-wearables_S09/2022-07-14_09-59-00_streamLog_actionNet-wearables_S09.hdf5",
+    "https://data.csail.mit.edu/ActionNet/wearable_data/2022-07-14_experiment_S09/2022-07-14_11-13-55_actionNet-wearables_S09/2022-07-14_11-14-21_streamLog_actionNet-wearables_S09.hdf5",
 ]
 
 HEADERS = {"User-Agent": "actionet-downloader/1.0"}
@@ -53,7 +82,7 @@ def download_file(url: str, dest_dir: str, timeout: int = 60, chunk_size: int = 
 
     with requests.get(url, stream=True, headers=HEADERS, timeout=timeout) as r:
         r.raise_for_status()
-        total = int(r.headers.get("Content-Length", "0")) or total_size or 0
+        total = int(r.headers.get("Content-Length", "0")) or (total_size or 0)
 
         with open(dest_path, "wb") as f, tqdm(
             total=total,
