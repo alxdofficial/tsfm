@@ -35,7 +35,7 @@ CFG = Config()
 
 # --------- Eval-only constants (also hard-coded) ---------
 CKPT_PATH = "checkpoints/best/cls_epoch_30.pt"  # change if evaluating a different checkpoint
-OUT_DIR = "debug_eval"                     # where plots/CSV go
+OUT_DIR = os.path.join("debug", "eval", "actionsense_cls")
 VAL_RATIO = 0.20
 SPLIT_SEED = 42
 VISUALIZE_BATCHES = 20                      # visualize first N val batches

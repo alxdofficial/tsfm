@@ -10,6 +10,8 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
+DEFAULT_DEBUG_DIR = os.path.join("debug", "datasets", "actionsenseqa", "plots")
+
 
 @dataclass
 class ActionSenseQARecord:
@@ -319,7 +321,7 @@ if __name__ == "__main__":
     parser.add_argument("--base_dir", default="data/actionsenseqa/data")
     parser.add_argument("--qa_csv", default="data/actionsenseqa/data/qa_pairs.csv")
     parser.add_argument("--manifest_csv", default="data/actionsenseqa/data/manifest.csv")
-    parser.add_argument("--outdir", default="debug_plots")
+    parser.add_argument("--outdir", default=DEFAULT_DEBUG_DIR)
     parser.add_argument("--num", type=int, default=4)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--patch_size", type=int, default=96)

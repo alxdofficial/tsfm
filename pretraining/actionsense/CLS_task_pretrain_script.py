@@ -22,7 +22,10 @@ from pretraining.actionsense.cls_head import ActivityCLSHead  # expects (long_to
 
 # Debug
 from pretraining.actionsense.debug_stats import DebugStats
-dbg = DebugStats(out_dir="debug")
+
+DEBUG_DIR = os.path.join("debug", "pretraining", "actionsense_cls")
+DEBUG_LOGITS_DIR = os.path.join(DEBUG_DIR, "logits")
+dbg = DebugStats(out_dir=os.path.join(DEBUG_DIR, "stats"))
 
 # Training utils
 from training_utils import (
@@ -145,7 +148,7 @@ def build_dataloaders(device: torch.device):
     return train_loader, val_loader, metadata, train_ds, val_ds
 
 # ------------------- Plotting -------------------
-def plot_training_loss(loss_history, out_path="checkpoints/train_loss_cls.png"):
+def plot_training_loss(loss_history, out_path=os.path.join(DEBUG_DIR, "train_loss.png")):
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     plt.figure(figsize=(10, 4))
     plt.plot(loss_history, label="Batch Loss")
@@ -159,7 +162,7 @@ def plot_training_loss(loss_history, out_path="checkpoints/train_loss_cls.png"):
     plt.close()
 
 
-def plot_val_history(val_hist: List[Dict[str, float]], out_path="checkpoints/val_metrics_cls.png"):
+def plot_val_history(val_hist: List[Dict[str, float]], out_path=os.path.join(DEBUG_DIR, "val_metrics.png")):
     """
     val_hist: list of dicts with keys {"epoch", "loss", "acc"}
     """
@@ -365,7 +368,7 @@ def train():
                         head.debug_logits_bar(
                             logits, targets, b_idx=0,
                             class_names=getattr(train_ds, "id_to_activity", None),
-                            save_path="debug/logits_bar.png",
+                            save_path=os.path.join(DEBUG_LOGITS_DIR, "latest.png"),
                             annotate_values=False
                         )
 
@@ -414,7 +417,7 @@ def train():
                     acc = correct / max(1, total)
 
                 if (len(loss_history) % CFG.LOSS_PLOT_EVERY) == 0:
-                    plot_training_loss(loss_history, out_path="checkpoints/train_loss_cls.png")
+                    plot_training_loss(loss_history)
                     try:
                         dbg.save_plots()
                     except Exception:
@@ -440,7 +443,7 @@ def train():
             val_loss, val_acc = evaluate(encoder, head, val_loader, ce, device, id_remap_val2train)
             val_history.append({"epoch": float(epoch), "loss": float(val_loss), "acc": float(val_acc)})
             print(f"[VAL-CLS]   {epoch}   val_loss={val_loss:.6f}   val_acc={val_acc:.3f}")
-            plot_val_history(val_history, out_path="checkpoints/val_metrics_cls.png")
+            plot_val_history(val_history)
 
             # Keep best-by-accuracy checkpoint (optional but safe)
             if val_acc > best_val_acc:

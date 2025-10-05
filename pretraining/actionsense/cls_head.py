@@ -89,7 +89,7 @@ class ActivityCLSHead(nn.Module):
         targets: torch.Tensor,           # (B,)
         b_idx: int = 0,
         class_names=None,                # list[str] OR dict[int,str] OR None
-        save_path: Optional[str] = "debug/logits_bar.png",
+        save_path: Optional[str] = os.path.join("debug", "pretraining", "actionsense_cls", "logits", "latest.png"),
         annotate_values: bool = False,
     ):
         """

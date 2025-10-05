@@ -5,6 +5,8 @@ import pandas as pd
 from datetime import datetime
 from typing import List, Tuple, Dict
 
+DEFAULT_DEBUG_DIR = os.path.join("debug", "datasets", "actionsense_converter")
+
 class ActionSenseConverter:
     def __init__(
         self,
@@ -208,7 +210,7 @@ if __name__ == "__main__":
     matplotlib.use("Agg")  # use non-GUI backend
     import matplotlib.pyplot as plt
 
-    output_dir = "debug_plots"
+    output_dir = DEFAULT_DEBUG_DIR
     os.makedirs(output_dir, exist_ok=True)
 
     # Use ActionSenseConverter here

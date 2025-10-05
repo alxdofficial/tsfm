@@ -10,6 +10,8 @@ import torch
 import pandas as pd
 import matplotlib.pyplot as plt
 
+DEFAULT_DEBUG_DIR = os.path.join("debug", "pretraining", "actionsense", "stats")
+
 
 @dataclass
 class _RowTensor:
@@ -36,7 +38,7 @@ class _RowGrad:
 
 
 class DebugStats:
-    def __init__(self, out_dir: str = "debug_stats"):
+    def __init__(self, out_dir: str = DEFAULT_DEBUG_DIR):
         self.out_dir = out_dir
         os.makedirs(self.out_dir, exist_ok=True)
         self._tensor_csv = os.path.join(self.out_dir, "tensors.csv")

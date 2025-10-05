@@ -25,7 +25,9 @@ from encoder.processors.StatisticalFeatureProcessor import StatisticalFeaturePro
 
 # Debug
 from pretraining.actionsense.debug_stats import DebugStats
-dbg = DebugStats(out_dir="debug")
+
+DEBUG_DIR = os.path.join("debug", "pretraining", "actionsense_msp")
+dbg = DebugStats(out_dir=os.path.join(DEBUG_DIR, "stats"))
 
 # Training utils
 from training_utils import (
@@ -130,7 +132,7 @@ def build_encoder_and_head(processors, device: torch.device) -> nn.Module:
     return encoder
 
 
-def plot_training_loss(loss_history, out_path="checkpoints/train_loss_msp.png"):
+def plot_training_loss(loss_history, out_path=os.path.join(DEBUG_DIR, "train_loss.png")):
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     plt.figure(figsize=(10, 4))
     plt.plot(loss_history, label="Batch Loss")
@@ -206,7 +208,7 @@ def train():
                 loss_history.append(loss.item())
 
                 if (len(loss_history) % CFG.LOSS_PLOT_EVERY) == 0:
-                    plot_training_loss(loss_history, out_path="checkpoints/train_loss_msp.png")
+                    plot_training_loss(loss_history)
 
                 P = batch["patches"].shape[1]
                 D = batch["patches"].shape[2]

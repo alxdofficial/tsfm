@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 from typing import List, Tuple, Dict
 
+DEFAULT_DEBUG_DIR = os.path.join("debug", "datasets", "actionsense_multimodal_converter")
+
 
 class ActionSenseMultiModalConverter:
     """
@@ -194,7 +196,7 @@ if __name__ == "__main__":
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    out_dir = "debug_plots"
+    out_dir = DEFAULT_DEBUG_DIR
     os.makedirs(out_dir, exist_ok=True)
 
     converter = ActionSenseMultiModalConverter(data_dir="data/actionsense", patch_size=96)

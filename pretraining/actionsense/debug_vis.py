@@ -3,7 +3,11 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-def plot_reconstruction(targets_small, recon_small, token_mask, b_idx=0, p_idx=None, out_dir="debug/recon_vis"):
+DEFAULT_RECON_DIR = os.path.join("debug", "pretraining", "actionsense", "recon")
+DEFAULT_FEATURE_STATS_DIR = os.path.join("debug", "pretraining", "actionsense", "feature_stats")
+
+
+def plot_reconstruction(targets_small, recon_small, token_mask, b_idx=0, p_idx=None, out_dir=DEFAULT_RECON_DIR):
     os.makedirs(out_dir, exist_ok=True)
     with torch.no_grad():
         B, P, D, K = targets_small.shape
@@ -41,7 +45,7 @@ def plot_reconstruction(targets_small, recon_small, token_mask, b_idx=0, p_idx=N
 
 
 def plot_small_feature_stats_all_patches_labeled(
-    targets_small, recon_small, token_mask, pad_mask=None, b_idx=0, out_dir="debug_stats/stats_all_patches_labeled"
+    targets_small, recon_small, token_mask, pad_mask=None, b_idx=0, out_dir=DEFAULT_FEATURE_STATS_DIR
 ):
     os.makedirs(out_dir, exist_ok=True)
     with torch.no_grad():
