@@ -2,10 +2,9 @@
 # Simple CSV + PNG logger for tensor stats and gradient magnitudes.
 
 import os
-import io
 import re
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List
 
 import torch
 import pandas as pd
@@ -44,6 +43,7 @@ class DebugStats:
         self._grad_csv   = os.path.join(self.out_dir, "grads.csv")
         self._scalar_csv = os.path.join(self.out_dir, "scalars.csv")
         self.step = 0
+
         # lazily init CSV headers
         for p, cols in [
             (self._tensor_csv, ["step","name","shape","dtype","min","max","mean","std","finite_ratio"]),
@@ -66,16 +66,24 @@ class DebugStats:
         finite = torch.isfinite(x_)
         n = x_.numel()
         n_finite = int(finite.sum().item()) if n > 0 else 0
+
+        # Use nan_to_num on scalar reductions for safety
+        x_min = float(torch.nan_to_num(x_.amin(), nan=0.0).item()) if n > 0 else 0.0
+        x_max = float(torch.nan_to_num(x_.amax(), nan=0.0).item()) if n > 0 else 0.0
+        x_mean = float(torch.nan_to_num(x_.mean(), nan=0.0).item()) if n > 0 else 0.0
+        # unbiased=False to avoid issues with small n
+        x_std = float(torch.nan_to_num(x_.std(unbiased=False), nan=0.0).item()) if n > 1 else 0.0
+
         row = _RowTensor(
             step=self.step,
             name=name,
             shape=str(tuple(x_.shape)),
             dtype=str(x_.dtype).replace("torch.", ""),
-            min=float(torch.nan_to_num(x_.amin(), nan=0.0).item()),
-            max=float(torch.nan_to_num(x_.amax(), nan=0.0).item()),
-            mean=float(torch.nan_to_num(x_.mean(), nan=0.0).item()),
-            std=float(torch.nan_to_num(x_.std(unbiased=False), nan=0.0).item()),
-            finite_ratio=float(n_finite / max(n,1))
+            min=x_min,
+            max=x_max,
+            mean=x_mean,
+            std=x_std,
+            finite_ratio=float(n_finite / max(n, 1))
         )
         df = pd.DataFrame([row.__dict__])
         df.to_csv(self._tensor_csv, mode="a", header=False, index=False)
@@ -100,85 +108,101 @@ class DebugStats:
             gmax = 0.0
             n_elems = 0
             n_zero = 0
-            matched = set()
+
             for p_name, p in name_to_param.items():
                 if not p.requires_grad:
                     continue
                 if not any(p_name.startswith(pref) for pref in prefixes):
                     continue
-                matched.add(p_name)
                 if p.grad is None:
                     continue
+
                 g = p.grad.detach()
-                n = g.numel()
+                # For numeric stability, cast to float
+                gf = g.float()
+                n = gf.numel()
                 n_elems += n
-                n_zero += int((g == 0).sum().item())
-                gnorm_sq += float((g.float().pow(2)).sum().item())
-                gsum_abs += float(g.float().abs().sum().item())
-                gmax = max(gmax, float(g.float().abs().max().item()))
+                n_zero += int((gf == 0).sum().item())
+                gnorm_sq += float((gf.pow(2)).sum().item())
+                gsum_abs += float(gf.abs().sum().item())
+                if n > 0:
+                    gmax = max(gmax, float(gf.abs().max().item()))
+
             if n_elems == 0:
                 gnorm = 0.0
                 gmean = 0.0
             else:
                 gnorm = (gnorm_sq ** 0.5)
                 gmean = gsum_abs / n_elems
+
             rows.append(_RowGrad(self.step, gname, gnorm, gmean, gmax, n_elems, n_zero))
-        pd.DataFrame([r.__dict__ for r in rows]).to_csv(self._grad_csv, mode="a", header=False, index=False)
+
+        if rows:
+            pd.DataFrame([r.__dict__ for r in rows]).to_csv(self._grad_csv, mode="a", header=False, index=False)
 
     # ---------- plots (overwrite each call) ----------
     def save_plots(self):
+        """
+        Generate PNGs for tensors, grads, and scalars.
+        Uses constrained_layout=True to avoid tight_layout warnings.
+        """
         # tensors: plot mean/std and min/max for each name
         try:
-            df = pd.read_csv(self._tensor_csv)
-            for name, sub in df.groupby("name"):
-                fig = plt.figure(figsize=(9,4))
-                ax = plt.gca()
-                ax.plot(sub["step"], sub["mean"], label="mean")
-                ax.plot(sub["step"], sub["std"],  label="std")
-                ax.plot(sub["step"], sub["min"],  label="min",  alpha=0.6)
-                ax.plot(sub["step"], sub["max"],  label="max",  alpha=0.6)
-                ax.set_title(f"tensor stats: {name}")
-                ax.set_xlabel("step"); ax.set_ylabel("value")
-                ax.legend()
-                plt.tight_layout()
-                plt.savefig(os.path.join(self.out_dir, f"tensor_{_sanitize(name)}.png"), dpi=140)
-                plt.close(fig)
+            if os.path.exists(self._tensor_csv) and os.path.getsize(self._tensor_csv) > 0:
+                df = pd.read_csv(self._tensor_csv)
+                if len(df) > 0:
+                    for name, sub in df.groupby("name"):
+                        fig = plt.figure(figsize=(9, 4), constrained_layout=True)
+                        ax = plt.gca()
+                        ax.plot(sub["step"], sub["mean"], label="mean")
+                        ax.plot(sub["step"], sub["std"],  label="std")
+                        ax.plot(sub["step"], sub["min"],  label="min",  alpha=0.6)
+                        ax.plot(sub["step"], sub["max"],  label="max",  alpha=0.6)
+                        ax.set_title(f"tensor stats: {name}")
+                        ax.set_xlabel("step")
+                        ax.set_ylabel("value")
+                        ax.legend()
+                        plt.savefig(os.path.join(self.out_dir, f"tensor_{_sanitize(name)}.png"), dpi=140)
+                        plt.close(fig)
         except Exception:
             pass
 
-        # grads: plot gnorm per group
+        # grads: plot mean|g| and max|g| per group
         try:
-            df = pd.read_csv(self._grad_csv)
-            for name, sub in df.groupby("group"):
-                fig = plt.figure(figsize=(9,4))
-                ax = plt.gca()
-                # ax.plot(sub["step"], sub["gnorm"], label="||g||2")
-                ax.plot(sub["step"], sub["gmean"], label="mean |g|", alpha=0.8)
-                ax.plot(sub["step"], sub["gmax"],  label="max |g|", alpha=0.6)
-                ax.set_title(f"grad mags: {name}")
-                ax.set_xlabel("step"); ax.set_ylabel("magnitude")
-                ax.legend()
-                plt.tight_layout()
-                plt.savefig(os.path.join(self.out_dir, f"grads_{_sanitize(name)}.png"), dpi=140)
-                plt.close(fig)
+            if os.path.exists(self._grad_csv) and os.path.getsize(self._grad_csv) > 0:
+                df = pd.read_csv(self._grad_csv)
+                if len(df) > 0:
+                    for name, sub in df.groupby("group"):
+                        fig = plt.figure(figsize=(9, 4), constrained_layout=True)
+                        ax = plt.gca()
+                        ax.plot(sub["step"], sub["gmean"], label="mean |g|", alpha=0.8)
+                        ax.plot(sub["step"], sub["gmax"],  label="max |g|",  alpha=0.6)
+                        ax.set_title(f"grad mags: {name}")
+                        ax.set_xlabel("step")
+                        ax.set_ylabel("magnitude")
+                        ax.legend()
+                        plt.savefig(os.path.join(self.out_dir, f"grads_{_sanitize(name)}.png"), dpi=140)
+                        plt.close(fig)
         except Exception:
             pass
 
-        # scalars: one combined plot
+        # scalars: one figure per scalar name
         try:
-            df = pd.read_csv(self._scalar_csv)
-            for name, sub in df.groupby("name"):
-                fig = plt.figure(figsize=(9,4))
-                ax = plt.gca()
-                ax.plot(sub["step"], sub["value"])
-                ax.set_title(f"scalar: {name}")
-                ax.set_xlabel("step"); ax.set_ylabel(name)
-                plt.tight_layout()
-                plt.savefig(os.path.join(self.out_dir, f"scalar_{_sanitize(name)}.png"), dpi=140)
-                plt.close(fig)
+            if os.path.exists(self._scalar_csv) and os.path.getsize(self._scalar_csv) > 0:
+                df = pd.read_csv(self._scalar_csv)
+                if len(df) > 0:
+                    for name, sub in df.groupby("name"):
+                        fig = plt.figure(figsize=(9, 4), constrained_layout=True)
+                        ax = plt.gca()
+                        ax.plot(sub["step"], sub["value"])
+                        ax.set_title(f"scalar: {name}")
+                        ax.set_xlabel("step")
+                        ax.set_ylabel(str(name))
+                        plt.savefig(os.path.join(self.out_dir, f"scalar_{_sanitize(name)}.png"), dpi=140)
+                        plt.close(fig)
         except Exception:
             pass
 
 
 def _sanitize(s: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9_.-]+", "_", s)
+    return re.sub(r"[^a-zA-Z0-9*.\-]+", "_", s)

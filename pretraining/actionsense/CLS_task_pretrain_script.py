@@ -11,6 +11,8 @@ from typing import Optional, Tuple, Dict, Any, List
 
 # Data & Collate
 from datasets.converters.ActionSenseConverter import ActionSenseConverter
+from datasets.converters.ActionSenseEMGTactileConverter import ActionSenseEMGTactileConverter
+from datasets.converters.ActionSenseMultiModalConverter import ActionSenseMultiModalConverter
 from datasets.BaseDataset import tsfm_collate
 from datasets.ActionSensePretrainingDatasets import ActionSenseActivityClsDataset
 
@@ -38,7 +40,7 @@ class Config:
     llama_dim = 512   # semantic dim (F)
 
     # Training
-    batch_size = 32
+    batch_size =20
     num_workers = 8
     epochs = 50
     grad_clip = None
@@ -50,7 +52,7 @@ class Config:
     mlp_ratio = 4.0
 
     # Plot cadence
-    LOSS_PLOT_EVERY = 10
+    LOSS_PLOT_EVERY = 50
 
 CFG = Config()
 
@@ -102,7 +104,9 @@ def build_dataloaders(device: torch.device):
     We build TRAIN first (its label mapping is canonical), then VAL. At eval time we remap
     val ids to train ids by name to avoid label-mapping bugs.
     """
-    converter = ActionSenseConverter()  # default patch_size=96
+    # converter = ActionSenseConverter()
+    # converter = ActionSenseEMGTactileConverter()
+    converter = ActionSenseMultiModalConverter()
     episodes, metadata = converter.convert()
 
     train_ds = ActionSenseActivityClsDataset(
@@ -357,12 +361,13 @@ def train():
                     loss = ce(logits, targets)
 
                     # --- per-sample raw logits plot (only for b_idx=0) ---
-                    head.debug_logits_bar(
-                        logits, targets, b_idx=0,
-                        class_names=getattr(train_ds, "id_to_activity", None),
-                        save_path="debug/logits_bar.png",
-                        annotate_values=False
-                    )
+                    if (len(loss_history) % CFG.LOSS_PLOT_EVERY) == 0:
+                        head.debug_logits_bar(
+                            logits, targets, b_idx=0,
+                            class_names=getattr(train_ds, "id_to_activity", None),
+                            save_path="debug/logits_bar.png",
+                            annotate_values=False
+                        )
 
                 if not torch.isfinite(loss):
                     print("[WARN] Non-finite loss detected, skipping step.")

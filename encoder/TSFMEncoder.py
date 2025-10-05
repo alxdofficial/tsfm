@@ -308,13 +308,6 @@ class TSFMEncoder(nn.Module):
 
     # --------------- public forward APIs ----------------
     def encode_batch(self, batch: Dict) -> Dict:
-        """
-        Standard encoding (no pretraining loss).
-
-        Returns:
-            batch["features"]: (B, P, D, F)       # fused inputs (content + position + per-patch scale)
-            batch["tokens"]:   (B, P, D, F)       # self-attended long sequence
-        """
         device = batch["patches"].device
 
         # ---- RAW features (pre-normalization) ----
@@ -328,11 +321,11 @@ class TSFMEncoder(nn.Module):
         else:
             vb = None
 
-        # ---- per-(patch,channel) scale token from raw signal (B,P,D,6) -> bias (B,P,D,F) ----
+        # ---- per-(patch,channel) scale token from RAW signal (B,P,D,6) -> bias (B,P,D,F) ----
         scale_tok_signal = self._compute_scale_token_from_signal(batch["patches"], valid_patch_mask)  # (B,P,D,6)
-        scale_bias = self.scale_mlp(self.scale_in_norm(scale_tok_signal))                                                # (B,P,D,F)
+        scale_bias = self.scale_mlp(self.scale_in_norm(scale_tok_signal))  # (B,P,D,F)
 
-        # ---- token-wise LayerNorm over feature dim K (replaces per-batch min-max) ----
+        # ---- token-wise LayerNorm over feature dim K ----
         small_features = F.layer_norm(raw_feats, normalized_shape=(raw_feats.size(-1),))  # (B,P,D,K)
 
         # ---- CONTENT & POSITION ----
@@ -347,16 +340,24 @@ class TSFMEncoder(nn.Module):
 
         fused_semantic = content_semantic + positional_semantic * pos_scale
 
-        # ---- ADD PER-PATCH SCALE BIAS to every token ----
+        # ---- ADD PER-PATCH SCALE BIAS ----
         fused_semantic = fused_semantic + scale_bias
         fused_semantic = torch.nan_to_num(fused_semantic, nan=0.0, posinf=0.0, neginf=0.0)
+
+        # ---- OPTIONAL CHANNEL SHUFFLE (after pos enc; before attention) ----
+        do_shuffle = True
+        if do_shuffle:
+            D = fused_semantic.size(2)
+            perm = torch.randperm(D, device=fused_semantic.device)
+            fused_semantic = fused_semantic[:, :, perm, :]
+            batch["channel_perm"] = perm  # for debugging/repro
 
         # attention masks for padding
         flattened_key_padding_mask = None
         if valid_patch_mask is not None:
             Bsz, Patches, Channels, _ = fused_semantic.shape
             valid_flattened = valid_patch_mask.unsqueeze(-1).expand(Bsz, Patches, Channels).reshape(Bsz, Patches * Channels)  # (B,P*D)
-            flattened_key_padding_mask = ~valid_flattened                                    # (B,P*D) True = pad
+            flattened_key_padding_mask = ~valid_flattened
             fused_semantic = fused_semantic * vb  # zero pads
 
         # Self-attend long sequence
@@ -368,6 +369,7 @@ class TSFMEncoder(nn.Module):
         batch["features"] = fused_semantic
         batch["tokens"]   = long_tokens
         return batch
+
 
     # ---------------- MSP helpers (names start with MSP_pretraining*) ----------------
     def MSP_pretraining_build_small_targets(self, batch: Dict):
