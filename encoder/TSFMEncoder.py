@@ -61,7 +61,6 @@ class TSFMEncoder(nn.Module):
         # --- scale-conditioning MLP (from per-(patch,channel) raw signal stats) ---
         # stats per (patch, channel) over time T: [min, max, mean, std, rms, loge] => 6 dims
         self._scale_stats_dim = 6
-        self.scale_in_norm  = nn.LayerNorm(self._scale_stats_dim)   # NEW: normalize 6-d stats
         self.scale_mlp = nn.Sequential(
             nn.Linear(self._scale_stats_dim, feature_dim),
             nn.GELU(),
@@ -151,14 +150,17 @@ class TSFMEncoder(nn.Module):
         return sum(dims)
 
     def grad_groups(self):
-        # group by *parameter-name prefixes* (for your grad logger)
+        # group by parameter-name prefixes for gradient logging
         return {
-            "mask_token":      ["mask_token"],
-            "mask_embed":      ["mask_embed"],
-            "output_type":     ["output_type_embed"],
-            "linear_proj":     ["linear_proj."],
-            "transformer":     ["transformer."],
-            "recon_head":      ["recon_head."]  # kept for sanity
+            "linear_proj": ["linear_proj."],
+            "scale_mlp": ["scale_mlp."],
+            "mask_tokens": ["mask_token", "mask_embed", "output_type_embed"],
+            "positional_proj": ["proj_chan.", "proj_psize.", "proj_patch."],
+            "positional_norm": ["norm_chan.", "norm_psize.", "norm_patch."],
+            "positional_alpha": ["alpha_channel", "alpha_psize", "alpha_patch", "pos_lambda"],
+            "embeddings": ["emb_channel.", "emb_patchsize."],
+            "transformer": ["transformer."],
+            "recon_head": ["recon_head."]
         }
 
     def _extract_features(self, patches: torch.Tensor) -> torch.Tensor:
@@ -216,6 +218,30 @@ class TSFMEncoder(nn.Module):
 
         # NaN/Inf safety
         return torch.nan_to_num(scale_tok, nan=0.0, posinf=0.0, neginf=0.0)
+
+    def _normalize_scale_token(
+        self,
+        scale_tok: torch.Tensor,                    # (B,P,D,6)
+        valid_patch_mask: Optional[torch.Tensor],   # (B,P)
+    ) -> torch.Tensor:
+        """Sequence-wise standardization so tokens reflect relative magnitude per sample."""
+        B, P, D, F = scale_tok.shape
+        if valid_patch_mask is None:
+            mask = torch.ones(B, P, D, F, device=scale_tok.device, dtype=scale_tok.dtype)
+        else:
+            mask = valid_patch_mask.to(scale_tok.dtype).unsqueeze(-1).unsqueeze(-1)
+            mask = mask.expand(-1, -1, D, F)
+
+        # zero already-invalid tokens stay zero; mask ensures they don't influence stats
+        masked_values = scale_tok * mask
+        denom = mask.sum(dim=(1, 2), keepdim=True).clamp_min(1.0)
+        mean = masked_values.sum(dim=(1, 2), keepdim=True) / denom
+        var = ((scale_tok - mean) * mask).pow(2).sum(dim=(1, 2), keepdim=True) / denom
+        std = var.sqrt().clamp_min(self._norm_eps)
+        normalized = (scale_tok - mean) / std
+        # keep pads at zero
+        normalized = normalized * mask
+        return torch.nan_to_num(normalized, nan=0.0, posinf=0.0, neginf=0.0)
 
     # ---------------- unified positional builder ----------------
     def _compute_positional(self, batch: Dict, for_output: bool = False) -> torch.Tensor:
@@ -323,7 +349,8 @@ class TSFMEncoder(nn.Module):
 
         # ---- per-(patch,channel) scale token from RAW signal (B,P,D,6) -> bias (B,P,D,F) ----
         scale_tok_signal = self._compute_scale_token_from_signal(batch["patches"], valid_patch_mask)  # (B,P,D,6)
-        scale_bias = self.scale_mlp(self.scale_in_norm(scale_tok_signal))  # (B,P,D,F)
+        scale_tok_normalized = self._normalize_scale_token(scale_tok_signal, valid_patch_mask)
+        scale_bias = self.scale_mlp(scale_tok_normalized)  # (B,P,D,F)
 
         # ---- token-wise LayerNorm over feature dim K ----
         small_features = F.layer_norm(raw_feats, normalized_shape=(raw_feats.size(-1),))  # (B,P,D,K)
@@ -367,6 +394,7 @@ class TSFMEncoder(nn.Module):
         )  # (B,P,D,F)
 
         batch["features"] = fused_semantic
+        batch["small_features"] = small_features
         batch["tokens"]   = long_tokens
         return batch
 
@@ -547,9 +575,111 @@ class TSFMEncoder(nn.Module):
         }
         return loss, aux
 
-    # ---------------- debug plotting passthroughs ----------------
-    def debug_plot_reconstruction(self, *args, **kwargs):
-        return debug_vis.plot_reconstruction(*args, **kwargs)
+    # ---------------- debug plotting helpers ----------------
+    @staticmethod
+    def _timedelta_to_seconds(delta) -> Optional[float]:
+        if delta is None:
+            return None
+        if hasattr(delta, "total_seconds"):
+            try:
+                return float(delta.total_seconds())
+            except Exception:
+                return None
+        try:
+            return float(delta / np.timedelta64(1, "s"))
+        except Exception:
+            return None
 
-    def debug_plot_small_feature_stats_all_patches_labeled(self, *args, **kwargs):
-        return debug_vis.plot_small_feature_stats_all_patches_labeled(*args, **kwargs)
+    def _extract_session_timing_info(self, batch: Dict, b_idx: int) -> Optional[Dict[str, Optional[float]]]:
+        if batch is None:
+            return None
+        patches = batch.get("patches")
+        timestamps = batch.get("timestamps")
+        pad_mask = batch.get("pad_mask")
+        if patches is None or timestamps is None:
+            return None
+        if b_idx >= patches.shape[0] or b_idx >= len(timestamps):
+            return None
+
+        T = int(patches.shape[2])
+        if pad_mask is not None:
+            mask_b = pad_mask[b_idx]
+            if isinstance(mask_b, torch.Tensor):
+                mask_b = mask_b.detach().cpu().to(dtype=torch.bool)
+            else:
+                mask_b = torch.as_tensor(mask_b, dtype=torch.bool)
+            valid_idx = torch.nonzero(mask_b, as_tuple=False).flatten().tolist()
+        else:
+            P = patches.shape[1]
+            valid_idx = list(range(P))
+
+        ts_list = timestamps[b_idx]
+        valid_times = [ts_list[i] for i in valid_idx if ts_list[i] is not None]
+
+        patch_span_seconds = None
+        session_seconds = None
+        first_ts = None
+        last_ts = None
+        if len(valid_times) >= 2:
+            first, second = valid_times[0], valid_times[1]
+            patch_span_seconds = self._timedelta_to_seconds(second - first)
+            last = valid_times[-1]
+            base_span = self._timedelta_to_seconds(last - first)
+            if base_span is not None:
+                if patch_span_seconds is not None:
+                    session_seconds = base_span + patch_span_seconds
+                else:
+                    session_seconds = base_span
+            first_ts, last_ts = first, last
+        elif len(valid_times) == 1 and pad_mask is None:
+            # No spacing info; keep None
+            first_ts = last_ts = valid_times[0]
+
+        return {
+            "patch_size": T,
+            "patch_span_seconds": patch_span_seconds,
+            "session_seconds": session_seconds,
+            "num_valid_patches": len(valid_idx),
+            "first_timestamp": first_ts,
+            "last_timestamp": last_ts,
+        }
+
+    def debug_plot_reconstruction(
+        self,
+        targets_small,
+        recon_small,
+        token_mask,
+        b_idx: int = 0,
+        p_idx: Optional[int] = None,
+        batch: Optional[Dict] = None,
+    ):
+        session_info = self._extract_session_timing_info(batch, b_idx) if batch is not None else None
+        return debug_vis.plot_reconstruction(
+            targets_small,
+            recon_small,
+            token_mask,
+            b_idx=b_idx,
+            p_idx=p_idx,
+            session_info=session_info,
+        )
+
+    def debug_plot_small_feature_stats_all_patches_labeled(
+        self,
+        targets_small,
+        recon_small,
+        token_mask,
+        pad_mask=None,
+        b_idx: int = 0,
+        out_dir: Optional[str] = None,
+        batch: Optional[Dict] = None,
+    ):
+        session_info = self._extract_session_timing_info(batch, b_idx) if batch is not None else None
+        return debug_vis.plot_small_feature_stats_all_patches_labeled(
+            targets_small,
+            recon_small,
+            token_mask,
+            pad_mask=pad_mask,
+            b_idx=b_idx,
+            out_dir=out_dir or debug_vis.DEFAULT_FEATURE_STATS_DIR,
+            session_info=session_info,
+        )

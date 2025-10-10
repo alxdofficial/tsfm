@@ -43,14 +43,18 @@ class ActionSenseQADataset(Dataset):
         split: str = "train",
         val_ratio: float = 0.2,
         split_seed: int = 42,
-        patch_size: int = 96,
+        patch_size: int = 1600,
         context_size: int = -1,
+        max_patches: int = 50,
+        log_mode: str = "info",
     ) -> None:
         assert split in {"train", "val"}, "split must be 'train' or 'val'"
 
         self.base_dir = base_dir
         self.patch_size = int(patch_size)
         self.context_size = int(context_size)
+        self.max_patches = int(max_patches)
+        self.log_mode = log_mode
 
         self.manifest_map = self._load_manifest(manifest_csv_path)
         self.all_records = self._load_qa_records(qa_csv_path)
@@ -70,9 +74,10 @@ class ActionSenseQADataset(Dataset):
                 (" ..." if len(missing) > 5 else "")
             )
 
-        print(
+        self._log(
             f"[INFO] ActionSenseQA split={split}: {len(self.records)} QA pairs "
-            f"(val_ratio={val_ratio}, seed={split_seed}, patch_size={self.patch_size})"
+            f"(val_ratio={val_ratio}, seed={split_seed}, patch_size={self.patch_size})",
+            level="info",
         )
 
     # ------------------------------------------------------------------
@@ -94,8 +99,13 @@ class ActionSenseQADataset(Dataset):
         if self.context_size > 0 and patches.shape[0] > self.context_size:
             keep = self.context_size
             patches = patches[-keep:]
-            if self.patch_size > 0:
+            if self.patch_size > 0 and trimmed_ts.size:
                 trimmed_ts = trimmed_ts[-keep * self.patch_size:]
+
+        if self.max_patches > 0 and patches.shape[0] > self.max_patches:
+            patches = patches[-self.max_patches :]
+            if self.patch_size > 0 and trimmed_ts.size:
+                trimmed_ts = trimmed_ts[-self.max_patches * self.patch_size :]
 
         sample = {
             "patches": torch.from_numpy(patches).float(),
@@ -141,7 +151,7 @@ class ActionSenseQADataset(Dataset):
                 "t1_abs": row.get("t1_abs"),
                 "raw": row.to_dict(),
             }
-        print(f"[INFO] Loaded manifest with {len(mapping)} activities from {manifest_csv_path}")
+        self._log(f"[INFO] Loaded manifest with {len(mapping)} activities from {manifest_csv_path}", level="info")
         return mapping
 
     def _load_qa_records(self, qa_csv_path: str) -> List[ActionSenseQARecord]:
@@ -178,8 +188,8 @@ class ActionSenseQADataset(Dataset):
             )
 
         if skipped:
-            print(f"[WARN] Skipped {skipped} QA rows with missing manifest entries")
-        print(f"[INFO] Loaded {len(records)} QA rows from {qa_csv_path}")
+            self._log(f"[WARN] Skipped {skipped} QA rows with missing manifest entries", level="warn")
+        self._log(f"[INFO] Loaded {len(records)} QA rows from {qa_csv_path}", level="info")
         return records
 
     def _split_records(
@@ -199,14 +209,14 @@ class ActionSenseQADataset(Dataset):
 
         chosen = indices[n_val:] if split == "train" else indices[:n_val]
         subset = [records[i] for i in chosen]
-        print(f"[INFO] Split '{split}' selected {len(subset)} / {n} QA rows")
+        self._log(f"[INFO] Split '{split}' selected {len(subset)} / {n} QA rows", level="info")
         return subset
 
     def _load_sensor_cache(self, sensor_paths: List[str]) -> Dict[str, Dict[str, Any]]:
         cache: Dict[str, Dict[str, Any]] = {}
         for path in sensor_paths:
             if not os.path.exists(path):
-                print(f"[WARN] Sensor CSV missing: {path}")
+                self._log(f"[WARN] Sensor CSV missing: {path}", level="warn")
                 continue
             df = pd.read_csv(path)
             if "time_s" not in df.columns:
@@ -222,8 +232,24 @@ class ActionSenseQADataset(Dataset):
                 "values": values,
                 "columns": numeric_cols,
             }
-        print(f"[INFO] Cached sensor data for {len(cache)} segments")
+        self._log(f"[INFO] Cached sensor data for {len(cache)} segments", level="info")
         return cache
+
+    def _log(self, message: str, level: str = "info") -> None:
+        mode = getattr(self, "log_mode", "info")
+        if level == "error":
+            print(message)
+            return
+        if level == "warn":
+            if mode != "silent":
+                print(message)
+            return
+        if level == "info":
+            if mode in {"info", "debug"}:
+                print(message)
+            return
+        if level == "debug" and mode == "debug":
+            print(message)
 
     # ------------------------------------------------------------------
     # Utility
@@ -324,8 +350,9 @@ if __name__ == "__main__":
     parser.add_argument("--outdir", default=DEFAULT_DEBUG_DIR)
     parser.add_argument("--num", type=int, default=4)
     parser.add_argument("--seed", type=int, default=123)
-    parser.add_argument("--patch_size", type=int, default=96)
-    parser.add_argument("--context_size", type=int, default=20)
+    parser.add_argument("--patch_size", type=int, default=1600)
+    parser.add_argument("--context_size", type=int, default=-1)
+    parser.add_argument("--log_mode", choices=["silent", "info", "debug"], default="info")
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -339,6 +366,7 @@ if __name__ == "__main__":
         manifest_csv_path=args.manifest_csv,
         patch_size=args.patch_size,
         context_size=args.context_size,
+        log_mode=args.log_mode,
         split="train",
         val_ratio=0.2,
         split_seed=args.seed,

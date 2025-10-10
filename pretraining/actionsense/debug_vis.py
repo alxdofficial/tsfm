@@ -2,12 +2,30 @@ import os
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+from typing import Dict, Optional
 
 DEFAULT_RECON_DIR = os.path.join("debug", "pretraining", "actionsense", "recon")
 DEFAULT_FEATURE_STATS_DIR = os.path.join("debug", "pretraining", "actionsense", "feature_stats")
 
 
-def plot_reconstruction(targets_small, recon_small, token_mask, b_idx=0, p_idx=None, out_dir=DEFAULT_RECON_DIR):
+def _format_seconds(value: Optional[float]) -> str:
+    if value is None:
+        return "unknown"
+    if value >= 60.0:
+        minutes = value / 60.0
+        return f"{minutes:.2f}m"
+    return f"{value:.2f}s"
+
+
+def plot_reconstruction(
+    targets_small,
+    recon_small,
+    token_mask,
+    b_idx: int = 0,
+    p_idx: Optional[int] = None,
+    out_dir: str = DEFAULT_RECON_DIR,
+    session_info: Optional[Dict[str, Optional[float]]] = None,
+):
     os.makedirs(out_dir, exist_ok=True)
     with torch.no_grad():
         B, P, D, K = targets_small.shape
@@ -18,6 +36,27 @@ def plot_reconstruction(targets_small, recon_small, token_mask, b_idx=0, p_idx=N
             masked_rows = token_mask[b_idx].any(dim=-1)
             idxs = torch.nonzero(masked_rows, as_tuple=False).flatten()
             p_idx = int(idxs[0].item()) if idxs.numel() > 0 else 0
+
+        timing_note = None
+        if session_info is not None:
+            patch_size = session_info.get("patch_size")
+            num_valid = session_info.get("num_valid_patches")
+            session_str = _format_seconds(session_info.get("session_seconds"))
+            patch_span_str = _format_seconds(session_info.get("patch_span_seconds"))
+            first_ts = session_info.get("first_timestamp")
+            last_ts = session_info.get("last_timestamp")
+            first_str = str(first_ts) if first_ts is not None else "unknown"
+            last_str = str(last_ts) if last_ts is not None else "unknown"
+            timing_note = (
+                f"session≈{session_str}  |  patch_size={patch_size if patch_size is not None else 'unknown'} steps"
+                f"  |  patch≈{patch_span_str}  |  start={first_str}  |  end={last_str}"
+            )
+            print(
+                "[RECONDBG] timing info: {} | valid_patches={}".format(
+                    timing_note,
+                    num_valid if num_valid is not None else "unknown",
+                )
+            )
 
         tgt = targets_small[b_idx, p_idx]
         rec = recon_small[b_idx, p_idx]
@@ -38,6 +77,9 @@ def plot_reconstruction(targets_small, recon_small, token_mask, b_idx=0, p_idx=N
         fig.colorbar(im3, ax=ax3, fraction=0.046, pad=0.04)
 
         plt.suptitle("Per-channel SMALL features (heatmaps)")
+        if timing_note is not None:
+            fig.subplots_adjust(bottom=0.2)
+            fig.text(0.5, 0.06, timing_note, ha="center", va="bottom", fontsize=10)
         plt.tight_layout()
         save_path = os.path.join(out_dir, "recon.png")
         plt.savefig(save_path, dpi=140); plt.close(fig)
@@ -45,7 +87,13 @@ def plot_reconstruction(targets_small, recon_small, token_mask, b_idx=0, p_idx=N
 
 
 def plot_small_feature_stats_all_patches_labeled(
-    targets_small, recon_small, token_mask, pad_mask=None, b_idx=0, out_dir=DEFAULT_FEATURE_STATS_DIR
+    targets_small,
+    recon_small,
+    token_mask,
+    pad_mask=None,
+    b_idx: int = 0,
+    out_dir: str = DEFAULT_FEATURE_STATS_DIR,
+    session_info: Optional[Dict[str, Optional[float]]] = None,
 ):
     os.makedirs(out_dir, exist_ok=True)
     with torch.no_grad():
@@ -53,6 +101,27 @@ def plot_small_feature_stats_all_patches_labeled(
         tgt_b, rec_b, mask_b = targets_small[b_idx], recon_small[b_idx], token_mask[b_idx]
         P, D, K = tgt_b.shape
         valid_patches = pad_mask[b_idx] if pad_mask is not None else torch.ones(P, dtype=torch.bool, device=tgt_b.device)
+
+        timing_note = None
+        if session_info is not None:
+            patch_size = session_info.get("patch_size")
+            num_valid = session_info.get("num_valid_patches")
+            session_str = _format_seconds(session_info.get("session_seconds"))
+            patch_span_str = _format_seconds(session_info.get("patch_span_seconds"))
+            first_ts = session_info.get("first_timestamp")
+            last_ts = session_info.get("last_timestamp")
+            first_str = str(first_ts) if first_ts is not None else "unknown"
+            last_str = str(last_ts) if last_ts is not None else "unknown"
+            timing_note = (
+                f"session≈{session_str}  |  patch_size={patch_size if patch_size is not None else 'unknown'} steps"
+                f"  |  patch≈{patch_span_str}  |  start={first_str}  |  end={last_str}"
+            )
+            print(
+                "[STATSDBG] timing info: {} | valid_patches={}".format(
+                    timing_note,
+                    num_valid if num_valid is not None else "unknown",
+                )
+            )
 
         fig, axes = plt.subplots(P, 3, figsize=(16, 3*P),
                                  gridspec_kw={"width_ratios": [3.2, 2.0, 0.6]}, squeeze=False)
@@ -100,6 +169,9 @@ def plot_small_feature_stats_all_patches_labeled(
             fig.legend(handles, labels, loc="upper center", ncol=8, fontsize=9)
 
         fig.suptitle(f"Per-patch SMALL feature stats (batch {b_idx})", y=1.02)
+        if timing_note is not None:
+            fig.subplots_adjust(bottom=0.15)
+            fig.text(0.5, 0.04, timing_note, ha="center", va="bottom", fontsize=10)
         plt.tight_layout()
         save_path = os.path.join(out_dir, f"stats_all_patches_batch{b_idx}.png")
         plt.savefig(save_path, dpi=150, bbox_inches="tight"); plt.close(fig)

@@ -18,7 +18,7 @@ from datasets.ActionSensePretrainingDatasets import ActionSenseActivityClsDatase
 
 # Encoder & Head
 from encoder.TSFMEncoder import TSFMEncoder
-from pretraining.actionsense.cls_head import ActivityCLSHead  # expects (long_tokens, key_padding_mask) -> logits
+from pretraining.actionsense.heads import ActivityCLSHead  # expects (long_tokens, key_padding_mask) -> logits
 
 # Debug
 from pretraining.actionsense.debug_stats import DebugStats

@@ -51,15 +51,8 @@ class SelfAttnBlock(nn.Module):
 
 
 class Transformer(nn.Module):
-    """
-    Stack of self-attention blocks over the **flattened long sequence**.
+    """Hierarchical attention: temporal per-channel + cross-channel fusion."""
 
-    Strategy per layer:
-      - Self-attn on flattened data: (B, P*D, F)
-      - No cross/output stream; we only return the long sequence.
-
-    NOTE: The learnable_output/noise seed is ignored now that we don't build an output stream.
-    """
     def __init__(
         self,
         d_model: int,
@@ -72,7 +65,11 @@ class Transformer(nn.Module):
     ):
         super().__init__()
         self.d_model = d_model
-        self.layers = nn.ModuleList([
+        # Each layer now applies temporal attention (length = P) followed by channel attention (length = D).
+        self.temporal_layers = nn.ModuleList([
+            SelfAttnBlock(d_model, nhead, dropout, mlp_ratio) for _ in range(num_layers)
+        ])
+        self.channel_layers = nn.ModuleList([
             SelfAttnBlock(d_model, nhead, dropout, mlp_ratio) for _ in range(num_layers)
         ])
 
@@ -87,13 +84,37 @@ class Transformer(nn.Module):
         """
         B, P, D, F = per_patch_channel_tokens.shape
 
-        # Flatten data tokens across channels: (B, P*D, F)
-        x = per_patch_channel_tokens.reshape(B, P * D, F)  # (B, P·D, F)
+        # Derive per-stage padding masks from the flattened view when provided.
+        if flattened_key_padding_mask is not None:
+            flat_mask = flattened_key_padding_mask.reshape(B, P, D)
+            temporal_pad_mask = flat_mask.permute(0, 2, 1).reshape(B * D, P)  # (B*D, P)
+            channel_pad_mask = flat_mask.reshape(B * P, D)                    # (B*P, D)
+        else:
+            temporal_pad_mask = None
+            channel_pad_mask = None
 
-        # Run stacked self-attention blocks
-        for layer in self.layers:
-            x = layer(x, key_padding_mask=flattened_key_padding_mask)  # (B, P*D, F)
+        x = per_patch_channel_tokens
 
-        # Reshape back to (B,P,D,F)
-        long_tokens = x.view(B, P, D, F)
-        return long_tokens
+        for temporal_block, channel_block in zip(self.temporal_layers, self.channel_layers):
+            # Stage 1: temporal attention within each channel (sequence length = P)
+            x_temporal = x.view(B * D, P, F)
+            x_temporal = temporal_block(x_temporal, key_padding_mask=temporal_pad_mask)
+            x = x_temporal.view(B, P, D, F)
+
+            # Stage 2: channel attention per patch (sequence length = D)
+            x_channel = x.view(B * P, D, F)
+            if channel_pad_mask is not None:
+                valid_rows = ~(channel_pad_mask.all(dim=-1))  # rows with at least one valid channel
+                if valid_rows.any():
+                    # run attention only on rows that have valid channels, keep padded rows unchanged
+                    updated = channel_block(
+                        x_channel[valid_rows],
+                        key_padding_mask=channel_pad_mask[valid_rows]
+                    )
+                    x_channel = x_channel.clone()
+                    x_channel[valid_rows] = updated
+            else:
+                x_channel = channel_block(x_channel, key_padding_mask=None)
+            x = x_channel.view(B, P, D, F)
+
+        return x

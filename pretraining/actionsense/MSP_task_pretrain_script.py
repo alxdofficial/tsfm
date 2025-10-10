@@ -15,7 +15,7 @@ from datasets.ActionSensePretrainingDatasets import ActionSenseMSPDataset
 
 # Encoder & Recon Head
 from encoder.TSFMEncoder import TSFMEncoder
-from pretraining.actionsense.reconstruction_head import SmallRecon
+from pretraining.actionsense.heads import SmallRecon
 
 # Non-learnable feature processors
 from encoder.processors.CorrelationSummaryProcessor import CorrelationSummaryProcessor
@@ -183,9 +183,16 @@ def train():
 
                 # Optional recon debug image dump
                 if global_step % 10 == 0:
-                    encoder.debug_plot_reconstruction(
-                        aux["targets_small"], aux["recon_small"], aux["token_mask"], b_idx=0, p_idx=None
-                    )
+                    batch_size = batch["patches"].shape[0]
+                    for dbg_b in range(batch_size):
+                        encoder.debug_plot_reconstruction(
+                            aux["targets_small"],
+                            aux["recon_small"],
+                            aux["token_mask"],
+                            b_idx=dbg_b,
+                            p_idx=None,
+                            batch=batch,
+                        )
 
                 dbg.set_step(global_step)
 

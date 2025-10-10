@@ -48,7 +48,7 @@ from datasets.BaseDataset import tsfm_collate
 from datasets.ActionSensePretrainingDatasets import ActionSenseActivityClsDataset
 
 from encoder.TSFMEncoder import TSFMEncoder
-from pretraining.actionsense.cls_head import ActivityCLSHead
+from pretraining.actionsense.heads import ActivityCLSHead
 from training_utils import configure_device_and_amp, count_params
 
 # ------------------- Helpers -------------------
