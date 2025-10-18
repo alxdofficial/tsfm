@@ -103,6 +103,8 @@ class SensorQALLMHead(nn.Module):
         )
         self.channel_norm = nn.LayerNorm(feature_dim)
 
+        self.query_norm = nn.LayerNorm(feature_dim)
+
         hidden_size = self.llama.config.hidden_size
         self.projector = nn.Sequential(
             nn.LayerNorm(feature_dim),
@@ -137,7 +139,9 @@ class SensorQALLMHead(nn.Module):
         B, P, D, F = tokens.shape
         tokens_flat = tokens.view(B * P, D, F)
         query = self.channel_query.expand(tokens_flat.size(0), -1, -1)
-        pooled, _ = self.channel_attn(query, tokens_flat, tokens_flat)
+        query = self.query_norm(query)
+        pooled, _ = self.channel_attn(query.float(), tokens_flat.float(), tokens_flat.float())
+        pooled = pooled.to(query.dtype)
         fused = pooled.view(B, P, F)
 
         fused = self.channel_norm(fused)
@@ -270,7 +274,7 @@ class SensorQALLMHead(nn.Module):
                 continue
             valid_count = int(sensor_counts[i].item()) if sensor_counts is not None else count
             valid_count = max(1, min(valid_count, count))
-            patch_embeds = projected[i, :valid_count, :]
+            patch_embeds = projected[i, -valid_count:, :]
             if patch_embeds.dtype != embeds.dtype:
                 patch_embeds = patch_embeds.to(embeds.dtype)
             if patch_embeds.size(0) < count:
@@ -305,7 +309,7 @@ class SensorQALLMHead(nn.Module):
             "logits": outputs.logits,
             "labels": tokenized.labels,
             "label_mask": tokenized.labels != -100,
-            "fused_patches": fused.detach(),
+            "fused_patches": fused,
         }
         return outputs.loss, info
 

@@ -219,7 +219,7 @@ if __name__ == "__main__":
     parser.add_argument("--manifest_path", type=str, default="data/actionsenseqa/data/manifest.csv")
     parser.add_argument("--base_dir", type=str, default="data/actionsenseqa/data")
     parser.add_argument("--outdir", type=str, default="debug/templated_dataset_samples")
-    parser.add_argument("--num_samples", type=int, default=5, help="Number of random samples to visualize.")
+    parser.add_argument("--num_samples", type=int, default=10, help="Number of random samples to visualize.")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 

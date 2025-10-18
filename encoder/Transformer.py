@@ -73,6 +73,19 @@ class Transformer(nn.Module):
             SelfAttnBlock(d_model, nhead, dropout, mlp_ratio) for _ in range(num_layers)
         ])
 
+    @staticmethod
+    def _sanitize_key_padding_mask(mask: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+        """Ensure each row has at least one unmasked element to avoid NaNs in attention."""
+        if mask is None:
+            return None
+        if mask.ndim < 2:
+            return mask
+        all_masked = mask.all(dim=-1)
+        if all_masked.any():
+            mask = mask.clone()
+            mask[all_masked, 0] = False
+        return mask
+
     def forward(
         self,
         per_patch_channel_tokens: torch.Tensor,                  # (B, P, D, F)  (inputs already include positional encodings)
@@ -87,11 +100,16 @@ class Transformer(nn.Module):
         # Derive per-stage padding masks from the flattened view when provided.
         if flattened_key_padding_mask is not None:
             flat_mask = flattened_key_padding_mask.reshape(B, P, D)
+            valid_mask = ~flat_mask
             temporal_pad_mask = flat_mask.permute(0, 2, 1).reshape(B * D, P)  # (B*D, P)
             channel_pad_mask = flat_mask.reshape(B * P, D)                    # (B*P, D)
+            temporal_pad_mask = self._sanitize_key_padding_mask(temporal_pad_mask)
+            channel_pad_mask = self._sanitize_key_padding_mask(channel_pad_mask)
+            mask_broadcast = valid_mask.to(per_patch_channel_tokens.dtype).unsqueeze(-1)
         else:
             temporal_pad_mask = None
             channel_pad_mask = None
+            mask_broadcast = None
 
         x = per_patch_channel_tokens
 
@@ -101,20 +119,17 @@ class Transformer(nn.Module):
             x_temporal = temporal_block(x_temporal, key_padding_mask=temporal_pad_mask)
             x = x_temporal.view(B, P, D, F)
 
+            if mask_broadcast is not None:
+                x = x * mask_broadcast
+
             # Stage 2: channel attention per patch (sequence length = D)
             x_channel = x.view(B * P, D, F)
-            if channel_pad_mask is not None:
-                valid_rows = ~(channel_pad_mask.all(dim=-1))  # rows with at least one valid channel
-                if valid_rows.any():
-                    # run attention only on rows that have valid channels, keep padded rows unchanged
-                    updated = channel_block(
-                        x_channel[valid_rows],
-                        key_padding_mask=channel_pad_mask[valid_rows]
-                    )
-                    x_channel = x_channel.clone()
-                    x_channel[valid_rows] = updated
-            else:
-                x_channel = channel_block(x_channel, key_padding_mask=None)
+            # Pass the whole tensor and rely on the key_padding_mask.
+            # This avoids a very expensive .clone() operation.
+            x_channel = channel_block(x_channel, key_padding_mask=channel_pad_mask)
             x = x_channel.view(B, P, D, F)
+
+            if mask_broadcast is not None:
+                x = x * mask_broadcast
 
         return x

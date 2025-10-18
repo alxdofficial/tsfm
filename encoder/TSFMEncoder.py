@@ -42,6 +42,7 @@ class TSFMEncoder(nn.Module):
         learnable_output: bool = False,
         noise_std: float = 0.0005,
         pretraining_args: Optional[dict] = None,
+        shuffle_channels: bool = True,
         # ---- capacities for dataset-agnostic positional modules ----
         max_channels_for_embed: int = 512,
         max_patch_sizes: int = 4096,
@@ -53,6 +54,7 @@ class TSFMEncoder(nn.Module):
         self.feature_dim = feature_dim      # internal semantic dim F (e.g., 1024/2048)
         self.encoding_dim = encoding_dim
         self.max_workers = max_workers
+        self.shuffle_channels = bool(shuffle_channels)
 
         # Project SMALL per-channel features to semantic_dim (CONTENT)
         self._raw_small_dim = self._total_feature_dim()  # == K: feature size per channel after processors
@@ -170,21 +172,20 @@ class TSFMEncoder(nn.Module):
         Returns:
             per_channel_features: (B, P, D, K)  # concatenated across processors
         """
-        with torch.no_grad():
-            B, P, T, D = patches.shape
-            patches_merged = patches.view(B * P, T, D)  # (B·P, T, D)
+        B, P, T, D = patches.shape
+        patches_merged = patches.view(B * P, T, D)  # (B·P, T, D)
 
-            processed = []
-            for proc in self.processors:
-                proc_out = proc.process(patches_merged)  # (B·P, D, F_i) or (B·P, F_i)
-                if proc_out.ndim == 2:
-                    # If a processor returned (B·P, F_i), broadcast across channels (D)
-                    proc_out = proc_out.unsqueeze(1).expand(-1, D, -1)  # (B·P, D, F_i)
-                processed.append(proc_out)
+        processed = []
+        for proc in self.processors:
+            proc_out = proc.process(patches_merged)  # (B·P, D, F_i) or (B·P, F_i)
+            if proc_out.ndim == 2:
+                # If a processor returned (B·P, F_i), broadcast across channels (D)
+                proc_out = proc_out.unsqueeze(1).expand(-1, D, -1)  # (B·P, D, F_i)
+            processed.append(proc_out)
 
-            features_concat = torch.cat(processed, dim=-1)              # (B·P, D, K)
-            per_channel_features = features_concat.view(B, P, D, -1)    # (B, P, D, K)
-            return per_channel_features
+        features_concat = torch.cat(processed, dim=-1)              # (B·P, D, K)
+        per_channel_features = features_concat.view(B, P, D, -1)    # (B, P, D, K)
+        return per_channel_features
 
     # -------------------- per-(patch,channel) scale token from RAW signal --------------------
     def _compute_scale_token_from_signal(
@@ -205,7 +206,8 @@ class TSFMEncoder(nn.Module):
         x_max  = x.amax(dim=2)                                    # (B,P,D)
         x_mean = x.mean(dim=2)                                    # (B,P,D)
         x_std  = x.std(dim=2, unbiased=False)                     # (B,P,D)
-        mean_sq = x.pow(2).mean(dim=2)                            # (B,P,D)
+        # use float64 for pow(2) to avoid overflow
+        mean_sq = x.to(torch.float64).pow(2).mean(dim=2).to(x.dtype) # (B,P,D)
         rms   = (mean_sq + self._norm_eps).sqrt()                 # (B,P,D)
         loge  = (mean_sq + self._norm_eps).log()                  # (B,P,D)
 
@@ -315,20 +317,27 @@ class TSFMEncoder(nn.Module):
     @staticmethod
     def _safe_rms(x: torch.Tensor, pad_mask: Optional[torch.Tensor], for_output: bool, eps: float = 1e-8) -> torch.Tensor:
         """
-        RMS over all elements, optionally ignoring padded positions.
+        RMS per-sample, optionally ignoring padded positions.
         x: (B,P,D,F) if for_output=False, else (B,P,F)
         pad_mask: (B,P) True=valid
+        Returns: (B, 1, 1, 1) or (B, 1, 1)
         """
         if pad_mask is None:
-            mean_sq = x.pow(2).mean()
+            # Keep batch dim
+            dims_to_reduce = tuple(range(1, x.ndim))
+            mean_sq = x.pow(2).mean(dim=dims_to_reduce, keepdim=True)
             return torch.sqrt(mean_sq + eps)
+
         m = pad_mask.to(x.dtype)
+        dims_to_reduce = tuple(range(1, x.ndim))
+
         if for_output:
             m = m.unsqueeze(-1)                        # (B,P,1)
         else:
             m = m.unsqueeze(-1).unsqueeze(-1)         # (B,P,1,1)
-        num = (x * x * m).sum()
-        den = m.sum().clamp_min(1.0)
+
+        num = (x * x * m).sum(dim=dims_to_reduce, keepdim=True)
+        den = m.sum(dim=dims_to_reduce, keepdim=True).clamp_min(1.0)
         mean_sq = num / den
         return torch.sqrt(mean_sq + eps)
 
@@ -372,7 +381,7 @@ class TSFMEncoder(nn.Module):
         fused_semantic = torch.nan_to_num(fused_semantic, nan=0.0, posinf=0.0, neginf=0.0)
 
         # ---- OPTIONAL CHANNEL SHUFFLE (after pos enc; before attention) ----
-        do_shuffle = True
+        do_shuffle = self.shuffle_channels and self.training
         if do_shuffle:
             D = fused_semantic.size(2)
             perm = torch.randperm(D, device=fused_semantic.device)
