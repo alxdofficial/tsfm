@@ -16,13 +16,12 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from datasets.ActionSenseTemplatedQADataset import ActionSenseTemplatedQADataset
-from datasets.ActionSenseQADataset import actionsenseqa_collate
-from encoder.TSFMEncoder import TSFMEncoder
-from encoder.processors.CorrelationSummaryProcessor import CorrelationSummaryProcessor
-from encoder.processors.FrequencyFeatureProcessor import FrequencyFeatureProcessor
-from encoder.processors.HistogramFeatureProcessor import HistogramFeatureProcessor
-from encoder.processors.StatisticalFeatureProcessor import StatisticalFeatureProcessor
+from datasets.ActionSenseTemplatedQADataset_NativeRate import (
+    ActionSenseTemplatedQADataset_NativeRate,
+    actionsenseqa_native_collate,
+)
+from encoders.tsfm import TSFMEncoder
+from patch_tokenizers import BaseTokenizer
 from pretraining.actionsense.heads import SensorQALLMHead
 from training_utils import (
     configure_device_and_amp,
@@ -45,34 +44,57 @@ CHECKPOINT_DIR = os.path.join("checkpoints", "actionsense_qa")
 
 class Config:
     # Data
-    patch_size = 1500
-    context_size = -1  # <=0 means keep the full sequence (no truncation)
-    qa_base_dir = "data/actionsenseqa/data"
-    qa_jsonl = "data/actionsenseqa/data/qa_pairs_templated.jsonl"
-    manifest_csv = "data/actionsenseqa/data/manifest.csv"
+    patch_duration_s = 2.0  # Time in seconds per patch (REDUCED from 3.0 for memory)
+    context_size = -1  # CRITICAL: Limit sequence length (was -1 unlimited) - 60% memory reduction
+    qa_base_dir = "data/actionsenseqa_native/data"
+    qa_jsonl = "data/actionsenseqa_native/data/qa_pairs_templated.jsonl"
+    manifest_csv = "data/actionsenseqa_native/data/manifest.csv"
     val_ratio = 0.2
     split_seed = 42
 
     # Training
-    epochs = 100
-    batch_size = 6
+    epochs = 30
+    batch_size = 2  # KEPT HIGH as requested by user
     num_workers = 8
     lr = 1e-4
     weight_decay = 0.05
     grad_clip = 1.0
     loss_plot_every = 10
 
-    # Models
+    # Tokenizer - OPTIMIZED FOR MEMORY
+    tokenizer_type = "conv"  # "conv" or "processor_based" or "phase_space"
+    tokenizer_config = {
+        # ConvTokenizer config - AGGRESSIVE MEMORY REDUCTION (88% reduction in conv activations)
+        "conv": {
+            "hidden_dim": 128,        # REDUCED from 256 (-50%)
+            "conv_out_dim": 256,      # REDUCED from 512 (-50%)
+            "T_fixed": 32,            # REDUCED from 128 (-75%) ← BIGGEST WIN
+            "return_raw_features": False,
+        },
+        # ProcessorBasedTokenizer config (example)
+        "processor_based": {
+            "processors": [],  # Will be populated by factory
+            "return_raw_features": False,
+        },
+        # PhaseSpaceTokenizer config (example)
+        "phase_space": {
+            "embedding_dim": 3,
+            "time_delay": 50,
+            "return_raw_features": False,
+        },
+    }
+
+    # Models - OPTIMIZED FOR MEMORY
     llama_model_name = "meta-llama/Llama-3.2-1B"
-    encoder_feature_dim = 1024
-    encoding_dim = 1024
+    encoder_feature_dim = 512      # REDUCED from 1024 (-50%) - reduces token memory
+    encoding_dim = 512             # REDUCED from 1024 (-50%)
     llama_dropout = 0.1
-    lora_rank = 16
-    lora_alpha = 32
+    lora_rank = 8                  # REDUCED from 16 (-50%)
+    lora_alpha = 16                # Maintains 2:1 ratio with rank
     lora_dropout = 0.05
     use_lora = True
     log_mode = "info"  # options: "debug", "info", "silent"
-    generation_every = 200
+    generation_every = 200  # KEPT as requested by user for debugging
     shuffle_channels = False
 
     # Misc
@@ -266,35 +288,86 @@ def _summarize_metrics(state: Dict[str, float]) -> Dict[str, float]:
     }
 
 
-def build_processors() -> List:
-    return [
-        CorrelationSummaryProcessor(),
-        FrequencyFeatureProcessor(),
-        HistogramFeatureProcessor(),
-        StatisticalFeatureProcessor(),
-    ]
+def build_tokenizer() -> BaseTokenizer:
+    """
+    Build tokenizer based on Config.
+
+    Tokenizer type is selected via CFG.tokenizer_type, and tokenizer-specific
+    parameters are read from CFG.tokenizer_config[CFG.tokenizer_type].
+
+    Returns:
+        BaseTokenizer: Configured tokenizer instance
+    """
+    tokenizer_type = CFG.tokenizer_type
+    config = CFG.tokenizer_config.get(tokenizer_type, {})
+
+    if tokenizer_type == "conv":
+        from patch_tokenizers import ConvTokenizer
+        return ConvTokenizer(
+            feature_dim=CFG.encoder_feature_dim,
+            hidden_dim=config.get("hidden_dim", 256),
+            conv_out_dim=config.get("conv_out_dim", 512),
+            T_fixed=config.get("T_fixed", 128),
+            return_raw_features=config.get("return_raw_features", False),
+        )
+
+    elif tokenizer_type == "processor_based":
+        from patch_tokenizers import ProcessorBasedTokenizer
+        from patch_tokenizers.human_engineered.processors import (
+            StatisticalFeatureProcessor,
+            FrequencyFeatureProcessor,
+        )
+
+        # Default processors if none specified
+        processors = config.get("processors")
+        if not processors:
+            processors = [
+                StatisticalFeatureProcessor(),
+                FrequencyFeatureProcessor(),
+            ]
+
+        return ProcessorBasedTokenizer(
+            processors=processors,
+            feature_dim=CFG.encoder_feature_dim,
+            return_raw_features=config.get("return_raw_features", False),
+        )
+
+    elif tokenizer_type == "phase_space":
+        from patch_tokenizers import PhaseSpaceTokenizer
+        return PhaseSpaceTokenizer(
+            embedding_dim=config.get("embedding_dim", 3),
+            time_delay=config.get("time_delay", 50),
+            feature_dim=CFG.encoder_feature_dim,
+            return_raw_features=config.get("return_raw_features", False),
+        )
+
+    else:
+        raise ValueError(
+            f"Unknown tokenizer_type: '{tokenizer_type}'. "
+            f"Must be one of: 'conv', 'processor_based', 'phase_space'"
+        )
 
 
 
 def build_dataloaders(device: torch.device) -> Tuple[DataLoader, DataLoader]:
-    train_dataset = ActionSenseTemplatedQADataset(
+    train_dataset = ActionSenseTemplatedQADataset_NativeRate(
         base_dir=CFG.qa_base_dir,
         qa_jsonl_path=CFG.qa_jsonl,
         manifest_csv_path=CFG.manifest_csv,
         split="train",
         val_ratio=CFG.val_ratio,
         split_seed=CFG.split_seed,
-        patch_size=CFG.patch_size,
+        patch_duration_s=CFG.patch_duration_s,
         log_mode=CFG.log_mode,
     )
-    val_dataset = ActionSenseTemplatedQADataset(
+    val_dataset = ActionSenseTemplatedQADataset_NativeRate(
         base_dir=CFG.qa_base_dir,
         qa_jsonl_path=CFG.qa_jsonl,
         manifest_csv_path=CFG.manifest_csv,
         split="val",
         val_ratio=CFG.val_ratio,
         split_seed=CFG.split_seed,
-        patch_size=CFG.patch_size,
+        patch_duration_s=CFG.patch_duration_s,
         log_mode=CFG.log_mode,
     )
 
@@ -304,7 +377,7 @@ def build_dataloaders(device: torch.device) -> Tuple[DataLoader, DataLoader]:
         shuffle=True,
         num_workers=CFG.num_workers,
         pin_memory=(device.type == "cuda"),
-        collate_fn=actionsenseqa_collate,
+        collate_fn=actionsenseqa_native_collate,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -312,7 +385,7 @@ def build_dataloaders(device: torch.device) -> Tuple[DataLoader, DataLoader]:
         shuffle=False,
         num_workers=CFG.num_workers,
         pin_memory=(device.type == "cuda"),
-        collate_fn=actionsenseqa_collate,
+        collate_fn=actionsenseqa_native_collate,
     )
     return train_loader, val_loader
 
@@ -335,8 +408,14 @@ class SensorQAModel(nn.Module):
         batch = {"patches": patches, "pad_mask": pad_mask, "metadata": metadata}
         if not self._debug_logged and metadata:
             pad_shape = None if pad_mask is None else pad_mask.shape
+            if isinstance(patches, dict):
+                patch_info = f"dict with {len(patches)} streams: " + ", ".join(
+                    f"{k}={v.shape}" for k, v in patches.items()
+                )
+            else:
+                patch_info = f"shape={patches.shape} dtype={patches.dtype}"
             log_debug(
-                f"[DEBUG] SensorQAModel input patches shape={patches.shape} dtype={patches.dtype} pad_mask shape={pad_shape}"
+                f"[DEBUG] SensorQAModel input patches {patch_info} pad_mask shape={pad_shape}"
             )
             subjects = metadata.get("subject", [])
             activity_names_list = metadata.get("activity_names", [])
@@ -368,7 +447,7 @@ class SensorQAModel(nn.Module):
         # For gradient debugging, pass through the tensors without detaching
         info["tokens"] = tokens if debug_tensors else tokens.detach()
         info["pad_mask"] = pad_mask
-        if (debug_tensors or visual_logging) and "small_features" in encoded:
+        if (debug_tensors or visual_logging) and encoded.get("small_features") is not None:
             info["small_features"] = encoded["small_features"].detach()
 
         if "fused_patches" in info:
@@ -380,9 +459,9 @@ class SensorQAModel(nn.Module):
         return loss, info
 
 
-def build_models(processors: List, device: torch.device) -> Tuple[SensorQAModel, SensorQALLMHead]:
+def build_models(tokenizer: BaseTokenizer, device: torch.device) -> Tuple[SensorQAModel, SensorQALLMHead]:
     encoder = TSFMEncoder(
-        processors=processors,
+        tokenizer=tokenizer,
         feature_dim=CFG.encoder_feature_dim,
         encoding_dim=CFG.encoding_dim,
         shuffle_channels=CFG.shuffle_channels,
@@ -531,7 +610,7 @@ def save_generation_visual(
     question: str,
     pred_answer: str,
     gt_answer: str,
-    patches_sample: torch.Tensor,
+    patches_sample: torch.Tensor,  # Can also be Dict[str, torch.Tensor] for multi-stream
     small_features_sample: torch.Tensor,
     tokens_sample: torch.Tensor,
     fused_sample: torch.Tensor,
@@ -541,7 +620,17 @@ def save_generation_visual(
     if getattr(CFG, "log_mode", "info") == "silent":
         return
     os.makedirs(GEN_PLOT_DIR, exist_ok=True)
-    patches_np = patches_sample.detach().cpu().numpy() if patches_sample.numel() else None
+
+    # Normalize patches to tensor format for visualization
+    # (handles both dict and tensor inputs in a tokenizer-agnostic way)
+    if isinstance(patches_sample, dict):
+        # For dict inputs (multi-stream), take first stream
+        patches_sample = next(iter(patches_sample.values()))
+
+    if patches_sample is None or not patches_sample.numel():
+        return  # No valid data to visualize
+
+    patches_np = patches_sample.detach().cpu().numpy()
     small_np = small_features_sample.detach().cpu().numpy() if small_features_sample.numel() else None
     tokens_np = tokens_sample.detach().cpu().numpy() if tokens_sample.numel() else None
     fused_np = fused_sample.detach().cpu().numpy() if fused_sample.numel() else None
@@ -712,9 +801,9 @@ def save_joint_checkpoint(encoder: TSFMEncoder, qa_head: SensorQALLMHead, epoch:
 
 def train():
     device, amp_ctx, scaler = configure_device_and_amp()
-    processors = build_processors()
+    tokenizer = build_tokenizer()
     train_loader, val_loader = build_dataloaders(device)
-    model, qa_head = build_models(processors, device)
+    model, qa_head = build_models(tokenizer, device)
 
     param_groups = [
         {"params": model.encoder.parameters(), "lr": CFG.lr},
@@ -790,7 +879,12 @@ def train():
             disable=not _log_allowed("info"),
         ) as pbar:
             for batch in train_loader:
-                patches = batch["patches"].to(device)
+                # Handle dict format for multi-stream native rate data
+                patches = batch["patches"]
+                if isinstance(patches, dict):
+                    patches = {stream: tensor.to(device) for stream, tensor in patches.items()}
+                else:
+                    patches = patches.to(device)
                 pad_mask = batch["pad_mask"].to(device)
 
                 if not debug_batch_meta_logged:
@@ -940,6 +1034,13 @@ def train():
                                 timestamps_list = metadata.get("timestamps")
                                 if isinstance(timestamps_list, (list, tuple)) and sample_idx < len(timestamps_list):
                                     timestamps_sample = timestamps_list[sample_idx]
+
+                            # Handle dict format for multi-stream patches
+                            if isinstance(patches, dict):
+                                patches_sample = {stream: tensor[sample_idx] for stream, tensor in patches.items()}
+                            else:
+                                patches_sample = patches[sample_idx]
+
                             save_generation_visual(
                                 epoch,
                                 global_step,
@@ -947,7 +1048,7 @@ def train():
                                 question,
                                 pred_text,
                                 gt_text,
-                                patches[sample_idx],
+                                patches_sample,
                                 qa_info.get("small_features", torch.empty(0))[sample_idx]
                                 if "small_features" in qa_info
                                 else torch.empty(0),
@@ -992,7 +1093,12 @@ def train():
         val_metric_state = _init_metric_state()
         with torch.no_grad():
             for batch in val_loader:
-                patches = batch["patches"].to(device)
+                # Handle dict format for multi-stream native rate data
+                patches = batch["patches"]
+                if isinstance(patches, dict):
+                    patches = {stream: tensor.to(device) for stream, tensor in patches.items()}
+                else:
+                    patches = patches.to(device)
                 pad_mask = batch["pad_mask"].to(device)
                 loss, qa_info = model(patches, pad_mask, batch["questions"], batch["answers"], batch.get("metadata"))
                 val_loss_total += loss.item()

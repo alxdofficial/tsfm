@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from encoder.processors.debug import _ensure_dir, _save_csv, _to_np, visualize_frequency_features
+from patch_tokenizers.human_engineered.processors.debug import _ensure_dir, _save_csv, _to_np, visualize_frequency_features
 import os   
 
 def linear_interp_1d(x: torch.Tensor, xp: torch.Tensor, fp: torch.Tensor) -> torch.Tensor:

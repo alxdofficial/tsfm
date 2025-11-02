@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """
-ActionSense downloader + slicer (ALL subjects/splits, fixed links)
+ActionSense downloader + slicer with NATIVE SAMPLING RATES (ALL subjects/splits, fixed links)
+
+CHANGES from download_script.py:
+- Saves sensor CSVs at native sampling rates (no upsampling to fastest rate)
+- Each stream (joints, emg_left, emg_right, gaze) saved to separate CSV
+- Extended manifest includes per-stream metadata (csv_path, rate_hz, num_channels)
+- Patches maintain temporal duration consistency across streams, not sample count
+- Optional FPV video download (default: False, use --download_video to enable)
 
 - Uses a hard-coded LINKS dict containing:
     * Wearable HDF5 per subject/split
@@ -9,18 +16,17 @@ ActionSense downloader + slicer (ALL subjects/splits, fixed links)
 - Parses HDF5 to find activity segments from:
       experiment-activities/activities/{data,time_s}
   (pairs "Start"/"Stop" events; skips Bad/Maybe)
-- Extracts per-activity video segments with ffmpeg.
+- Extracts per-activity video segments with ffmpeg (optional).
 - Builds per-activity pandas DataFrame with 4 streams:
       joints rotation (xsens-joints/rotation_xzy_deg)
       emg left (myo-left/emg)
       emg right (myo-right/emg)
       gaze (eye-tracking-gaze/position)
-  and interpolates all to the highest sampling rate timeline.
-- Each CSV contains an extra column `activity_label`.
-- Saves mirrored names for easy CSV ↔ video cross-reference and a manifest.csv.
+  and saves each stream to separate CSV at NATIVE rate.
+- Saves mirrored names for easy CSV ↔ video cross-reference and an extended manifest.csv.
 """
 
-import os, re, sys, math, subprocess
+import os, re, sys, math, subprocess, argparse
 from typing import Dict, List, Tuple, Optional
 import requests, h5py, numpy as np, pandas as pd
 from tqdm import tqdm
@@ -28,11 +34,19 @@ from tqdm import tqdm
 # ===========================
 # Hard-coded parameters
 # ===========================
-DATA_ROOT = "data/actionsenseqa/data"   # output root
+DATA_ROOT = "data/actionsenseqa_native/data"   # output root
 TIME_PADDING_S = 0.0                    # optional pad around each activity segment
 SAVE_FLOAT32 = True                     # store numeric columns as float32
 MIN_SEGMENT_SECONDS = 1.0               # ignore very short segments
 JOINTS_FIRST_N = 22                     # take first 22 joints from Xsens (as in reference converter)
+
+# Target sampling rates for resampling (from sensor specs)
+TARGET_RATES = {
+    "joints": 60.0,      # Xsens IMU documented spec
+    "emg_left": 200.0,   # Myo armband documented spec
+    "emg_right": 200.0,  # Myo armband documented spec
+    "gaze": 120.0,       # Tobii eye tracker documented spec
+}
 
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "ActionSense-Downloader/1.0 (+github:you)"})
@@ -127,6 +141,7 @@ def ensure_dir(p: str):
 def get_video_start_time(src_mp4: str) -> float:
     """Probe video to get start time (usually ~0.0)."""
     try:
+        import json
         cmd = [
             "ffprobe", "-v", "error",
             "-select_streams", "v:0",
@@ -227,9 +242,23 @@ def read_joints_rotation(f: h5py.File) -> Optional[Tuple[np.ndarray, np.ndarray]
         return t, D.astype(np.float32)
     return None
 
-def read_emg_left(f: h5py.File): return _read_dataset_pair(f, "myo-left/emg")
-def read_emg_right(f: h5py.File): return _read_dataset_pair(f, "myo-right/emg")
-def read_gaze(f: h5py.File): return _read_dataset_pair(f, "eye-tracking-gaze/position")
+def read_emg_left(f: h5py.File):
+    out = _read_dataset_pair(f, "myo-left/emg")
+    if out is None:
+        return None
+    return out[0], out[1].astype(np.float32)
+
+def read_emg_right(f: h5py.File):
+    out = _read_dataset_pair(f, "myo-right/emg")
+    if out is None:
+        return None
+    return out[0], out[1].astype(np.float32)
+
+def read_gaze(f: h5py.File):
+    out = _read_dataset_pair(f, "eye-tracking-gaze/position")
+    if out is None:
+        return None
+    return out[0], out[1].astype(np.float32)
 
 # --------------------------
 # Activity Segments
@@ -244,7 +273,7 @@ def get_activity_segments(f: h5py.File) -> List[Tuple[float, float, str]]:
     times = np.asarray(g["time_s"], dtype=np.float64).squeeze()
     rows = [[s.decode() if isinstance(s, (bytes, bytearray, np.bytes_)) else str(s) for s in r] for r in raw]
     BAD, CTRL = {"Bad", "Maybe"}, {"Start", "Stop", "Good", "Bad", "Maybe", ""}
-    def pick_name(tokens): 
+    def pick_name(tokens):
         cand = [t for t in tokens if t not in CTRL]
         return (cand[-1].strip() if cand else "Unknown") or "Unknown"
     starts, stops = [], []
@@ -265,8 +294,21 @@ def get_activity_segments(f: h5py.File) -> List[Tuple[float, float, str]]:
 # Main
 # --------------------------
 def main():
+    parser = argparse.ArgumentParser(
+        description="Download and process ActionSense data with native sampling rates"
+    )
+    parser.add_argument(
+        "--download_video",
+        action="store_true",
+        default=False,
+        help="Download and slice FPV videos (default: False). Videos are large, so skip if only sensor data is needed."
+    )
+    args = parser.parse_args()
+
     os.makedirs(DATA_ROOT, exist_ok=True)
     manifest_rows = []
+
+    print(f"[INFO] FPV video download: {'ENABLED' if args.download_video else 'DISABLED (use --download_video to enable)'}")
 
     # Wrap over all subject/split pairs with tqdm
     for (subject, split), urls in tqdm(LINKS.items(), desc="Subjects/Splits", unit="split"):
@@ -283,17 +325,24 @@ def main():
 
         # Downloads
         try: download_file(urls["hdf5"], paths["hdf5"])
-        except Exception as e: 
+        except Exception as e:
             print(f"[WARN] HDF5 download failed: {e}"); continue
-        try: download_file(urls["fpv_world"], paths["fpv_world"])
-        except Exception as e: 
-            print(f"[WARN] Video download failed: {e}"); continue
+
+        # Only download video if requested
+        if args.download_video:
+            try: download_file(urls["fpv_world"], paths["fpv_world"])
+            except Exception as e:
+                print(f"[WARN] Video download failed: {e}"); continue
+        else:
+            # Check if video already exists (for processing previously downloaded videos)
+            if not os.path.exists(paths["fpv_world"]):
+                print(f"[INFO] Skipping video download (use --download_video to enable)")
 
         # Parse, slice, save
         try:
             with h5py.File(paths["hdf5"], "r") as f:
                 hdf5_offset = compute_hdf5_offset(f)
-                video_start = get_video_start_time(paths["fpv_world"])
+                video_start = get_video_start_time(paths["fpv_world"]) if os.path.exists(paths["fpv_world"]) else 0.0
                 if hdf5_offset is None:
                     print(f"[WARN] No valid offset for {subject}/{split}")
                     continue
@@ -309,15 +358,87 @@ def main():
                         continue
 
                     base = f"activity_{idx:04d}__{safe_slug(name)}__{int(round(t0_abs*1000)):013d}_{int(round(t1_abs*1000)):013d}"
-                    csv_path = os.path.join(paths["sensors_dir"], base + ".csv")
                     vid_path = os.path.join(paths["video_dir"], base + ".mp4")
 
-                    # Video cut
-                    try:
-                        run_ffmpeg_cut(paths["fpv_world"], vid_path, t0_rel, t1_rel)
-                    except subprocess.CalledProcessError:
-                        print(f"[WARN] ffmpeg cut failed for {subject}/{split} activity {idx}")
+                    # Video cut (only if source video exists)
+                    if os.path.exists(paths["fpv_world"]):
+                        try:
+                            run_ffmpeg_cut(paths["fpv_world"], vid_path, t0_rel, t1_rel)
+                        except subprocess.CalledProcessError:
+                            print(f"[WARN] ffmpeg cut failed for {subject}/{split} activity {idx}")
+                    else:
+                        # No video available - set empty path in manifest
+                        vid_path = ""
 
+                    # ===== NEW: Save sensor CSVs at native rates =====
+                    streams = {}
+                    for stream_name, reader_fn in [
+                        ("joints", read_joints_rotation),
+                        ("emg_left", read_emg_left),
+                        ("emg_right", read_emg_right),
+                        ("gaze", read_gaze),
+                    ]:
+                        stream_data = reader_fn(f)
+                        if stream_data is None:
+                            streams[stream_name] = {"csv": "", "rate_hz": 0.0, "num_channels": 0}
+                            continue
+
+                        time_s, values = stream_data  # (T,), (T, D)
+
+                        # Crop to segment [t0_abs - padding, t1_abs + padding]
+                        t0_seg = t0_abs - TIME_PADDING_S
+                        t1_seg = t1_abs + TIME_PADDING_S
+                        mask = (time_s >= t0_seg) & (time_s <= t1_seg)
+                        seg_time = time_s[mask]
+                        seg_vals = values[mask]
+
+                        if len(seg_time) == 0:
+                            streams[stream_name] = {"csv": "", "rate_hz": 0.0, "num_channels": 0}
+                            continue
+
+                        # Resample to target rate (regular grid)
+                        # This ensures all streams have same temporal alignment for patching
+                        target_rate = TARGET_RATES.get(stream_name, 60.0)
+                        duration = seg_time[-1] - seg_time[0]
+                        num_samples = int(np.ceil(duration * target_rate))
+
+                        # Create regular time grid
+                        t_regular = np.linspace(seg_time[0], seg_time[-1], num_samples)
+
+                        # Interpolate each channel to regular grid
+                        seg_vals_resampled = np.zeros((num_samples, seg_vals.shape[1]), dtype=np.float32)
+                        for d in range(seg_vals.shape[1]):
+                            seg_vals_resampled[:, d] = np.interp(t_regular, seg_time, seg_vals[:, d])
+
+                        # Replace with resampled data
+                        seg_time = t_regular
+                        seg_vals = seg_vals_resampled
+                        rate_hz = target_rate
+
+                        print(f"    [RESAMPLE] {stream_name}: {len(seg_vals)} samples @ {rate_hz:.1f} Hz (duration={duration:.2f}s)")
+
+                        # Save to CSV
+                        stream_csv_path = os.path.join(paths["sensors_dir"], base + f"__{stream_name}.csv")
+                        D = seg_vals.shape[1]
+                        col_names = [f"{stream_name}_{i}" for i in range(D)]
+                        df = pd.DataFrame(seg_vals, columns=col_names)
+                        df.insert(0, "time_s", seg_time)
+
+                        if SAVE_FLOAT32:
+                            # Convert numeric columns to float32
+                            for col in col_names:
+                                df[col] = df[col].astype(np.float32)
+
+                        df.to_csv(stream_csv_path, index=False)
+                        print(f"    [CSV] Saved {stream_name}: {len(df)} samples @ {rate_hz:.1f} Hz ({D} channels)")
+
+                        streams[stream_name] = {
+                            "csv": os.path.relpath(stream_csv_path, DATA_ROOT),
+                            "rate_hz": float(rate_hz),
+                            "num_channels": int(D),
+                        }
+
+                    # Add to manifest with stream metadata
                     manifest_rows.append({
                         "subject": subject,
                         "split": split,
@@ -325,18 +446,34 @@ def main():
                         "activity_name": name,
                         "t0_abs": t0_abs,
                         "t1_abs": t1_abs,
-                        "csv_path": os.path.relpath(csv_path, DATA_ROOT),
-                        "video_path": os.path.relpath(vid_path, DATA_ROOT),
+                        "video_path": os.path.relpath(vid_path, DATA_ROOT) if vid_path else "",
+                        # Stream metadata
+                        "joints_csv": streams.get("joints", {}).get("csv", ""),
+                        "joints_rate_hz": streams.get("joints", {}).get("rate_hz", 0.0),
+                        "joints_channels": streams.get("joints", {}).get("num_channels", 0),
+                        "emg_left_csv": streams.get("emg_left", {}).get("csv", ""),
+                        "emg_left_rate_hz": streams.get("emg_left", {}).get("rate_hz", 0.0),
+                        "emg_left_channels": streams.get("emg_left", {}).get("num_channels", 0),
+                        "emg_right_csv": streams.get("emg_right", {}).get("csv", ""),
+                        "emg_right_rate_hz": streams.get("emg_right", {}).get("rate_hz", 0.0),
+                        "emg_right_channels": streams.get("emg_right", {}).get("num_channels", 0),
+                        "gaze_csv": streams.get("gaze", {}).get("csv", ""),
+                        "gaze_rate_hz": streams.get("gaze", {}).get("rate_hz", 0.0),
+                        "gaze_channels": streams.get("gaze", {}).get("num_channels", 0),
                     })
         except Exception as e:
             print(f"[WARN] Processing failed for {subject}/{split}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
 
     if manifest_rows:
         man = pd.DataFrame(manifest_rows)
         man.sort_values(["subject", "split", "activity_index"], inplace=True)
-        man.to_csv(os.path.join(DATA_ROOT, "manifest.csv"), index=False)
-        print(f"[DONE] Wrote manifest with {len(manifest_rows)} rows.")
+        manifest_path = os.path.join(DATA_ROOT, "manifest.csv")
+        man.to_csv(manifest_path, index=False)
+        print(f"\n[DONE] Wrote manifest with {len(manifest_rows)} rows to {manifest_path}")
+        print(f"[INFO] Manifest columns: {list(man.columns)}")
     else:
         print("[DONE] No outputs produced.")
 

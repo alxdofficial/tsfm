@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from encoder.processors.debug import _ensure_dir, _save_csv, _to_np, visualize_histogram_features
+from patch_tokenizers.human_engineered.processors.debug import _ensure_dir, _save_csv, _to_np, visualize_histogram_features
 import os
 
 class HistogramFeatureProcessor:

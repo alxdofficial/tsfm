@@ -313,6 +313,265 @@ class SensorQALLMHead(nn.Module):
         }
         return outputs.loss, info
 
+    def forward_autoregressive(
+        self,
+        tokens: torch.Tensor,
+        pad_mask: torch.Tensor,
+        questions: List[str],
+        answers: List[str],
+        return_predictions: bool = False,
+    ):
+        """
+        Autoregressive training: generate tokens using model's own predictions,
+        then compute loss against ground truth.
+
+        This avoids teacher forcing and forces the model to learn from sensor data.
+
+        Args:
+            tokens: (B, P, D, F) encoder tokens
+            pad_mask: (B, P) padding mask
+            questions: List of question strings
+            answers: List of ground truth answers
+            return_predictions: If True, return dict with loss and decoded predictions
+
+        Returns:
+            If return_predictions=False: Scalar cross-entropy loss
+            If return_predictions=True: Dict with {"loss": loss, "predictions": List[str]}
+        """
+        device = tokens.device
+        batch_size = len(questions)
+
+        # 1. Fuse channels and project sensor embeddings
+        fused = self.fuse_channels(tokens, pad_mask)  # (B, P, F)
+        sensor_counts = pad_mask.sum(dim=1) if pad_mask is not None else torch.full(
+            (tokens.size(0),), tokens.size(1), device=device, dtype=torch.long
+        )
+        sensor_counts = sensor_counts.to(torch.long)
+        projected = self.projector(fused)  # (B, P, H)
+
+        # 2. Prepare prompt embeddings (question + sensors + "ANSWER:")
+        dummy_answers = [""] * batch_size
+        tokenized_prompt = self.prepare_text_batch(questions, dummy_answers, sensor_counts, device)
+
+        # Inject sensor embeddings
+        base_embeds = self.llama.get_input_embeddings()(tokenized_prompt.input_ids)
+        if base_embeds.dtype != projected.dtype:
+            base_embeds = base_embeds.to(projected.dtype)
+        prompt_embeds = base_embeds.clone()
+
+        for i, positions in enumerate(tokenized_prompt.sensor_positions):
+            count = positions.numel()
+            if count == 0:
+                continue
+            valid_count = int(sensor_counts[i].item()) if sensor_counts is not None else count
+            valid_count = max(1, min(valid_count, count))
+            patch_embeds = projected[i, -valid_count:, :]
+            if patch_embeds.dtype != prompt_embeds.dtype:
+                patch_embeds = patch_embeds.to(prompt_embeds.dtype)
+            if patch_embeds.size(0) < count:
+                pad_len = count - patch_embeds.size(0)
+                pad_tensor = torch.zeros((pad_len, patch_embeds.size(-1)), device=device, dtype=patch_embeds.dtype)
+                patch_embeds = torch.cat([patch_embeds, pad_tensor], dim=0)
+            elif patch_embeds.size(0) > count:
+                patch_embeds = patch_embeds[:count]
+            prompt_embeds[i, positions, :] = patch_embeds
+
+        prompt_length = prompt_embeds.shape[1]
+
+        # 3. Tokenize ground truth answers to know target
+        answer_texts = [" " + ans + self.tokenizer.eos_token for ans in answers]
+        answer_tokens = self.tokenizer(
+            answer_texts,
+            add_special_tokens=False,
+            padding=True,
+            return_tensors="pt"
+        ).input_ids.to(device)  # (B, max_answer_len)
+
+        max_answer_length = answer_tokens.shape[1]
+
+        # 4. Autoregressively generate tokens with gradient tracking
+        current_embeds = prompt_embeds  # Start with prompt
+        all_logits = []
+        all_predicted_ids = [] if return_predictions else None  # Collect predictions if needed
+
+        embedding_layer = self.llama.get_input_embeddings()
+
+        for step in range(max_answer_length):
+            # Forward pass through LLaMA
+            attention_mask = torch.ones(
+                current_embeds.shape[:2],
+                dtype=torch.long,
+                device=device
+            )
+
+            outputs = self.llama(
+                inputs_embeds=current_embeds,
+                attention_mask=attention_mask,
+                use_cache=False,  # Disable cache for training
+            )
+
+            # Get logits for next token position
+            next_token_logits = outputs.logits[:, -1, :]  # (B, vocab_size)
+            all_logits.append(next_token_logits)
+
+            # Sample next token (greedy for deterministic training)
+            next_token_ids = next_token_logits.argmax(dim=-1)  # (B,)
+
+            # Collect predicted token IDs if requested
+            if return_predictions:
+                all_predicted_ids.append(next_token_ids)
+
+            # Get embeddings for next token
+            next_token_embeds = embedding_layer(next_token_ids.unsqueeze(1))  # (B, 1, hidden)
+
+            # Append to sequence for next iteration
+            current_embeds = torch.cat([current_embeds, next_token_embeds], dim=1)
+
+        # 5. Stack all logits and compute cross-entropy loss
+        logits = torch.stack(all_logits, dim=1)  # (B, max_answer_length, vocab_size)
+
+        # Compute loss against ground truth answer tokens
+        loss = torch.nn.functional.cross_entropy(
+            logits.reshape(-1, logits.size(-1)),  # (B*seq_len, vocab_size)
+            answer_tokens.reshape(-1),             # (B*seq_len,)
+            ignore_index=self.tokenizer.pad_token_id,
+            reduction='mean'
+        )
+
+        # If predictions requested, decode token IDs to text
+        if return_predictions:
+            # Stack predicted tokens: (B, max_answer_length)
+            predicted_ids = torch.stack(all_predicted_ids, dim=1)  # (max_answer_length, B) -> (B, max_answer_length)
+
+            # Decode each sample's predicted tokens to text
+            predictions = []
+            for i in range(batch_size):
+                pred_tokens = predicted_ids[i].detach().cpu().tolist()
+                # Decode and skip special tokens
+                pred_text = self.tokenizer.decode(pred_tokens, skip_special_tokens=True)
+                predictions.append(pred_text)
+
+            return {"loss": loss, "predictions": predictions}
+
+        return loss
+
+    def generate(
+        self,
+        tokens: torch.Tensor,
+        pad_mask: torch.Tensor,
+        questions: List[str],
+        max_new_tokens: int = 32,
+        temperature: float = 0.7,
+        do_sample: bool = False,
+    ) -> List[str]:
+        """
+        Generate answers autoregressively (no teacher forcing).
+
+        Args:
+            tokens: (B, P, D, F) encoder tokens
+            pad_mask: (B, P) padding mask
+            questions: List of question strings
+            max_new_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
+            do_sample: Whether to sample (True) or use greedy (False)
+
+        Returns:
+            List of generated answer strings
+        """
+        device = tokens.device
+        batch_size = tokens.size(0)
+
+        # Fuse channels and project
+        fused = self.fuse_channels(tokens, pad_mask)  # (B, P, F)
+        sensor_counts = pad_mask.sum(dim=1) if pad_mask is not None else torch.full(
+            (tokens.size(0),), tokens.size(1), device=device, dtype=torch.long
+        )
+        sensor_counts = sensor_counts.to(torch.long)
+
+        # Prepare prompt (question + sensor tokens + "Answer:")
+        # Use empty answers for generation
+        dummy_answers = [""] * batch_size
+        tokenized = self.prepare_text_batch(questions, dummy_answers, sensor_counts, device)
+
+        # Project sensor embeddings
+        projected = self.projector(fused)  # (B, P, H)
+
+        # Get base embeddings and inject sensor embeddings
+        base_embeds = self.llama.get_input_embeddings()(tokenized.input_ids)
+        if base_embeds.dtype != projected.dtype:
+            base_embeds = base_embeds.to(projected.dtype)
+        embeds = base_embeds.clone()
+
+        for i, positions in enumerate(tokenized.sensor_positions):
+            count = positions.numel()
+            if count == 0:
+                continue
+            valid_count = int(sensor_counts[i].item()) if sensor_counts is not None else count
+            valid_count = max(1, min(valid_count, count))
+            patch_embeds = projected[i, -valid_count:, :]
+            if patch_embeds.dtype != embeds.dtype:
+                patch_embeds = patch_embeds.to(embeds.dtype)
+            if patch_embeds.size(0) < count:
+                pad_len = count - patch_embeds.size(0)
+                pad_tensor = torch.zeros((pad_len, patch_embeds.size(-1)), device=device, dtype=patch_embeds.dtype)
+                patch_embeds = torch.cat([patch_embeds, pad_tensor], dim=0)
+            elif patch_embeds.size(0) > count:
+                patch_embeds = patch_embeds[:count]
+            embeds[i, positions, :] = patch_embeds
+
+        # Generate autoregressively
+        generated_ids = self.llama.generate(
+            inputs_embeds=embeds,
+            attention_mask=tokenized.attention_mask,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            do_sample=do_sample,
+            pad_token_id=self.tokenizer.pad_token_id,
+            eos_token_id=self.tokenizer.eos_token_id,
+        )
+
+        # When using inputs_embeds, generated_ids might not include the prompt
+        # We need to use the actual prompt embedding length, not tokenized.input_ids
+        prompt_length = embeds.shape[1]  # Use embedding sequence length instead
+
+        generated_texts = []
+        for idx, ids in enumerate(generated_ids):
+            # Debug: Always log first sample
+            if idx == 0:
+                full_ids = ids.tolist()
+                print(f"\n[GEN_DEBUG] Sample 0:")
+                print(f"  Embedding prompt length: {prompt_length}")
+                print(f"  Tokenized input_ids length: {tokenized.input_ids.shape[1]}")
+                print(f"  Generated sequence length: {len(full_ids)}")
+                print(f"  Full generated IDs: {full_ids[:20]}...")
+                print(f"  EOS token ID: {self.tokenizer.eos_token_id}")
+                print(f"  PAD token ID: {self.tokenizer.pad_token_id}")
+
+            # Extract only newly generated tokens
+            # If generate() returns ONLY new tokens (not including prompt), use all
+            # If it returns prompt + new tokens, skip prompt
+            if len(ids) > prompt_length:
+                new_tokens = ids[prompt_length:]
+            else:
+                # Generated sequence is the new tokens
+                new_tokens = ids
+
+            # Debug: Show what we're decoding
+            if idx == 0:
+                new_ids = new_tokens.tolist()
+                print(f"  New tokens to decode: {new_ids}")
+
+            text = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+            generated_texts.append(text.strip())
+
+            # Debug: Show decoded text for first sample
+            if idx == 0:
+                print(f"  Decoded text (with special): '{self.tokenizer.decode(new_tokens)}'")
+                print(f"  Decoded text (skip special): '{text}'")
+                print(f"  After strip: '{text.strip()}'")
+
+        return generated_texts
+
     def save_checkpoint(self, out_dir: str, epoch: int) -> None:
         os.makedirs(out_dir, exist_ok=True)
         head_path = os.path.join(out_dir, f"qa_head_e{epoch}.pt")
