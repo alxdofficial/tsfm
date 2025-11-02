@@ -1,11 +1,13 @@
-# encoder/TSFMEncoder.py
+# encoders/tsfm/encoder.py
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from typing import List, Dict, Optional
-from encoder.SinusoidalEncoding import SinusoidalEncoding
-from encoder.Transformer import Transformer
+from typing import List, Dict, Optional, Union
+from .SinusoidalEncoding import SinusoidalEncoding
+from .Transformer import Transformer
+from patch_tokenizers.base import BaseTokenizer, TokenizerOutput
+from patch_tokenizers.human_engineered import ProcessorBasedTokenizer
 from pretraining.actionsense import debug_vis
 
 import os
@@ -14,7 +16,7 @@ import matplotlib.pyplot as plt
 
 class TSFMEncoder(nn.Module):
     """
-    Time-Series Foundation Model Encoder
+    Time-Series Foundation Model Encoder (Refactored with Tokenizer Interface)
 
     Inputs
       patches: (B, P, T, D)  batches of episodes split into P patches of length T for D channels
@@ -25,13 +27,22 @@ class TSFMEncoder(nn.Module):
       - features: (B, P, D, F)  fused (content + position + scale-bias)
       - tokens:   (B, P, D, F)  self-attended long sequence
 
-    Notes
-      - All processors are expected to be batch-aware and operate on (B*P, T, D).
-      - Shapes consistently use (B, P, D, F) for long tokens so downstream heads can pool over P×D.
+    Architecture:
+      Raw patches → Tokenizer → Content tokens (B,P,D,F)
+                  → + Positional encodings
+                  → + Scale conditioning
+                  → Transformer → Output tokens
+
+    Tokenizer Interface:
+      The tokenizer converts raw patches to semantic tokens. Different tokenization
+      strategies can be swapped by passing different tokenizer instances:
+      - ProcessorBasedTokenizer: Handcrafted feature extraction (default)
+      - PatchEmbeddingTokenizer: Learned patch embeddings (future)
+      - etc.
     """
     def __init__(
         self,
-        processors: List,
+        tokenizer: Union[BaseTokenizer, List],  # NEW: accepts tokenizer OR legacy processors list
         feature_dim: int,
         encoding_dim: int,
         max_workers: int = 4,
@@ -42,6 +53,7 @@ class TSFMEncoder(nn.Module):
         learnable_output: bool = False,
         noise_std: float = 0.0005,
         pretraining_args: Optional[dict] = None,
+        shuffle_channels: bool = True,
         # ---- capacities for dataset-agnostic positional modules ----
         max_channels_for_embed: int = 512,
         max_patch_sizes: int = 4096,
@@ -49,14 +61,36 @@ class TSFMEncoder(nn.Module):
         recon_head: Optional[nn.Module] = None,
     ):
         super().__init__()
-        self.processors = processors
-        self.feature_dim = feature_dim      # internal semantic dim F (e.g., 1024/2048)
+
+        # ===== TOKENIZER SETUP (NEW) =====
+        # Support legacy interface: if tokenizer is a list, wrap it in ProcessorBasedTokenizer
+        if isinstance(tokenizer, list):
+            print("[TSFMEncoder] Legacy mode: Converting processor list to ProcessorBasedTokenizer")
+            self.tokenizer = ProcessorBasedTokenizer(
+                processors=tokenizer,
+                feature_dim=feature_dim,
+                norm_eps=pretraining_args.get("feature_norm_eps", 1e-6) if pretraining_args else 1e-6,
+                return_raw_features=True,  # Needed for MSP reconstruction
+            )
+        elif isinstance(tokenizer, BaseTokenizer):
+            self.tokenizer = tokenizer
+        else:
+            raise TypeError(f"tokenizer must be BaseTokenizer or List[Processor], got {type(tokenizer)}")
+
+        # Verify tokenizer output matches expected feature_dim
+        if self.tokenizer.feature_dim != feature_dim:
+            raise ValueError(
+                f"Tokenizer feature_dim ({self.tokenizer.feature_dim}) != "
+                f"TSFMEncoder feature_dim ({feature_dim})"
+            )
+
+        self.feature_dim = feature_dim      # internal semantic dim F (e.g., 512/1024)
         self.encoding_dim = encoding_dim
         self.max_workers = max_workers
+        self.shuffle_channels = bool(shuffle_channels)
 
-        # Project SMALL per-channel features to semantic_dim (CONTENT)
-        self._raw_small_dim = self._total_feature_dim()  # == K: feature size per channel after processors
-        self.linear_proj = nn.Linear(self._raw_small_dim, feature_dim)
+        print(f"[TSFMEncoder] Using tokenizer: {self.tokenizer}")
+        print(f"[TSFMEncoder] feature_dim={feature_dim}, encoding_dim={encoding_dim}")
 
         # --- scale-conditioning MLP (from per-(patch,channel) raw signal stats) ---
         # stats per (patch, channel) over time T: [min, max, mean, std, rms, loge] => 6 dims
@@ -131,28 +165,26 @@ class TSFMEncoder(nn.Module):
               f"max_channels={self._max_channels_for_embed}, max_patch_sizes={self._max_patch_sizes}")
         print("[ENCDBG] Using token-wise LayerNorm over K + per-(patch,channel) scale-conditioning from raw signal.")
 
-    # --------- feature extraction & encodings ----------
-    def _total_feature_dim(self) -> int:
+    # --------- tokenization (NEW: uses tokenizer interface) ----------
+    def _tokenize_patches(self, patches: torch.Tensor, metadata: Optional[Dict] = None) -> TokenizerOutput:
         """
-        Probe processors to learn per-channel feature size K.
-        Expects processors return (B, D, F_i) or (B, F_i) given (B, T, D).
+        Convert raw patches to content tokens using the tokenizer.
+
+        Args:
+            patches: (B, P, T, D)
+            metadata: Optional metadata dict for tokenizer
+
+        Returns:
+            TokenizerOutput containing:
+                - tokens: (B, P, D, F) semantic embeddings
+                - raw_features: (B, P, D, K) if tokenizer returns them
         """
-        dummy = torch.randn(2, 32, 6)  # (B=2, T=32, D=6) on CPU is fine here
-        dims = []
-        for proc in self.processors:
-            proc_out = proc.process(dummy)  # (B,D,F_i) or (B,F_i)
-            if proc_out.ndim == 2:
-                dims.append(proc_out.shape[-1])
-            elif proc_out.ndim == 3:
-                dims.append(proc_out.shape[-1])
-            else:
-                raise ValueError(f"Processor returned unexpected shape: {proc_out.shape}")
-        return sum(dims)
+        return self.tokenizer.tokenize(patches, metadata)
 
     def grad_groups(self):
         # group by parameter-name prefixes for gradient logging
         return {
-            "linear_proj": ["linear_proj."],
+            "tokenizer": ["tokenizer."],  # NEW: tokenizer params
             "scale_mlp": ["scale_mlp."],
             "mask_tokens": ["mask_token", "mask_embed", "output_type_embed"],
             "positional_proj": ["proj_chan.", "proj_psize.", "proj_patch."],
@@ -163,57 +195,84 @@ class TSFMEncoder(nn.Module):
             "recon_head": ["recon_head."]
         }
 
-    def _extract_features(self, patches: torch.Tensor) -> torch.Tensor:
+    def get_raw_feature_dim(self) -> int:
         """
-        Args:
-            patches: (B, P, T, D)
-        Returns:
-            per_channel_features: (B, P, D, K)  # concatenated across processors
+        Get the raw feature dimension K from tokenizer (if applicable).
+
+        Used for MSP reconstruction head that predicts raw features.
+        Returns 0 if tokenizer doesn't expose raw features.
         """
-        with torch.no_grad():
-            B, P, T, D = patches.shape
-            patches_merged = patches.view(B * P, T, D)  # (B·P, T, D)
-
-            processed = []
-            for proc in self.processors:
-                proc_out = proc.process(patches_merged)  # (B·P, D, F_i) or (B·P, F_i)
-                if proc_out.ndim == 2:
-                    # If a processor returned (B·P, F_i), broadcast across channels (D)
-                    proc_out = proc_out.unsqueeze(1).expand(-1, D, -1)  # (B·P, D, F_i)
-                processed.append(proc_out)
-
-            features_concat = torch.cat(processed, dim=-1)              # (B·P, D, K)
-            per_channel_features = features_concat.view(B, P, D, -1)    # (B, P, D, K)
-            return per_channel_features
+        if hasattr(self.tokenizer, 'get_raw_feature_dim'):
+            return self.tokenizer.get_raw_feature_dim()
+        return 0
 
     # -------------------- per-(patch,channel) scale token from RAW signal --------------------
     def _compute_scale_token_from_signal(
         self,
-        patches: torch.Tensor,                      # (B,P,T,D) raw time-series
-        valid_patch_mask: Optional[torch.Tensor],   # (B,P) True=valid
+        patches,                                                 # (B,P,T,D) or Dict[stream -> (B,P,T_stream,D_stream)]
+        valid_patch_mask: Optional[torch.Tensor] = None,        # (B,P) True=valid
+        stream_mask: Optional[torch.Tensor] = None,             # (B,P,D) True=channel present
     ) -> torch.Tensor:
         """
         Stats over the time dimension T for each (patch, channel):
           [min, max, mean, std, rms, log-energy]
-        Returns: (B, P, D, 6)
+        Returns: (B, P, D, 6) where D=44 for multi-stream or D=original for single tensor
         """
-        B, P, T, D = patches.shape
-        x = patches  # (B,P,T,D)
+        # Handle dict input (multi-stream native rate)
+        if isinstance(patches, dict):
+            # Get dims from first stream
+            first_stream = next(iter(patches.values()))
+            B, P = first_stream.shape[:2]
+            device = first_stream.device
 
-        # Compute stats over T
-        x_min  = x.amin(dim=2)                                    # (B,P,D)
-        x_max  = x.amax(dim=2)                                    # (B,P,D)
-        x_mean = x.mean(dim=2)                                    # (B,P,D)
-        x_std  = x.std(dim=2, unbiased=False)                     # (B,P,D)
-        mean_sq = x.pow(2).mean(dim=2)                            # (B,P,D)
-        rms   = (mean_sq + self._norm_eps).sqrt()                 # (B,P,D)
-        loge  = (mean_sq + self._norm_eps).log()                  # (B,P,D)
+            # Process each stream independently and concatenate
+            # Streams are processed in sorted order for deterministic channel layout
+            stream_names = sorted(patches.keys())
+            stream_scales = []
 
-        scale_tok = torch.stack([x_min, x_max, x_mean, x_std, rms, loge], dim=-1)  # (B,P,D,6)
+            for stream_name in stream_names:
+                stream_patches = patches[stream_name]
+                # stream_patches: (B, P, T_stream, D_stream)
+                x = stream_patches
 
-        # Zero-out invalid patches (keeps shapes stable)
+                # Compute stats over T
+                x_min  = x.amin(dim=2)  # (B,P,D_stream)
+                x_max  = x.amax(dim=2)
+                x_mean = x.mean(dim=2)
+                x_std  = x.std(dim=2, unbiased=False)
+                mean_sq = x.to(torch.float64).pow(2).mean(dim=2).to(x.dtype)
+                rms   = (mean_sq + self._norm_eps).sqrt()
+                loge  = (mean_sq + self._norm_eps).log()
+
+                stream_scale = torch.stack([x_min, x_max, x_mean, x_std, rms, loge], dim=-1)  # (B,P,D_stream,6)
+                stream_scales.append(stream_scale)
+
+            # Concatenate all streams along channel dimension
+            scale_tok = torch.cat(stream_scales, dim=2)  # (B, P, D_total, 6)
+        else:
+            # Single tensor input (backward compatible)
+            B, P, T, D = patches.shape
+            x = patches  # (B,P,T,D)
+
+            # Compute stats over T
+            x_min  = x.amin(dim=2)                                    # (B,P,D)
+            x_max  = x.amax(dim=2)                                    # (B,P,D)
+            x_mean = x.mean(dim=2)                                    # (B,P,D)
+            x_std  = x.std(dim=2, unbiased=False)                     # (B,P,D)
+            # use float64 for pow(2) to avoid overflow
+            mean_sq = x.to(torch.float64).pow(2).mean(dim=2).to(x.dtype) # (B,P,D)
+            rms   = (mean_sq + self._norm_eps).sqrt()                 # (B,P,D)
+            loge  = (mean_sq + self._norm_eps).log()                  # (B,P,D)
+
+            scale_tok = torch.stack([x_min, x_max, x_mean, x_std, rms, loge], dim=-1)  # (B,P,D,6)
+
+        # Zero-out invalid patches/channels (keeps shapes stable)
         if valid_patch_mask is not None:
             m = valid_patch_mask.to(scale_tok.dtype).unsqueeze(-1).unsqueeze(-1)   # (B,P,1,1)
+            scale_tok = scale_tok * m
+
+        if stream_mask is not None:
+            m = stream_mask.to(scale_tok.dtype).unsqueeze(-1)  # (B,P,D,1)
             scale_tok = scale_tok * m
 
         # NaN/Inf safety
@@ -222,25 +281,34 @@ class TSFMEncoder(nn.Module):
     def _normalize_scale_token(
         self,
         scale_tok: torch.Tensor,                    # (B,P,D,6)
-        valid_patch_mask: Optional[torch.Tensor],   # (B,P)
+        mask: Optional[torch.Tensor],               # (B,P) or (B,P,D)
     ) -> torch.Tensor:
         """Sequence-wise standardization so tokens reflect relative magnitude per sample."""
         B, P, D, F = scale_tok.shape
-        if valid_patch_mask is None:
-            mask = torch.ones(B, P, D, F, device=scale_tok.device, dtype=scale_tok.dtype)
+        if mask is None:
+            mask_4d = torch.ones(B, P, D, F, device=scale_tok.device, dtype=scale_tok.dtype)
         else:
-            mask = valid_patch_mask.to(scale_tok.dtype).unsqueeze(-1).unsqueeze(-1)
-            mask = mask.expand(-1, -1, D, F)
+            # Handle both (B,P) and (B,P,D) masks
+            if mask.ndim == 2:
+                # (B,P) -> (B,P,D,F)
+                mask_4d = mask.to(scale_tok.dtype).unsqueeze(-1).unsqueeze(-1)
+                mask_4d = mask_4d.expand(-1, -1, D, F)
+            elif mask.ndim == 3:
+                # (B,P,D) -> (B,P,D,F)
+                mask_4d = mask.to(scale_tok.dtype).unsqueeze(-1)
+                mask_4d = mask_4d.expand(-1, -1, -1, F)
+            else:
+                raise ValueError(f"mask must be (B,P) or (B,P,D), got shape {mask.shape}")
 
         # zero already-invalid tokens stay zero; mask ensures they don't influence stats
-        masked_values = scale_tok * mask
-        denom = mask.sum(dim=(1, 2), keepdim=True).clamp_min(1.0)
+        masked_values = scale_tok * mask_4d
+        denom = mask_4d.sum(dim=(1, 2), keepdim=True).clamp_min(1.0)
         mean = masked_values.sum(dim=(1, 2), keepdim=True) / denom
-        var = ((scale_tok - mean) * mask).pow(2).sum(dim=(1, 2), keepdim=True) / denom
+        var = ((scale_tok - mean) * mask_4d).pow(2).sum(dim=(1, 2), keepdim=True) / denom
         std = var.sqrt().clamp_min(self._norm_eps)
         normalized = (scale_tok - mean) / std
         # keep pads at zero
-        normalized = normalized * mask
+        normalized = normalized * mask_4d
         return torch.nan_to_num(normalized, nan=0.0, posinf=0.0, neginf=0.0)
 
     # ---------------- unified positional builder ----------------
@@ -249,8 +317,19 @@ class TSFMEncoder(nn.Module):
         Build positional/meta encodings with sinusoidal patch index, learned channel id, and patch size.
         Each source: Linear(E->F) -> LayerNorm(F) -> scalar gate α_i. Combine and scale by 1/sqrt(n_streams).
         """
-        B, P, T, D = batch["patches"].shape
-        device = batch["patches"].device
+        patches = batch["patches"]
+
+        # Handle dict input (multi-stream native rate)
+        if isinstance(patches, dict):
+            first_stream = next(iter(patches.values()))
+            B, P, T = first_stream.shape[:3]
+            device = first_stream.device
+
+            # Compute total channels dynamically from all streams
+            D = sum(stream_patches.shape[3] for stream_patches in patches.values())
+        else:
+            B, P, T, D = patches.shape
+            device = patches.device
 
         if D > self.emb_channel.num_embeddings:
             raise ValueError(
@@ -315,54 +394,111 @@ class TSFMEncoder(nn.Module):
     @staticmethod
     def _safe_rms(x: torch.Tensor, pad_mask: Optional[torch.Tensor], for_output: bool, eps: float = 1e-8) -> torch.Tensor:
         """
-        RMS over all elements, optionally ignoring padded positions.
+        RMS per-sample, optionally ignoring padded positions.
         x: (B,P,D,F) if for_output=False, else (B,P,F)
-        pad_mask: (B,P) True=valid
+        pad_mask: (B,P) or (B,P,D) True=valid
+        Returns: (B, 1, 1, 1) or (B, 1, 1)
         """
         if pad_mask is None:
-            mean_sq = x.pow(2).mean()
+            # Keep batch dim
+            dims_to_reduce = tuple(range(1, x.ndim))
+            mean_sq = x.pow(2).mean(dim=dims_to_reduce, keepdim=True)
             return torch.sqrt(mean_sq + eps)
+
         m = pad_mask.to(x.dtype)
+        dims_to_reduce = tuple(range(1, x.ndim))
+
+        # Handle both (B,P) and (B,P,D) masks
         if for_output:
-            m = m.unsqueeze(-1)                        # (B,P,1)
+            if m.ndim == 2:
+                m = m.unsqueeze(-1)  # (B,P) -> (B,P,1)
+            elif m.ndim == 3:
+                # (B,P,D) but x is (B,P,F) - reduce over D first
+                # This shouldn't happen in practice for output mode
+                raise ValueError("output mode with (B,P,D) mask not supported")
         else:
-            m = m.unsqueeze(-1).unsqueeze(-1)         # (B,P,1,1)
-        num = (x * x * m).sum()
-        den = m.sum().clamp_min(1.0)
+            # x is (B,P,D,F)
+            if m.ndim == 2:
+                m = m.unsqueeze(-1).unsqueeze(-1)  # (B,P) -> (B,P,1,1)
+            elif m.ndim == 3:
+                m = m.unsqueeze(-1)  # (B,P,D) -> (B,P,D,1)
+
+        num = (x * x * m).sum(dim=dims_to_reduce, keepdim=True)
+        den = m.sum(dim=dims_to_reduce, keepdim=True).clamp_min(1.0)
         mean_sq = num / den
         return torch.sqrt(mean_sq + eps)
 
     # --------------- public forward APIs ----------------
     def encode_batch(self, batch: Dict) -> Dict:
-        device = batch["patches"].device
-
-        # ---- RAW features (pre-normalization) ----
-        raw_feats = self._extract_features(batch["patches"])  # (B,P,D,K)
-
-        # ---- PAD-MASK handling (zero padded before stats) ----
+        patches = batch["patches"]
+        device = patches.device if not isinstance(patches, dict) else next(iter(patches.values())).device
         valid_patch_mask = batch.get("pad_mask", None)  # (B,P) True=valid
-        if valid_patch_mask is not None:
-            vb = valid_patch_mask.to(raw_feats.dtype).unsqueeze(-1).unsqueeze(-1)  # (B,P,1,1)
-            raw_feats = raw_feats * vb
+
+        # ===== TOKENIZATION (NEW: uses tokenizer interface) =====
+        tokenizer_output = self._tokenize_patches(batch["patches"], metadata=batch)
+
+        # Handle dict vs tensor output from tokenizer
+        if isinstance(tokenizer_output.tokens, dict):
+            # Tokenizer returned dict format - concatenate streams
+            # Use sorted order for deterministic channel layout
+            stream_names = sorted(tokenizer_output.tokens.keys())
+            token_list = [tokenizer_output.tokens[name] for name in stream_names]
+            content_semantic = torch.cat(token_list, dim=2)  # (B, P, D_total, F)
+
+            # Build stream mask to track which channels are present
+            B, P = content_semantic.shape[:2]
+            device = content_semantic.device
+            stream_mask = torch.ones(B, P, content_semantic.shape[2], dtype=torch.bool, device=device)
+
+            # Handle raw features if dict
+            if tokenizer_output.raw_features is not None and isinstance(tokenizer_output.raw_features, dict):
+                raw_feat_list = [tokenizer_output.raw_features[name] for name in stream_names]
+                raw_feats = torch.cat(raw_feat_list, dim=2)  # (B, P, D_total, K)
+            else:
+                raw_feats = tokenizer_output.raw_features
         else:
-            vb = None
+            # Tokenizer returned tensor format (backward compatible)
+            content_semantic = tokenizer_output.tokens  # (B,P,D,F)
+            raw_feats = tokenizer_output.raw_features  # (B,P,D,K) or None
+            stream_mask = tokenizer_output.stream_mask  # (B,P,D) or None
+
+        # ===== STREAM MASK handling (multi-stream native rate support) =====
+        # stream_mask: (B,P,D) boolean - True = channel/stream is present
+        # Already set above based on tokenizer output format
+
+        # Combine patch-level mask (B,P) with channel-level mask (B,P,D)
+        # Final mask: (B,P,D) where True = both patch is valid AND channel is present
+        if valid_patch_mask is not None and stream_mask is not None:
+            # Broadcast patch mask to (B,P,D)
+            combined_mask = valid_patch_mask.unsqueeze(-1) & stream_mask  # (B,P,D)
+        elif stream_mask is not None:
+            combined_mask = stream_mask  # (B,P,D)
+        elif valid_patch_mask is not None:
+            # Legacy: just patch-level masking
+            B, P, D, _ = content_semantic.shape
+            combined_mask = valid_patch_mask.unsqueeze(-1).expand(B, P, D)  # (B,P,D)
+        else:
+            combined_mask = None
+
+        # ---- PAD-MASK handling (zero padded tokens) ----
+        if combined_mask is not None:
+            mask_4d = combined_mask.to(content_semantic.dtype).unsqueeze(-1)  # (B,P,D,1)
+            content_semantic = content_semantic * mask_4d
+            if raw_feats is not None:
+                raw_feats = raw_feats * mask_4d
 
         # ---- per-(patch,channel) scale token from RAW signal (B,P,D,6) -> bias (B,P,D,F) ----
-        scale_tok_signal = self._compute_scale_token_from_signal(batch["patches"], valid_patch_mask)  # (B,P,D,6)
-        scale_tok_normalized = self._normalize_scale_token(scale_tok_signal, valid_patch_mask)
+        scale_tok_signal = self._compute_scale_token_from_signal(batch["patches"], valid_patch_mask, stream_mask)  # (B,P,D,6)
+        scale_tok_normalized = self._normalize_scale_token(scale_tok_signal, combined_mask)
         scale_bias = self.scale_mlp(scale_tok_normalized)  # (B,P,D,F)
 
-        # ---- token-wise LayerNorm over feature dim K ----
-        small_features = F.layer_norm(raw_feats, normalized_shape=(raw_feats.size(-1),))  # (B,P,D,K)
-
-        # ---- CONTENT & POSITION ----
-        content_semantic    = self.linear_proj(small_features)                  # (B,P,D,F)
+        # ---- POSITION ----
         positional_semantic = self._compute_positional(batch, for_output=False) # (B,P,D,F)
 
         # Mask-aware RMS match before fuse (no grad through scale)
         with torch.no_grad():
-            r_ref = self._safe_rms(content_semantic, valid_patch_mask, for_output=False)
-            r_pos = self._safe_rms(positional_semantic, valid_patch_mask, for_output=False)
+            r_ref = self._safe_rms(content_semantic, combined_mask, for_output=False)
+            r_pos = self._safe_rms(positional_semantic, combined_mask, for_output=False)
         pos_scale = (self.pos_lambda * (r_ref / r_pos.clamp_min(1e-8))).clamp(0.1, 10.0)
 
         fused_semantic = content_semantic + positional_semantic * pos_scale
@@ -372,7 +508,7 @@ class TSFMEncoder(nn.Module):
         fused_semantic = torch.nan_to_num(fused_semantic, nan=0.0, posinf=0.0, neginf=0.0)
 
         # ---- OPTIONAL CHANNEL SHUFFLE (after pos enc; before attention) ----
-        do_shuffle = True
+        do_shuffle = self.shuffle_channels and self.training
         if do_shuffle:
             D = fused_semantic.size(2)
             perm = torch.randperm(D, device=fused_semantic.device)
@@ -381,11 +517,11 @@ class TSFMEncoder(nn.Module):
 
         # attention masks for padding
         flattened_key_padding_mask = None
-        if valid_patch_mask is not None:
+        if combined_mask is not None:
             Bsz, Patches, Channels, _ = fused_semantic.shape
-            valid_flattened = valid_patch_mask.unsqueeze(-1).expand(Bsz, Patches, Channels).reshape(Bsz, Patches * Channels)  # (B,P*D)
+            valid_flattened = combined_mask.reshape(Bsz, Patches * Channels)  # (B,P*D)
             flattened_key_padding_mask = ~valid_flattened
-            fused_semantic = fused_semantic * vb  # zero pads
+            fused_semantic = fused_semantic * mask_4d  # zero pads
 
         # Self-attend long sequence
         long_tokens = self.transformer(
@@ -394,8 +530,9 @@ class TSFMEncoder(nn.Module):
         )  # (B,P,D,F)
 
         batch["features"] = fused_semantic
-        batch["small_features"] = small_features
+        batch["small_features"] = raw_feats  # Raw features from tokenizer (B,P,D,K)
         batch["tokens"]   = long_tokens
+        batch["encodings"] = long_tokens  # Alias for consistency
         return batch
 
 
@@ -406,29 +543,55 @@ class TSFMEncoder(nn.Module):
 
         Returns:
           small_features:   (B,P,D,K)  normalized (LayerNorm over K)
-          valid_patch_mask: (B,P)      True = valid
+          combined_mask:    (B,P,D)    True = valid patch AND present channel
           K_small:          int        == K
           scale_tok:        (B,P,D,6)  per (patch, channel) raw-signal stats
         """
-        # RAW features
-        raw_feats = self._extract_features(batch["patches"])  # (B,P,D,K)
-        valid_patch_mask = batch.get("pad_mask", None)        # (B,P) True=valid
-        if valid_patch_mask is not None:
-            vb = valid_patch_mask.to(raw_feats.dtype).unsqueeze(-1).unsqueeze(-1)  # (B,P,1,1)
-            raw_feats = raw_feats * vb
+        # ===== RAW FEATURES (using tokenizer) =====
+        tokenizer_output = self._tokenize_patches(batch["patches"], metadata=batch)
+        raw_feats = tokenizer_output.raw_features  # (B,P,D,K)
+
+        if raw_feats is None:
+            raise ValueError("MSP pretraining requires tokenizer to return raw_features. "
+                           "Ensure tokenizer has return_raw_features=True")
+
+        # ===== STREAM MASK handling (multi-stream native rate support) =====
+        valid_patch_mask = batch.get("pad_mask", None)  # (B,P) True=valid
+        stream_mask = tokenizer_output.stream_mask       # (B,P,D) or None
+
+        # Combine patch-level mask (B,P) with channel-level mask (B,P,D)
+        if valid_patch_mask is not None and stream_mask is not None:
+            combined_mask = valid_patch_mask.unsqueeze(-1) & stream_mask  # (B,P,D)
+        elif stream_mask is not None:
+            combined_mask = stream_mask  # (B,P,D)
+        elif valid_patch_mask is not None:
+            B, P, D, _ = raw_feats.shape
+            combined_mask = valid_patch_mask.unsqueeze(-1).expand(B, P, D)  # (B,P,D)
+        else:
+            combined_mask = None
+
+        # Apply mask to raw features
+        if combined_mask is not None:
+            mask_4d = combined_mask.to(raw_feats.dtype).unsqueeze(-1)  # (B,P,D,1)
+            raw_feats = raw_feats * mask_4d
 
         # Per-token LayerNorm for SMALL targets
         small_features = F.layer_norm(raw_feats, normalized_shape=(raw_feats.size(-1),))  # (B,P,D,K)
 
         # SCALE TOKEN from RAW SIGNAL (not features)
-        scale_tok = self._compute_scale_token_from_signal(batch["patches"], valid_patch_mask)  # (B,P,D,6)
+        scale_tok = self._compute_scale_token_from_signal(
+            batch["patches"],
+            valid_patch_mask,
+            stream_mask
+        )  # (B,P,D,6)
 
         K_small = small_features.size(-1)
-        return small_features, valid_patch_mask, K_small, scale_tok
+        return small_features, combined_mask, K_small, scale_tok
 
-    def MSP_pretraining_sample_patch_mask(self, B: int, P: int, D: int, device, valid_patch_mask: Optional[torch.Tensor]):
+    def MSP_pretraining_sample_patch_mask(self, B: int, P: int, D: int, device, valid_mask: Optional[torch.Tensor]):
         """
         Patch-only mask; respects kept patches and padding. Returns (B,P,D) bool where True indicates masked tokens.
+        valid_mask can be (B,P) or (B,P,D).
         """
         ratio_patch = float(self.pre_args.get("ratio_patch", 0.30))
         keep_ratio  = float(self.pre_args.get("keep_patch_ratio", 0.00))
@@ -445,14 +608,20 @@ class TSFMEncoder(nn.Module):
                 keep_bool.scatter_(1, keep_idx, True)
                 token_full_mask = token_full_mask & ~keep_bool.unsqueeze(-1).expand_as(token_full_mask)
 
-        if valid_patch_mask is not None:
-            token_full_mask = token_full_mask & valid_patch_mask.unsqueeze(-1).expand_as(token_full_mask)
+        if valid_mask is not None:
+            if valid_mask.ndim == 2:
+                # (B,P) -> (B,P,D)
+                token_full_mask = token_full_mask & valid_mask.unsqueeze(-1).expand_as(token_full_mask)
+            elif valid_mask.ndim == 3:
+                # (B,P,D) - direct AND
+                token_full_mask = token_full_mask & valid_mask
 
         return token_full_mask  # (B,P,D)
 
-    def MSP_pretraining_corrupt_inputs(self, content_semantic, positional_semantic, token_full_mask, valid_patch_mask):
+    def MSP_pretraining_corrupt_inputs(self, content_semantic, positional_semantic, token_full_mask, valid_mask):
         """
         CONTENT-ONLY corruption + add positional (after masking) + mask flag embed; RMS matched.
+        valid_mask can be (B,P) or (B,P,D).
         """
         masked_content = torch.where(
             token_full_mask.unsqueeze(-1),                  # (B,P,D,1)
@@ -462,24 +631,37 @@ class TSFMEncoder(nn.Module):
 
         masked_flag = token_full_mask.unsqueeze(-1).to(masked_content.dtype)  # (B,P,D,1)
         with torch.no_grad():
-            r_ref = self._safe_rms(masked_content, valid_patch_mask, for_output=False)
-            r_pos = self._safe_rms(positional_semantic, valid_patch_mask, for_output=False)
+            r_ref = self._safe_rms(masked_content, valid_mask, for_output=False)
+            r_pos = self._safe_rms(positional_semantic, valid_mask, for_output=False)
         pos_scale = (self.pos_lambda * (r_ref / r_pos.clamp_min(1e-8))).clamp(0.1, 10.0)
 
         corrupted_input = masked_content + positional_semantic * pos_scale + masked_flag * self.mask_embed
         corrupted_input = torch.nan_to_num(corrupted_input, nan=0.0, posinf=0.0, neginf=0.0)
 
-        if valid_patch_mask is not None:
-            vb = valid_patch_mask.to(corrupted_input.dtype).unsqueeze(-1).unsqueeze(-1)  # (B,P,1,1)
-            corrupted_input = corrupted_input * vb
+        if valid_mask is not None:
+            if valid_mask.ndim == 2:
+                # (B,P) -> (B,P,1,1)
+                mask_4d = valid_mask.to(corrupted_input.dtype).unsqueeze(-1).unsqueeze(-1)
+            elif valid_mask.ndim == 3:
+                # (B,P,D) -> (B,P,D,1)
+                mask_4d = valid_mask.to(corrupted_input.dtype).unsqueeze(-1)
+            corrupted_input = corrupted_input * mask_4d
         return corrupted_input  # (B,P,D,F)
 
-    def MSP_pretraining_run_transformer(self, fused_input: torch.Tensor, valid_patch_mask: Optional[torch.Tensor]):
-        """Run self-attention over long sequence; returns (B,P,D,F) and uses flattened (B,P·D) mask."""
+    def MSP_pretraining_run_transformer(self, fused_input: torch.Tensor, valid_mask: Optional[torch.Tensor]):
+        """
+        Run self-attention over long sequence; returns (B,P,D,F) and uses flattened (B,P·D) mask.
+        valid_mask can be (B,P) or (B,P,D).
+        """
         flattened_key_padding_mask = None
-        if valid_patch_mask is not None:
+        if valid_mask is not None:
             B, P, D, F = fused_input.shape
-            valid_flattened = valid_patch_mask.unsqueeze(-1).expand(B, P, D).reshape(B, P * D)  # (B,P*D)
+            if valid_mask.ndim == 2:
+                # (B,P) -> (B,P,D) -> (B,P*D)
+                valid_flattened = valid_mask.unsqueeze(-1).expand(B, P, D).reshape(B, P * D)
+            elif valid_mask.ndim == 3:
+                # (B,P,D) -> (B,P*D)
+                valid_flattened = valid_mask.reshape(B, P * D)
             flattened_key_padding_mask = ~valid_flattened  # True = pad
         long_tokens = self.transformer(
             fused_input,
@@ -520,24 +702,29 @@ class TSFMEncoder(nn.Module):
         device = batch["patches"].device
 
         # Inform processors (if they visualize per P)
-        from encoder.processors.debug import set_current_num_patches
+        from patch_tokenizers.human_engineered.processors.debug import set_current_num_patches
         set_current_num_patches(P)
 
         # Build SMALL (LayerNorm-normalized) targets + SCALE TOKEN (from RAW signal)
-        small_features, valid_patch_mask, K_small, scale_tok = self.MSP_pretraining_build_small_targets(batch)  # (B,P,D,K),(B,P,D,6)
+        small_features, combined_mask, K_small, scale_tok = self.MSP_pretraining_build_small_targets(batch)  # (B,P,D,K),(B,P,D,6)
         targets_small = small_features.detach()
 
-        # CONTENT & POSITIONAL
-        content_semantic    = self.linear_proj(small_features)                  # (B,P,D,F)
+        # Extract original valid_patch_mask for methods that expect (B,P)
+        valid_patch_mask = batch.get("pad_mask", None)  # (B,P) True=valid
+
+        # ===== CONTENT & POSITIONAL (using tokenizer) =====
+        tokenizer_output = self._tokenize_patches(batch["patches"], metadata=batch)
+        content_semantic = tokenizer_output.tokens  # (B,P,D,F)
         positional_semantic = self._compute_positional(batch, for_output=False) # (B,P,D,F)
 
         # SCALE BIAS (per patch/channel)
-        scale_bias = self.scale_mlp(self.scale_in_norm(scale_tok))  # (B,P,D,F)
+        scale_tok_normalized = self._normalize_scale_token(scale_tok, combined_mask)  # Now accepts (B,P,D)
+        scale_bias = self.scale_mlp(scale_tok_normalized)  # (B,P,D,F)
 
         # Masking
-        token_full_mask = self.MSP_pretraining_sample_patch_mask(B, P, D, device, valid_patch_mask)  # (B,P,D) bool
+        token_full_mask = self.MSP_pretraining_sample_patch_mask(B, P, D, device, combined_mask)  # (B,P,D) bool
         num_masked_tokens = int(token_full_mask.sum().item())
-        total_tokens = (int(valid_patch_mask.sum().item()) * D) if (valid_patch_mask is not None) else (B * P * D)
+        total_tokens = int(combined_mask.sum().item()) if (combined_mask is not None) else (B * P * D)
         print(f"[MSPDBG] patch mask: masked={num_masked_tokens}/{total_tokens} ({num_masked_tokens/max(total_tokens,1):.2%})")
 
         # ---- CORRUPTION: mask CONTENT only, then add POSITIONALS (after masking) ----
@@ -545,7 +732,7 @@ class TSFMEncoder(nn.Module):
             content_semantic,               # (B,P,D,F)  unfused CONTENT
             positional_semantic,            # (B,P,D,F)  unfused POSITIONALS
             token_full_mask,                # (B,P,D)    bool
-            valid_patch_mask                # (B,P)      True=valid
+            combined_mask                   # (B,P,D)    True=valid patch AND present channel
         )  # -> (B,P,D,F)
 
         # ---- ADD PER-PATCH SCALE BIAS AFTER corruption so masked tokens keep it ----
@@ -553,7 +740,7 @@ class TSFMEncoder(nn.Module):
         corrupted_input = torch.nan_to_num(corrupted_input, nan=0.0, posinf=0.0, neginf=0.0)
 
         # Transformer
-        long_tokens = self.MSP_pretraining_run_transformer(corrupted_input, valid_patch_mask)  # (B,P,D,F)
+        long_tokens = self.MSP_pretraining_run_transformer(corrupted_input, combined_mask)  # (B,P,D,F)
 
         # Reconstruct SMALL (LayerNorm) features
         recon_small = self.recon_head(long_tokens)  # (B,P,D,K_small)

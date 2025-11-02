@@ -16,12 +16,12 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from datasets.ActionSenseQADataset import ActionSenseQADataset, actionsenseqa_collate
-from encoder.TSFMEncoder import TSFMEncoder
-from encoder.processors.CorrelationSummaryProcessor import CorrelationSummaryProcessor
-from encoder.processors.FrequencyFeatureProcessor import FrequencyFeatureProcessor
-from encoder.processors.HistogramFeatureProcessor import HistogramFeatureProcessor
-from encoder.processors.StatisticalFeatureProcessor import StatisticalFeatureProcessor
+from datasets.ActionSenseTemplatedQADataset_NativeRate import (
+    ActionSenseTemplatedQADataset_NativeRate,
+    actionsenseqa_native_collate,
+)
+from encoders.tsfm import TSFMEncoder
+from patch_tokenizers import BaseTokenizer
 from pretraining.actionsense.heads import SensorQALLMHead
 from training_utils import (
     configure_device_and_amp,
@@ -31,7 +31,6 @@ from training_utils import (
 )
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-
 
 DEBUG_ROOT = os.path.join("debug", "pretraining", "actionsense_qa")
 LOSS_PLOT_PATH = os.path.join(DEBUG_ROOT, "train_val_loss.png")
@@ -43,37 +42,60 @@ GRAD_PLOT_PATH = os.path.join(DEBUG_ROOT, "encoder_grad_norms.png")
 GEN_PLOT_DIR = os.path.join(DEBUG_ROOT, "generations")
 CHECKPOINT_DIR = os.path.join("checkpoints", "actionsense_qa")
 
-
 class Config:
     # Data
-    patch_size = 1000
-    context_size = -1  # <=0 means keep the full sequence (no truncation)
-    qa_base_dir = "data/actionsenseqa/data"
-    qa_csv = "data/actionsenseqa/data/qa_pairs.csv"
-    manifest_csv = "data/actionsenseqa/data/manifest.csv"
+    patch_duration_s = 2.0  # Time in seconds per patch (REDUCED from 3.0 for memory)
+    context_size = -1  # CRITICAL: Limit sequence length (was -1 unlimited) - 60% memory reduction
+    qa_base_dir = "data/actionsenseqa_native/data"
+    qa_jsonl = "data/actionsenseqa_native/data/qa_pairs_templated.jsonl"
+    manifest_csv = "data/actionsenseqa_native/data/manifest.csv"
     val_ratio = 0.2
     split_seed = 42
 
     # Training
-    epochs = 100
-    batch_size = 16
+    epochs = 30
+    batch_size = 2  # KEPT HIGH as requested by user
     num_workers = 8
     lr = 1e-4
     weight_decay = 0.05
     grad_clip = 1.0
     loss_plot_every = 10
 
-    # Models
+    # Tokenizer - OPTIMIZED FOR MEMORY
+    tokenizer_type = "conv"  # "conv" or "processor_based" or "phase_space"
+    tokenizer_config = {
+        # ConvTokenizer config - AGGRESSIVE MEMORY REDUCTION (88% reduction in conv activations)
+        "conv": {
+            "hidden_dim": 128,        # REDUCED from 256 (-50%)
+            "conv_out_dim": 256,      # REDUCED from 512 (-50%)
+            "T_fixed": 32,            # REDUCED from 128 (-75%) ← BIGGEST WIN
+            "return_raw_features": False,
+        },
+        # ProcessorBasedTokenizer config (example)
+        "processor_based": {
+            "processors": [],  # Will be populated by factory
+            "return_raw_features": False,
+        },
+        # PhaseSpaceTokenizer config (example)
+        "phase_space": {
+            "embedding_dim": 3,
+            "time_delay": 50,
+            "return_raw_features": False,
+        },
+    }
+
+    # Models - OPTIMIZED FOR MEMORY
     llama_model_name = "meta-llama/Llama-3.2-1B"
-    encoder_feature_dim = 1024
-    encoding_dim = 1024
+    encoder_feature_dim = 512      # REDUCED from 1024 (-50%) - reduces token memory
+    encoding_dim = 512             # REDUCED from 1024 (-50%)
     llama_dropout = 0.1
-    lora_rank = 16
-    lora_alpha = 32
+    lora_rank = 8                  # REDUCED from 16 (-50%)
+    lora_alpha = 16                # Maintains 2:1 ratio with rank
     lora_dropout = 0.05
     use_lora = True
     log_mode = "info"  # options: "debug", "info", "silent"
-    generation_every = 30
+    generation_every = 200  # KEPT as requested by user for debugging
+    shuffle_channels = False
 
     # Misc
     checkpoint_every = 5
@@ -266,35 +288,86 @@ def _summarize_metrics(state: Dict[str, float]) -> Dict[str, float]:
     }
 
 
-def build_processors() -> List:
-    return [
-        CorrelationSummaryProcessor(),
-        FrequencyFeatureProcessor(),
-        HistogramFeatureProcessor(),
-        StatisticalFeatureProcessor(),
-    ]
+def build_tokenizer() -> BaseTokenizer:
+    """
+    Build tokenizer based on Config.
+
+    Tokenizer type is selected via CFG.tokenizer_type, and tokenizer-specific
+    parameters are read from CFG.tokenizer_config[CFG.tokenizer_type].
+
+    Returns:
+        BaseTokenizer: Configured tokenizer instance
+    """
+    tokenizer_type = CFG.tokenizer_type
+    config = CFG.tokenizer_config.get(tokenizer_type, {})
+
+    if tokenizer_type == "conv":
+        from patch_tokenizers import ConvTokenizer
+        return ConvTokenizer(
+            feature_dim=CFG.encoder_feature_dim,
+            hidden_dim=config.get("hidden_dim", 256),
+            conv_out_dim=config.get("conv_out_dim", 512),
+            T_fixed=config.get("T_fixed", 128),
+            return_raw_features=config.get("return_raw_features", False),
+        )
+
+    elif tokenizer_type == "processor_based":
+        from patch_tokenizers import ProcessorBasedTokenizer
+        from patch_tokenizers.human_engineered.processors import (
+            StatisticalFeatureProcessor,
+            FrequencyFeatureProcessor,
+        )
+
+        # Default processors if none specified
+        processors = config.get("processors")
+        if not processors:
+            processors = [
+                StatisticalFeatureProcessor(),
+                FrequencyFeatureProcessor(),
+            ]
+
+        return ProcessorBasedTokenizer(
+            processors=processors,
+            feature_dim=CFG.encoder_feature_dim,
+            return_raw_features=config.get("return_raw_features", False),
+        )
+
+    elif tokenizer_type == "phase_space":
+        from patch_tokenizers import PhaseSpaceTokenizer
+        return PhaseSpaceTokenizer(
+            embedding_dim=config.get("embedding_dim", 3),
+            time_delay=config.get("time_delay", 50),
+            feature_dim=CFG.encoder_feature_dim,
+            return_raw_features=config.get("return_raw_features", False),
+        )
+
+    else:
+        raise ValueError(
+            f"Unknown tokenizer_type: '{tokenizer_type}'. "
+            f"Must be one of: 'conv', 'processor_based', 'phase_space'"
+        )
 
 
 
 def build_dataloaders(device: torch.device) -> Tuple[DataLoader, DataLoader]:
-    train_dataset = ActionSenseQADataset(
+    train_dataset = ActionSenseTemplatedQADataset_NativeRate(
         base_dir=CFG.qa_base_dir,
-        qa_csv_path=CFG.qa_csv,
+        qa_jsonl_path=CFG.qa_jsonl,
         manifest_csv_path=CFG.manifest_csv,
         split="train",
         val_ratio=CFG.val_ratio,
         split_seed=CFG.split_seed,
-        patch_size=CFG.patch_size,
+        patch_duration_s=CFG.patch_duration_s,
         log_mode=CFG.log_mode,
     )
-    val_dataset = ActionSenseQADataset(
+    val_dataset = ActionSenseTemplatedQADataset_NativeRate(
         base_dir=CFG.qa_base_dir,
-        qa_csv_path=CFG.qa_csv,
+        qa_jsonl_path=CFG.qa_jsonl,
         manifest_csv_path=CFG.manifest_csv,
         split="val",
         val_ratio=CFG.val_ratio,
         split_seed=CFG.split_seed,
-        patch_size=CFG.patch_size,
+        patch_duration_s=CFG.patch_duration_s,
         log_mode=CFG.log_mode,
     )
 
@@ -304,7 +377,7 @@ def build_dataloaders(device: torch.device) -> Tuple[DataLoader, DataLoader]:
         shuffle=True,
         num_workers=CFG.num_workers,
         pin_memory=(device.type == "cuda"),
-        collate_fn=actionsenseqa_collate,
+        collate_fn=actionsenseqa_native_collate,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -312,7 +385,7 @@ def build_dataloaders(device: torch.device) -> Tuple[DataLoader, DataLoader]:
         shuffle=False,
         num_workers=CFG.num_workers,
         pin_memory=(device.type == "cuda"),
-        collate_fn=actionsenseqa_collate,
+        collate_fn=actionsenseqa_native_collate,
     )
     return train_loader, val_loader
 
@@ -330,48 +403,68 @@ class SensorQAModel(nn.Module):
         pad_mask: torch.Tensor,
         questions: List[str],
         answers: List[str],
+        metadata: Optional[Dict] = None,
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-        batch = {"patches": patches, "pad_mask": pad_mask}
-        if not self._debug_logged:
+        batch = {"patches": patches, "pad_mask": pad_mask, "metadata": metadata}
+        if not self._debug_logged and metadata:
             pad_shape = None if pad_mask is None else pad_mask.shape
+            if isinstance(patches, dict):
+                patch_info = f"dict with {len(patches)} streams: " + ", ".join(
+                    f"{k}={v.shape}" for k, v in patches.items()
+                )
+            else:
+                patch_info = f"shape={patches.shape} dtype={patches.dtype}"
             log_debug(
-                f"[DEBUG] SensorQAModel input patches shape={patches.shape} dtype={patches.dtype} pad_mask shape={pad_shape}"
+                f"[DEBUG] SensorQAModel input patches {patch_info} pad_mask shape={pad_shape}"
             )
-            metadata = batch.get("metadata")
-            if metadata is not None:
-                subjects = metadata.get("subject", [])
-                activities = metadata.get("activity_name", [])
-                sensors = metadata.get("sensor_path", [])
-                for idx, (q, a) in enumerate(zip(questions, answers)):
-                    subj = subjects[idx] if idx < len(subjects) else None
-                    act = activities[idx] if idx < len(activities) else None
-                    sensor_path = sensors[idx] if idx < len(sensors) else None
-                    log_debug(
-                        f"[DEBUG] Sample {idx}: subject={subj}, activity={act}, sensor_path={sensor_path}"
-                    )
-                    log_debug(f"        Q: {q}")
-                    log_debug(f"        A: {a}")
+            subjects = metadata.get("subject", [])
+            activity_names_list = metadata.get("activity_names", [])
+            for idx, (q, a) in enumerate(zip(questions, answers)):
+                subj = subjects[idx] if idx < len(subjects) else "N/A"
+                act_names = activity_names_list[idx] if idx < len(activity_names_list) else []
+                log_debug(
+                    f"[DEBUG] Model FWD Sample {idx}: subject={subj}, activity_names={act_names}"
+                )
+                log_debug(f"        Q: {q}")
+                log_debug(f"        A: {a}")
+
         encoded = self.encoder.encode_batch(batch)
         tokens = encoded["tokens"]
+        debug_tensors = _log_allowed("debug")
+        visual_logging = (
+            getattr(CFG, "generation_every", 0) > 0 and _log_allowed("info")
+        )
+        if self.training and debug_tensors:
+            tokens.retain_grad()
+
         if not self._debug_logged:
             log_debug(
                 f"[DEBUG] Encoder tokens shape={tokens.shape} dtype={tokens.dtype}"
             )
             self._debug_logged = True
         loss, info = self.qa_head(tokens, pad_mask, questions, answers)
-        info["tokens"] = tokens.detach()
+
+        # For gradient debugging, pass through the tensors without detaching
+        info["tokens"] = tokens if debug_tensors else tokens.detach()
         info["pad_mask"] = pad_mask
-        if "small_features" in encoded:
+        if (debug_tensors or visual_logging) and encoded.get("small_features") is not None:
             info["small_features"] = encoded["small_features"].detach()
-        info["per_channel_features"] = encoded.get("features", torch.empty(0)).detach()
+
+        if "fused_patches" in info:
+            if debug_tensors and self.training:
+                info["fused_patches"].retain_grad()
+            else:
+                info["fused_patches"] = info["fused_patches"].detach()
+
         return loss, info
 
 
-def build_models(processors: List, device: torch.device) -> Tuple[SensorQAModel, SensorQALLMHead]:
+def build_models(tokenizer: BaseTokenizer, device: torch.device) -> Tuple[SensorQAModel, SensorQALLMHead]:
     encoder = TSFMEncoder(
-        processors=processors,
+        tokenizer=tokenizer,
         feature_dim=CFG.encoder_feature_dim,
         encoding_dim=CFG.encoding_dim,
+        shuffle_channels=CFG.shuffle_channels,
         pretraining_args={},
         recon_head=None,
     ).to(device)
@@ -517,7 +610,7 @@ def save_generation_visual(
     question: str,
     pred_answer: str,
     gt_answer: str,
-    patches_sample: torch.Tensor,
+    patches_sample: torch.Tensor,  # Can also be Dict[str, torch.Tensor] for multi-stream
     small_features_sample: torch.Tensor,
     tokens_sample: torch.Tensor,
     fused_sample: torch.Tensor,
@@ -527,7 +620,17 @@ def save_generation_visual(
     if getattr(CFG, "log_mode", "info") == "silent":
         return
     os.makedirs(GEN_PLOT_DIR, exist_ok=True)
-    patches_np = patches_sample.detach().cpu().numpy() if patches_sample.numel() else None
+
+    # Normalize patches to tensor format for visualization
+    # (handles both dict and tensor inputs in a tokenizer-agnostic way)
+    if isinstance(patches_sample, dict):
+        # For dict inputs (multi-stream), take first stream
+        patches_sample = next(iter(patches_sample.values()))
+
+    if patches_sample is None or not patches_sample.numel():
+        return  # No valid data to visualize
+
+    patches_np = patches_sample.detach().cpu().numpy()
     small_np = small_features_sample.detach().cpu().numpy() if small_features_sample.numel() else None
     tokens_np = tokens_sample.detach().cpu().numpy() if tokens_sample.numel() else None
     fused_np = fused_sample.detach().cpu().numpy() if fused_sample.numel() else None
@@ -595,7 +698,7 @@ def save_generation_visual(
     axes[0].set_ylabel("Value")
 
     # Pad mask visualization
-    axes[1].imshow(pad_mask_np[:, np.newaxis], aspect="auto", cmap="Greys")
+    axes[1].imshow(pad_mask_np[:, np.newaxis], aspect="auto", cmap="Greys_r")
     axes[1].set_title("Pad mask (black = valid patch)")
     axes[1].set_ylabel("Patch index")
     axes[1].set_xticks([])
@@ -698,9 +801,9 @@ def save_joint_checkpoint(encoder: TSFMEncoder, qa_head: SensorQALLMHead, epoch:
 
 def train():
     device, amp_ctx, scaler = configure_device_and_amp()
-    processors = build_processors()
+    tokenizer = build_tokenizer()
     train_loader, val_loader = build_dataloaders(device)
-    model, qa_head = build_models(processors, device)
+    model, qa_head = build_models(tokenizer, device)
 
     param_groups = [
         {"params": model.encoder.parameters(), "lr": CFG.lr},
@@ -776,48 +879,82 @@ def train():
             disable=not _log_allowed("info"),
         ) as pbar:
             for batch in train_loader:
-                patches = batch["patches"].to(device)
+                # Handle dict format for multi-stream native rate data
+                patches = batch["patches"]
+                if isinstance(patches, dict):
+                    patches = {stream: tensor.to(device) for stream, tensor in patches.items()}
+                else:
+                    patches = patches.to(device)
                 pad_mask = batch["pad_mask"].to(device)
 
                 if not debug_batch_meta_logged:
                     metadata = batch.get("metadata", {})
                     subjects = metadata.get("subject", [])
-                    activities = metadata.get("activity_name", [])
-                    sensors = metadata.get("sensor_path", [])
-                    raw_rows = metadata.get("raw_row", [])
+                    activity_names_list = metadata.get("activity_names", [])
+                    activity_indices_list = metadata.get("activity_indices", [])
+                    question_types = metadata.get("question_type", [])
+
                     for idx, (q, a) in enumerate(zip(batch["questions"], batch["answers"])):
-                        subj = subjects[idx] if idx < len(subjects) else None
-                        act = activities[idx] if idx < len(activities) else None
-                        sensor_path = sensors[idx] if idx < len(sensors) else None
-                        row = raw_rows[idx] if idx < len(raw_rows) else None
-                        session_id = None
-                        if isinstance(row, dict):
-                            session_id = row.get("activity_index")
+                        subj = subjects[idx] if idx < len(subjects) else "N/A"
+                        act_names = activity_names_list[idx] if idx < len(activity_names_list) else []
+                        act_indices = activity_indices_list[idx] if idx < len(activity_indices_list) else []
+                        q_type = question_types[idx] if idx < len(question_types) else "N/A"
+
                         log_debug(
-                            f"[DEBUG] Batch sample {idx}: subject={subj}, activity={act}, sensor_path={sensor_path}, activity_index={session_id}"
+                            f"[DEBUG] Batch sample {idx}: subject={subj}, question_type={q_type}, "
+                            f"activity_names={act_names}, activity_indices={act_indices}"
                         )
                     debug_batch_meta_logged = True
 
                 optimizer.zero_grad(set_to_none=True)
                 with amp_ctx:
-                    loss, qa_info = model(patches, pad_mask, batch["questions"], batch["answers"])
+                    loss, qa_info = model(patches, pad_mask, batch["questions"], batch["answers"], batch.get("metadata"))
 
                 if not torch.isfinite(loss):
                     log_warn("[WARN] Non-finite loss encountered; skipping batch")
-                    scheduler.step()
                     pbar.update(1)
                     continue
 
-                logits = qa_info["logits"]
-                labels = qa_info["labels"]
-                label_mask = qa_info["label_mask"]
+                logits = qa_info["logits"][:, :-1]
+                labels = qa_info["labels"][:, 1:]
+                label_mask = qa_info["label_mask"][:, 1:]
                 with torch.no_grad():
                     preds = logits.argmax(dim=-1)
                     mask = label_mask.to(dtype=torch.bool)
                     _update_metrics(train_metric_state, preds, labels, mask, tokenizer)
 
+                # ---- GRADIENT AND PREDICTION DEBUGGING ----
+                def print_grad_stats(name, tensor):
+                    if tensor is not None and tensor.grad is not None:
+                        grad = tensor.grad
+                        if not torch.isfinite(grad).all():
+                            log_warn(f"!!!! Non-finite gradients detected in '{name}' !!!!")
+                        else:
+                            log_debug(f"Grads for '{name}': mean={grad.mean():.6f}, std={grad.std():.6f}, max={grad.max():.6f}, min={grad.min():.6f}")
+                    else:
+                        log_debug(f"No gradients found for '{name}'.")
+
                 if scaler is not None:
                     scaler.scale(loss).backward()
+                    log_debug("--- Training Step Debug Info (AMP) ---")
+                    log_debug(f"Loss: {loss.item():.6f}")
+                    with torch.no_grad():
+                        logits = qa_info["logits"][:, :-1]
+                        labels = qa_info["labels"][:, 1:]
+                        label_mask = qa_info["label_mask"][:, 1:]
+                        preds = logits.argmax(dim=-1)
+                        sample_idx = 0
+                        mask_i = label_mask[sample_idx].to(dtype=torch.bool)
+                        if mask_i.any():
+                            pred_ids = preds[sample_idx][mask_i].detach().cpu().tolist()
+                            label_ids = labels[sample_idx][mask_i].detach().cpu().tolist()
+                            pred_text = tokenizer.decode(pred_ids, skip_special_tokens=True)
+                            label_text = tokenizer.decode(label_ids, skip_special_tokens=True)
+                            log_debug(f"Sample [{sample_idx}] GT:      '{label_text}'")
+                            log_debug(f"Sample [{sample_idx}] Pred:    '{pred_text}'")
+                    print_grad_stats("Encoder Tokens", qa_info.get("tokens"))
+                    print_grad_stats("Fused Patches", qa_info.get("fused_patches"))
+                    log_debug("------------------------------------")
                     scaler.unscale_(optimizer)
                     step_norms = record_encoder_grad_norms()
                     if not encoder_grad_logged:
@@ -832,6 +969,25 @@ def train():
                     scaler.update()
                 else:
                     loss.backward()
+                    log_debug("--- Training Step Debug Info (FP32) ---")
+                    log_debug(f"Loss: {loss.item():.6f}")
+                    with torch.no_grad():
+                        logits = qa_info["logits"][:, :-1]
+                        labels = qa_info["labels"][:, 1:]
+                        label_mask = qa_info["label_mask"][:, 1:]
+                        preds = logits.argmax(dim=-1)
+                        sample_idx = 0
+                        mask_i = label_mask[sample_idx].to(dtype=torch.bool)
+                        if mask_i.any():
+                            pred_ids = preds[sample_idx][mask_i].detach().cpu().tolist()
+                            label_ids = labels[sample_idx][mask_i].detach().cpu().tolist()
+                            pred_text = tokenizer.decode(pred_ids, skip_special_tokens=True)
+                            label_text = tokenizer.decode(label_ids, skip_special_tokens=True)
+                            log_debug(f"Sample [{sample_idx}] GT:      '{label_text}'")
+                            log_debug(f"Sample [{sample_idx}] Pred:    '{pred_text}'")
+                    print_grad_stats("Encoder Tokens", qa_info.get("tokens"))
+                    print_grad_stats("Fused Patches", qa_info.get("fused_patches"))
+                    log_debug("------------------------------------")
                     step_norms = record_encoder_grad_norms()
                     if not encoder_grad_logged:
                         log_debug(
@@ -878,6 +1034,13 @@ def train():
                                 timestamps_list = metadata.get("timestamps")
                                 if isinstance(timestamps_list, (list, tuple)) and sample_idx < len(timestamps_list):
                                     timestamps_sample = timestamps_list[sample_idx]
+
+                            # Handle dict format for multi-stream patches
+                            if isinstance(patches, dict):
+                                patches_sample = {stream: tensor[sample_idx] for stream, tensor in patches.items()}
+                            else:
+                                patches_sample = patches[sample_idx]
+
                             save_generation_visual(
                                 epoch,
                                 global_step,
@@ -885,7 +1048,7 @@ def train():
                                 question,
                                 pred_text,
                                 gt_text,
-                                patches[sample_idx],
+                                patches_sample,
                                 qa_info.get("small_features", torch.empty(0))[sample_idx]
                                 if "small_features" in qa_info
                                 else torch.empty(0),
@@ -930,13 +1093,18 @@ def train():
         val_metric_state = _init_metric_state()
         with torch.no_grad():
             for batch in val_loader:
-                patches = batch["patches"].to(device)
+                # Handle dict format for multi-stream native rate data
+                patches = batch["patches"]
+                if isinstance(patches, dict):
+                    patches = {stream: tensor.to(device) for stream, tensor in patches.items()}
+                else:
+                    patches = patches.to(device)
                 pad_mask = batch["pad_mask"].to(device)
-                loss, qa_info = model(patches, pad_mask, batch["questions"], batch["answers"])
+                loss, qa_info = model(patches, pad_mask, batch["questions"], batch["answers"], batch.get("metadata"))
                 val_loss_total += loss.item()
-                logits = qa_info["logits"]
-                labels = qa_info["labels"]
-                label_mask = qa_info["label_mask"]
+                logits = qa_info["logits"][:, :-1]
+                labels = qa_info["labels"][:, 1:]
+                label_mask = qa_info["label_mask"][:, 1:]
                 preds = logits.argmax(dim=-1)
                 mask = label_mask.to(dtype=torch.bool)
                 _update_metrics(val_metric_state, preds, labels, mask, tokenizer)

@@ -1,5 +1,5 @@
 import torch
-from encoder.processors.debug import _ensure_dir, _save_csv, _to_np, visualize_correlation_summary
+from patch_tokenizers.human_engineered.processors.debug import _ensure_dir, _save_csv, _to_np, visualize_correlation_summary
 import os
 
 class CorrelationSummaryProcessor:
