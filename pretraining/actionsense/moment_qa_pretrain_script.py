@@ -1,14 +1,14 @@
 """
-Chronos-2 QA pretraining script for ActionSense dataset.
+MOMENT QA pretraining script for ActionSense dataset.
 
 Architecture:
-    Chronos2Encoder → QA Head → LLaMA decoder
+    MOMENTEncoder → MOMENTQAHead → LLaMA decoder
 
-Key differences from TSFM pretraining:
-    - Uses continuous time series (not patches)
-    - Uses ActionSenseChronos2QA dataset (18 arm joint channels, up to 2016 timesteps)
-    - Chronos-2 handles tokenization and encoding
-    - Simpler pipeline: no separate tokenizer needed
+Key differences from Chronos QA:
+    - Uses MOMENT encoder (fixed 512 timesteps, 64 patches)
+    - Uses per-patch cross-channel fusion from MOMENTCLSHead
+    - Fixed 64 sensor tokens (vs variable in Chronos)
+    - Adaptive sampling strategy: pad/uniform/window based on length
 """
 
 import os
@@ -19,34 +19,33 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
-from typing import List
-import numpy as np
 
 # Add project root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from datasets.ActionSenseChronos2QA import (
-    ActionSenseChronos2QA,
-    chronos2_qa_collate,
+from datasets.ActionSenseMOMENTQA import (
+    ActionSenseMOMENTQA,
+    moment_qa_collate,
 )
-from encoders.chronos import Chronos2Encoder
-from pretraining.actionsense.heads import SensorQALLMHead
+from encoders.moment import MOMENTEncoder
+from pretraining.actionsense.heads.moment_qa import MOMENTQAHead
 
 
-class Chronos2QAModel(nn.Module):
+class MOMENTQAModel(nn.Module):
     """
-    End-to-end QA model using Chronos-2 encoder.
+    End-to-end QA model using MOMENT encoder.
 
     Pipeline:
-        continuous_stream (B, D, T) → Chronos2Encoder → (B, num_patches, D, 2048)
-        → SensorQALLMHead (channel fusion) → LLaMA decoder → answer
+        continuous_stream (B, D=18, T=512) → MOMENTEncoder → (B, D=18, P=64, F)
+        → MOMENTQAHead (channel fusion + projection) → LLaMA decoder → answer
 
-    Key: Patches are temporally aligned for proper channel fusion
+    Key: Fixed 64 sensor tokens (one per patch)
     """
 
     def __init__(
         self,
-        freeze_chronos=False,
+        moment_size="base",
+        freeze_moment=False,
         llama_model_name="meta-llama/Llama-3.2-1B-Instruct",
         lora_rank=16,
         lora_alpha=32,
@@ -57,27 +56,29 @@ class Chronos2QAModel(nn.Module):
 
         self.device = device
 
-        # 1. Chronos-2 encoder (outputs temporally-aligned patches)
-        self.encoder = Chronos2Encoder(
-            output_dim=2048,  # Output feature dimension
-            freeze_chronos=freeze_chronos,
+        # 1. MOMENT encoder
+        self.encoder = MOMENTEncoder(
+            model_size=moment_size,
+            freeze_moment=freeze_moment,
             device=device,
         )
 
-        # 2. QA head with channel fusion (same as TSFM pretraining)
-        self.qa_head = SensorQALLMHead(
+        # Get MOMENT feature dimension based on model size
+        moment_dim_map = {"small": 512, "base": 768, "large": 1024}
+        moment_dim = moment_dim_map.get(moment_size, 768)
+
+        # 2. QA head with channel fusion and LLaMA integration
+        self.qa_head = MOMENTQAHead(
+            moment_dim=moment_dim,
             llama_model_name=llama_model_name,
-            feature_dim=2048,
-            attn_heads=8,
-            attn_dropout=0.1,
+            nhead=8,
+            dropout=0.1,
             lora_rank=lora_rank,
             lora_alpha=lora_alpha,
-            lora_dropout=0.05,
             use_lora=use_lora,
-            log_mode="info",
         )
 
-        print("[Chronos2QAModel] Model initialized")
+        print(f"[MOMENTQAModel] Model initialized with MOMENT-{moment_size}")
 
     def forward(self, batch):
         """
@@ -91,21 +92,32 @@ class Chronos2QAModel(nn.Module):
         """
         # 1. Encode continuous stream
         encoder_output = self.encoder(batch)
-        # encoder_output["embeddings"]: (B, num_patches, D, 2048)
-        # encoder_output["pad_mask"]: (B, num_patches)
+        # encoder_output["embeddings"]: (B, D=18, P=64, F)
+        # encoder_output["pad_mask"]: None (MOMENT doesn't use padding)
 
         # 2. Pass through QA head with channel fusion
         loss, info = self.qa_head(
-            tokens=encoder_output["embeddings"],  # (B, num_patches, D, 2048)
-            pad_mask=encoder_output["pad_mask"],
-            questions=batch["questions"],
-            answers=batch["answers"],
+            moment_embeddings=encoder_output["embeddings"],  # (B, D=18, P=64, F)
+            questions=batch["question"],
+            answers=batch["answer"],
         )
 
         return {"loss": loss, **info}
 
 
-def train_epoch(model, dataloader, optimizer, device, epoch, batch_loss_history, debug_dir, plot_every=10, gen_samples_every=50, teacher_forcing_ratio=0.0, use_amp=False):
+def train_epoch(
+    model,
+    dataloader,
+    optimizer,
+    device,
+    epoch,
+    batch_loss_history,
+    debug_dir,
+    plot_every=10,
+    gen_samples_every=50,
+    teacher_forcing_ratio=0.0,
+    use_amp=False,
+):
     """
     Train for one epoch with curriculum learning (teacher forcing warmup).
 
@@ -135,13 +147,11 @@ def train_epoch(model, dataloader, optimizer, device, epoch, batch_loss_history,
         if use_teacher_forcing:
             # Teacher forcing: Standard forward pass
             with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=use_amp):
-                output = model.qa_head(
-                    tokens=encoder_output["embeddings"],
-                    pad_mask=encoder_output["pad_mask"],
-                    questions=batch["questions"],
-                    answers=batch["answers"],
+                loss, _ = model.qa_head(
+                    moment_embeddings=encoder_output["embeddings"],
+                    questions=batch["question"],
+                    answers=batch["answer"],
                 )
-                loss = output[0]  # qa_head.forward returns (loss, info)
         else:
             # Log transition once
             if not transition_logged and teacher_forcing_ratio > 0:
@@ -151,10 +161,9 @@ def train_epoch(model, dataloader, optimizer, device, epoch, batch_loss_history,
             # Autoregressive: Model uses own predictions
             with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=use_amp):
                 loss = model.qa_head.forward_autoregressive(
-                    tokens=encoder_output["embeddings"],
-                    pad_mask=encoder_output["pad_mask"],
-                    questions=batch["questions"],
-                    answers=batch["answers"],
+                    moment_embeddings=encoder_output["embeddings"],
+                    questions=batch["question"],
+                    answers=batch["answer"],
                 )
 
         optimizer.zero_grad()
@@ -179,10 +188,9 @@ def train_epoch(model, dataloader, optimizer, device, epoch, batch_loss_history,
             with torch.no_grad():
                 # Get predictions from forward_autoregressive
                 output = model.qa_head.forward_autoregressive(
-                    tokens=encoder_output["embeddings"],
-                    pad_mask=encoder_output["pad_mask"],
-                    questions=batch["questions"],
-                    answers=batch["answers"],
+                    moment_embeddings=encoder_output["embeddings"],
+                    questions=batch["question"],
+                    answers=batch["answer"],
                     return_predictions=True,
                 )
                 predictions = output["predictions"]
@@ -191,9 +199,9 @@ def train_epoch(model, dataloader, optimizer, device, epoch, batch_loss_history,
                 samples_data = []
                 for i in range(min(2, len(predictions))):  # Max 2 samples
                     samples_data.append({
-                        "question": batch["questions"][i],
+                        "question": batch["question"][i],
                         "generated": predictions[i],
-                        "ground_truth": batch["answers"][i],
+                        "ground_truth": batch["answer"][i],
                         "continuous_stream": batch["continuous_stream"][i],
                         "metadata": {
                             "subject": batch["metadata"]["subject"][i] if "subject" in batch["metadata"] else "N/A",
@@ -211,13 +219,13 @@ def train_epoch(model, dataloader, optimizer, device, epoch, batch_loss_history,
                 )
 
         # Aggressive cache clearing for autoregressive training
-        if batch_idx % 5 == 0:
-            torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
 
     avg_loss = total_loss / num_batches
     return avg_loss
 
 
+@torch.no_grad()
 def validate(model, dataloader, device, use_mixed_precision=False):
     """
     Validate model using autoregressive loss and exact match accuracy.
@@ -237,32 +245,33 @@ def validate(model, dataloader, device, use_mixed_precision=False):
     exact_matches = 0
     total_samples = 0
 
-    with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Validation"):
-            batch["continuous_stream"] = batch["continuous_stream"].to(device)
+    for batch in tqdm(dataloader, desc="Validation"):
+        batch["continuous_stream"] = batch["continuous_stream"].to(device)
 
-            # Compute autoregressive loss and get predictions
-            with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=use_mixed_precision):
-                encoder_output = model.encoder(batch)
-                output = model.qa_head.forward_autoregressive(
-                    tokens=encoder_output["embeddings"],
-                    pad_mask=encoder_output["pad_mask"],
-                    questions=batch["questions"],
-                    answers=batch["answers"],
-                    return_predictions=True,
-                )
-                loss = output["loss"]
-                predictions = output["predictions"]
+        # Compute autoregressive loss and get predictions
+        with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=use_mixed_precision):
+            encoder_output = model.encoder(batch)
+            output = model.qa_head.forward_autoregressive(
+                moment_embeddings=encoder_output["embeddings"],
+                questions=batch["question"],
+                answers=batch["answer"],
+                return_predictions=True,
+            )
+            loss = output["loss"]
+            predictions = output["predictions"]
 
-            total_loss += loss.item()
-            num_batches += 1
+        total_loss += loss.item()
+        num_batches += 1
 
-            # Compute exact match
-            for pred, gt in zip(predictions, batch["answers"]):
-                # Normalize for comparison (strip whitespace)
-                if pred.strip().lower() == gt.strip().lower():
-                    exact_matches += 1
-                total_samples += 1
+        # Compute exact match
+        for pred, gt in zip(predictions, batch["answer"]):
+            # Normalize for comparison (strip whitespace)
+            if pred.strip().lower() == gt.strip().lower():
+                exact_matches += 1
+            total_samples += 1
+
+        # Clear cache after each validation batch
+        torch.cuda.empty_cache()
 
     avg_loss = total_loss / num_batches
     exact_match_acc = exact_matches / total_samples if total_samples > 0 else 0.0
@@ -282,7 +291,7 @@ def plot_loss_curves(train_losses, val_losses, out_dir):
 
     plt.xlabel("Epoch", fontsize=12)
     plt.ylabel("Loss", fontsize=12)
-    plt.title("Chronos-2 QA Training: Train vs Validation Loss", fontsize=14)
+    plt.title("MOMENT QA Training: Train vs Validation Loss", fontsize=14)
     plt.grid(True, linestyle="--", alpha=0.6)
     plt.legend(fontsize=11)
     plt.tight_layout()
@@ -302,14 +311,13 @@ def plot_batch_loss(batch_losses, out_dir):
 
     plt.xlabel("Batch Number", fontsize=12)
     plt.ylabel("Loss", fontsize=12)
-    plt.title("Chronos-2 QA Training: Batch-Level Loss", fontsize=14)
+    plt.title("MOMENT QA Training: Batch-Level Loss", fontsize=14)
     plt.grid(True, linestyle="--", alpha=0.4)
     plt.tight_layout()
 
     out_path = os.path.join(out_dir, "train_batch_loss.png")
     plt.savefig(out_path, dpi=150)
     plt.close()
-    # print(f"[PLOT] Saved batch loss: {out_path}")
 
 
 def plot_exact_match(val_em_scores, out_dir):
@@ -323,7 +331,7 @@ def plot_exact_match(val_em_scores, out_dir):
 
     plt.xlabel("Epoch", fontsize=12)
     plt.ylabel("Exact Match Accuracy", fontsize=12)
-    plt.title("Chronos-2 QA Validation: Exact Match Accuracy (Autoregressive Generation)", fontsize=14)
+    plt.title("MOMENT QA Validation: Exact Match Accuracy (Autoregressive Generation)", fontsize=14)
     plt.ylim(0, 1.0)
     plt.grid(True, linestyle="--", alpha=0.6)
     plt.legend(fontsize=11)
@@ -333,57 +341,6 @@ def plot_exact_match(val_em_scores, out_dir):
     plt.savefig(out_path, dpi=150)
     plt.close()
     print(f"[PLOT] Saved exact match: {out_path}")
-
-
-def generate_training_samples(model, batch, max_samples=2):
-    """
-    Generate answers for a training batch and collect samples.
-
-    Args:
-        model: The model
-        batch: Training batch
-        max_samples: Max samples to generate
-
-    Returns:
-        Tuple of (samples_data, exact_match_rate)
-    """
-    model.train(False)  # Temporarily set to inference mode
-    samples_data = []
-    exact_matches = 0
-
-    with torch.no_grad():
-        encoder_output = model.encoder(batch)
-        generated_answers = model.qa_head.generate(
-            tokens=encoder_output["embeddings"],
-            pad_mask=encoder_output["pad_mask"],
-            questions=batch["questions"],
-            max_new_tokens=32,
-            do_sample=False,
-        )
-
-        # Compute exact match for all samples in batch
-        for idx, (gen, gt) in enumerate(zip(generated_answers, batch["answers"])):
-            pred_norm = gen.lower().strip()
-            gt_norm = gt.lower().strip()
-            if pred_norm == gt_norm:
-                exact_matches += 1
-
-            # Collect visualization samples
-            if idx < max_samples:
-                samples_data.append({
-                    "question": batch["questions"][idx],
-                    "generated": gen,
-                    "ground_truth": gt,
-                    "continuous_stream": batch["continuous_stream"][idx].cpu(),
-                    "metadata": {
-                        "subject": batch["metadata"]["subject"][idx],
-                        "activity_names": batch["metadata"]["activity_names"][idx],
-                    },
-                })
-
-    model.train(True)  # Set back to training mode
-    exact_match_rate = exact_matches / len(generated_answers) if len(generated_answers) > 0 else 0.0
-    return samples_data, exact_match_rate
 
 
 def save_generation_samples(
@@ -504,13 +461,18 @@ def main():
     QA_JSONL_PATH = "data/actionsenseqa_native/data/qa_pairs_templated.jsonl"
     MANIFEST_CSV_PATH = "data/actionsenseqa_native/data/manifest.csv"
 
-    FREEZE_CHRONOS = False
+    # MOMENT configuration
+    MOMENT_SIZE = "base"  # Options: "small" (512), "base" (768), "large" (1024)
+    FREEZE_MOMENT = True  # Freeze MOMENT encoder for efficiency
+
+    # LLaMA configuration
     LLAMA_MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
     LORA_RANK = 16
     LORA_ALPHA = 32
     USE_LORA = True
 
-    BATCH_SIZE = 1
+    # Training configuration
+    BATCH_SIZE = 2  # Small due to LLaMA memory requirements
     NUM_EPOCHS = 10
     LEARNING_RATE = 1e-4
     VAL_RATIO = 0.2
@@ -518,26 +480,30 @@ def main():
     USE_MIXED_PRECISION = False  # Enable mixed precision training for memory efficiency
     TEACHER_FORCING_RATIO = 0.2  # Use teacher forcing for first 20% of batches per epoch
 
+    # Paths and logging
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    CHECKPOINT_DIR = "checkpoints/chronos_qa"
-    DEBUG_DIR = "debug/pretraining/chronos_qa"
+    CHECKPOINT_DIR = "checkpoints/moment_qa"
+    DEBUG_DIR = "debug/pretraining/moment_qa"
     SAVE_EVERY = 1
     PLOT_EVERY = 10  # Plot batch loss every N batches
-    GEN_SAMPLES_EVERY = 2  # Save generation samples every N epochs (validation)
     GEN_SAMPLES_EVERY_BATCH = 50  # Generate samples every N training batches
-    MAX_GEN_SAMPLES = 4  # Maximum samples to visualize per epoch
 
     print("=" * 80)
-    print("Chronos-2 QA Pretraining")
+    print("MOMENT QA Pretraining")
     print("=" * 80)
     print(f"Device: {DEVICE}")
+    print(f"MOMENT size: {MOMENT_SIZE}")
+    print(f"Freeze MOMENT: {FREEZE_MOMENT}")
     print(f"Batch size: {BATCH_SIZE}")
     print(f"Learning rate: {LEARNING_RATE}")
     print(f"Mixed precision: {USE_MIXED_PRECISION}")
-    print(f"Freeze Chronos: {FREEZE_CHRONOS}")
     print(f"Use LoRA: {USE_LORA}")
     if USE_LORA:
         print(f"LoRA rank: {LORA_RANK}, alpha: {LORA_ALPHA}")
+    print(f"\nAdaptive sampling to 512 timesteps:")
+    print(f"  - If T < 512: use all + pad")
+    print(f"  - If T >= 512 and equiv_rate >= 10Hz: uniform sample")
+    print(f"  - If T >= 512 and equiv_rate < 10Hz: window at 10Hz cap")
     print("=" * 80)
 
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
@@ -545,29 +511,25 @@ def main():
 
     # 1. Create datasets
     print("\n[1/4] Loading datasets...")
-    train_dataset = ActionSenseChronos2QA(
+    train_dataset = ActionSenseMOMENTQA(
         base_dir=BASE_DIR,
         qa_jsonl_path=QA_JSONL_PATH,
         manifest_csv_path=MANIFEST_CSV_PATH,
         split="train",
         val_ratio=VAL_RATIO,
         split_seed=SPLIT_SEED,
-        target_fps=6,         # Downsample to 30Hz for memory efficiency
-        window_seconds=5.0,   # 10 second windows
-        random_window=True,    # Random window selection for data augmentation
+        random_window=True,  # Random window selection for data augmentation
         log_mode="info",
     )
 
-    val_dataset = ActionSenseChronos2QA(
+    val_dataset = ActionSenseMOMENTQA(
         base_dir=BASE_DIR,
         qa_jsonl_path=QA_JSONL_PATH,
         manifest_csv_path=MANIFEST_CSV_PATH,
         split="val",
         val_ratio=VAL_RATIO,
         split_seed=SPLIT_SEED,
-        target_fps=6,         # Downsample to 30Hz
-        window_seconds=5.0,   # 10 second windows
-        random_window=True,   # Deterministic for validation
+        random_window=False,  # Deterministic for validation
         log_mode="info",
     )
 
@@ -580,7 +542,7 @@ def main():
         train_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        collate_fn=chronos2_qa_collate,
+        collate_fn=moment_qa_collate,
         num_workers=0,
     )
 
@@ -588,14 +550,15 @@ def main():
         val_dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
-        collate_fn=chronos2_qa_collate,
+        collate_fn=moment_qa_collate,
         num_workers=0,
     )
 
     # 3. Create model
     print("\n[3/4] Initializing model...")
-    model = Chronos2QAModel(
-        freeze_chronos=FREEZE_CHRONOS,
+    model = MOMENTQAModel(
+        moment_size=MOMENT_SIZE,
+        freeze_moment=FREEZE_MOMENT,
         llama_model_name=LLAMA_MODEL_NAME,
         lora_rank=LORA_RANK,
         lora_alpha=LORA_ALPHA,
@@ -621,6 +584,7 @@ def main():
     best_val_loss = float("inf")
     train_losses = []
     val_losses = []
+    val_em_scores = []
     batch_loss_history = []
 
     for epoch in range(1, NUM_EPOCHS + 1):
@@ -628,16 +592,26 @@ def main():
         print("-" * 80)
 
         train_loss = train_epoch(
-            model, train_loader, optimizer, DEVICE, epoch,
-            batch_loss_history, DEBUG_DIR, PLOT_EVERY, GEN_SAMPLES_EVERY_BATCH,
-            teacher_forcing_ratio=TEACHER_FORCING_RATIO, use_amp=USE_MIXED_PRECISION
+            model,
+            train_loader,
+            optimizer,
+            DEVICE,
+            epoch,
+            batch_loss_history,
+            DEBUG_DIR,
+            PLOT_EVERY,
+            GEN_SAMPLES_EVERY_BATCH,
+            teacher_forcing_ratio=TEACHER_FORCING_RATIO,
+            use_amp=USE_MIXED_PRECISION,
         )
         print(f"Train loss: {train_loss:.4f}")
 
         # Validation
         val_results = validate(
-            model, val_loader, DEVICE,
-            use_mixed_precision=USE_MIXED_PRECISION
+            model,
+            val_loader,
+            DEVICE,
+            use_mixed_precision=USE_MIXED_PRECISION,
         )
         val_loss = val_results["loss"]
         val_exact_match = val_results["exact_match"]
@@ -646,14 +620,16 @@ def main():
         # Record epoch metrics
         train_losses.append(train_loss)
         val_losses.append(val_loss)
+        val_em_scores.append(val_exact_match)
 
         # Plot loss curves after each epoch
         plot_loss_curves(train_losses, val_losses, DEBUG_DIR)
+        plot_exact_match(val_em_scores, DEBUG_DIR)
 
         if epoch % SAVE_EVERY == 0:
             checkpoint_path = os.path.join(
                 CHECKPOINT_DIR,
-                f"chronos_qa_epoch{epoch}.pt",
+                f"moment_qa_epoch{epoch}.pt",
             )
             torch.save(
                 {
@@ -662,6 +638,15 @@ def main():
                     "optimizer_state_dict": optimizer.state_dict(),
                     "train_loss": train_loss,
                     "val_loss": val_loss,
+                    "val_exact_match": val_exact_match,
+                    "config": {
+                        "moment_size": MOMENT_SIZE,
+                        "freeze_moment": FREEZE_MOMENT,
+                        "llama_model_name": LLAMA_MODEL_NAME,
+                        "use_lora": USE_LORA,
+                        "lora_rank": LORA_RANK,
+                        "lora_alpha": LORA_ALPHA,
+                    },
                 },
                 checkpoint_path,
             )
@@ -669,7 +654,7 @@ def main():
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            best_path = os.path.join(CHECKPOINT_DIR, "chronos_qa_best.pt")
+            best_path = os.path.join(CHECKPOINT_DIR, "moment_qa_best.pt")
             torch.save(
                 {
                     "epoch": epoch,
@@ -677,6 +662,15 @@ def main():
                     "optimizer_state_dict": optimizer.state_dict(),
                     "train_loss": train_loss,
                     "val_loss": val_loss,
+                    "val_exact_match": val_exact_match,
+                    "config": {
+                        "moment_size": MOMENT_SIZE,
+                        "freeze_moment": FREEZE_MOMENT,
+                        "llama_model_name": LLAMA_MODEL_NAME,
+                        "use_lora": USE_LORA,
+                        "lora_rank": LORA_RANK,
+                        "lora_alpha": LORA_ALPHA,
+                    },
                 },
                 best_path,
             )
@@ -686,15 +680,18 @@ def main():
     print("\n[INFO] Generating final plots...")
     plot_loss_curves(train_losses, val_losses, DEBUG_DIR)
     plot_batch_loss(batch_loss_history, DEBUG_DIR)
+    plot_exact_match(val_em_scores, DEBUG_DIR)
 
     print("\n" + "=" * 80)
     print("Training complete!")
     print(f"Best validation loss: {best_val_loss:.4f}")
     print(f"Final train loss: {train_losses[-1]:.4f}")
     print(f"Final val loss: {val_losses[-1]:.4f}")
+    print(f"Final val exact match: {val_em_scores[-1]:.4f}")
     print(f"\nPlots saved to: {DEBUG_DIR}")
     print(f"  - train_val_loss.png (train & val loss curves)")
     print(f"  - train_batch_loss.png (batch-level training loss)")
+    print(f"  - val_exact_match.png (validation exact match accuracy)")
     print(f"\nCheckpoints saved to: {CHECKPOINT_DIR}")
     print("=" * 80)
 

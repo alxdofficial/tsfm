@@ -1,31 +1,31 @@
 """
-Chronos-2 specific dataset for ActionSense activity classification.
+MOMENT-specific dataset for ActionSense activity classification.
 
 Key features:
 - Uses BOTH ARM joint rotations: left + right (shoulder, forearm, wrist)
 - 18 channels total: 6 joints × 3 axes (X, Y, Z rotations)
-- Fixed 512 timesteps (8.5 seconds at 60Hz)
+- Fixed 512 timesteps (MOMENT requirement)
 - Adaptive sampling strategy:
   1. If T < 512: use all data and left-pad
   2. If T >= 512 and equiv_rate >= 10Hz: uniform sampling
   3. If T >= 512 and equiv_rate < 10Hz: windowing at 10Hz cap
-- Output: (D=18, T=512) ready for Chronos-2 multivariate input
+- Output: (D=18, T=512) ready for MOMENT multivariate input
 """
 
 import os
 import random
-import json
 from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 
-class ActionSenseChronos2CLS(Dataset):
+class ActionSenseMOMENTCLS(Dataset):
     """
-    Chronos-2 specific dataset for ActionSense activity classification.
+    MOMENT-specific dataset for ActionSense activity classification.
 
     Bilateral arm joint rotations:
     1. 18 channels: both arms (left + right) × 3 joints (shoulder, forearm, wrist) × 3 axes (X,Y,Z)
@@ -34,7 +34,7 @@ class ActionSenseChronos2CLS(Dataset):
        - Short sessions (T < 512): use all and left-pad
        - Long sessions (T >= 512, equiv_rate >= 10Hz): uniform sampling
        - Very long sessions (equiv_rate < 10Hz): window at 10Hz cap
-    4. Output format: (D=18, T=512) for Chronos-2 multivariate input
+    4. Output format: (D=18, T=512) for MOMENT multivariate input
     """
 
     # Arm joint indices (both left and right arms)
@@ -56,7 +56,7 @@ class ActionSenseChronos2CLS(Dataset):
 
     # Constants
     SAMPLING_RATE = 60.0          # Hz (joints native rate)
-    FIXED_TIMESTEPS = 512         # Fixed output length (8.5 seconds at 60Hz)
+    FIXED_TIMESTEPS = 512         # MOMENT requirement
     TOTAL_CHANNELS = 18           # 6 joints × 3 axes
 
     def __init__(
@@ -115,7 +115,7 @@ class ActionSenseChronos2CLS(Dataset):
         self.sensor_cache = self._load_joint_streams(sensor_paths)
 
         self._log(
-            f"[INFO] ActionSenseChronos2CLS split={split}: {len(self.record_keys)} samples loaded.",
+            f"[INFO] ActionSenseMOMENTCLS split={split}: {len(self.record_keys)} samples loaded.",
             level="info",
         )
         self._log(
@@ -131,15 +131,15 @@ class ActionSenseChronos2CLS(Dataset):
             level="info",
         )
         self._log(
-            f"       - If T < {self.FIXED_TIMESTEPS}: use all and pad",
+            f"       - If T < 512: use all and pad",
             level="info",
         )
         self._log(
-            f"       - If T >= {self.FIXED_TIMESTEPS} and equiv_rate >= 10Hz: uniform sample",
+            f"       - If T >= 512 and equiv_rate >= 10Hz: uniform sample",
             level="info",
         )
         self._log(
-            f"       - If T >= {self.FIXED_TIMESTEPS} and equiv_rate < 10Hz: window at 10Hz cap (random={self.random_window})",
+            f"       - If T >= 512 and equiv_rate < 10Hz: window at 10Hz cap (random={self.random_window})",
             level="info",
         )
 
@@ -352,9 +352,9 @@ class ActionSenseChronos2CLS(Dataset):
             print(message)
 
 
-def chronos2_cls_collate(batch: List[Dict]) -> Dict:
+def moment_cls_collate(batch: List[Dict]) -> Dict:
     """
-    Collate function for Chronos-2 CLS dataset.
+    Collate function for MOMENT CLS dataset.
 
     Since all samples are already fixed at 512 timesteps, we just stack them.
 

@@ -9,3 +9,5 @@ scikit-learn
 Pillow
 opencv-python
 scipy
+chronos-forecasting
+momentfm

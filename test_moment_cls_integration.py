@@ -1,10 +1,10 @@
 """
-Test Chronos-2 CLS integration.
+Test MOMENT CLS integration.
 
 Verifies:
-1. Dataset loads correctly
+1. Dataset loads correctly and produces (18, 512) tensors
 2. Collate function works
-3. Encoder outputs correct shape
+3. MOMENT encoder outputs correct shape
 4. CLS head accepts embeddings correctly
 5. Forward pass works end-to-end
 """
@@ -15,13 +15,13 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from datasets.ActionSenseChronos2CLS import ActionSenseChronos2CLS, chronos2_cls_collate
-from encoders.chronos import Chronos2Encoder
-from pretraining.actionsense.heads.chronos2_cls import Chronos2CLSHead
+from datasets.ActionSenseMOMENTCLS import ActionSenseMOMENTCLS, moment_cls_collate
+from encoders.moment.encoder import MOMENTEncoder
+from pretraining.actionsense.heads.moment_cls import MOMENTCLSHead
 from torch.utils.data import DataLoader
 
 print("=" * 80)
-print("Test: Chronos-2 CLS Integration")
+print("Test: MOMENT CLS Integration")
 print("=" * 80)
 
 # Test parameters
@@ -31,9 +31,9 @@ print(f"\n[CONFIG]")
 print(f"  Device: {device}")
 
 # Step 1: Test Dataset
-print(f"\n[STEP 1] Testing ActionSenseChronos2CLS dataset...")
+print(f"\n[STEP 1] Testing ActionSenseMOMENTCLS dataset...")
 try:
-    dataset = ActionSenseChronos2CLS(
+    dataset = ActionSenseMOMENTCLS(
         base_dir="data/actionsenseqa_native/data",
         manifest_csv_path="data/actionsenseqa_native/data/manifest.csv",
         split="train",
@@ -69,7 +69,7 @@ except Exception as e:
 print(f"\n[STEP 2] Testing collate function...")
 try:
     batch = [dataset[i] for i in range(min(2, len(dataset)))]
-    collated = chronos2_cls_collate(batch)
+    collated = moment_cls_collate(batch)
 
     print(f"\n  Collated batch structure:")
     print(f"    - continuous_stream shape: {collated['continuous_stream'].shape}")
@@ -88,12 +88,13 @@ except Exception as e:
     traceback.print_exc()
     sys.exit(1)
 
-# Step 3: Test Encoder
-print(f"\n[STEP 3] Testing Chronos2Encoder...")
+# Step 3: Test MOMENT Encoder
+print(f"\n[STEP 3] Testing MOMENTEncoder...")
 try:
-    encoder = Chronos2Encoder(
-        output_dim=2048,
-        freeze_chronos=False,
+    encoder = MOMENTEncoder(
+        model_size="small",
+        freeze_moment=True,
+        output_dim=None,  # Use native 512
         device=device,
     )
 
@@ -110,13 +111,14 @@ try:
 
     print(f"\n  Encoder output structure:")
     print(f"    - embeddings shape: {encoder_output['embeddings'].shape}")
-    print(f"    - pad_mask shape: {encoder_output['pad_mask'].shape}")
+    print(f"    - pad_mask: {encoder_output['pad_mask']}")
 
-    B, num_groups, D_out, output_dim = encoder_output["embeddings"].shape
-    assert output_dim == 2048, f"Expected output_dim=2048, got {output_dim}"
+    B, D_out, P, F = encoder_output["embeddings"].shape
     assert D_out == 18, f"Expected D=18, got D={D_out}"
+    assert P == 64, f"Expected P=64 patches, got P={P}"
+    assert F == encoder.output_dim, f"Expected F={encoder.output_dim}, got F={F}"
 
-    print(f"  ✓ Output shape verified: ({B}, {num_groups}, {D_out}, {output_dim})")
+    print(f"  ✓ Output shape verified: ({B}, {D_out}, {P}, {F})")
     print(f"  ✓ Encoder test PASSED")
 
 except Exception as e:
@@ -126,10 +128,10 @@ except Exception as e:
     sys.exit(1)
 
 # Step 4: Test CLS Head
-print(f"\n[STEP 4] Testing Chronos2CLSHead...")
+print(f"\n[STEP 4] Testing MOMENTCLSHead...")
 try:
-    cls_head = Chronos2CLSHead(
-        d_model=2048,
+    cls_head = MOMENTCLSHead(
+        d_model=encoder.output_dim,
         nhead=8,
         num_classes=dataset.num_classes,
         dropout=0.1,
@@ -140,7 +142,7 @@ try:
     # Forward pass
     with torch.no_grad():
         logits = cls_head(
-            chronos_embeddings=encoder_output["embeddings"],
+            moment_embeddings=encoder_output["embeddings"],
             pad_mask=encoder_output["pad_mask"],
         )
 
@@ -166,7 +168,7 @@ try:
         dataset,
         batch_size=2,
         shuffle=False,
-        collate_fn=chronos2_cls_collate,
+        collate_fn=moment_cls_collate,
         num_workers=0,
     )
 
@@ -181,9 +183,42 @@ except Exception as e:
     traceback.print_exc()
     sys.exit(1)
 
+# Step 6: Test End-to-End (manual composition)
+print(f"\n[STEP 6] Testing end-to-end forward pass...")
+try:
+    # Manually compose encoder + head (since training script doesn't exist yet)
+    print(f"  ✓ Using manual composition: encoder + cls_head")
+
+    batch_input = {
+        "continuous_stream": batch["continuous_stream"].to(device),
+    }
+
+    with torch.no_grad():
+        # Encoder
+        encoder_output = encoder(batch_input)
+        # CLS head
+        output = cls_head(
+            moment_embeddings=encoder_output["embeddings"],
+            pad_mask=encoder_output["pad_mask"],
+        )
+
+    print(f"\n  End-to-end output:")
+    print(f"    - logits shape: {output.shape}")
+
+    B_final, num_classes_final = output.shape
+    assert num_classes_final == dataset.num_classes, f"Expected {dataset.num_classes}, got {num_classes_final}"
+
+    print(f"  ✓ End-to-end test PASSED")
+
+except Exception as e:
+    print(f"  ✗ End-to-end test FAILED: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+
 print(f"\n{'=' * 80}")
 print(f"✓ All tests passed!")
 print(f"{'=' * 80}")
-print(f"\nYou can now run training with:")
-print(f"  python pretraining/actionsense/chronos_cls_pretrain_script.py")
+print(f"\nMOMENT CLS system ready for training!")
+print(f"Note: Training script to be created separately")
 print(f"{'=' * 80}")
