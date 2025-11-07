@@ -1,0 +1,2 @@
+the data folder stores the actual data in raw form, but this folder stores implementations of dataset classes for pytorch training
+as well as any collate or normalization functions etc. the same data may have multiple dataset classes depending on training task

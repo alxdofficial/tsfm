@@ -156,8 +156,8 @@ def main():
     """
     Main function to run the dataset generation process.
     """
-    manifest_path = "data/actionsenseqa_native/data/manifest.csv"
-    output_path = "data/actionsenseqa_native/data/qa_pairs_templated.jsonl"
+    manifest_path = "data/raw/actionsense/manifest.csv"
+    output_path = "data/raw/actionsense/qa_pairs_templated.jsonl"
     target_total = 10000
     simple_ratio = 0.5 # 50% simple questions
 

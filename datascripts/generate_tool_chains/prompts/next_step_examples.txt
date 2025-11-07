@@ -1,0 +1,242 @@
+Determine the next step in this analysis conversation.
+
+## CURRENT CONVERSATION STATE
+
+Dataset: {{DATASET_NAME}}
+Session: {{SESSION_ID}}
+User Query: "{{USER_QUERY}}"
+
+{{CONVERSATION_HISTORY}}
+
+## YOUR TASK
+
+Decide what the analyst should do next. You have two options:
+
+1. **Use a tool** - If you need more information
+2. **Provide final classification** - If you have enough information
+
+## AVAILABLE TOOLS
+
+**show_channel_stats(dataset_name: str)**
+- See what sensor channels are available
+- Parameters: {"dataset_name": "{{DATASET_NAME}}"}
+
+**select_channels(dataset_name: str, session_id: str, channels: list)**
+- Filter to specific channels
+- Parameters: {"dataset_name": "{{DATASET_NAME}}", "session_id": "{{SESSION_ID}}", "channels": ["channel1", "channel2", ...]}
+
+## REASONING EXAMPLES
+
+Learn from these examples of good analytical reasoning:
+
+---
+
+### Example 1: Just Started, Need Context
+
+**Situation:** User just asked "What activity is this?" and no tools have been used yet.
+
+**Good Reasoning:**
+"I need to understand what sensors are available in this dataset before I can classify the activity. Different sensors provide different types of information - accelerometers capture movement, gyroscopes capture rotation, etc. Let me check what channels this dataset has."
+
+**Tool to Use:** `show_channel_stats`
+
+**Why This Works:** Demonstrates logical progression, explains why the tool is needed, shows domain knowledge.
+
+---
+
+### Example 2: Have Channel Info, Need to Select
+
+**Situation:** User asked "Using only IMU data, classify this". You've seen the channels and know there are 9 channels including accelerometer, gyroscope, and other sensors.
+
+**Good Reasoning:**
+"The user specifically wants IMU (Inertial Measurement Unit) data, which typically includes accelerometer and gyroscope. Looking at the available channels, I can see body_acc_x/y/z and body_gyro_x/y/z are the IMU sensors. I should filter to just these 6 channels to focus the analysis on what the user requested."
+
+**Tool to Use:** `select_channels` with IMU channels only
+
+**Why This Works:** References the user's explicit request, shows understanding of sensor terminology, makes logical connection.
+
+---
+
+### Example 3: User Wants Specific Sensor
+
+**Situation:** User asked "What does the accelerometer show?" You haven't checked channels yet.
+
+**Good Reasoning:**
+"The user is specifically interested in accelerometer data. Before I can select the accelerometer channels, I need to see exactly which accelerometer channels are available in this dataset. Different datasets organize accelerometer data differently (e.g., 'acc', 'body_acc', 'total_acc')."
+
+**Tool to Use:** `show_channel_stats`
+
+**Why This Works:** Acknowledges user's specific interest, explains why channel info is needed first.
+
+---
+
+### Example 4: Have Context, Ready to Classify
+
+**Situation:** You've selected the relevant IMU channels. The dataset is UCI HAR with 50Hz sampling, 2.54-second windows. User asked "What activity is this?"
+
+**Good Reasoning:**
+"Now I have the relevant sensor data selected - 6 IMU channels at 50Hz. Based on my understanding of activity recognition:
+
+For this session, I would expect to see:
+- **Walking**: Periodic acceleration ~1.5-2 Hz, moderate magnitude, smooth gyroscope patterns
+- **Running**: Higher frequency >2 Hz, larger magnitudes, more dynamic
+- **Sitting/Standing**: Minimal body acceleration (gravity removed), near-zero gyroscope
+- **Stairs**: Distinct vertical patterns, irregular periodicity
+
+Given the characteristics of the selected IMU data, this appears to be walking."
+
+**Action:** Provide classification
+
+**Why This Works:** Shows analytical thinking, references specific signal characteristics, demonstrates domain expertise.
+
+---
+
+### Example 5: Dataset-Specific Knowledge
+
+**Situation:** MHEALTH dataset, user asked "What activity is this using physiological sensors?"
+
+**Good Reasoning:**
+"The user mentioned physiological sensors, which for MHEALTH would include the ECG channels. Let me first check what channels are available to identify the ECG and other physiological sensors versus the motion sensors."
+
+**Tool to Use:** `show_channel_stats`
+
+**Why This Works:** Shows dataset-specific knowledge, understands user terminology.
+
+---
+
+### Example 6: Multi-Device Dataset
+
+**Situation:** WISDM dataset (phone + watch), user asked "What does the watch show?"
+
+**Good Reasoning:**
+"WISDM has both phone and watch sensors. The user is specifically interested in watch data. I need to see the channel names to identify which channels come from the watch versus the phone, so I can filter appropriately."
+
+**Tool to Use:** `show_channel_stats`
+
+**Why This Works:** Understands multi-device context, plans ahead for filtering.
+
+---
+
+### Example 7: Ready After Quick Analysis
+
+**Situation:** Simple dataset (UCI HAR), you've seen channels, user asked straightforward "What activity is happening?"
+
+**Good Reasoning:**
+"I have all the information I need. The dataset has standard IMU channels at 50Hz. Based on the session characteristics and typical patterns:
+- The body acceleration shows periodic patterns consistent with locomotion
+- The gyroscope indicates rotational movement typical of walking gait
+- The frequency and magnitude suggest steady walking rather than running or stairs
+
+This is walking."
+
+**Action:** Provide classification
+
+**Why This Works:** Concise, confident, cites specific evidence.
+
+---
+
+## LANGUAGE VARIATION EXAMPLES
+
+Mix up your phrasing. Here are alternatives for common situations:
+
+**Instead of always saying "I need to...":**
+- "Let me check..."
+- "First, I should..."
+- "Before proceeding, ..."
+- "It would be helpful to..."
+- "My next step is to..."
+
+**Instead of always saying "This shows...":**
+- "Based on this, ..."
+- "The data indicates..."
+- "This suggests..."
+- "Looking at this, ..."
+- "The patterns reveal..."
+
+**Instead of always saying "I will use...":**
+- "Let me call..."
+- "I'll select..."
+- "Time to check..."
+- "I should query..."
+
+## DECISION FRAMEWORK
+
+Ask yourself:
+
+1. **Do I know what sensors are available?**
+   - No → Use `show_channel_stats`
+   - Yes → Continue
+
+2. **Does the user want specific sensors/channels?**
+   - Yes, and I haven't filtered → Use `select_channels`
+   - No, or already filtered → Continue
+
+3. **Do I have enough information to classify?**
+   - Yes → Provide classification with reasoning
+   - No → Use appropriate tool
+
+## WHEN TO STOP (IMPORTANT!)
+
+You should provide a final classification when:
+
+✅ **You understand the available sensors** (via show_channel_stats or manifest)
+✅ **The user's query is satisfied** (you have the info they asked for)
+✅ **You can make a confident prediction** based on the context
+
+You do NOT need to use every available tool! Examples:
+
+**Stop early if the user query is simple:**
+- User: "What activity is this?" + You've seen channels → CLASSIFY (don't need to filter)
+- User: "Classify this session" + Simple dataset → CLASSIFY (maybe 1 tool max)
+
+**Continue if user needs specific processing:**
+- User: "Using only IMU data..." → Need to filter first, then classify
+- User: "Based on accelerometer..." → Need to select those channels
+
+**Stop if next tool isn't available:**
+- If you'd want to use `motion_tokenizer` but it's not in available tools → CLASSIFY now with current info
+- Don't wait for tools that don't exist yet
+
+**Remember:** The goal is to answer the user's question efficiently. Don't use tools just because they exist!
+
+## OUTPUT FORMAT
+
+You must respond with EITHER:
+
+**Option A - Tool Use:**
+```json
+{
+  "reasoning": "Your thought process here...",
+  "action": "use_tool",
+  "tool_name": "show_channel_stats",
+  "parameters": {"dataset_name": "{{DATASET_NAME}}"}
+}
+```
+
+OR
+
+```json
+{
+  "reasoning": "Your thought process here...",
+  "action": "use_tool",
+  "tool_name": "select_channels",
+  "parameters": {
+    "dataset_name": "{{DATASET_NAME}}",
+    "session_id": "{{SESSION_ID}}",
+    "channels": ["body_acc_x", "body_acc_y", "body_acc_z"]
+  }
+}
+```
+
+**Option B - Final Classification:**
+```json
+{
+  "reasoning": "Your analytical thought process...",
+  "action": "classify",
+  "classification": "activity_name",
+  "confidence": "high" or "medium" or "low",
+  "explanation": "Detailed explanation of why..."
+}
+```
+
+Now, decide what to do next:

@@ -34,7 +34,7 @@ from tqdm import tqdm
 # ===========================
 # Hard-coded parameters
 # ===========================
-DATA_ROOT = "data/actionsenseqa_native/data"   # output root
+DATA_ROOT = "data/raw/actionsense"   # output root (consistent with other datasets)
 TIME_PADDING_S = 0.0                    # optional pad around each activity segment
 SAVE_FLOAT32 = True                     # store numeric columns as float32
 MIN_SEGMENT_SECONDS = 1.0               # ignore very short segments

@@ -1,0 +1,210 @@
+{
+  "task_templates": [
+    {
+      "id": "session_01",
+      "category": "exploration",
+      "complexity": "simple",
+      "user_query": "How many sessions are in the dataset and what's the average duration?",
+      "expected_tools": ["show_session_stats"],
+      "notes": "Basic dataset overview"
+    },
+    {
+      "id": "session_02",
+      "category": "exploration",
+      "complexity": "simple",
+      "user_query": "What's the total duration of data available in hours?",
+      "expected_tools": ["show_session_stats"],
+      "notes": "Query about total duration"
+    },
+    {
+      "id": "channel_01",
+      "category": "exploration",
+      "complexity": "simple",
+      "user_query": "What channels are available in the dataset?",
+      "expected_tools": ["show_channel_stats"],
+      "notes": "List available channels"
+    },
+    {
+      "id": "channel_02",
+      "category": "exploration",
+      "complexity": "simple",
+      "user_query": "Show me the statistics for all EMG channels",
+      "expected_tools": ["show_channel_stats"],
+      "notes": "Get stats, then filter to EMG channels in response"
+    },
+    {
+      "id": "channel_03",
+      "category": "exploration",
+      "complexity": "simple",
+      "user_query": "What's the typical range of values for the joint angle channels?",
+      "expected_tools": ["show_channel_stats"],
+      "notes": "Get stats, interpret joint channel ranges"
+    },
+    {
+      "id": "preprocess_01",
+      "category": "preprocessing",
+      "complexity": "simple",
+      "user_query": "Keep only the left arm EMG channels",
+      "expected_tools": ["show_channel_stats", "select_channels"],
+      "notes": "First see what channels exist, then select EMG left channels"
+    },
+    {
+      "id": "preprocess_02",
+      "category": "preprocessing",
+      "complexity": "simple",
+      "user_query": "Extract the first 10 seconds from all sessions",
+      "expected_tools": ["filter_by_time"],
+      "notes": "Simple temporal filtering"
+    },
+    {
+      "id": "preprocess_03",
+      "category": "preprocessing",
+      "complexity": "medium",
+      "user_query": "Focus on upper body motion by selecting relevant joint channels",
+      "expected_tools": ["show_channel_stats", "select_channels"],
+      "notes": "Need to identify which joints are upper body from channel names"
+    },
+    {
+      "id": "preprocess_04",
+      "category": "preprocessing",
+      "complexity": "medium",
+      "user_query": "Extract a 5-second window starting at 3 seconds into each session",
+      "expected_tools": ["show_session_stats", "filter_by_time"],
+      "notes": "Check session durations first, then filter"
+    },
+    {
+      "id": "preprocess_05",
+      "category": "preprocessing",
+      "complexity": "medium",
+      "user_query": "Prepare data for EMG analysis: keep only bilateral EMG channels and focus on the middle 15 seconds of each session",
+      "expected_tools": ["show_session_stats", "show_channel_stats", "select_channels", "filter_by_time"],
+      "notes": "Multi-step preprocessing pipeline"
+    },
+    {
+      "id": "analysis_01",
+      "category": "analysis",
+      "complexity": "medium",
+      "user_query": "Are the gaze channels centered around the middle of the screen or biased to one side?",
+      "expected_tools": ["show_channel_stats"],
+      "notes": "Interpret gaze statistics to answer spatial distribution question"
+    },
+    {
+      "id": "analysis_02",
+      "category": "analysis",
+      "complexity": "medium",
+      "user_query": "Which modality has the most variability - EMG or joints?",
+      "expected_tools": ["show_channel_stats"],
+      "notes": "Compare std across modalities"
+    },
+    {
+      "id": "analysis_03",
+      "category": "analysis",
+      "complexity": "medium",
+      "user_query": "How much data would remain if we only kept sessions longer than 30 seconds?",
+      "expected_tools": ["show_session_stats"],
+      "notes": "Interpret duration stats to estimate filtering impact"
+    },
+    {
+      "id": "analysis_04",
+      "category": "analysis",
+      "complexity": "complex",
+      "user_query": "For training a model, I need at least 100 sessions with minimum 20 seconds each, focusing on hand and wrist motion. Can this dataset support that?",
+      "expected_tools": ["show_session_stats", "show_channel_stats"],
+      "notes": "Check session count and duration, identify hand/wrist channels"
+    },
+    {
+      "id": "mixed_01",
+      "category": "mixed",
+      "complexity": "complex",
+      "user_query": "Prepare training data: extract 10-20 second windows, keep only upper body joints and bilateral EMG, then tell me how many channels and sessions remain",
+      "expected_tools": ["show_session_stats", "show_channel_stats", "filter_by_time", "select_channels"],
+      "notes": "Full preprocessing workflow with summary"
+    },
+    {
+      "id": "mixed_02",
+      "category": "mixed",
+      "complexity": "complex",
+      "user_query": "I want to study early motion patterns. Show me what channels are available, then prepare data with just the first 5 seconds and only joint channels",
+      "expected_tools": ["show_channel_stats", "select_channels", "filter_by_time"],
+      "notes": "Analysis-driven preprocessing"
+    },
+    {
+      "id": "mixed_03",
+      "category": "mixed",
+      "complexity": "complex",
+      "user_query": "Compare the dimensionality reduction if I keep only 8 EMG channels versus keeping all joint channels. Which is more compact?",
+      "expected_tools": ["show_channel_stats", "select_channels"],
+      "notes": "Multiple select_channels calls to compare options"
+    },
+    {
+      "id": "edge_01",
+      "category": "edge_cases",
+      "complexity": "medium",
+      "user_query": "Extract 0-5 second windows. How many sessions are too short for this?",
+      "expected_tools": ["show_session_stats", "filter_by_time"],
+      "notes": "Check for sessions excluded by temporal filtering"
+    },
+    {
+      "id": "edge_02",
+      "category": "edge_cases",
+      "complexity": "medium",
+      "user_query": "If I extract 50-60 second windows, will I lose most of the data?",
+      "expected_tools": ["show_session_stats", "filter_by_time"],
+      "notes": "Compare avg_duration to window size"
+    },
+    {
+      "id": "efficiency_01",
+      "category": "efficiency",
+      "complexity": "complex",
+      "user_query": "I need to reduce data size for faster training. Should I reduce channels or shorten session duration? Show me both options.",
+      "expected_tools": ["show_session_stats", "show_channel_stats", "select_channels", "filter_by_time"],
+      "notes": "Compare trade-offs between spatial and temporal reduction"
+    }
+  ],
+  "metadata": {
+    "version": "2.0.0",
+    "created": "2025-01-06",
+    "updated": "2025-01-06",
+    "description": "Task templates for dataset-agnostic tool-use training data. Templates work with 4 core tools: show_session_stats, show_channel_stats, select_channels, filter_by_time. All reasoning uses real-world time (seconds), never timesteps.",
+    "total_templates": 20,
+    "complexity_distribution": {
+      "simple": 7,
+      "medium": 8,
+      "complex": 5
+    },
+    "category_distribution": {
+      "exploration": 5,
+      "preprocessing": 5,
+      "analysis": 4,
+      "mixed": 3,
+      "edge_cases": 2,
+      "efficiency": 1
+    },
+    "tool_coverage": {
+      "show_session_stats": [
+        "session_01", "session_02", "preprocess_04", "preprocess_05",
+        "analysis_03", "analysis_04", "mixed_01", "edge_01", "edge_02", "efficiency_01"
+      ],
+      "show_channel_stats": [
+        "channel_01", "channel_02", "channel_03", "preprocess_01", "preprocess_03",
+        "preprocess_05", "analysis_01", "analysis_02", "analysis_04", "mixed_01",
+        "mixed_02", "mixed_03", "efficiency_01"
+      ],
+      "select_channels": [
+        "preprocess_01", "preprocess_03", "preprocess_05", "mixed_01",
+        "mixed_02", "mixed_03", "efficiency_01"
+      ],
+      "filter_by_time": [
+        "preprocess_02", "preprocess_04", "preprocess_05", "mixed_01",
+        "mixed_02", "edge_01", "edge_02", "efficiency_01"
+      ]
+    },
+    "design_notes": [
+      "All tasks use real-world time (seconds), not timesteps",
+      "Tools are dataset-agnostic and work with session-based format",
+      "Templates cover exploration, preprocessing, analysis, and edge cases",
+      "Complexity ranges from single-tool queries to multi-step workflows",
+      "Edge case templates test understanding of data filtering impacts"
+    ]
+  }
+}

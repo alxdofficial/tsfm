@@ -1,0 +1,93 @@
+Generate a realistic user query for activity classification based on the dataset provided.
+
+## DATASET MANIFEST
+
+{{MANIFEST}}
+
+## YOUR TASK
+
+Generate a plausible user query that someone analyzing this dataset might ask. The user has ONE SESSION of interest and wants to classify what activity is happening.
+
+## QUERY PATTERNS TO USE
+
+Vary your language and use different patterns:
+
+### Basic Classification Queries
+- "What activity is happening in this session?"
+- "Can you tell me what the person is doing?"
+- "Classify the activity in this data"
+- "What's going on in this session?"
+- "Identify the activity being performed"
+- "What motion is captured here?"
+
+### Specific Activity Queries
+- "Is the person walking in this session?"
+- "Was running captured in this data?"
+- "Is this a sitting or standing activity?"
+- "Check if this shows stair climbing"
+- "Does this session contain cycling?"
+
+### Channel-Specific Queries
+- "Using only accelerometer data, what activity is this?"
+- "Based on the IMU sensors, classify this activity"
+- "What activity is this using gyroscope data?"
+- "Classify using only body acceleration channels"
+- "Using the watch sensors, what is the person doing?"
+- "What activity does the phone accelerometer show?"
+
+### Detailed/Technical Queries
+- "Analyze the sensor patterns and classify the activity"
+- "What does the motion signature indicate?"
+- "Based on the available sensors, determine the activity type"
+- "Examine the data and tell me what activity this represents"
+
+### Comparative Queries
+- "Is this walking or running?"
+- "Sitting, standing, or lying down - which is it?"
+- "Is this stairs up or stairs down?"
+- "Walking on flat ground or climbing?"
+
+### Multi-Sensor Queries
+- "Using both accelerometer and gyroscope, classify this"
+- "What activity does the multi-modal sensor data show?"
+- "Based on phone and watch data, what's happening?"
+
+## GUIDELINES
+
+1. **Match the dataset**: If the dataset has specific sensors (e.g., ECG, heart rate), you can reference them
+2. **Match activities**: Only ask about activities that could plausibly be in the dataset
+3. **Vary complexity**: Mix simple and complex queries
+4. **Vary length**: Some short (5-8 words), some longer (10-15 words)
+5. **Natural language**: Sound like a real person, not a template
+
+## EXAMPLES FOR DIFFERENT DATASETS
+
+**UCI HAR (smartphone IMU):**
+- "What activity is the person doing?"
+- "Is this walking upstairs or downstairs?"
+- "Using body acceleration only, classify this"
+- "Based on the gyroscope, what motion is this?"
+
+**PAMAP2 (3 IMUs + heart rate):**
+- "What activity is happening based on the hand sensor?"
+- "Is the person exercising or resting?"
+- "Using heart rate and IMU, classify this"
+- "What does the chest accelerometer indicate?"
+
+**MHEALTH (IMUs + ECG):**
+- "What activity is shown in the ECG and motion data?"
+- "Is this a physical activity or resting?"
+- "Based on ankle and arm sensors, what's happening?"
+- "Classify using the multi-sensor data"
+
+**WISDM (phone + watch):**
+- "What activity does the watch show?"
+- "Using phone accelerometer, classify this"
+- "Is this an eating activity or locomotion?"
+- "What motion is captured on the wrist sensor?"
+
+## OUTPUT FORMAT
+
+Return ONLY the query text, nothing else. No explanations, no preamble.
+
+Your generated query:

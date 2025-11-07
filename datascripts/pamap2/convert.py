@@ -1,0 +1,269 @@
+"""
+Convert PAMAP2 dataset to standardized format.
+
+Input: data/raw/pamap2/PAMAP2_Dataset/
+Output: data/pamap2/
+  - manifest.json
+  - labels.json
+  - sessions/session_XXX/data.parquet
+"""
+
+import os
+import json
+import numpy as np
+import pandas as pd
+from pathlib import Path
+
+
+# Activity mapping
+ACTIVITIES = {
+    0: "transient",
+    1: "lying",
+    2: "sitting",
+    3: "standing",
+    4: "walking",
+    5: "running",
+    6: "cycling",
+    7: "nordic_walking",
+    9: "watching_tv",
+    10: "computer_work",
+    11: "car_driving",
+    12: "ascending_stairs",
+    13: "descending_stairs",
+    16: "vacuum_cleaning",
+    17: "ironing",
+    18: "folding_laundry",
+    19: "house_cleaning",
+    20: "playing_soccer",
+    24: "rope_jumping"
+}
+
+# Column names for PAMAP2 (54 columns)
+COLUMN_NAMES = ['timestamp', 'activity_id', 'heart_rate'] + [
+    f'{location}_{sensor}'
+    for location in ['hand', 'chest', 'ankle']
+    for sensor in ['temp', 'acc16_x', 'acc16_y', 'acc16_z',
+                   'acc6_x', 'acc6_y', 'acc6_z',
+                   'gyro_x', 'gyro_y', 'gyro_z',
+                   'mag_x', 'mag_y', 'mag_z',
+                   'ori_1', 'ori_2', 'ori_3', 'ori_4']
+    if not (sensor.startswith('ori'))  # Skip invalid orientation columns
+] + [f'{location}_ori_{i}' for location in ['hand', 'chest', 'ankle'] for i in range(1, 5)]
+
+# Paths
+RAW_DIR = Path("data/raw/pamap2/PAMAP2_Dataset/Protocol")
+OUTPUT_DIR = Path("data/pamap2")
+
+
+def segment_continuous_activity(df: pd.DataFrame, min_duration_sec: float = 5.0):
+    """Segment continuous recording into sessions based on activity changes."""
+    sessions = []
+
+    # Find activity boundaries
+    activity_changes = df['activity_id'].ne(df['activity_id'].shift())
+    segment_ids = activity_changes.cumsum()
+
+    for seg_id in segment_ids.unique():
+        segment = df[segment_ids == seg_id].copy()
+
+        # Skip transient activities and very short segments
+        activity_id = segment['activity_id'].iloc[0]
+        if activity_id == 0:
+            continue
+
+        duration = (segment['timestamp'].iloc[-1] - segment['timestamp'].iloc[0])
+        if duration < min_duration_sec:
+            continue
+
+        sessions.append({
+            'data': segment,
+            'activity_id': activity_id,
+            'duration_sec': duration
+        })
+
+    return sessions
+
+
+def convert_subject(subject_file: Path):
+    """Convert one subject file to sessions."""
+    print(f"  Processing: {subject_file.name}")
+
+    # Load data (space-separated, 54 columns)
+    try:
+        df = pd.read_csv(subject_file, sep=' ', header=None, names=COLUMN_NAMES)
+    except Exception as e:
+        print(f"    ERROR loading {subject_file.name}: {e}")
+        return [], {}
+
+    # Interpolate NaN values (wireless data loss is common in PAMAP2)
+    # Use linear interpolation for sensor data, forward-fill for activity_id
+    df['activity_id'] = df['activity_id'].ffill().bfill()  # Forward-fill activity labels
+    df = df.interpolate(method='linear', limit_direction='both')  # Linear interpolation for sensors
+    df = df.fillna(0)  # Fill any remaining NaN at edges with 0
+
+    # Segment into sessions
+    sessions = segment_continuous_activity(df)
+
+    print(f"    Found {len(sessions)} sessions")
+
+    subject_id = subject_file.stem.replace('subject', '')
+    session_data = []
+    labels_dict = {}
+
+    for idx, session in enumerate(sessions):
+        # Create session ID
+        session_id = f"subject{subject_id}_seg{idx:03d}"
+
+        # Prepare DataFrame (drop activity_id column, keep only sensor data)
+        data = session['data'].copy()
+
+        # Reset timestamp to start from 0
+        data['timestamp_sec'] = data['timestamp'] - data['timestamp'].iloc[0]
+
+        # Drop activity_id (it's in labels.json)
+        data = data.drop(columns=['activity_id'])
+
+        # Reorder: timestamp first, then all channels
+        cols = ['timestamp_sec'] + [c for c in data.columns if c != 'timestamp_sec' and c != 'timestamp']
+        data = data[cols]
+
+        # Save to parquet
+        session_dir = OUTPUT_DIR / "sessions" / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+        parquet_path = session_dir / "data.parquet"
+        data.to_parquet(parquet_path, index=False)
+
+        # Store label
+        activity_name = ACTIVITIES.get(session['activity_id'], 'unknown')
+        labels_dict[session_id] = [activity_name]
+
+        session_data.append(session_id)
+
+    return session_data, labels_dict
+
+
+def create_manifest():
+    """Create minimal manifest.json."""
+    # Create channel metadata (only for valid sensors, skip orientation)
+    channels = [
+        {
+            "name": "heart_rate",
+            "description": "Heart rate from chest monitor",
+            "sampling_rate_hz": 9.0
+        }
+    ]
+
+    # IMU sensors on 3 locations
+    for location in ['hand', 'chest', 'ankle']:
+        location_desc = {
+            'hand': 'wrist-mounted',
+            'chest': 'chest-mounted',
+            'ankle': 'ankle-mounted'
+        }[location]
+
+        # Temperature
+        channels.append({
+            "name": f"{location}_temp",
+            "description": f"Temperature from {location_desc} IMU",
+            "sampling_rate_hz": 100.0
+        })
+
+        # Accelerometers (16g and 6g scales)
+        for scale in ['16', '6']:
+            for axis in ['x', 'y', 'z']:
+                channels.append({
+                    "name": f"{location}_acc{scale}_{axis}",
+                    "description": f"Acceleration {axis}-axis (±{scale}g scale) from {location_desc} IMU",
+                    "sampling_rate_hz": 100.0
+                })
+
+        # Gyroscope
+        for axis in ['x', 'y', 'z']:
+            channels.append({
+                "name": f"{location}_gyro_{axis}",
+                "description": f"Angular velocity {axis}-axis from {location_desc} IMU",
+                "sampling_rate_hz": 100.0
+            })
+
+        # Magnetometer
+        for axis in ['x', 'y', 'z']:
+            channels.append({
+                "name": f"{location}_mag_{axis}",
+                "description": f"Magnetic field {axis}-axis from {location_desc} IMU",
+                "sampling_rate_hz": 100.0
+            })
+
+    manifest = {
+        "dataset_name": "PAMAP2",
+        "description": "Physical activity monitoring with 3 IMUs (hand, chest, ankle) and heart rate. 9 subjects performing 18 activities including walking, running, cycling, and household tasks.",
+        "channels": channels
+    }
+
+    manifest_path = OUTPUT_DIR / "manifest.json"
+    with open(manifest_path, 'w') as f:
+        json.dump(manifest, f, indent=2)
+
+    print(f"✓ Created manifest: {manifest_path}")
+
+
+def main():
+    """Convert PAMAP2 to standardized format."""
+    print("=" * 80)
+    print("PAMAP2 → Standardized Format Converter")
+    print("=" * 80)
+
+    # Check input
+    if not RAW_DIR.exists():
+        print(f"ERROR: Raw data not found at {RAW_DIR}")
+        print("Run: python datascripts/download_all_datasets.py pamap2")
+        return
+
+    # Create output directory
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Process all subject files
+    subject_files = sorted(RAW_DIR.glob("subject*.dat"))
+    print(f"\nFound {len(subject_files)} subject files")
+
+    all_labels = {}
+    all_sessions = []
+
+    for subject_file in subject_files:
+        sessions, labels = convert_subject(subject_file)
+        all_sessions.extend(sessions)
+        all_labels.update(labels)
+
+    # Save labels.json
+    labels_path = OUTPUT_DIR / "labels.json"
+    with open(labels_path, 'w') as f:
+        json.dump(all_labels, f, indent=2)
+
+    print(f"\n✓ Created labels: {labels_path}")
+    print(f"  Total sessions: {len(all_labels)}")
+
+    # Create manifest
+    create_manifest()
+
+    print(f"\n{'=' * 80}")
+    print("Conversion complete!")
+    print(f"{'=' * 80}")
+    print(f"Output: {OUTPUT_DIR}")
+    print(f"  - {len(all_labels)} sessions")
+    print(f"  - ~40 channels (3 IMUs + heart rate)")
+    print(f"  - 100 Hz IMU, 9 Hz heart rate")
+
+    # Generate debug visualizations
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent))  # Add datascripts/ to path
+        from shared.visualization_utils import generate_debug_visualizations
+
+        generate_debug_visualizations(OUTPUT_DIR)
+    except ImportError as e:
+        print(f"\n⚠ Could not generate visualizations: {e}")
+        print("Install matplotlib: pip install matplotlib")
+
+
+if __name__ == "__main__":
+    main()
