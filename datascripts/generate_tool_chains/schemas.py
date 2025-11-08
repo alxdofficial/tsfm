@@ -10,11 +10,11 @@ from enum import Enum
 
 
 # ============================================================================
-# Query Generation
+# Thread Initialization
 # ============================================================================
 
 class GeneratedQuery(BaseModel):
-    """A generated user query."""
+    """A generated user query to start a new thread."""
     query: str = Field(description="The user's question about the session")
 
 
@@ -22,49 +22,40 @@ class GeneratedQuery(BaseModel):
 # Next Step Decision
 # ============================================================================
 
-class ToolUseDecision(BaseModel):
-    """Decision to use a tool."""
-    reasoning: str = Field(description="Why this tool is needed")
-    action: Literal["use_tool"] = Field(default="use_tool")
-    tool_name: Literal["show_channel_stats", "select_channels"] = Field(
-        description="Which tool to call"
-    )
-    parameters: Dict[str, Any] = Field(description="Tool parameters as JSON")
-
-
-class ClassificationDecision(BaseModel):
-    """Decision to provide final classification."""
-    reasoning: str = Field(description="Analytical thought process")
-    action: Literal["classify"] = Field(default="classify")
-    classification: str = Field(description="The predicted activity name")
-    confidence: Literal["high", "medium", "low"] = Field(
-        description="Confidence in prediction"
-    )
-    explanation: str = Field(
-        description="Detailed explanation of why this classification"
-    )
-
-
-# For Gemini to choose between the two
 class NextStepAction(str, Enum):
     """What action to take next."""
-    USE_TOOL = "use_tool"
-    CLASSIFY = "classify"
+    RESPOND = "respond"  # Provide intermediate response without tool
+    USE_TOOL = "use_tool"  # Call a tool to get more information
 
 
 class NextStepDecision(BaseModel):
     """
     Decision for what to do next in the analysis.
 
-    Either use a tool to get more information, or provide final classification.
+    Two possible actions:
+    - respond: Give an intermediate answer/observation without calling a tool
+    - use_tool: Call a tool to gather more information
     """
     action: NextStepAction = Field(
-        description="Whether to use a tool or provide classification"
+        description="What action to take: respond or use_tool"
     )
     reasoning: str = Field(description="Thought process for this decision")
 
+    # If action == RESPOND
+    response: Optional[str] = Field(
+        default=None,
+        description="Intermediate response to user (required if action is respond)"
+    )
+
     # If action == USE_TOOL
-    tool_name: Optional[Literal["show_channel_stats", "select_channels"]] = Field(
+    tool_name: Optional[Literal[
+        "show_channel_stats",
+        "select_channels",
+        "human_activity_motion_tokenizer",
+        "human_activity_motion_classifier",
+        "human_activity_motion_capture_tokenizer",
+        "human_activity_motion_capture_classifier"
+    ]] = Field(
         default=None,
         description="Tool to call (required if action is use_tool)"
     )
@@ -73,28 +64,26 @@ class NextStepDecision(BaseModel):
         description="Tool parameters (required if action is use_tool)"
     )
 
-    # If action == CLASSIFY
-    classification: Optional[str] = Field(
-        default=None,
-        description="Activity name (required if action is classify)"
-    )
-    confidence: Optional[Literal["high", "medium", "low"]] = Field(
-        default=None,
-        description="Confidence level (required if action is classify)"
-    )
-    explanation: Optional[str] = Field(
-        default=None,
-        description="Detailed explanation (required if action is classify)"
-    )
-
     def validate_completeness(self) -> bool:
         """Check that required fields are present based on action."""
-        if self.action == NextStepAction.USE_TOOL:
+        if self.action == NextStepAction.RESPOND:
+            return self.response is not None
+        elif self.action == NextStepAction.USE_TOOL:
             return self.tool_name is not None and self.parameters is not None
-        elif self.action == NextStepAction.CLASSIFY:
-            return (
-                self.classification is not None
-                and self.confidence is not None
-                and self.explanation is not None
-            )
         return False
+
+
+# ============================================================================
+# Final Answer Generation
+# ============================================================================
+
+class FinalAnswer(BaseModel):
+    """
+    Final answer to the user's query.
+
+    This is generated separately after the conversation reaches a conclusion.
+    """
+    reasoning: str = Field(description="Step-by-step reasoning leading to the answer")
+    final_answer: str = Field(description="The final classification or answer")
+    confidence: Literal["high", "medium", "low"] = Field(description="Confidence level")
+    explanation: str = Field(description="Detailed explanation of why this is the answer")

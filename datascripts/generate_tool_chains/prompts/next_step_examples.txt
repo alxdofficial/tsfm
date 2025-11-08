@@ -4,6 +4,7 @@ Determine the next step in this analysis conversation.
 
 Dataset: {{DATASET_NAME}}
 Session: {{SESSION_ID}}
+Current Artifact ID: {{ARTIFACT_ID}}
 User Query: "{{USER_QUERY}}"
 
 {{CONVERSATION_HISTORY}}
@@ -12,18 +13,74 @@ User Query: "{{USER_QUERY}}"
 
 Decide what the analyst should do next. You have two options:
 
-1. **Use a tool** - If you need more information
-2. **Provide final classification** - If you have enough information
+1. **respond** - Give an intermediate answer or observation without calling a tool
+2. **use_tool** - Call a tool to gather more information
+
+Note: The conversation will be manually ended when enough information has been gathered. Focus on using tools and gathering information.
 
 ## AVAILABLE TOOLS
 
 **show_channel_stats(dataset_name: str)**
-- See what sensor channels are available
+- See what sensor channels are available in the dataset
 - Parameters: {"dataset_name": "{{DATASET_NAME}}"}
 
-**select_channels(dataset_name: str, session_id: str, channels: list)**
-- Filter to specific channels
-- Parameters: {"dataset_name": "{{DATASET_NAME}}", "session_id": "{{SESSION_ID}}", "channels": ["channel1", "channel2", ...]}
+**select_channels(artifact_id: str, channel_names: list)**
+- Select specific channels from a timeseries artifact, creating a new filtered artifact
+- **IMPORTANT**: Use the EXACT artifact_id shown in "Current Artifact ID" above - do NOT make up your own ID
+- Artifact IDs look like: "ts_a43f337420a2", "ts_be6133e6579c" (NOT descriptive names)
+- Parameters: {"artifact_id": "{{ARTIFACT_ID}}", "channel_names": ["channel1", "channel2", ...]}
+- Returns: {"type": "timeseries", "artifact_id": "new_artifact_id"}
+- After calling this tool, the returned artifact_id becomes the new current artifact for subsequent tools
+- **Can be called multiple times**: First to narrow down channels, then again to refine for a specific tokenizer
+
+**human_activity_motion_tokenizer(artifact_id: str)**
+- Tokenize IMU sensor data (accelerometer, gyroscope, magnetometer) into discrete z-space tokens
+- **DOMAIN**: Human Activity Recognition (HAR)
+- **BEST FOR**: Wearable IMU sensors at 50-100 Hz
+- **CHANNELS NEEDED**: accelerometer (acc_x/y/z), gyroscope (gyro_x/y/z), optionally magnetometer (mag_x/y/z)
+- Parameters: {"artifact_id": "{{ARTIFACT_ID}}"}
+- Returns: {"type": "z_tokens", "artifact_id": "new_ztokens_artifact_id"}
+- **WORKFLOW**: Use select_channels first to ensure only IMU channels are included
+
+**human_activity_motion_classifier(artifact_id: str)**
+- Classify z-tokens from human_activity_motion_tokenizer into semantic activity labels
+- **INPUT**: Z-tokens artifact from human_activity_motion_tokenizer
+- **OUTPUT**: E-tokens with semantic labels (walking, running, sitting, etc.)
+- Parameters: {"artifact_id": "zt_xyz..."}  (use z-tokens artifact ID)
+- Returns: {"type": "e_tokens", "artifact_id": "new_etokens_artifact_id"}
+- **MUST** be called AFTER human_activity_motion_tokenizer
+
+**human_activity_motion_capture_tokenizer(artifact_id: str)**
+- Tokenize motion capture joint rotation data into discrete z-space tokens
+- **DOMAIN**: Motion Capture (MoCap) - Full body kinematics
+- **BEST FOR**: Joint rotation/angle data at 60-120 Hz
+- **CHANNELS NEEDED**: Joint rotations like hip_rot_x/y/z, knee_rot_x/y/z, shoulder_rot_x/y/z
+- **NOT FOR**: Raw IMU sensors (use human_activity_motion_tokenizer instead)
+- Parameters: {"artifact_id": "{{ARTIFACT_ID}}"}
+- Returns: {"type": "z_tokens", "artifact_id": "new_ztokens_artifact_id"}
+- **WORKFLOW**: Use select_channels first to ensure only joint rotation channels are included
+
+**human_activity_motion_capture_classifier(artifact_id: str)**
+- Classify z-tokens from motion capture tokenizer into semantic movement labels
+- **INPUT**: Z-tokens artifact from human_activity_motion_capture_tokenizer
+- **OUTPUT**: E-tokens with semantic labels for full-body movements
+- Parameters: {"artifact_id": "zt_xyz..."}  (use z-tokens artifact ID)
+- Returns: {"type": "e_tokens", "artifact_id": "new_etokens_artifact_id"}
+- **MUST** be called AFTER human_activity_motion_capture_tokenizer
+
+**SENSOR COMPATIBILITY WARNING:**
+- **DO NOT mix sensors from drastically different modalities** that have incompatible sampling rates, measurement types, or temporal patterns
+- ❌ **BAD COMBINATIONS** (avoid these):
+  - IMU (accelerometer/gyroscope) + EMG (muscle electrical activity) - different signal characteristics
+  - IMU + ECG (heart electrical activity) - different measurement types
+  - Motion sensors + Physiological sensors - incompatible analysis methods
+  - High-frequency sensors (1000+ Hz) + Low-frequency sensors (<100 Hz) - mismatched temporal resolution
+- ✅ **GOOD COMBINATIONS** (use these):
+  - Accelerometer + Gyroscope + Magnetometer - all IMU sensors, same sampling rate
+  - ECG Lead 1 + ECG Lead 2 - same sensor type
+  - Multiple accelerometers from different body locations - same modality
+  - Chest sensors only OR Ankle sensors only OR Arm sensors only
+- **When user requests mixed modalities**: Ask yourself if the analysis makes sense. Usually stick to one sensor type unless user explicitly requires combination.
 
 ## REASONING EXAMPLES
 
@@ -31,7 +88,254 @@ Learn from these examples of good analytical reasoning:
 
 ---
 
-### Example 1: Just Started, Need Context
+### Example 0: Using Artifacts Correctly
+
+**Current State:**
+- Current Artifact ID: ts_a43f337420a2
+- User asked: "Analyze only the IMU sensors"
+- You've already seen the channels using show_channel_stats
+
+**Good Reasoning & Tool Call:**
+```json
+{
+  "reasoning": "The user wants to analyze only IMU sensors. From the channel stats, I can see the IMU sensors are the accelerometer and gyroscope channels. I'll use select_channels to filter the current artifact (ts_a43f337420a2) to include only those channels.",
+  "action": "use_tool",
+  "tool_name": "select_channels",
+  "parameters": {
+    "artifact_id": "ts_a43f337420a2",
+    "channel_names": ["body_acc_x", "body_acc_y", "body_acc_z", "body_gyro_x", "body_gyro_y", "body_gyro_z"]
+  }
+}
+```
+
+**Why This Works:**
+- Uses the EXACT artifact ID from "Current Artifact ID" (ts_a43f337420a2)
+- Does NOT make up a descriptive name like "imu_sensors_filtered"
+- References what was learned from previous tool calls
+
+**Tool Returns:**
+```json
+{
+  "type": "timeseries",
+  "artifact_id": "ts_be6133e6579c"
+}
+```
+
+**What Happens Next:**
+- The new artifact ts_be6133e6579c becomes the "Current Artifact ID" for the next turn
+- Any subsequent tools should use "ts_be6133e6579c" as the artifact_id
+
+---
+
+### Example 1: Complete Tokenizer/Classifier Workflow
+
+**Situation:** User asked "Classify the activity". Dataset has IMU sensors (chest_acc, ankle_acc, ankle_gyro) and ECG.
+
+**Step 1 - Check Channels:**
+```json
+{
+  "reasoning": "I need to see what channels are available to understand which tokenizer to use.",
+  "action": "use_tool",
+  "tool_name": "show_channel_stats",
+  "parameters": {"dataset_name": "mhealth"}
+}
+```
+
+**After seeing channels:**
+Available: chest_acc_x/y/z, ankle_acc_x/y/z, ankle_gyro_x/y/z, ecg_lead1/2
+
+**Step 2 - Select IMU Channels (exclude ECG):**
+```json
+{
+  "reasoning": "For activity classification, I should use IMU sensors only. The human_activity_motion_tokenizer works with IMU data (accelerometer and gyroscope). I'll exclude ECG since it's a physiological sensor incompatible with motion analysis.",
+  "action": "use_tool",
+  "tool_name": "select_channels",
+  "parameters": {
+    "artifact_id": "ts_a43f337420a2",
+    "channel_names": ["chest_acc_x", "chest_acc_y", "chest_acc_z",
+                     "ankle_acc_x", "ankle_acc_y", "ankle_acc_z",
+                     "ankle_gyro_x", "ankle_gyro_y", "ankle_gyro_z"]
+  }
+}
+```
+Returns: `{"type": "timeseries", "artifact_id": "ts_be6133e6579c"}`
+
+**Step 3 - Apply Tokenizer:**
+```json
+{
+  "reasoning": "Now I have IMU-only channels. I'll use the human_activity_motion_tokenizer which is designed for HAR with IMU sensors at 50-100 Hz.",
+  "action": "use_tool",
+  "tool_name": "human_activity_motion_tokenizer",
+  "parameters": {
+    "artifact_id": "ts_be6133e6579c"
+  }
+}
+```
+Returns: `{"type": "z_tokens", "artifact_id": "zt_abc12345678"}`
+
+**Step 4 - Apply Classifier:**
+```json
+{
+  "reasoning": "I now have z-tokens from the motion tokenizer. I'll use the matching classifier to get semantic activity labels.",
+  "action": "use_tool",
+  "tool_name": "human_activity_motion_classifier",
+  "parameters": {
+    "artifact_id": "zt_abc12345678"
+  }
+}
+```
+Returns: `{"type": "e_tokens", "artifact_id": "et_def98765432"}`
+
+**Why This Works:**
+1. Checked available channels first
+2. Selected only IMU sensors (excluded incompatible ECG)
+3. Used the correct tokenizer for the data domain (HAR with IMU)
+4. Applied the matching classifier to get semantic labels
+5. Each step used the artifact_id from the previous step
+
+---
+
+### Example 2: Refining Channels for Tokenizer
+
+**Situation:** User said "Use only ankle sensors". Dataset has chest, ankle, arm IMU sensors.
+
+**Step 1 - Initial Channel Selection (all IMU):**
+```json
+{
+  "tool_name": "select_channels",
+  "parameters": {
+    "artifact_id": "ts_initial",
+    "channel_names": ["chest_acc_x", "chest_acc_y", "chest_acc_z",
+                     "ankle_acc_x", "ankle_acc_y", "ankle_acc_z", "ankle_gyro_x/y/z",
+                     "arm_acc_x", "arm_acc_y", "arm_acc_z", "arm_gyro_x/y/z"]
+  }
+}
+```
+
+**Step 2 - Refine to Ankle Only:**
+```json
+{
+  "reasoning": "The user specifically wants ankle sensors only. Before tokenizing, I'll filter to just ankle channels.",
+  "action": "use_tool",
+  "tool_name": "select_channels",
+  "parameters": {
+    "artifact_id": "ts_after_step1",
+    "channel_names": ["ankle_acc_x", "ankle_acc_y", "ankle_acc_z",
+                     "ankle_gyro_x", "ankle_gyro_y", "ankle_gyro_z"]
+  }
+}
+```
+
+**Step 3 - Tokenize:**
+```json
+{
+  "tool_name": "human_activity_motion_tokenizer",
+  "parameters": {"artifact_id": "ts_ankle_only"}
+}
+```
+
+**Why This Works:**
+- Called select_channels TWICE: once broadly, once to refine
+- Each refinement created a new artifact
+- Final artifact had exactly the channels needed for the tokenizer
+
+---
+
+### Example 3: Choosing Wrong Tokenizer (AVOID THIS)
+
+**Situation:** Dataset has IMU sensors (accelerometer + gyroscope).
+
+**❌ BAD - Using Motion Capture Tokenizer on IMU Data:**
+```json
+{
+  "reasoning": "I'll tokenize the motion data",
+  "action": "use_tool",
+  "tool_name": "human_activity_motion_capture_tokenizer",  // WRONG!
+  "parameters": {"artifact_id": "ts_imu_data"}
+}
+```
+
+**Why This Is Wrong:**
+- Motion capture tokenizer expects joint rotation data (hip_rot, knee_rot, etc.)
+- Dataset has raw IMU sensors (acc, gyro)
+- Domain mismatch: MoCap vs HAR
+- Will produce poor quality tokens
+
+**✅ CORRECT - Use HAR Tokenizer:**
+```json
+{
+  "tool_name": "human_activity_motion_tokenizer",  // Correct for IMU
+  "parameters": {"artifact_id": "ts_imu_data"}
+}
+```
+
+**Rule**: Match the tokenizer to your data domain:
+- IMU sensors (acc/gyro/mag) → human_activity_motion_tokenizer
+- Joint rotations (hip_rot/knee_rot) → human_activity_motion_capture_tokenizer
+
+---
+
+### Example 4: Sensor Compatibility - Good Selection
+
+**Situation:** User asked "Classify the activity using IMU sensors". Dataset has chest_acc_x/y/z, ankle_acc_x/y/z, ankle_gyro_x/y/z, ecg_lead1/2.
+
+**Good Reasoning:**
+"The user wants IMU sensor analysis. IMU sensors include accelerometers and gyroscopes, which measure motion. I should select all accelerometer and gyroscope channels, but AVOID the ECG channels since those are physiological sensors (measuring heart activity) and have completely different signal characteristics from motion sensors. Mixing IMU and ECG would be inappropriate for motion-based activity classification."
+
+**Tool Call:**
+```json
+{
+  "tool_name": "select_channels",
+  "parameters": {
+    "artifact_id": "ts_a43f337420a2",
+    "channel_names": ["chest_acc_x", "chest_acc_y", "chest_acc_z",
+                     "ankle_acc_x", "ankle_acc_y", "ankle_acc_z",
+                     "ankle_gyro_x", "ankle_gyro_y", "ankle_gyro_z"]
+  }
+}
+```
+
+**Why This Works:**
+- Selects only motion sensors (acc + gyro)
+- Excludes ECG (physiological sensor)
+- All selected channels have same modality and compatible sampling rates
+
+---
+
+### Example 2: Sensor Compatibility - Bad Selection (AVOID THIS)
+
+**Situation:** User asked "What activity is this based on sensor data". Dataset has IMU and ECG channels.
+
+**Bad Reasoning (DON'T DO THIS):**
+"The user wants to use all sensor data, so I'll select everything including both IMU and ECG sensors together."
+
+**Bad Tool Call:**
+```json
+{
+  "tool_name": "select_channels",
+  "parameters": {
+    "artifact_id": "ts_a43f337420a2",
+    "channel_names": ["chest_acc_x", "chest_acc_y", "chest_acc_z",
+                     "ecg_lead1", "ecg_lead2"]  // ❌ WRONG - mixing motion + physiological
+  }
+}
+```
+
+**Why This Is Bad:**
+- IMU measures physical motion (m/s²)
+- ECG measures electrical heart activity (mV)
+- Completely different signal characteristics, incompatible for joint analysis
+- Different measurement types with different patterns
+
+**Correct Approach:**
+Choose ONE sensor modality based on the analysis goal:
+- For activity classification → Use IMU only
+- For heart rate analysis → Use ECG only
+- Don't mix unless user EXPLICITLY requests combined physiological + motion analysis
+
+---
+
+### Example 3: Just Started, Need Context
 
 **Situation:** User just asked "What activity is this?" and no tools have been used yet.
 
@@ -44,7 +348,7 @@ Learn from these examples of good analytical reasoning:
 
 ---
 
-### Example 2: Have Channel Info, Need to Select
+### Example 4: Have Channel Info, Need to Select
 
 **Situation:** User asked "Using only IMU data, classify this". You've seen the channels and know there are 9 channels including accelerometer, gyroscope, and other sensors.
 
@@ -57,7 +361,7 @@ Learn from these examples of good analytical reasoning:
 
 ---
 
-### Example 3: User Wants Specific Sensor
+### Example 5: User Wants Specific Sensor
 
 **Situation:** User asked "What does the accelerometer show?" You haven't checked channels yet.
 
@@ -70,68 +374,81 @@ Learn from these examples of good analytical reasoning:
 
 ---
 
-### Example 4: Have Context, Ready to Classify
+### Example 6: Intermediate Response
 
-**Situation:** You've selected the relevant IMU channels. The dataset is UCI HAR with 50Hz sampling, 2.54-second windows. User asked "What activity is this?"
+**Situation:** You've checked the channels. User asked "What can you tell me about this session?" but the question is open-ended.
 
 **Good Reasoning:**
-"Now I have the relevant sensor data selected - 6 IMU channels at 50Hz. Based on my understanding of activity recognition:
+"Looking at the available channels, I can see this dataset has 6 IMU sensors (accelerometer and gyroscope in 3 axes). The session appears to involve movement based on the presence of body acceleration data. However, I need to examine the actual data patterns to provide a specific classification."
 
-For this session, I would expect to see:
+**Action:** respond
+
+**Why This Works:** Provides useful intermediate information without prematurely committing to a final answer. Sets up for next step.
+
+---
+
+### Example 7: Have Enough Context
+
+**Situation:** You've selected the relevant IMU channels and used show_channel_stats. The dataset is UCI HAR with 50Hz sampling, 2.54-second windows. User asked "What activity is this?"
+
+**Good Reasoning:**
+"I now have good understanding of the sensor setup - 6 IMU channels at 50Hz. Based on what I know about activity recognition patterns:
+
+For this session, typical patterns would be:
 - **Walking**: Periodic acceleration ~1.5-2 Hz, moderate magnitude, smooth gyroscope patterns
 - **Running**: Higher frequency >2 Hz, larger magnitudes, more dynamic
 - **Sitting/Standing**: Minimal body acceleration (gravity removed), near-zero gyroscope
 - **Stairs**: Distinct vertical patterns, irregular periodicity
 
-Given the characteristics of the selected IMU data, this appears to be walking."
+I have gathered enough information about the sensors to form an understanding."
 
-**Action:** Provide classification
+**Action:** respond
 
-**Why This Works:** Shows analytical thinking, references specific signal characteristics, demonstrates domain expertise.
+**Why This Works:** Shows analytical thinking, references specific signal characteristics, demonstrates domain expertise. The conversation can be manually ended when sufficient information is gathered.
 
 ---
 
-### Example 5: Dataset-Specific Knowledge
+### Example 8: Dataset-Specific Knowledge
 
 **Situation:** MHEALTH dataset, user asked "What activity is this using physiological sensors?"
 
 **Good Reasoning:**
 "The user mentioned physiological sensors, which for MHEALTH would include the ECG channels. Let me first check what channels are available to identify the ECG and other physiological sensors versus the motion sensors."
 
-**Tool to Use:** `show_channel_stats`
+**Action:** use_tool with `show_channel_stats`
 
 **Why This Works:** Shows dataset-specific knowledge, understands user terminology.
 
 ---
 
-### Example 6: Multi-Device Dataset
+### Example 9: Multi-Device Dataset
 
 **Situation:** WISDM dataset (phone + watch), user asked "What does the watch show?"
 
 **Good Reasoning:**
 "WISDM has both phone and watch sensors. The user is specifically interested in watch data. I need to see the channel names to identify which channels come from the watch versus the phone, so I can filter appropriately."
 
-**Tool to Use:** `show_channel_stats`
+**Action:** use_tool with `show_channel_stats`
 
 **Why This Works:** Understands multi-device context, plans ahead for filtering.
 
 ---
 
-### Example 7: Ready After Quick Analysis
+### Example 10: After Quick Analysis
 
 **Situation:** Simple dataset (UCI HAR), you've seen channels, user asked straightforward "What activity is happening?"
 
 **Good Reasoning:**
-"I have all the information I need. The dataset has standard IMU channels at 50Hz. Based on the session characteristics and typical patterns:
-- The body acceleration shows periodic patterns consistent with locomotion
-- The gyroscope indicates rotational movement typical of walking gait
-- The frequency and magnitude suggest steady walking rather than running or stairs
+"I've reviewed the channel information. The dataset has standard IMU channels at 50Hz. Based on typical patterns for activity recognition:
+- Body acceleration patterns can indicate locomotion type
+- Gyroscope data captures rotational movements during activities
+- Combined analysis of frequency and magnitude helps distinguish between walking, running, and stairs
 
-This is walking."
+I now understand the sensor setup well enough to characterize the activity."
 
-**Action:** Provide classification
+**Action:** respond
 
-**Why This Works:** Concise, confident, cites specific evidence.
+**Why This Works:** Concise, shows domain knowledge, demonstrates understanding. The conversation can be ended manually when sufficient.
 
 ---
 
@@ -163,80 +480,96 @@ Mix up your phrasing. Here are alternatives for common situations:
 
 Ask yourself:
 
-1. **Do I know what sensors are available?**
-   - No → Use `show_channel_stats`
+1. **Can I provide useful information right now without a tool?**
+   - Yes → Use `respond` to share observations or intermediate findings
+   - No → Continue
+
+2. **Do I know what sensors are available?**
+   - No → Use `use_tool` with `show_channel_stats`
    - Yes → Continue
 
-2. **Does the user want specific sensors/channels?**
-   - Yes, and I haven't filtered → Use `select_channels`
+3. **Does the user want specific sensors/channels?**
+   - Yes, and I haven't filtered → Use `use_tool` with `select_channels`
    - No, or already filtered → Continue
 
-3. **Do I have enough information to classify?**
-   - Yes → Provide classification with reasoning
-   - No → Use appropriate tool
+4. **Should I gather more information?**
+   - Need more context → Use appropriate tool
+   - Have sufficient understanding → Use `respond` to share what you know
 
-## WHEN TO STOP (IMPORTANT!)
+## WHEN TO USE EACH ACTION
 
-You should provide a final classification when:
+**respond:**
+- User asks open-ended question and you can provide partial information
+- You want to acknowledge progress or share intermediate findings
+- You have gathered enough context to share observations
+- Useful for building understanding in the conversation
 
-✅ **You understand the available sensors** (via show_channel_stats or manifest)
-✅ **The user's query is satisfied** (you have the info they asked for)
-✅ **You can make a confident prediction** based on the context
+**use_tool:**
+- You need specific data that a tool can provide
+- User explicitly requests certain processing (e.g., "use only IMU data")
+- You lack context to proceed
+- More information would be valuable for understanding
 
-You do NOT need to use every available tool! Examples:
+## GATHERING INFORMATION (IMPORTANT!)
 
-**Stop early if the user query is simple:**
-- User: "What activity is this?" + You've seen channels → CLASSIFY (don't need to filter)
-- User: "Classify this session" + Simple dataset → CLASSIFY (maybe 1 tool max)
+Focus on gathering useful information:
 
-**Continue if user needs specific processing:**
-- User: "Using only IMU data..." → Need to filter first, then classify
-- User: "Based on accelerometer..." → Need to select those channels
+✅ **Use tools to understand the data:**
+- Check what sensors are available (show_channel_stats)
+- Filter to relevant channels if user specifies (select_channels)
 
-**Stop if next tool isn't available:**
-- If you'd want to use `motion_tokenizer` but it's not in available tools → CLASSIFY now with current info
-- Don't wait for tools that don't exist yet
+✅ **Provide intermediate observations:**
+- Share what you've learned from tool outputs
+- Build understanding progressively
+- Don't wait until you have "everything" - share insights along the way
 
-**Remember:** The goal is to answer the user's question efficiently. Don't use tools just because they exist!
+✅ **Don't overuse tools:**
+- User: "What activity is this?" + You've seen channels → Can respond with observations
+- User: "Classify this session" → Use 1-2 tools max, then share findings
+
+✅ **Use tools purposefully:**
+- User: "Using only IMU data..." → Need to filter with select_channels
+- User: "Based on accelerometer..." → Select those specific channels
+
+**Remember:** The conversation will be manually ended when sufficient information is gathered. Focus on using tools effectively and sharing useful observations.
 
 ## OUTPUT FORMAT
 
-You must respond with EITHER:
+You must respond with ONE of these two options:
 
-**Option A - Tool Use:**
+**Option A - Respond (intermediate answer/observation):**
 ```json
 {
-  "reasoning": "Your thought process here...",
+  "reasoning": "Why I'm providing this information now...",
+  "action": "respond",
+  "response": "Intermediate answer or observation to share with user"
+}
+```
+
+**Option B - Use Tool:**
+```json
+{
+  "reasoning": "Why this tool is needed...",
   "action": "use_tool",
   "tool_name": "show_channel_stats",
   "parameters": {"dataset_name": "{{DATASET_NAME}}"}
 }
 ```
 
-OR
+OR (using the EXACT artifact_id from "Current Artifact ID" above):
 
 ```json
 {
-  "reasoning": "Your thought process here...",
+  "reasoning": "The user wants to analyze specific channels. I need to select those channels from the current artifact.",
   "action": "use_tool",
   "tool_name": "select_channels",
   "parameters": {
-    "dataset_name": "{{DATASET_NAME}}",
-    "session_id": "{{SESSION_ID}}",
-    "channels": ["body_acc_x", "body_acc_y", "body_acc_z"]
+    "artifact_id": "{{ARTIFACT_ID}}",
+    "channel_names": ["body_acc_x", "body_acc_y", "body_acc_z"]
   }
 }
 ```
 
-**Option B - Final Classification:**
-```json
-{
-  "reasoning": "Your analytical thought process...",
-  "action": "classify",
-  "classification": "activity_name",
-  "confidence": "high" or "medium" or "low",
-  "explanation": "Detailed explanation of why..."
-}
-```
+**CRITICAL**: When using select_channels, copy the EXACT value from "Current Artifact ID" - it will be a string like "ts_a43f337420a2". Do NOT create your own descriptive artifact name.
 
 Now, decide what to do next:

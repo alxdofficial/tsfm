@@ -2,8 +2,8 @@
 Training data generation functions using Gemini.
 
 Two main functions:
-1. generate_query: Generate a plausible user query
-2. generate_next_step: Generate the next step in a conversation
+1. start_new_thread: Initialize a new conversation with a user query
+2. generate_next_step: Generate the next step in an ongoing conversation
 """
 
 import json
@@ -13,7 +13,7 @@ from typing import Dict, Any, List
 from google import genai
 from google.genai.types import GenerateContentConfig, Part
 
-from datascripts.generate_tool_chains.schemas import GeneratedQuery, NextStepDecision
+from datascripts.generate_tool_chains.schemas import GeneratedQuery, NextStepDecision, FinalAnswer
 
 
 # Paths to prompts (in same folder as this file)
@@ -29,14 +29,14 @@ def load_system_instructions() -> str:
         return f.read()
 
 
-def generate_query(
+def start_new_thread(
     client: genai.Client,
     manifest: Dict[str, Any],
     model: str = "gemini-2.5-flash",
     temperature: float = 0.9
 ) -> str:
     """
-    Generate a realistic user query for activity classification.
+    Generate a realistic user query to initialize a new conversation thread.
 
     Args:
         client: Gemini client instance
@@ -91,6 +91,7 @@ def generate_next_step(
     session_id: str,
     user_query: str,
     conversation_history: List[Dict[str, Any]],
+    artifact_id: str = None,
     model: str = "gemini-2.5-flash",
     temperature: float = 0.7
 ) -> NextStepDecision:
@@ -103,6 +104,7 @@ def generate_next_step(
         session_id: ID of the session being analyzed
         user_query: The user's question
         conversation_history: List of previous turns (tool calls + results)
+        artifact_id: Current artifact ID to use in tools (optional)
         model: Which Gemini model to use
         temperature: Sampling temperature
 
@@ -123,9 +125,26 @@ def generate_next_step(
         for i, turn in enumerate(conversation_history, 1):
             history_parts.append(f"**Step {i}:**")
             history_parts.append(f"Reasoning: {turn['reasoning']}")
-            history_parts.append(f"Tool: {turn['tool_call']['tool_name']}")
-            history_parts.append(f"Parameters: {json.dumps(turn['tool_call']['parameters'])}")
-            history_parts.append(f"Result: {json.dumps(turn['tool_result'], indent=2)}")
+
+            # Check if this is a tool call or a response
+            if turn.get('action') == 'use_tool' and 'tool_call' in turn:
+                history_parts.append(f"Tool: {turn['tool_call']['tool_name']}")
+                history_parts.append(f"Parameters: {json.dumps(turn['tool_call']['parameters'])}")
+                history_parts.append(f"Result: {json.dumps(turn['tool_result'], indent=2)}")
+
+                # Highlight new artifact IDs if created
+                if isinstance(turn['tool_result'], dict) and 'artifact_id' in turn['tool_result']:
+                    new_artifact_id = turn['tool_result']['artifact_id']
+                    history_parts.append(f"→ Created new artifact: {new_artifact_id}")
+
+            elif turn.get('action') == 'respond' and 'response' in turn:
+                history_parts.append(f"Action: respond")
+                history_parts.append(f"Response: {turn['response']}")
+
+            else:
+                # Fallback for unknown turn type
+                history_parts.append(f"Action: {turn.get('action', 'unknown')}")
+
             history_parts.append("")
         history_text = '\n'.join(history_parts)
 
@@ -134,6 +153,13 @@ def generate_next_step(
     prompt = prompt.replace("{{SESSION_ID}}", session_id)
     prompt = prompt.replace("{{USER_QUERY}}", user_query)
     prompt = prompt.replace("{{CONVERSATION_HISTORY}}", history_text)
+
+    # Replace {{ARTIFACT_ID}} placeholder with actual artifact ID from thread
+    if artifact_id:
+        prompt = prompt.replace("{{ARTIFACT_ID}}", artifact_id)
+    else:
+        # Fallback if no artifact ID provided
+        prompt = prompt.replace("{{ARTIFACT_ID}}", "<no_artifact_available>")
 
     # Combine system instructions and prompt
     full_prompt = f"{system_instructions}\n\n---\n\n{prompt}"
@@ -181,7 +207,13 @@ def format_next_step_for_storage(decision: NextStepDecision) -> Dict[str, Any]:
     Returns:
         Dictionary suitable for JSON storage
     """
-    if decision.action.value == "use_tool":
+    if decision.action.value == "respond":
+        return {
+            "reasoning": decision.reasoning,
+            "action": "respond",
+            "response": decision.response
+        }
+    elif decision.action.value == "use_tool":
         return {
             "reasoning": decision.reasoning,
             "action": "use_tool",
@@ -190,11 +222,54 @@ def format_next_step_for_storage(decision: NextStepDecision) -> Dict[str, Any]:
                 "parameters": decision.parameters
             }
         }
-    else:  # classify
+    else:  # finish
         return {
             "reasoning": decision.reasoning,
-            "action": "classify",
-            "classification": decision.classification,
+            "action": "finish",
+            "final_answer": decision.final_answer,
             "confidence": decision.confidence,
             "explanation": decision.explanation
         }
+
+
+def generate_final_answer(
+    client: genai.Client,
+    dataset_name: str,
+    session_id: str,
+    user_query: str,
+    conversation_history: List[Dict[str, Any]],
+    ground_truth: str,
+    model: str = "gemini-2.5-flash",
+    temperature: float = 0.7
+) -> FinalAnswer:
+    """
+    Generate final answer after conversation is complete.
+
+    This is a separate step with its own prompting to help the model
+    synthesize all the information gathered and provide a final classification.
+
+    Args:
+        client: Gemini client instance
+        dataset_name: Name of the dataset
+        session_id: ID of the session being analyzed
+        user_query: The user's question
+        conversation_history: List of previous turns (tool calls + results)
+        ground_truth: The correct answer (for context, not revealed to model)
+        model: Which Gemini model to use
+        temperature: Sampling temperature
+
+    Returns:
+        FinalAnswer with reasoning, answer, confidence, and explanation
+    """
+    # TODO: Implement final answer generation with custom prompting
+    # For now, this is a placeholder that will be implemented later
+    # when more tools are available
+
+    raise NotImplementedError(
+        "Final answer generation not yet implemented. "
+        "This will be added once more tools are available."
+    )
+
+
+# Backward compatibility alias
+generate_query = start_new_thread

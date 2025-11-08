@@ -13,7 +13,12 @@ from .tool_executor import (
     filter_by_time,
     load_manifest,
     load_labels,
-    get_session_paths
+    get_session_paths,
+    load_session_as_artifact,
+    human_activity_motion_tokenizer,
+    human_activity_motion_classifier,
+    human_activity_motion_capture_tokenizer,
+    human_activity_motion_capture_classifier
 )
 
 __all__ = [
@@ -24,5 +29,10 @@ __all__ = [
     "filter_by_time",
     "load_manifest",
     "load_labels",
-    "get_session_paths"
+    "get_session_paths",
+    "load_session_as_artifact",
+    "human_activity_motion_tokenizer",
+    "human_activity_motion_classifier",
+    "human_activity_motion_capture_tokenizer",
+    "human_activity_motion_capture_classifier"
 ]

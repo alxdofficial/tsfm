@@ -1,0 +1,51 @@
+Generate a final answer for the activity classification task.
+
+## CONVERSATION CONTEXT
+
+Dataset: {{DATASET_NAME}}
+Session: {{SESSION_ID}}
+User Query: "{{USER_QUERY}}"
+
+## CONVERSATION HISTORY
+
+{{CONVERSATION_HISTORY}}
+
+## YOUR TASK
+
+Based on all the information gathered during the conversation, provide a final classification answer.
+
+You should:
+1. Review all the tool calls and their results
+2. Synthesize the information into a coherent understanding
+3. Make a final classification decision
+4. Provide confidence level and detailed explanation
+
+## OUTPUT FORMAT
+
+You must provide a JSON response with the following fields:
+
+```json
+{
+  "reasoning": "Step-by-step thought process leading to your final answer...",
+  "final_answer": "The activity label (e.g., 'walking', 'running', 'sitting', etc.)",
+  "confidence": "high|medium|low",
+  "explanation": "Detailed explanation of why this is the correct classification, referencing specific evidence from the conversation..."
+}
+```
+
+## IMPORTANT NOTES
+
+- The final_answer should be a single activity label (lowercase)
+- Confidence should reflect how certain you are based on available information
+- Explanation should cite specific evidence from tool results
+- Reasoning should show your analytical process
+
+---
+
+**TODO:** This prompt template needs to be customized with:
+- Domain-specific guidance for activity classification
+- Examples of good final answers
+- Criteria for confidence levels
+- Signal pattern descriptions for different activities
+
+This will be implemented once more tools are available to gather richer context.
