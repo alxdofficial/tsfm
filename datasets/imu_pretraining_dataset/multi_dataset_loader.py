@@ -189,13 +189,23 @@ class IMUPretrainingDataset(Dataset):
         # Get patch size for this dataset (use per-dataset if available, otherwise default)
         patch_size_sec = self.patch_size_per_dataset.get(dataset_name, self.patch_size_sec)
 
+        # Convert label to text string
+        # Labels are stored as lists, join them with space if multiple
+        label_list = session_info['label']
+        if isinstance(label_list, list):
+            label_text = ' '.join(str(l) for l in label_list)
+        else:
+            label_text = str(label_list)
+
         return {
             'data': data,
             'attention_mask': attention_mask,
+            'label_text': label_text,  # Add label text at top level
             'metadata': {
                 'dataset': dataset_name,
                 'session_id': session_info['session_id'],
                 'label': session_info['label'],
+                'label_text': label_text,  # Also keep in metadata for backwards compatibility
                 'channels': selected_channels,
                 'channel_descriptions': channel_descriptions,
                 'sampling_rate_hz': sampling_rate,
@@ -217,6 +227,7 @@ class IMUPretrainingDataset(Dataset):
             - data: (batch, max_timesteps, max_channels) with zero padding
             - attention_mask: (batch, max_timesteps) Boolean mask
             - channel_mask: (batch, max_channels) Boolean mask for valid channels
+            - label_texts: List of label text strings
             - metadata: List of metadata dicts
         """
         # Find max dimensions
@@ -231,6 +242,7 @@ class IMUPretrainingDataset(Dataset):
         channel_mask = torch.zeros(batch_size, max_channels, dtype=torch.bool)
 
         metadata_list = []
+        label_texts = []
 
         for i, sample in enumerate(batch):
             data = sample['data']
@@ -244,11 +256,13 @@ class IMUPretrainingDataset(Dataset):
             channel_mask[i, :num_channels] = True
 
             metadata_list.append(sample['metadata'])
+            label_texts.append(sample['label_text'])
 
         return {
             'data': padded_data,
             'attention_mask': attention_mask,
             'channel_mask': channel_mask,
+            'label_texts': label_texts,
             'metadata': metadata_list
         }
 

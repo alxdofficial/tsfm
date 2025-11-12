@@ -33,7 +33,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from tools.models.imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
 from tools.models.imu_activity_recognition_encoder.config import get_config as get_encoder_config
 from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders
-from datasets.imu_pretraining_dataset.augmentations import get_mixed_augmentation
+from datasets.imu_pretraining_dataset.augmentations import get_weak_augmentation
 from training_scripts.imu_tool_pretraining.losses import (
     CombinedPretrainingLoss,
     create_random_mask
@@ -90,7 +90,7 @@ WARMUP_EPOCHS = 10
 # Loss weights
 MAE_WEIGHT = 1.0
 CONTRASTIVE_WEIGHT = 1.0
-TEMPERATURE = 0.5  # Higher temperature works better for small batch sizes (was 0.2)
+TEMPERATURE = 0.2  # Standard contrastive learning temperature
 
 # Masking
 MASK_RATIO = 0.5  # 50% random masking
@@ -387,6 +387,13 @@ def train_epoch(
             'mae': f"{metrics['mae_loss']:.4f}",
             'contrast': f"{metrics['contrastive_loss']:.4f}"
         })
+
+        # Log batch-level training losses for real-time monitoring
+        if plotter is not None:
+            global_batch = epoch * len(dataloader) + batch_idx
+            plotter.add_scalar('batch/train_loss', metrics['total_loss'], global_batch)
+            plotter.add_scalar('batch/train_mae_loss', metrics['mae_loss'], global_batch)
+            plotter.add_scalar('batch/train_contrastive_loss', metrics['contrastive_loss'], global_batch)
 
         # Clear CUDA cache periodically to prevent memory buildup
         if device.type == 'cuda' and batch_idx % 10 == 0:
@@ -721,8 +728,8 @@ def main():
         seed=SEED
     )
 
-    # Create augmentation
-    augmentation = get_mixed_augmentation()
+    # Create augmentation (weak: jitter, scale, time_shift)
+    augmentation = get_weak_augmentation()
 
     # Create criterion
     criterion = CombinedPretrainingLoss(

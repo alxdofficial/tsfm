@@ -23,30 +23,24 @@ class TrainingPlotter:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Storage for metrics
+        # Storage for metrics - dynamically populated
         self.metrics = {
-            'epoch': {
-                'train_loss': [],
-                'val_loss': [],
-                'train_mae_loss': [],
-                'val_mae_loss': [],
-                'train_contrastive_loss': [],
-                'val_contrastive_loss': [],
-                'lr': [],
-            },
-            'train_per_dataset': {},  # {dataset: {'loss': [], 'mae': [], 'contrastive': []}}
+            'epoch': {},  # {metric_name: [(step, value), ...]}
+            'batch': {},  # {metric_name: [(step, value), ...]}
+            'train_per_dataset': {},  # {dataset: {metric: [(step, value), ...]}}
             'val_per_dataset': {},
         }
 
-        # Track current epoch
+        # Track current epoch and batch
         self.current_epoch = 0
+        self.global_batch = 0  # Global batch counter across all epochs
 
     def add_scalar(self, tag: str, value: float, step: int):
         """
         Add a scalar metric (mimics TensorBoard API).
 
         Args:
-            tag: Metric name (e.g., 'epoch/train_loss', 'train_per_dataset/uci_har/loss')
+            tag: Metric name (e.g., 'epoch/train_loss', 'batch/stage1_loss', 'train_per_dataset/uci_har/loss')
             value: Metric value
             step: Step number (epoch or batch)
         """
@@ -54,36 +48,42 @@ class TrainingPlotter:
         parts = tag.split('/')
 
         if parts[0] == 'epoch':
-            # Epoch-level metrics
+            # Epoch-level metrics - dynamically add if not exists
             metric_name = parts[1]
-            if metric_name in self.metrics['epoch']:
-                self.metrics['epoch'][metric_name].append((step, value))
+            if metric_name not in self.metrics['epoch']:
+                self.metrics['epoch'][metric_name] = []
+            self.metrics['epoch'][metric_name].append((step, value))
+
+        elif parts[0] == 'batch':
+            # Batch-level training metrics - dynamically add if not exists
+            metric_name = parts[1]
+            if metric_name not in self.metrics['batch']:
+                self.metrics['batch'][metric_name] = []
+            self.metrics['batch'][metric_name].append((step, value))
 
         elif parts[0] == 'train_per_dataset':
-            # Per-dataset training metrics
+            # Per-dataset training metrics - dynamically add dataset and metric
             dataset_name = parts[1]
             metric_name = parts[2]
 
             if dataset_name not in self.metrics['train_per_dataset']:
-                self.metrics['train_per_dataset'][dataset_name] = {
-                    'loss': [],
-                    'mae_loss': [],
-                    'contrastive_loss': []
-                }
+                self.metrics['train_per_dataset'][dataset_name] = {}
+
+            if metric_name not in self.metrics['train_per_dataset'][dataset_name]:
+                self.metrics['train_per_dataset'][dataset_name][metric_name] = []
 
             self.metrics['train_per_dataset'][dataset_name][metric_name].append((step, value))
 
         elif parts[0] == 'val_per_dataset':
-            # Per-dataset validation metrics
+            # Per-dataset validation metrics - dynamically add dataset and metric
             dataset_name = parts[1]
             metric_name = parts[2]
 
             if dataset_name not in self.metrics['val_per_dataset']:
-                self.metrics['val_per_dataset'][dataset_name] = {
-                    'loss': [],
-                    'mae_loss': [],
-                    'contrastive_loss': []
-                }
+                self.metrics['val_per_dataset'][dataset_name] = {}
+
+            if metric_name not in self.metrics['val_per_dataset'][dataset_name]:
+                self.metrics['val_per_dataset'][dataset_name][metric_name] = []
 
             self.metrics['val_per_dataset'][dataset_name][metric_name].append((step, value))
 
@@ -95,34 +95,67 @@ class TrainingPlotter:
 
     def plot_all(self):
         """Generate all plots and save as PNG files."""
-        self._plot_overall_loss()
-        self._plot_loss_components()
+        self._plot_batch_training_losses()  # Real-time training convergence
+        self._plot_overall_loss()  # Epoch-level train vs val
+        self._plot_loss_components()  # Epoch-level MAE vs Contrastive
         self._plot_per_dataset_losses()
         self._plot_learning_rate()
         self.save_metrics()
 
+    def _plot_batch_training_losses(self):
+        """Plot batch-level training losses for real-time convergence monitoring."""
+        # Find any loss metric in batch
+        loss_metrics = [k for k in self.metrics['batch'].keys() if 'loss' in k.lower()]
+        if not loss_metrics:
+            return
+
+        # Plot the first loss metric as main plot
+        main_loss = loss_metrics[0]
+        batches, losses = zip(*self.metrics['batch'][main_loss])
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(batches, losses, linewidth=1, alpha=0.7, label=main_loss)
+
+        # Plot other loss metrics if they exist
+        for metric in loss_metrics[1:]:
+            if self.metrics['batch'][metric]:
+                b, v = zip(*self.metrics['batch'][metric])
+                ax.plot(b, v, linewidth=1, alpha=0.7, label=metric)
+
+        ax.set_xlabel('Batch', fontsize=12)
+        ax.set_ylabel('Loss', fontsize=12)
+        ax.set_title('Training Loss (Batch-level)', fontsize=14, fontweight='bold')
+        ax.legend(fontsize=10)
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(self.output_dir / 'batch_training_losses.png', dpi=150)
+        plt.close(fig)
+
     def _plot_overall_loss(self):
         """Plot overall train/val loss over epochs."""
-        # Skip if no data yet
-        if not self.metrics['epoch']['train_loss'] and not self.metrics['epoch']['val_loss']:
+        # Find loss metrics
+        train_loss = self.metrics['epoch'].get('train_loss')
+        val_loss = self.metrics['epoch'].get('val_loss')
+
+        if not train_loss and not val_loss:
             return
 
         fig, ax = plt.subplots(figsize=(10, 6))
 
-        # Extract data
-        if self.metrics['epoch']['train_loss']:
-            epochs_train, train_loss = zip(*self.metrics['epoch']['train_loss'])
-            ax.plot(epochs_train, train_loss, label='Train Loss', marker='o', linewidth=2)
+        # Extract and plot data
+        if train_loss:
+            epochs_train, losses_train = zip(*train_loss)
+            ax.plot(epochs_train, losses_train, label='Train Loss', marker='o', linewidth=2)
 
-        if self.metrics['epoch']['val_loss']:
-            epochs_val, val_loss = zip(*self.metrics['epoch']['val_loss'])
-            ax.plot(epochs_val, val_loss, label='Val Loss', marker='s', linewidth=2)
+        if val_loss:
+            epochs_val, losses_val = zip(*val_loss)
+            ax.plot(epochs_val, losses_val, label='Val Loss', marker='s', linewidth=2)
 
         ax.set_xlabel('Epoch', fontsize=12)
         ax.set_ylabel('Loss', fontsize=12)
         ax.set_title('Training and Validation Loss', fontsize=14, fontweight='bold')
-        if self.metrics['epoch']['train_loss'] or self.metrics['epoch']['val_loss']:
-            ax.legend(fontsize=10)
+        ax.legend(fontsize=10)
         ax.grid(True, alpha=0.3)
 
         plt.tight_layout()
@@ -130,49 +163,47 @@ class TrainingPlotter:
         plt.close(fig)
 
     def _plot_loss_components(self):
-        """Plot MAE loss vs Contrastive loss over epochs."""
-        # Skip if no data yet
-        has_train_data = self.metrics['epoch']['train_mae_loss'] or self.metrics['epoch']['train_contrastive_loss']
-        has_val_data = self.metrics['epoch']['val_mae_loss'] or self.metrics['epoch']['val_contrastive_loss']
-        if not has_train_data and not has_val_data:
+        """Plot all non-loss metrics (accuracy, similarity, etc.) over epochs."""
+        # Get all metrics except main loss
+        train_metrics = [k for k in self.metrics['epoch'].keys()
+                        if k.startswith('train_') and k != 'train_loss']
+        val_metrics = [k for k in self.metrics['epoch'].keys()
+                      if k.startswith('val_') and k != 'val_loss']
+
+        if not train_metrics and not val_metrics:
             return
 
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        # Create plots for each metric type
+        fig, axes = plt.subplots(1, 2, figsize=(15, 6))
 
-        # Train losses
-        if self.metrics['epoch']['train_mae_loss']:
-            epochs, mae_loss = zip(*self.metrics['epoch']['train_mae_loss'])
-            ax1.plot(epochs, mae_loss, label='MAE Loss', marker='o', linewidth=2, color='tab:blue')
+        # Plot training metrics
+        for metric in train_metrics:
+            if self.metrics['epoch'][metric]:
+                epochs, values = zip(*self.metrics['epoch'][metric])
+                axes[0].plot(epochs, values, label=metric.replace('train_', ''), marker='o', linewidth=2)
 
-        if self.metrics['epoch']['train_contrastive_loss']:
-            epochs, contrast_loss = zip(*self.metrics['epoch']['train_contrastive_loss'])
-            ax1.plot(epochs, contrast_loss, label='Contrastive Loss', marker='s', linewidth=2, color='tab:orange')
+        axes[0].set_xlabel('Epoch', fontsize=12)
+        axes[0].set_ylabel('Value', fontsize=12)
+        axes[0].set_title('Training Metrics', fontsize=14, fontweight='bold')
+        if train_metrics:
+            axes[0].legend(fontsize=10)
+        axes[0].grid(True, alpha=0.3)
 
-        ax1.set_xlabel('Epoch', fontsize=12)
-        ax1.set_ylabel('Loss', fontsize=12)
-        ax1.set_title('Training Loss Components', fontsize=14, fontweight='bold')
-        if has_train_data:
-            ax1.legend(fontsize=10)
-        ax1.grid(True, alpha=0.3)
+        # Plot validation metrics
+        for metric in val_metrics:
+            if self.metrics['epoch'][metric]:
+                epochs, values = zip(*self.metrics['epoch'][metric])
+                axes[1].plot(epochs, values, label=metric.replace('val_', ''), marker='s', linewidth=2)
 
-        # Validation losses
-        if self.metrics['epoch']['val_mae_loss']:
-            epochs, mae_loss = zip(*self.metrics['epoch']['val_mae_loss'])
-            ax2.plot(epochs, mae_loss, label='MAE Loss', marker='o', linewidth=2, color='tab:blue')
-
-        if self.metrics['epoch']['val_contrastive_loss']:
-            epochs, contrast_loss = zip(*self.metrics['epoch']['val_contrastive_loss'])
-            ax2.plot(epochs, contrast_loss, label='Contrastive Loss', marker='s', linewidth=2, color='tab:orange')
-
-        ax2.set_xlabel('Epoch', fontsize=12)
-        ax2.set_ylabel('Loss', fontsize=12)
-        ax2.set_title('Validation Loss Components', fontsize=14, fontweight='bold')
-        if has_val_data:
-            ax2.legend(fontsize=10)
-        ax2.grid(True, alpha=0.3)
+        axes[1].set_xlabel('Epoch', fontsize=12)
+        axes[1].set_ylabel('Value', fontsize=12)
+        axes[1].set_title('Validation Metrics', fontsize=14, fontweight='bold')
+        if val_metrics:
+            axes[1].legend(fontsize=10)
+        axes[1].grid(True, alpha=0.3)
 
         plt.tight_layout()
-        plt.savefig(self.output_dir / 'loss_components.png', dpi=150)
+        plt.savefig(self.output_dir / 'metrics.png', dpi=150)
         plt.close(fig)
 
     def _plot_per_dataset_losses(self):
@@ -280,12 +311,13 @@ class TrainingPlotter:
 
     def _plot_learning_rate(self):
         """Plot learning rate schedule."""
-        if not self.metrics['epoch']['lr']:
+        lr_data = self.metrics['epoch'].get('lr')
+        if not lr_data:
             return
 
         fig, ax = plt.subplots(figsize=(10, 6))
 
-        epochs, lrs = zip(*self.metrics['epoch']['lr'])
+        epochs, lrs = zip(*lr_data)
         ax.plot(epochs, lrs, linewidth=2, color='tab:green')
 
         ax.set_xlabel('Epoch', fontsize=12)
@@ -302,8 +334,9 @@ class TrainingPlotter:
         """Finalize plotting (mimics TensorBoard API)."""
         self.plot_all()
         print(f"\n✓ Plots saved to {self.output_dir}")
-        print(f"  - overall_loss.png")
-        print(f"  - loss_components.png")
+        print(f"  - batch_training_losses.png (real-time training convergence)")
+        print(f"  - overall_loss.png (epoch-level train vs val)")
+        print(f"  - loss_components.png (epoch-level MAE vs contrastive)")
         print(f"  - per_dataset_losses.png")
         print(f"  - learning_rate.png")
         print(f"  - dataset_*_detail.png (per dataset)")
