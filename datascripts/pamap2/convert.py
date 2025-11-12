@@ -194,6 +194,14 @@ def create_manifest():
                 "sampling_rate_hz": 100.0
             })
 
+        # Orientation (quaternion)
+        for i in range(1, 5):
+            channels.append({
+                "name": f"{location}_ori_{i}",
+                "description": f"Orientation quaternion component {i} from {location_desc} IMU",
+                "sampling_rate_hz": 100.0
+            })
+
     manifest = {
         "dataset_name": "PAMAP2",
         "description": "Physical activity monitoring with 3 IMUs (hand, chest, ankle) and heart rate. 9 subjects performing 18 activities including walking, running, cycling, and household tasks.",

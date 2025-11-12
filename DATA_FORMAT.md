@@ -263,19 +263,22 @@ Tools operate on this standardized format:
 
 **Example workflow:**
 ```python
-# 1. Get overview
+# 1. Get overview (requires dataset)
 stats = show_session_stats(dataset_name="uci_har")
 # Returns: {num_sessions: 7352, avg_duration_sec: 2.56, ...}
 
-# 2. Explore channels
-channels = show_channel_stats(dataset_name="uci_har")
-# Returns: {body_acc_x: {mean: 0.08, std: 0.15, ...}, ...}
+# 2. Load a session as artifact
+artifact_id = load_session_as_artifact("uci_har", "train_01_0000")
 
-# 3. Focus on relevant channels
-select_channels(dataset_name="uci_har", channel_names=["body_acc_x", "body_acc_y", "gyro_z"])
+# 3. Explore channels from artifact
+channels = show_channel_stats(artifact_id=artifact_id)
+# Returns: {channels: [{name: "body_acc_x", ...}, ...], total_channels: 9, ...}
 
-# 4. Extract temporal window (real-world time!)
-filter_by_time(dataset_name="uci_har", start_sec=0.0, end_sec=2.0)
+# 4. Focus on relevant channels
+filtered_artifact = select_channels(artifact_id=artifact_id, channel_names=["body_acc_x", "body_acc_y", "gyro_z"])
+
+# 5. Extract temporal window (real-world time!)
+time_filtered = filter_by_time(artifact_id=artifact_id, start_sec=0.0, end_sec=2.0)
 ```
 
 ### Phase 2: Model Selection (Future)

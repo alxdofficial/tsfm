@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-ActionSense downloader + slicer with NATIVE SAMPLING RATES (ALL subjects/splits, fixed links)
+ActionSense downloader + slicer - EMG ONLY at 200Hz
 
-CHANGES from download_script.py:
-- Saves sensor CSVs at native sampling rates (no upsampling to fastest rate)
-- Each stream (joints, emg_left, emg_right, gaze) saved to separate CSV
-- Extended manifest includes per-stream metadata (csv_path, rate_hz, num_channels)
-- Patches maintain temporal duration consistency across streams, not sample count
+CHANGES from original:
+- Processes ONLY EMG data (bilateral Myo armbands)
+- Target sampling rate: 200Hz (Myo armband documented spec)
+- Joints and gaze modalities excluded
 - Optional FPV video download (default: False, use --download_video to enable)
 
 - Uses a hard-coded LINKS dict containing:
@@ -17,12 +16,10 @@ CHANGES from download_script.py:
       experiment-activities/activities/{data,time_s}
   (pairs "Start"/"Stop" events; skips Bad/Maybe)
 - Extracts per-activity video segments with ffmpeg (optional).
-- Builds per-activity pandas DataFrame with 4 streams:
-      joints rotation (xsens-joints/rotation_xzy_deg)
+- Builds per-activity pandas DataFrame with 2 EMG streams:
       emg left (myo-left/emg)
       emg right (myo-right/emg)
-      gaze (eye-tracking-gaze/position)
-  and saves each stream to separate CSV at NATIVE rate.
+  and saves each stream to separate CSV at 200Hz.
 - Saves mirrored names for easy CSV ↔ video cross-reference and an extended manifest.csv.
 """
 
@@ -40,12 +37,11 @@ SAVE_FLOAT32 = True                     # store numeric columns as float32
 MIN_SEGMENT_SECONDS = 1.0               # ignore very short segments
 JOINTS_FIRST_N = 22                     # take first 22 joints from Xsens (as in reference converter)
 
-# Target sampling rates for resampling (from sensor specs)
+# Target sampling rate for EMG resampling (from sensor specs)
+# Both EMG streams use the same rate (Myo armband documented spec)
 TARGET_RATES = {
-    "joints": 60.0,      # Xsens IMU documented spec
     "emg_left": 200.0,   # Myo armband documented spec
     "emg_right": 200.0,  # Myo armband documented spec
-    "gaze": 120.0,       # Tobii eye tracker documented spec
 }
 
 SESSION = requests.Session()
@@ -370,13 +366,11 @@ def main():
                         # No video available - set empty path in manifest
                         vid_path = ""
 
-                    # ===== NEW: Save sensor CSVs at native rates =====
+                    # ===== Save EMG sensor CSVs at 200Hz =====
                     streams = {}
                     for stream_name, reader_fn in [
-                        ("joints", read_joints_rotation),
                         ("emg_left", read_emg_left),
                         ("emg_right", read_emg_right),
-                        ("gaze", read_gaze),
                     ]:
                         stream_data = reader_fn(f)
                         if stream_data is None:
@@ -438,7 +432,7 @@ def main():
                             "num_channels": int(D),
                         }
 
-                    # Add to manifest with stream metadata
+                    # Add to manifest with EMG stream metadata only
                     manifest_rows.append({
                         "subject": subject,
                         "split": split,
@@ -447,19 +441,13 @@ def main():
                         "t0_abs": t0_abs,
                         "t1_abs": t1_abs,
                         "video_path": os.path.relpath(vid_path, DATA_ROOT) if vid_path else "",
-                        # Stream metadata
-                        "joints_csv": streams.get("joints", {}).get("csv", ""),
-                        "joints_rate_hz": streams.get("joints", {}).get("rate_hz", 0.0),
-                        "joints_channels": streams.get("joints", {}).get("num_channels", 0),
+                        # EMG stream metadata
                         "emg_left_csv": streams.get("emg_left", {}).get("csv", ""),
                         "emg_left_rate_hz": streams.get("emg_left", {}).get("rate_hz", 0.0),
                         "emg_left_channels": streams.get("emg_left", {}).get("num_channels", 0),
                         "emg_right_csv": streams.get("emg_right", {}).get("csv", ""),
                         "emg_right_rate_hz": streams.get("emg_right", {}).get("rate_hz", 0.0),
                         "emg_right_channels": streams.get("emg_right", {}).get("num_channels", 0),
-                        "gaze_csv": streams.get("gaze", {}).get("csv", ""),
-                        "gaze_rate_hz": streams.get("gaze", {}).get("rate_hz", 0.0),
-                        "gaze_channels": streams.get("gaze", {}).get("num_channels", 0),
                     })
         except Exception as e:
             print(f"[WARN] Processing failed for {subject}/{split}: {e}")

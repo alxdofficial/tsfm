@@ -33,3 +33,6 @@ debug_stats
 debug
 debug_eval
 comparison
+training_output
+.serena
+.claude

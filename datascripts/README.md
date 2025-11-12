@@ -88,7 +88,7 @@ Pandas DataFrame with:
 | **PAMAP2** | 9 | 18 | ~40 | 100 Hz | 3 IMUs (hand, chest, ankle) + HR |
 | **MHEALTH** | 10 | 12 | 23 | 50 Hz | 3 IMUs (chest, ankle, wrist) + ECG |
 | **WISDM** | 51 | 18 | 12 | 20 Hz | Phone + watch accel + gyro |
-| **ActionSense** | 9 | 23 | 84 | Multi | Kitchen activities: mocap + EMG + gaze |
+| **ActionSense** | 9 | 23 | 16 | 200 Hz | Kitchen activities: bilateral EMG only |
 
 ## Usage
 
@@ -225,12 +225,40 @@ python datascripts/setup_all_datasets.py mhealth
 - Future: Multi-modal alignment across devices
 
 ### ActionSense
-- Multi-modal with different sampling rates:
-  - Joints: 60 Hz (66 channels)
-  - EMG: 200 Hz (16 channels)
-  - Gaze: 120 Hz (2 channels)
-- Currently uses first available modality per session
-- Future: Multi-rate interpolation and alignment
+- **EMG-only dataset** at 200 Hz (bilateral Myo armbands)
+- 16 channels: 8 left forearm + 8 right forearm
+- Other modalities (joints, gaze) excluded
+- Target rate chosen based on EMG sensor hardware spec (Myo armband documented rate)
+
+## Sampling Rate Policy
+
+**Preprocessing Approach**: All variable-rate resampling is handled during dataset conversion (one-time preprocessing). Runtime code assumes all channels within a dataset have uniform sampling rates.
+
+### Design Decisions
+
+1. **Per-Dataset Target Rate**: Each dataset has a human-chosen target sampling rate specified in conversion scripts
+2. **Uniform Within Dataset**: All channels in a dataset are resampled to the same target rate during conversion
+3. **Hardware-Based Targets**: Target rates chosen based on sensor hardware specifications when available
+4. **Linear Interpolation**: Resampling uses `np.interp()` for temporal alignment
+
+### Dataset Target Rates
+
+| Dataset | Target Rate | Rationale |
+|---------|-------------|-----------|
+| UCI HAR | 50 Hz | Native rate (pre-processed) |
+| PAMAP2 | 100 Hz | Native rate (synchronized) |
+| MHEALTH | 50 Hz | Native rate (synchronized) |
+| WISDM | 20 Hz | Native rate (phone sensors) |
+| ActionSense | 200 Hz | Myo armband hardware spec |
+
+### Multi-Rate Datasets
+
+For datasets with channels at different native rates (e.g., ActionSense):
+- **Option 1 (Current)**: Select single modality per dataset (e.g., EMG only)
+- **Option 2 (Future)**: Resample all modalities to common target rate with interpolation
+- **Option 3 (Future)**: Support per-channel rates with NaN-sparse storage or metadata-driven resampling
+
+Current implementation uses **Option 1** for simplicity and to avoid interpolation artifacts.
 
 ## Output Structure
 

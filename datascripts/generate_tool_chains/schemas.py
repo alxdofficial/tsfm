@@ -26,18 +26,20 @@ class NextStepAction(str, Enum):
     """What action to take next."""
     RESPOND = "respond"  # Provide intermediate response without tool
     USE_TOOL = "use_tool"  # Call a tool to get more information
+    FINISH_CONVERSATION = "finish_conversation"  # Finish with final answer using e-tokens
 
 
 class NextStepDecision(BaseModel):
     """
     Decision for what to do next in the analysis.
 
-    Two possible actions:
+    Three possible actions:
     - respond: Give an intermediate answer/observation without calling a tool
     - use_tool: Call a tool to gather more information
+    - finish_conversation: Finish the conversation with final answer (after model returns e-tokens)
     """
     action: NextStepAction = Field(
-        description="What action to take: respond or use_tool"
+        description="What action to take: respond, use_tool, or finish_conversation"
     )
     reasoning: str = Field(description="Thought process for this decision")
 
@@ -51,10 +53,8 @@ class NextStepDecision(BaseModel):
     tool_name: Optional[Literal[
         "show_channel_stats",
         "select_channels",
-        "human_activity_motion_tokenizer",
-        "human_activity_motion_classifier",
-        "human_activity_motion_capture_tokenizer",
-        "human_activity_motion_capture_classifier"
+        "human_activity_recognition_model",
+        "motion_capture_model"
     ]] = Field(
         default=None,
         description="Tool to call (required if action is use_tool)"
@@ -64,12 +64,17 @@ class NextStepDecision(BaseModel):
         description="Tool parameters (required if action is use_tool)"
     )
 
+    # If action == FINISH_CONVERSATION
+    # No additional fields needed - the system will call generate_final_answer()
+
     def validate_completeness(self) -> bool:
         """Check that required fields are present based on action."""
         if self.action == NextStepAction.RESPOND:
             return self.response is not None
         elif self.action == NextStepAction.USE_TOOL:
             return self.tool_name is not None and self.parameters is not None
+        elif self.action == NextStepAction.FINISH_CONVERSATION:
+            return True  # No additional fields required
         return False
 
 

@@ -23,7 +23,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from google import genai
 from tools.tool_executor import execute_tool, load_manifest, load_labels, load_session_as_artifact
-from datascripts.generate_tool_chains.generation import start_new_thread, generate_next_step
+from datascripts.generate_tool_chains.generation import (
+    start_new_thread,
+    generate_next_step,
+    generate_final_answer,
+    format_final_answer_for_storage
+)
 from datascripts.generate_tool_chains.schemas import NextStepDecision
 from artifacts import get_artifact_metadata
 
@@ -366,6 +371,9 @@ def generate_step_interactive(
             print(f"\n🔧 Tool: {decision.tool_name}")
             print(f"📋 Parameters: {json.dumps(decision.parameters, indent=2)}")
 
+        elif decision.action.value == "finish_conversation":
+            print(f"\n🏁 Action: Finish conversation and generate final answer")
+
         print("\n[y] Accept and save  [n] Retry  [x] Exit")
         response = input("→ ").strip().lower()
 
@@ -451,6 +459,72 @@ def generate_step_interactive(
                 except Exception as e:
                     print(f"❌ Tool execution failed: {e}")
                     print("Retry with different parameters?")
+                    continue
+
+            elif decision.action.value == "finish_conversation":
+                # Finish conversation with final answer
+                print("\n" + "="*80)
+                print("🎯 FINISHING CONVERSATION - GENERATING FINAL ANSWER")
+                print("="*80)
+
+                # Get ground truth and metadata
+                ground_truth_label = thread["metadata"]["ground_truth"]
+                user_query = thread["metadata"]["user_query"]
+                dataset_name = thread["metadata"]["dataset"]
+                session_id = thread["metadata"]["session"]
+
+                # Convert messages to conversation history
+                conversation_history = messages_to_conversation_history(thread["messages"])
+
+                print(f"\nGround Truth Label: {ground_truth_label}")
+                print("Calling generate_final_answer()...")
+
+                try:
+                    final_answer = generate_final_answer(
+                        client=client,
+                        dataset_name=dataset_name,
+                        session_id=session_id,
+                        user_query=user_query,
+                        ground_truth_label=ground_truth_label,
+                        conversation_history=conversation_history,
+                        model=MODEL,
+                        temperature=STEP_TEMP
+                    )
+
+                    print("\n✅ Final answer generated!")
+                    print(f"\n📝 Final Answer: {final_answer.final_answer}")
+                    print(f"🎯 Confidence: {final_answer.confidence}")
+                    print(f"\n💬 Explanation to user:")
+                    print(f"   {final_answer.explanation}")
+
+                    # Add final answer as assistant message
+                    thread["messages"].append({
+                        "role": "assistant",
+                        "content": final_answer.explanation,
+                        "tool_calls": None
+                    })
+
+                    # Mark thread as finished
+                    thread["metadata"]["status"] = "finished"
+                    thread["metadata"]["final_answer"] = final_answer.final_answer
+                    thread["metadata"]["confidence"] = final_answer.confidence
+
+                    # Check if answer is correct
+                    thread["metadata"]["is_correct"] = (
+                        final_answer.final_answer.lower().strip() == ground_truth_label.lower().strip()
+                    )
+
+                    save_thread(thread)
+
+                    print("\n" + "="*80)
+                    print("✅ CONVERSATION COMPLETE")
+                    print("="*80)
+
+                    return False  # Stop the conversation
+
+                except Exception as e:
+                    print(f"\n❌ Failed to generate final answer: {e}")
+                    print("   Retrying will regenerate the final answer...")
                     continue
 
         else:

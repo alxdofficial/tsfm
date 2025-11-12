@@ -15,10 +15,8 @@ from .tool_executor import (
     load_labels,
     get_session_paths,
     load_session_as_artifact,
-    human_activity_motion_tokenizer,
-    human_activity_motion_classifier,
-    human_activity_motion_capture_tokenizer,
-    human_activity_motion_capture_classifier
+    human_activity_recognition_model,
+    motion_capture_model
 )
 
 __all__ = [
@@ -31,8 +29,6 @@ __all__ = [
     "load_labels",
     "get_session_paths",
     "load_session_as_artifact",
-    "human_activity_motion_tokenizer",
-    "human_activity_motion_classifier",
-    "human_activity_motion_capture_tokenizer",
-    "human_activity_motion_capture_classifier"
+    "human_activity_recognition_model",
+    "motion_capture_model"
 ]

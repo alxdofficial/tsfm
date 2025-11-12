@@ -21,12 +21,11 @@ Output: data/actionsense/
   - labels.json
   - sessions/session_XXX/data.parquet
 
-Note: This dataset has multi-modal data with different sampling rates:
-  - Joints: 60 Hz (66 channels)
-  - EMG: 200 Hz (16 channels)
-  - Gaze: 120 Hz (2 channels)
-Currently, only one modality per session is loaded. Multi-modal alignment
-with interpolation is planned for a future version.
+Note: This conversion processes ONLY EMG data at 200Hz target sampling rate.
+  - EMG left: 8 channels from left forearm Myo armband
+  - EMG right: 8 channels from right forearm Myo armband
+  - Total: 16 EMG channels
+Other modalities (joints, gaze) are excluded.
 """
 
 import os
@@ -41,53 +40,9 @@ RAW_DIR = Path("data/raw/actionsense")
 MANIFEST_CSV = RAW_DIR / "manifest.csv"
 OUTPUT_DIR = Path("data/actionsense")
 
-
-def load_episode_data(episode_row):
-    """Load all modalities for one episode and merge into single DataFrame."""
-    dfs = {}
-    sampling_rates = {}
-
-    # Load each modality that exists for this episode
-    modalities = {
-        'joints': ('joints_csv', 60.0),
-        'emg_left': ('emg_left_csv', 200.0),
-        'emg_right': ('emg_right_csv', 200.0),
-        'gaze': ('gaze_csv', 120.0)
-    }
-
-    for modality_name, (csv_col, sampling_rate) in modalities.items():
-        csv_path = episode_row.get(csv_col)
-
-        if pd.notna(csv_path) and os.path.exists(RAW_DIR / csv_path):
-            df = pd.read_csv(RAW_DIR / csv_path)
-
-            # Add timestamp column based on sampling rate
-            df.insert(0, 'timestamp_sec', np.arange(len(df)) / sampling_rate)
-
-            dfs[modality_name] = df
-            sampling_rates[modality_name] = sampling_rate
-
-    if not dfs:
-        return None
-
-    # For simplicity, use the first modality as base
-    # In a more advanced version, we could interpolate to align all modalities
-    base_modality = list(dfs.keys())[0]
-    merged_df = dfs[base_modality]
-
-    # Add other modalities (for now, just keep them separate by session)
-    # In practice, multi-modal alignment would require interpolation
-    for modality_name, df in dfs.items():
-        if modality_name != base_modality:
-            # Prefix column names
-            df_renamed = df.rename(columns={
-                col: f"{col}" for col in df.columns if col != 'timestamp_sec'
-            })
-            # For now, just keep the first modality
-            # TODO: Implement proper alignment
-            pass
-
-    return merged_df
+# Target sampling rate for EMG data (Hz)
+# This is the documented spec for Myo armband used in ActionSense
+TARGET_SAMPLING_RATE = 200.0
 
 
 def convert_episodes():
@@ -108,45 +63,46 @@ def convert_episodes():
         # Create session ID
         session_id = f"{row['subject']}_{row['split']}_act{row['activity_index']}"
 
-        # Load and merge modality data
-        # For ActionSense, we'll process each modality separately
-        # since they have different sampling rates
+        # Load EMG data only
+        emg_dfs = []
 
-        modalities_to_process = [
-            ('joints', 'joints_csv', 60.0),
-            ('emg_left', 'emg_left_csv', 200.0),
-            ('emg_right', 'emg_right_csv', 200.0),
-            ('gaze', 'gaze_csv', 120.0)
-        ]
+        # Load EMG left
+        emg_left_path = row.get('emg_left_csv')
+        if pd.notna(emg_left_path):
+            full_path = RAW_DIR / emg_left_path
+            if full_path.exists():
+                emg_left_df = pd.read_csv(full_path)
+                emg_dfs.append(emg_left_df)
 
-        # Load first available modality as primary
-        primary_data = None
-        for modality_name, csv_col, sampling_rate in modalities_to_process:
-            csv_path = row.get(csv_col)
+        # Load EMG right
+        emg_right_path = row.get('emg_right_csv')
+        if pd.notna(emg_right_path):
+            full_path = RAW_DIR / emg_right_path
+            if full_path.exists():
+                emg_right_df = pd.read_csv(full_path)
+                emg_dfs.append(emg_right_df)
 
-            if pd.notna(csv_path):
-                full_path = RAW_DIR / csv_path
-                if full_path.exists():
-                    df = pd.read_csv(full_path)
-
-                    # Add timestamp column
-                    df.insert(0, 'timestamp_sec', np.arange(len(df)) / sampling_rate)
-
-                    if primary_data is None:
-                        primary_data = df
-                    # TODO: Merge other modalities with interpolation
-
-                    break  # Use first available modality for now
-
-        if primary_data is None:
+        # Skip if no EMG data available
+        if not emg_dfs:
             continue
+
+        # Merge EMG left and right
+        combined_emg = pd.concat(emg_dfs, axis=1)
+
+        # Drop duplicate 'time_s' columns (both left and right EMG have this)
+        # Keep only the sensor data columns
+        cols_to_keep = [col for col in combined_emg.columns if col.startswith('emg_')]
+        combined_emg = combined_emg[cols_to_keep]
+
+        # Add timestamp column at 200Hz
+        combined_emg.insert(0, 'timestamp_sec', np.arange(len(combined_emg)) / TARGET_SAMPLING_RATE)
 
         # Save to parquet
         session_dir = OUTPUT_DIR / "sessions" / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
 
         parquet_path = session_dir / "data.parquet"
-        primary_data.to_parquet(parquet_path, index=False)
+        combined_emg.to_parquet(parquet_path, index=False)
 
         # Store label
         activity_name = row['activity_name']
@@ -162,15 +118,8 @@ def create_manifest():
     """Create minimal manifest.json."""
     manifest = {
         "dataset_name": "ActionSense",
-        "description": "Multi-modal kitchen activity dataset with motion capture, bilateral EMG, and gaze tracking. 9 subjects performing 23 kitchen activities.",
+        "description": "Kitchen activity dataset with bilateral EMG from Myo armbands. 9 subjects performing 23 kitchen activities. Target sampling rate: 200Hz.",
         "channels": [
-            # Joints (66 channels, flat numbering)
-            *[{
-                "name": f"joints_{i}",
-                "description": f"Joint channel {i} from motion capture system",
-                "sampling_rate_hz": 60.0
-            } for i in range(66)],
-
             # EMG left (8 channels)
             *[{
                 "name": f"emg_left_{i}",
@@ -183,19 +132,7 @@ def create_manifest():
                 "name": f"emg_right_{i}",
                 "description": f"Right forearm EMG channel {i} from Myo armband",
                 "sampling_rate_hz": 200.0
-            } for i in range(8)],
-
-            # Gaze (2 channels)
-            {
-                "name": "gaze_x",
-                "description": "Eye gaze X-coordinate (screen pixels)",
-                "sampling_rate_hz": 120.0
-            },
-            {
-                "name": "gaze_y",
-                "description": "Eye gaze Y-coordinate (screen pixels)",
-                "sampling_rate_hz": 120.0
-            }
+            } for i in range(8)]
         ]
     }
 
@@ -240,10 +177,9 @@ def main():
         print(f"{'=' * 80}")
         print(f"Output: {OUTPUT_DIR}")
         print(f"  - {len(labels_dict)} sessions")
-        print(f"  - 84 channels (joints + EMG + gaze)")
-        print(f"  - Multi-rate: 60Hz (joints), 200Hz (EMG), 120Hz (gaze)")
-        print(f"\nNOTE: Currently using first available modality per session.")
-        print(f"      Multi-modal alignment coming in future version.")
+        print(f"  - 16 channels (bilateral EMG)")
+        print(f"  - 200Hz uniform sampling rate")
+        print(f"\nNOTE: Only EMG data is processed. Joints and gaze modalities excluded.")
 
         # Generate debug visualizations
         try:

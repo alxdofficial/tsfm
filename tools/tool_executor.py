@@ -145,7 +145,7 @@ def load_session_as_artifact(
 # Tool 1: show_session_stats
 # ============================================================================
 
-def show_session_stats(dataset_name: str) -> Dict[str, Any]:
+def show_session_stats(dataset_name: str) -> Dict[str, str]:
     """
     Get session-level statistics for a dataset.
 
@@ -153,11 +153,7 @@ def show_session_stats(dataset_name: str) -> Dict[str, Any]:
         dataset_name: Name of the dataset (e.g., "uci_har", "pamap2")
 
     Returns:
-        Dictionary containing:
-        - total_sessions: Number of sessions
-        - label_distribution: Count of sessions per label
-        - duration_stats: Min/max/mean/median session duration
-        - Other dataset-specific stats
+        Dictionary with "content" field containing formatted dataset statistics
     """
     labels = load_labels(dataset_name)
     session_paths = get_session_paths(dataset_name)
@@ -196,69 +192,63 @@ def show_session_stats(dataset_name: str) -> Dict[str, Any]:
                 if part.isdigit() or (part.startswith('data_') and part[5:].split('_')[0].isdigit()):
                     subjects.add(part)
 
-    result = {
-        "total_sessions": len(labels),
-        "label_distribution": label_counts,
-        "duration_stats": {
-            "min": float(np.min(durations)) if durations else 0.0,
-            "max": float(np.max(durations)) if durations else 0.0,
-            "mean": float(np.mean(durations)) if durations else 0.0,
-            "median": float(np.median(durations)) if durations else 0.0,
-            "unit": "seconds"
-        }
-    }
+    # Build formatted output
+    lines = []
+    lines.append(f"Dataset: {dataset_name}")
+    lines.append(f"Total sessions: {len(labels)}")
 
-    # Add subject count if detected
     if subjects:
-        result["subjects"] = len(subjects)
+        lines.append(f"Subjects: {len(subjects)}")
 
-    return result
+    lines.append("")
+    lines.append("Label distribution:")
+    for label, count in sorted(label_counts.items()):
+        lines.append(f"  - {label}: {count} sessions")
+
+    if durations:
+        lines.append("")
+        lines.append("Session duration statistics:")
+        lines.append(f"  - Min: {np.min(durations):.2f}s")
+        lines.append(f"  - Max: {np.max(durations):.2f}s")
+        lines.append(f"  - Mean: {np.mean(durations):.2f}s")
+        lines.append(f"  - Median: {np.median(durations):.2f}s")
+
+    return {
+        "content": "\n".join(lines)
+    }
 
 
 # ============================================================================
 # Tool 2: show_channel_stats
 # ============================================================================
 
-def show_channel_stats(dataset_name: str) -> Dict[str, Any]:
+def show_channel_stats(artifact: TimeSeriesArtifact) -> Dict[str, str]:
     """
-    Get channel information for a dataset.
+    Get channel information from the current timeseries artifact.
 
     Args:
-        dataset_name: Name of the dataset
+        artifact: The timeseries artifact to inspect
 
     Returns:
-        Dictionary containing list of channels with metadata:
-        - name: Channel name
-        - sampling_rate_hz: Sampling rate
-        - description: Channel description
-        - samples_per_session: Typical number of samples per session
+        Dictionary with "content" field containing formatted channel information
     """
-    manifest = load_manifest(dataset_name)
-    session_paths = get_session_paths(dataset_name)
+    if artifact.type != "timeseries":
+        raise ValueError(f"show_channel_stats requires a timeseries artifact, got {artifact.type}")
 
-    # Load first session to get actual samples_per_session
-    if session_paths:
-        first_session = load_session(session_paths[0])
-        samples_per_session = len(first_session)
-    else:
-        samples_per_session = None
+    # Build formatted output
+    lines = []
+    lines.append(f"Artifact has {len(artifact.channels)} channels:")
+    lines.append(f"Duration: {artifact.duration_sec:.2f}s")
+    lines.append(f"Sampling rate: {artifact.sampling_rate_hz:.1f}Hz")
+    lines.append(f"Samples: {len(artifact.data)}")
+    lines.append("")
+    lines.append("Available channels:")
 
-    # Build channel list from manifest
-    channels = []
-    for ch in manifest.get("channels", []):
-        channel_info = {
-            "name": ch["name"],
-            "sampling_rate_hz": ch.get("sampling_rate_hz", 0.0),
-            "description": ch.get("description", "")
-        }
-
-        if samples_per_session is not None:
-            channel_info["samples_per_session"] = samples_per_session
-
-        channels.append(channel_info)
+    for ch_name in artifact.channels:
+        lines.append(f"  - {ch_name}")
 
     return {
-        "channels": channels
+        "content": "\n".join(lines)
     }
 
 
@@ -515,103 +505,66 @@ def filter_by_time(
 
 
 # ============================================================================
-# Tool 5: human_activity_motion_tokenizer
+# Tool 5: human_activity_recognition_model
 # ============================================================================
 
-def human_activity_motion_tokenizer(
+def human_activity_recognition_model(
     artifact_id: Optional[str] = None,
     artifact: Optional[TimeSeriesArtifact] = None,
-    turn_number: int = 0
+    turn_number: int = 0,
+    patch_size_sec: Optional[float] = None,
+    query: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Tokenize human activity motion data from IMU sensors into discrete z-space tokens.
+    Domain-specific model for Human Activity Recognition (HAR).
+
+    Processes IMU sensor data through:
+    1. Resizing/patch normalization
+    2. Conv1D feature extraction
+    3. Per-channel temporal self-attention
+    4. Cross-channel patch-wise attention
+    5. Task head (classification, captioning, forecasting)
 
     **DOMAIN**: Human Activity Recognition (HAR)
     **BEST FOR**: IMU sensor data (accelerometer, gyroscope, magnetometer)
     **SAMPLING RATE**: 50-100 Hz typical
     **CHANNELS**: body_acc_x/y/z, body_gyro_x/y/z, ankle_acc_x/y/z, etc.
+    **NOT FOR**: Joint rotation data (use motion_capture_model instead)
 
     Args:
         artifact_id: ID of the source timeseries artifact
         artifact: Resolved artifact object (provided by execute_tool)
         turn_number: Current turn number (for creating new artifact)
-
-    Returns:
-        Dictionary containing z-tokens artifact:
-        - type: "z_tokens"
-        - artifact_id: ID of the new tokens artifact
-    """
-    if artifact is None or not isinstance(artifact, TimeSeriesArtifact):
-        raise ValueError("human_activity_motion_tokenizer requires a timeseries artifact")
-
-    # Mock tokenization: create random token IDs
-    num_samples = len(artifact.data)
-    vocab_size = 512  # Mock vocabulary size
-    mock_tokens = np.random.randint(0, vocab_size, size=num_samples // 10)  # Downsample 10x
-
-    # Create z-tokens artifact
-    from artifacts import create_artifact
-    new_artifact_id = create_artifact(
-        artifact_type="z_tokens",
-        created_at_turn=turn_number,
-        created_by="human_activity_motion_tokenizer",
-        parent_artifact_id=artifact_id,
-        tokens=mock_tokens,
-        vocabulary_size=vocab_size,
-        codebook_info={
-            "model_type": "vq-vae",
-            "domain": "human_activity_recognition",
-            "sensor_types": ["accelerometer", "gyroscope", "magnetometer"],
-            "sampling_rate": artifact.sampling_rate_hz
-        },
-        source_artifact_id=artifact_id
-    )
-
-    return {
-        "type": "z_tokens",
-        "artifact_id": new_artifact_id
-    }
-
-
-# ============================================================================
-# Tool 6: human_activity_motion_classifier
-# ============================================================================
-
-def human_activity_motion_classifier(
-    artifact_id: Optional[str] = None,
-    artifact: Optional[Any] = None,  # Can accept ZTokensArtifact
-    turn_number: int = 0
-) -> Dict[str, Any]:
-    """
-    Classify z-tokens from human activity motion tokenizer into semantic e-space tokens.
-
-    **DOMAIN**: Human Activity Recognition (HAR)
-    **INPUT**: Z-tokens from human_activity_motion_tokenizer
-    **OUTPUT**: Semantic labels aligned with language (walking, running, etc.)
-
-    Args:
-        artifact_id: ID of the z-tokens artifact
-        artifact: Resolved artifact object (provided by execute_tool)
-        turn_number: Current turn number (for creating new artifact)
+        patch_size_sec: Patch size in seconds (optional, defaults to 0.5s)
+        query: Natural language query (optional, defaults to "classify activity")
+                Examples: "classify activity", "describe the movement", "forecast next 2 seconds"
 
     Returns:
         Dictionary containing e-tokens artifact:
         - type: "e_tokens"
-        - artifact_id: ID of the new e-tokens artifact
+        - artifact_id: ID of the new semantic tokens artifact
     """
-    from artifacts.artifact_types import ZTokensArtifact
-    from artifacts import create_artifact
+    if artifact is None or not isinstance(artifact, TimeSeriesArtifact):
+        raise ValueError("human_activity_recognition_model requires a timeseries artifact")
 
-    if artifact is None:
-        raise ValueError("human_activity_motion_classifier requires a z-tokens artifact")
+    # Default parameters
+    if patch_size_sec is None:
+        patch_size_sec = 0.5  # 500ms patches for HAR
 
-    if not isinstance(artifact, ZTokensArtifact):
-        raise ValueError(f"Expected ZTokensArtifact, got {type(artifact)}")
+    if query is None:
+        query = "classify activity"
 
-    # Mock classification: create semantic token IDs
-    num_tokens = len(artifact.tokens)
-    num_classes = 12  # Mock: walking, running, sitting, standing, etc.
-    mock_e_tokens = np.random.randint(0, num_classes, size=num_tokens)
+    # Mock processing: simulate end-to-end model
+    num_samples = len(artifact.data)
+    sampling_rate = artifact.sampling_rate_hz or 50.0
+
+    # Calculate number of patches
+    samples_per_patch = int(patch_size_sec * sampling_rate)
+    num_patches = max(1, num_samples // samples_per_patch)
+
+    # Mock semantic token generation (one token per patch for classification)
+    num_classes = 12
+    mock_e_tokens = np.random.randint(0, num_classes, size=num_patches)
 
     semantic_labels = [
         "walking", "running", "sitting", "standing", "laying",
@@ -619,19 +572,28 @@ def human_activity_motion_classifier(
         "climbing_stairs", "cycling", "jumping", "idle"
     ]
 
-    # Create e-tokens artifact
+    # Create e-tokens artifact (skip z-tokens, go directly to semantic space)
+    from artifacts import create_artifact
     new_artifact_id = create_artifact(
         artifact_type="e_tokens",
         created_at_turn=turn_number,
-        created_by="human_activity_motion_classifier",
+        created_by="human_activity_recognition_model",
         parent_artifact_id=artifact_id,
         tokens=mock_e_tokens,
         semantic_labels=semantic_labels,
         vocabulary_size=num_classes,
         classifier_info={
-            "model_type": "pretrained_har_classifier",
+            "model_type": "unified_har_model",
             "domain": "human_activity_recognition",
-            "training_datasets": ["uci_har", "wisdm", "pamap2"]
+            "architecture": "patch_transformer_with_task_head",
+            "patch_size_sec": patch_size_sec,
+            "sampling_rate_hz": sampling_rate,
+            "query": query,
+            "training_objectives": [
+                "masked_self_prediction",
+                "contrastive_loss",
+                "semantic_alignment"
+            ]
         },
         source_artifact_id=artifact_id
     )
@@ -643,104 +605,66 @@ def human_activity_motion_classifier(
 
 
 # ============================================================================
-# Tool 7: human_activity_motion_capture_tokenizer
+# Tool 6: motion_capture_model
 # ============================================================================
 
-def human_activity_motion_capture_tokenizer(
+def motion_capture_model(
     artifact_id: Optional[str] = None,
     artifact: Optional[TimeSeriesArtifact] = None,
-    turn_number: int = 0
+    turn_number: int = 0,
+    patch_size_sec: Optional[float] = None,
+    query: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Tokenize human activity motion capture data (joint rotations) into discrete z-space tokens.
+    Domain-specific model for Motion Capture (MoCap) data.
+
+    Processes joint rotation data through:
+    1. Resizing/patch normalization
+    2. Conv1D feature extraction
+    3. Per-channel temporal self-attention
+    4. Cross-channel patch-wise attention
+    5. Task head (classification, captioning, forecasting)
 
     **DOMAIN**: Motion Capture (MoCap) - Full body kinematics
     **BEST FOR**: Joint rotation/angle data from motion capture systems
     **SAMPLING RATE**: 60-120 Hz typical
-    **CHANNELS**: hip_rot_x/y/z, knee_rot_x/y/z, shoulder_rot_x/y/z, spine_rot_x/y/z, etc.
-    **NOT FOR**: Raw IMU sensor data (use human_activity_motion_tokenizer instead)
+    **CHANNELS**: hip_rot_x/y/z, knee_rot_x/y/z, shoulder_rot_x/y/z, etc.
+    **NOT FOR**: Raw IMU sensor data (use human_activity_recognition_model instead)
 
     Args:
         artifact_id: ID of the source timeseries artifact
         artifact: Resolved artifact object (provided by execute_tool)
         turn_number: Current turn number (for creating new artifact)
-
-    Returns:
-        Dictionary containing z-tokens artifact:
-        - type: "z_tokens"
-        - artifact_id: ID of the new tokens artifact
-    """
-    if artifact is None or not isinstance(artifact, TimeSeriesArtifact):
-        raise ValueError("human_activity_motion_capture_tokenizer requires a timeseries artifact")
-
-    # Mock tokenization: create random token IDs
-    num_samples = len(artifact.data)
-    vocab_size = 1024  # Larger vocab for more complex joint space
-    mock_tokens = np.random.randint(0, vocab_size, size=num_samples // 10)  # Downsample 10x
-
-    # Create z-tokens artifact
-    from artifacts import create_artifact
-    new_artifact_id = create_artifact(
-        artifact_type="z_tokens",
-        created_at_turn=turn_number,
-        created_by="human_activity_motion_capture_tokenizer",
-        parent_artifact_id=artifact_id,
-        tokens=mock_tokens,
-        vocabulary_size=vocab_size,
-        codebook_info={
-            "model_type": "vq-vae",
-            "domain": "motion_capture",
-            "data_type": "joint_rotations",
-            "sampling_rate": artifact.sampling_rate_hz
-        },
-        source_artifact_id=artifact_id
-    )
-
-    return {
-        "type": "z_tokens",
-        "artifact_id": new_artifact_id
-    }
-
-
-# ============================================================================
-# Tool 8: human_activity_motion_capture_classifier
-# ============================================================================
-
-def human_activity_motion_capture_classifier(
-    artifact_id: Optional[str] = None,
-    artifact: Optional[Any] = None,  # Can accept ZTokensArtifact
-    turn_number: int = 0
-) -> Dict[str, Any]:
-    """
-    Classify z-tokens from motion capture tokenizer into semantic e-space tokens.
-
-    **DOMAIN**: Motion Capture (MoCap) activities
-    **INPUT**: Z-tokens from human_activity_motion_capture_tokenizer
-    **OUTPUT**: Semantic labels for full-body movements
-
-    Args:
-        artifact_id: ID of the z-tokens artifact
-        artifact: Resolved artifact object (provided by execute_tool)
-        turn_number: Current turn number (for creating new artifact)
+        patch_size_sec: Patch size in seconds (optional, defaults to 0.25s)
+        query: Natural language query (optional, defaults to "classify movement")
+                Examples: "classify movement", "describe the action", "forecast next second"
 
     Returns:
         Dictionary containing e-tokens artifact:
         - type: "e_tokens"
-        - artifact_id: ID of the new e-tokens artifact
+        - artifact_id: ID of the new semantic tokens artifact
     """
-    from artifacts.artifact_types import ZTokensArtifact
-    from artifacts import create_artifact
+    if artifact is None or not isinstance(artifact, TimeSeriesArtifact):
+        raise ValueError("motion_capture_model requires a timeseries artifact")
 
-    if artifact is None:
-        raise ValueError("human_activity_motion_capture_classifier requires a z-tokens artifact")
+    # Default parameters
+    if patch_size_sec is None:
+        patch_size_sec = 0.25  # 250ms patches for MoCap (higher resolution)
 
-    if not isinstance(artifact, ZTokensArtifact):
-        raise ValueError(f"Expected ZTokensArtifact, got {type(artifact)}")
+    if query is None:
+        query = "classify movement"
 
-    # Mock classification: create semantic token IDs
-    num_tokens = len(artifact.tokens)
-    num_classes = 15  # Mock: various full-body movements
-    mock_e_tokens = np.random.randint(0, num_classes, size=num_tokens)
+    # Mock processing: simulate end-to-end model
+    num_samples = len(artifact.data)
+    sampling_rate = artifact.sampling_rate_hz or 100.0
+
+    # Calculate number of patches
+    samples_per_patch = int(patch_size_sec * sampling_rate)
+    num_patches = max(1, num_samples // samples_per_patch)
+
+    # Mock semantic token generation
+    num_classes = 15
+    mock_e_tokens = np.random.randint(0, num_classes, size=num_patches)
 
     semantic_labels = [
         "walking", "running", "jumping", "squatting", "lunging",
@@ -749,18 +673,27 @@ def human_activity_motion_capture_classifier(
     ]
 
     # Create e-tokens artifact
+    from artifacts import create_artifact
     new_artifact_id = create_artifact(
         artifact_type="e_tokens",
         created_at_turn=turn_number,
-        created_by="human_activity_motion_capture_classifier",
+        created_by="motion_capture_model",
         parent_artifact_id=artifact_id,
         tokens=mock_e_tokens,
         semantic_labels=semantic_labels,
         vocabulary_size=num_classes,
         classifier_info={
-            "model_type": "pretrained_mocap_classifier",
+            "model_type": "unified_mocap_model",
             "domain": "motion_capture",
-            "training_datasets": ["cmu_mocap", "humaneva", "amass"]
+            "architecture": "patch_transformer_with_task_head",
+            "patch_size_sec": patch_size_sec,
+            "sampling_rate_hz": sampling_rate,
+            "query": query,
+            "training_objectives": [
+                "masked_self_prediction",
+                "contrastive_loss",
+                "semantic_alignment"
+            ]
         },
         source_artifact_id=artifact_id
     )
@@ -780,10 +713,8 @@ TOOLS = {
     "show_channel_stats": show_channel_stats,
     "select_channels": select_channels,
     "filter_by_time": filter_by_time,
-    "human_activity_motion_tokenizer": human_activity_motion_tokenizer,
-    "human_activity_motion_classifier": human_activity_motion_classifier,
-    "human_activity_motion_capture_tokenizer": human_activity_motion_capture_tokenizer,
-    "human_activity_motion_capture_classifier": human_activity_motion_capture_classifier
+    "human_activity_recognition_model": human_activity_recognition_model,
+    "motion_capture_model": motion_capture_model
 }
 
 
@@ -812,14 +743,20 @@ def execute_tool(tool_name: str, parameters: Dict[str, Any], turn_number: int = 
     if "artifact_id" in resolved_params:
         artifact_id = resolved_params["artifact_id"]
         artifact = get_artifact(artifact_id)
-        resolved_params["artifact"] = artifact
-        # Keep artifact_id for tools that need it
+
+        # Tools that work with artifact objects directly
+        artifact_object_tools = ["show_channel_stats"]
+        if tool_name in artifact_object_tools:
+            resolved_params["artifact"] = artifact
+            del resolved_params["artifact_id"]
+        else:
+            # Keep artifact_id for tools that need it
+            resolved_params["artifact"] = artifact
 
     # Add turn_number for tools that create artifacts
     artifact_creating_tools = [
         "select_channels", "filter_by_time",
-        "human_activity_motion_tokenizer", "human_activity_motion_classifier",
-        "human_activity_motion_capture_tokenizer", "human_activity_motion_capture_classifier"
+        "human_activity_recognition_model", "motion_capture_model"
     ]
     if tool_name in artifact_creating_tools:
         resolved_params["turn_number"] = turn_number
@@ -835,13 +772,14 @@ if __name__ == "__main__":
     # Test show_session_stats
     print("\n1. show_session_stats on uci_har:")
     result = execute_tool("show_session_stats", {"dataset_name": "uci_har"})
-    print(json.dumps(result, indent=2))
+    print(result["content"])
 
     # Test show_channel_stats
-    print("\n2. show_channel_stats on uci_har:")
-    result = execute_tool("show_channel_stats", {"dataset_name": "uci_har"})
-    print(f"Found {len(result['channels'])} channels")
-    print(f"First channel: {result['channels'][0]}")
+    print("\n2. show_channel_stats on artifact:")
+    # First create an artifact by loading a session
+    artifact_id = load_session_as_artifact("uci_har", "train_01_0000")
+    result = execute_tool("show_channel_stats", {"artifact_id": artifact_id}, turn_number=1)
+    print(result["content"])
 
     # Test select_channels
     print("\n3. select_channels (body acc + gyro, walking only):")
