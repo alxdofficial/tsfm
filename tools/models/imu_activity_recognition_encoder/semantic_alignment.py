@@ -38,8 +38,8 @@ class CrossChannelFusion(nn.Module):
         self.num_bottlenecks = num_bottlenecks
         self.d_model_fused = d_model_fused
 
-        # Learnable bottleneck queries
-        self.bottleneck_tokens = nn.Parameter(torch.randn(num_bottlenecks, d_model_fused))
+        # Learnable bottleneck queries (Xavier-like initialization: std = 1/sqrt(d_model))
+        self.bottleneck_tokens = nn.Parameter(torch.randn(num_bottlenecks, d_model_fused) / (d_model_fused ** 0.5))
 
         # Cross-attention: bottleneck queries attend to channel keys/values
         self.cross_attention = nn.MultiheadAttention(
@@ -209,8 +209,8 @@ class CLSAttentionPooling(nn.Module):
         """
         super().__init__()
 
-        # Learnable CLS token
-        self.cls_token = nn.Parameter(torch.randn(1, 1, d_model))
+        # Learnable CLS token (Xavier-like initialization: std = 1/sqrt(d_model))
+        self.cls_token = nn.Parameter(torch.randn(1, 1, d_model) / (d_model ** 0.5))
 
         # Single transformer layer for CLS attention
         self.attention = nn.TransformerEncoderLayer(

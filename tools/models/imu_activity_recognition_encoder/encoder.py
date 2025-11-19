@@ -72,6 +72,9 @@ class IMUActivityRecognitionEncoder(nn.Module):
         use_channel_encoding: bool = True,
         sentence_bert_model: str = 'all-MiniLM-L6-v2',
 
+        # Learnable token initialization
+        mask_token_init_scale: float = 0.1,
+
         # Other
         max_patches: int = 5000
     ):
@@ -95,6 +98,8 @@ class IMUActivityRecognitionEncoder(nn.Module):
             channel_init_scale: Initial scale for channel semantic encoding
             use_channel_encoding: Whether to use channel semantic encoding
             sentence_bert_model: Sentence-BERT model for channel encoding
+
+            mask_token_init_scale: Initialization scale for mask/pad tokens (scales with sqrt(d_model))
 
             max_patches: Maximum number of patches to support
         """
@@ -136,8 +141,10 @@ class IMUActivityRecognitionEncoder(nn.Module):
 
         # Learnable tokens for MAE and padding
         # Shape: (1, 1, 1, d_model) to broadcast to (batch, patches, channels, d_model)
-        self.mask_token = nn.Parameter(torch.randn(1, 1, 1, d_model) * 0.02)
-        self.pad_token = nn.Parameter(torch.randn(1, 1, 1, d_model) * 0.02)
+        # Scale properly with d_model: init_scale / sqrt(d_model)
+        token_init_std = mask_token_init_scale / (d_model ** 0.5)
+        self.mask_token = nn.Parameter(torch.randn(1, 1, 1, d_model) * token_init_std)
+        self.pad_token = nn.Parameter(torch.randn(1, 1, 1, d_model) * token_init_std)
 
     def preprocess(
         self,

@@ -227,6 +227,7 @@ class ChannelSemanticEncoding(nn.Module):
                 with torch.no_grad():
                     non_pad_embeddings = encoder.encode(non_pad_descriptions, convert_to_tensor=True)
                 # Cache the sentence BERT embeddings
+                
                 self._sbert_embedding_cache[cache_key] = non_pad_embeddings
 
             # Fill in non-padded embeddings
@@ -272,14 +273,7 @@ class ChannelSemanticEncoding(nn.Module):
             channel_enc = self.encode_channel_descriptions(channel_descriptions)
         else:
             # Use learnable embeddings as fallback - create per channel count
-            emb_key = f'learnable_channel_emb_{num_channels}'
-            if not hasattr(self, emb_key):
-                setattr(
-                    self,
-                    emb_key,
-                    nn.Parameter(torch.randn(num_channels, d_model) * 0.01)
-                )
-            channel_enc = getattr(self, emb_key)
+            print("Warning: No channel descriptions provided.")
 
         # Ensure channel encoding is on same device as input
         channel_enc = channel_enc.to(x.device)

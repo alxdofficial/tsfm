@@ -12,21 +12,22 @@ from typing import List, Optional
 
 class MultiScaleConv1D(nn.Module):
     """
-    Multi-scale 1D convolution block with parallel branches.
+    1D convolution block with optional parallel branches.
 
-    Each branch uses a different kernel size to capture patterns at different scales:
+    By default uses a single kernel size (5) for simplicity. Can optionally use
+    multiple kernel sizes to capture patterns at different scales:
     - Small kernels (3): Capture fine-grained, high-frequency patterns
     - Medium kernels (5): Capture mid-level temporal patterns
     - Large kernels (7): Capture longer-range dependencies
 
-    The outputs are concatenated to form a rich multi-scale representation.
+    When multiple kernels are used, outputs are concatenated for multi-scale representation.
     """
 
     def __init__(
         self,
         in_channels: int,
         out_channels: int,
-        kernel_sizes: List[int] = [3, 5, 7],
+        kernel_sizes: List[int] = [5],
         dropout: float = 0.1
     ):
         """
@@ -53,7 +54,7 @@ class MultiScaleConv1D(nn.Module):
                     padding=padding,
                     bias=False
                 ),
-                nn.BatchNorm1d(out_channels),
+                nn.GroupNorm(num_groups=1, num_channels=out_channels),
                 nn.ReLU(inplace=True),
                 nn.Dropout(dropout)
             )
@@ -90,7 +91,7 @@ class ChannelIndependentCNN(nn.Module):
     Architecture:
     - Input: (batch, num_patches, 96, num_channels)
     - Process each channel independently
-    - Multi-scale convolutions with increasing depth
+    - Convolutions with increasing depth (default kernel size 5)
     - Output: (batch, num_patches, num_channels, d_model)
     """
 
@@ -98,14 +99,14 @@ class ChannelIndependentCNN(nn.Module):
         self,
         d_model: int = 128,
         cnn_channels: List[int] = [64, 128],
-        kernel_sizes: List[int] = [3, 5, 7],
+        kernel_sizes: List[int] = [5],
         dropout: float = 0.1
     ):
         """
         Args:
             d_model: Output feature dimension
             cnn_channels: Number of channels in each CNN layer
-            kernel_sizes: Kernel sizes for multi-scale convolutions
+            kernel_sizes: Kernel sizes for convolutions (default [5] for simplicity)
             dropout: Dropout probability
         """
         super().__init__()
@@ -200,7 +201,7 @@ class FixedPatchCNN(nn.Module):
     Key properties:
     - Fixed input size: 96 timesteps
     - Channel-independent processing
-    - Multi-scale temporal feature extraction
+    - Temporal feature extraction with CNN (default kernel size 5)
     - Output: dense feature vectors per patch per channel
     """
 
@@ -208,14 +209,14 @@ class FixedPatchCNN(nn.Module):
         self,
         d_model: int = 128,
         cnn_channels: List[int] = [64, 128],
-        kernel_sizes: List[int] = [3, 5, 7],
+        kernel_sizes: List[int] = [5],
         dropout: float = 0.1
     ):
         """
         Args:
             d_model: Output feature dimension
             cnn_channels: Channel progression through CNN layers (e.g., [64, 128])
-            kernel_sizes: Kernel sizes for multi-scale convolution (e.g., [3, 5, 7])
+            kernel_sizes: Kernel sizes for convolution (default [5] for simplicity)
             dropout: Dropout probability
         """
         super().__init__()

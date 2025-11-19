@@ -60,16 +60,20 @@ class InfoNCELoss(nn.Module):
         imu_embeddings: torch.Tensor,
         text_embeddings: torch.Tensor,
         label_texts: Optional[list] = None,
-        return_metrics: bool = True
+        return_metrics: bool = True,
+        imu_queue: Optional[torch.Tensor] = None,
+        text_queue: Optional[torch.Tensor] = None
     ) -> tuple[torch.Tensor, Optional[Dict[str, float]]]:
         """
-        Compute InfoNCE loss with optional soft targets.
+        Compute InfoNCE loss with optional soft targets and memory bank queue.
 
         Args:
             imu_embeddings: IMU embeddings (batch_size, embedding_dim), L2-normalized
             text_embeddings: Text embeddings (batch_size, embedding_dim), L2-normalized
             label_texts: Optional list of label text strings (needed for prototypes)
             return_metrics: Whether to return additional metrics
+            imu_queue: Optional queue of past IMU embeddings (queue_size, embedding_dim)
+            text_queue: Optional queue of past text embeddings (queue_size, embedding_dim)
 
         Returns:
             loss: Scalar loss value
@@ -77,9 +81,18 @@ class InfoNCELoss(nn.Module):
         """
         batch_size = imu_embeddings.shape[0]
 
-        # Compute cosine similarity matrix (batch x batch)
+        # Expand embeddings with queue if provided (for more negatives)
+        if imu_queue is not None and text_queue is not None and len(imu_queue) > 0:
+            all_imu = torch.cat([imu_embeddings, imu_queue.detach()], dim=0)
+            all_text = torch.cat([text_embeddings, text_queue.detach()], dim=0)
+        else:
+            all_imu = imu_embeddings
+            all_text = text_embeddings
+
+        # Compute cosine similarity matrix
+        # Current batch (queries) vs all embeddings (keys: current + queue)
         # Both embeddings should already be L2-normalized
-        logits = torch.matmul(imu_embeddings, text_embeddings.T) / self.temperature
+        logits = torch.matmul(imu_embeddings, all_text.T) / self.temperature  # (batch, batch+queue)
 
         # Start with hard targets (one-hot)
         hard_targets = torch.eye(batch_size, device=imu_embeddings.device)
@@ -122,19 +135,28 @@ class InfoNCELoss(nn.Module):
             targets = (1 - self.soft_target_weight) * hard_targets + \
                      self.soft_target_weight * soft_targets_prototype
 
+        # Expand targets to include queue dimension (if queue is used)
+        # Queue embeddings are all negatives, so pad with zeros
+        if imu_queue is not None and text_queue is not None and len(imu_queue) > 0:
+            queue_size = imu_queue.shape[0]
+            targets = torch.cat([targets, torch.zeros(batch_size, queue_size, device=targets.device)], dim=1)
+
         # Compute loss
+        # Text→IMU direction (text queries vs IMU keys)
+        logits_t2i = torch.matmul(text_embeddings, all_imu.T) / self.temperature  # (batch, batch+queue)
+
         if self.use_soft_targets or self.use_prototypes:
             # Soft targets: use KL divergence
             log_probs = F.log_softmax(logits, dim=1)
             loss_imu_to_text = -(targets * log_probs).sum(dim=1).mean()
 
-            log_probs_T = F.log_softmax(logits.T, dim=1)
-            loss_text_to_imu = -(targets * log_probs_T).sum(dim=1).mean()
+            log_probs_t2i = F.log_softmax(logits_t2i, dim=1)
+            loss_text_to_imu = -(targets * log_probs_t2i).sum(dim=1).mean()
         else:
             # Hard targets: use cross-entropy
             labels = torch.arange(batch_size, device=imu_embeddings.device)
             loss_imu_to_text = F.cross_entropy(logits, labels)
-            loss_text_to_imu = F.cross_entropy(logits.T, labels)
+            loss_text_to_imu = F.cross_entropy(logits_t2i, labels)
 
         loss = (loss_imu_to_text + loss_text_to_imu) / 2.0
 
@@ -142,17 +164,19 @@ class InfoNCELoss(nn.Module):
         metrics = None
         if return_metrics:
             with torch.no_grad():
-                # Accuracy: how often is the correct text the highest similarity?
+                # Accuracy: how often is the correct match the highest similarity?
                 labels = torch.arange(batch_size, device=imu_embeddings.device)
                 imu_to_text_acc = (logits.argmax(dim=1) == labels).float().mean().item()
-                text_to_imu_acc = (logits.T.argmax(dim=1) == labels).float().mean().item()
+                text_to_imu_acc = (logits_t2i.argmax(dim=1) == labels).float().mean().item()
 
                 # Average similarity of positive pairs
                 positive_sim = torch.diagonal(logits).mean().item() * self.temperature
 
                 # Average similarity of negative pairs
-                mask = torch.eye(batch_size, device=logits.device, dtype=torch.bool)
-                negative_sim = logits[~mask].mean().item() * self.temperature
+                # Create mask for positives (only diagonal of current batch, queue is all negatives)
+                logits_mask = torch.zeros_like(logits, dtype=torch.bool)
+                logits_mask[:, :batch_size] = torch.eye(batch_size, device=logits.device, dtype=torch.bool)
+                negative_sim = logits[~logits_mask].mean().item() * self.temperature
 
                 metrics = {
                     'loss': loss.item(),
@@ -169,7 +193,8 @@ class InfoNCELoss(nn.Module):
                 if self.use_soft_targets:
                     # Compute average semantic similarity of labels in batch
                     text_similarity = torch.matmul(text_embeddings, text_embeddings.T)
-                    label_similarity = text_similarity[~mask].mean().item()
+                    batch_mask = torch.eye(batch_size, device=logits.device, dtype=torch.bool)
+                    label_similarity = text_similarity[~batch_mask].mean().item()
                     metrics['label_semantic_similarity'] = label_similarity
 
         return loss, metrics
@@ -218,7 +243,9 @@ class SemanticAlignmentLoss(nn.Module):
         imu_embeddings: torch.Tensor,
         text_embeddings: torch.Tensor,
         label_texts: Optional[list] = None,
-        return_metrics: bool = True
+        return_metrics: bool = True,
+        imu_queue: Optional[torch.Tensor] = None,
+        text_queue: Optional[torch.Tensor] = None
     ) -> tuple[torch.Tensor, Optional[Dict[str, float]]]:
         """
         Compute semantic alignment loss.
@@ -228,12 +255,15 @@ class SemanticAlignmentLoss(nn.Module):
             text_embeddings: Text embeddings (batch_size, embedding_dim)
             label_texts: Optional list of label texts (needed for prototypes)
             return_metrics: Whether to return additional metrics
+            imu_queue: Optional queue of past IMU embeddings (queue_size, embedding_dim)
+            text_queue: Optional queue of past text embeddings (queue_size, embedding_dim)
 
         Returns:
             loss: Scalar loss value
             metrics: Optional dict with metrics
         """
-        return self.infonce(imu_embeddings, text_embeddings, label_texts, return_metrics)
+        return self.infonce(imu_embeddings, text_embeddings, label_texts, return_metrics,
+                           imu_queue, text_queue)
 
 
 def compute_retrieval_metrics(

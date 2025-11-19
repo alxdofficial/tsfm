@@ -28,6 +28,7 @@ from training_scripts.imu_tool_pretraining.label_bank import LabelBank
 from training_scripts.imu_tool_pretraining.prototype_manager import PrototypeManager
 from training_scripts.imu_tool_pretraining.semantic_loss import SemanticAlignmentLoss, compute_retrieval_metrics
 from training_scripts.imu_tool_pretraining.plot_utils import TrainingPlotter
+from training_scripts.imu_tool_pretraining.memory_bank import MemoryBank
 
 
 # ======================== HYPERPARAMETERS ========================
@@ -56,7 +57,7 @@ CNN_CHANNELS = [64, 128]
 CNN_KERNEL_SIZES = [3, 5, 7]
 
 # Semantic alignment configuration
-D_MODEL_FUSED = 256  # Dimension after cross-channel fusion
+D_MODEL_FUSED = 384  # Dimension after cross-channel fusion (match D_MODEL to avoid bottleneck)
 SEMANTIC_DIM = 384  # Final embedding dimension (must match SentenceBERT)
 NUM_BOTTLENECKS = 1  # Start with single bottleneck per patch
 NUM_SEMANTIC_TEMPORAL_LAYERS = 2  # Temporal attention layers in semantic head
@@ -74,22 +75,26 @@ SEED = 42
 # End-to-end training (encoder + semantic head)
 EPOCHS = 30
 BATCH_SIZE = 16  # Reduced from 32 due to training both encoder + head
-LEARNING_RATE = 3e-4  # Lower LR since we're training everything
+LEARNING_RATE = 1e-4  # Conservative LR for stable training from scratch
 WARMUP_EPOCHS = 3
 
 # Shared parameters
 NUM_WORKERS = 4
 WEIGHT_DECAY = 1e-5
-TEMPERATURE = 0.1  # Standard for contrastive learning
+TEMPERATURE = 0.3  # Higher temperature for more stable training from scratch (was 0.1)
 
 # Soft targets configuration
-USE_SOFT_TARGETS = True  # Use semantic similarity between labels
+USE_SOFT_TARGETS = True  # Learn from semantic similarities between labels
 SOFT_TARGET_TEMPERATURE = 0.5  # Temperature for soft target distribution (higher = smoother)
 SOFT_TARGET_WEIGHT = 0.5  # Balance: 0=hard, 1=pure soft, 0.5=balanced
 
 # Prototype soft targets configuration (DISABLED BY DEFAULT)
 USE_PROTOTYPES = False  # Use cluster-based prototypes for soft targets
 NUM_PROTOTYPE_CLUSTERS = 5  # Number of semantic clusters (e.g., locomotion, stationary, etc.)
+
+# Memory bank configuration (MoCo-style queue for more negatives)
+USE_MEMORY_BANK = True  # Enable memory bank for 4096+ negatives
+MEMORY_BANK_SIZE = 4096  # Queue size (provides 4096 additional negatives)
 PROTOTYPE_UPDATE_INTERVAL = 100  # Update prototypes every N batches
 PROTOTYPE_WEIGHT = 0.5  # Balance between pairwise and prototype (0=pairwise, 1=prototype)
 
@@ -150,7 +155,7 @@ class SemanticAlignmentModel(nn.Module):
                                    patch_mask=padded_patch_mask, normalize=True)
 
 
-def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epoch, scaler, prototype_manager=None, plotter=None, stage="stage1"):
+def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epoch, scaler, prototype_manager=None, plotter=None, stage="stage1", memory_bank=None):
     """Train for one epoch."""
     model.train()
 
@@ -181,9 +186,19 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             if prototype_manager is not None:
                 prototype_manager.add_labels(label_texts, text_embeddings)
 
+        # Clear gradients BEFORE forward pass
+        optimizer.zero_grad()
+
+        # Get queue embeddings from memory bank if enabled
+        if memory_bank is not None and USE_MEMORY_BANK:
+            imu_queue, text_queue = memory_bank.get_queue_embeddings(label_bank, device)
+        else:
+            imu_queue, text_queue = None, None
+
         with autocast('cuda', enabled=device.type == 'cuda'):
             imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
-            loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts, return_metrics=True)
+            loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
+                                     return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
 
         if scaler is not None:
             scaler.scale(loss).backward()
@@ -193,7 +208,9 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             loss.backward()
             optimizer.step()
 
-        optimizer.zero_grad()
+        # Update memory bank with current batch embeddings
+        if memory_bank is not None and USE_MEMORY_BANK:
+            memory_bank.update(imu_embeddings, label_texts)
 
         # Accumulate metrics
         total_loss += metrics['loss']
@@ -298,7 +315,8 @@ def main():
                      'use_soft_targets': USE_SOFT_TARGETS, 'soft_target_temperature': SOFT_TARGET_TEMPERATURE,
                      'soft_target_weight': SOFT_TARGET_WEIGHT,
                      'use_prototypes': USE_PROTOTYPES, 'num_prototype_clusters': NUM_PROTOTYPE_CLUSTERS,
-                     'prototype_update_interval': PROTOTYPE_UPDATE_INTERVAL, 'prototype_weight': PROTOTYPE_WEIGHT},
+                     'prototype_update_interval': PROTOTYPE_UPDATE_INTERVAL, 'prototype_weight': PROTOTYPE_WEIGHT,
+                     'use_memory_bank': USE_MEMORY_BANK, 'memory_bank_size': MEMORY_BANK_SIZE},
         'training': {'epochs': EPOCHS, 'batch_size': BATCH_SIZE, 'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS}
     }
     with open(CHECKPOINT_DIR / 'hyperparameters.json', 'w') as f:
@@ -356,6 +374,13 @@ def main():
         prototype_manager=prototype_manager
     )
 
+    # Initialize memory bank if enabled
+    memory_bank = None
+    if USE_MEMORY_BANK:
+        print(f"Initializing memory bank (queue_size={MEMORY_BANK_SIZE}, embedding_dim={SEMANTIC_DIM})...")
+        memory_bank = MemoryBank(queue_size=MEMORY_BANK_SIZE, embedding_dim=SEMANTIC_DIM)
+        print(f"✓ Memory bank initialized - provides {MEMORY_BANK_SIZE} additional negatives")
+
     plotter = TrainingPlotter(plot_dir)
 
     print("\n" + "="*70)
@@ -364,6 +389,8 @@ def main():
         print(f"Using pairwise soft targets (temperature={SOFT_TARGET_TEMPERATURE}, weight={SOFT_TARGET_WEIGHT})")
     if USE_PROTOTYPES:
         print(f"Using prototype soft targets ({NUM_PROTOTYPE_CLUSTERS} clusters, weight={PROTOTYPE_WEIGHT})")
+    if USE_MEMORY_BANK:
+        print(f"Using memory bank with {MEMORY_BANK_SIZE} queue size (effective batch size: {BATCH_SIZE + MEMORY_BANK_SIZE})")
     print("="*70)
 
     # Create dataloaders
@@ -381,7 +408,7 @@ def main():
     # Training loop
     for epoch in range(1, EPOCHS + 1):
         train_metrics = train_epoch(model, label_bank, train_loader, criterion, optimizer,
-                                      device, epoch, scaler, prototype_manager, plotter, "train")
+                                      device, epoch, scaler, prototype_manager, plotter, "train", memory_bank)
         val_metrics = validate(model, label_bank, val_loader, criterion, device, epoch, "val")
 
         # Step scheduler after warmup

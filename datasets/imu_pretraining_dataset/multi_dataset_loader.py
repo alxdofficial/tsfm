@@ -17,12 +17,15 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import random
 
+from datasets.imu_pretraining_dataset.label_augmentation import augment_label
+
 
 class IMUPretrainingDataset(Dataset):
     """
     Multi-dataset loader for pretraining IMU encoder.
 
     Loads from multiple datasets with variable channel sampling.
+    Uses dataset-specific label augmentation with synonyms and templates.
     """
 
     def __init__(
@@ -193,9 +196,20 @@ class IMUPretrainingDataset(Dataset):
         # Labels are stored as lists, join them with space if multiple
         label_list = session_info['label']
         if isinstance(label_list, list):
-            label_text = ' '.join(str(l) for l in label_list)
+            base_label = ' '.join(str(l) for l in label_list)
         else:
-            label_text = str(label_list)
+            base_label = str(label_list)
+
+        # Apply dataset-specific label augmentation (only for training split)
+        # Uses synonyms and templates tailored to each dataset's activities
+        augmentation_rate = 0.8 if self.split == 'train' else 0.0
+        label_text = augment_label(
+            label=base_label,
+            dataset_name=dataset_name,
+            augmentation_rate=augmentation_rate,
+            use_synonyms=True,
+            use_templates=True
+        )
 
         return {
             'data': data,
@@ -267,6 +281,36 @@ class IMUPretrainingDataset(Dataset):
         }
 
 
+def worker_init_fn(worker_id: int) -> None:
+    """
+    Initialize random seeds for DataLoader workers to ensure reproducibility.
+
+    Each worker gets a unique seed based on worker_id to ensure:
+    1. Different workers produce different random sequences
+    2. Results are reproducible across runs with the same seed
+
+    Args:
+        worker_id: Worker ID (0 to num_workers-1)
+    """
+    # Get the dataset instance from the worker
+    worker_info = torch.utils.data.get_worker_info()
+    if worker_info is None:
+        # Single-process data loading, no need to reseed
+        return
+
+    # Get base seed from dataset
+    dataset = worker_info.dataset
+    base_seed = getattr(dataset, 'seed', 42)
+
+    # Create unique seed for this worker
+    worker_seed = base_seed + worker_id
+
+    # Seed all random number generators
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+    torch.manual_seed(worker_seed)
+
+
 def create_dataloaders(
     data_root: str = "/home/alex/code/tsfm/data",
     datasets: List[str] = ['uci_har', 'mhealth', 'pamap2', 'wisdm'],
@@ -326,7 +370,8 @@ def create_dataloaders(
         shuffle=True,
         num_workers=num_workers,
         collate_fn=IMUPretrainingDataset.collate_fn,
-        pin_memory=True
+        pin_memory=True,
+        worker_init_fn=worker_init_fn
     )
 
     val_loader = DataLoader(
@@ -335,7 +380,8 @@ def create_dataloaders(
         shuffle=False,
         num_workers=num_workers,
         collate_fn=IMUPretrainingDataset.collate_fn,
-        pin_memory=True
+        pin_memory=True,
+        worker_init_fn=worker_init_fn
     )
 
     test_loader = DataLoader(
@@ -344,47 +390,151 @@ def create_dataloaders(
         shuffle=False,
         num_workers=num_workers,
         collate_fn=IMUPretrainingDataset.collate_fn,
-        pin_memory=True
+        pin_memory=True,
+        worker_init_fn=worker_init_fn
     )
 
     return train_loader, val_loader, test_loader
 
 
 if __name__ == "__main__":
-    # Test the dataset loader
-    print("Testing IMU Pretraining Dataset...")
+    import sys
 
-    # Create dataset
-    dataset = IMUPretrainingDataset(
-        split='train',
-        patch_size_sec=2.0,
-        seed=42
-    )
+    # Check if debug mode requested
+    debug_labels = '--debug-labels' in sys.argv or '--labels' in sys.argv or len(sys.argv) == 1
 
-    print(f"\nDataset size: {len(dataset)}")
+    if debug_labels:
+        print("=" * 80)
+        print("LABEL AUGMENTATION DEBUG MODE")
+        print("=" * 80)
 
-    # Test single sample
-    sample = dataset[0]
-    print(f"\nSample 0:")
-    print(f"  Data shape: {sample['data'].shape}")
-    print(f"  Attention mask shape: {sample['attention_mask'].shape}")
-    print(f"  Dataset: {sample['metadata']['dataset']}")
-    print(f"  Channels: {sample['metadata']['num_channels']}")
-    print(f"  Selected channels: {sample['metadata']['channels'][:3]}...")
-    print(f"  Sampling rate: {sample['metadata']['sampling_rate_hz']} Hz")
+        # Create dataset
+        dataset = IMUPretrainingDataset(split='train', seed=42)
 
-    # Test dataloader with batching
-    print("\nTesting dataloader with batching...")
-    train_loader, _, _ = create_dataloaders(batch_size=4, num_workers=0)
+        print(f"\nDataset size: {len(dataset)} samples")
+        print(f"Augmentation rate: 80% for training split")
 
-    batch = next(iter(train_loader))
-    print(f"\nBatch shapes:")
-    print(f"  Data: {batch['data'].shape}")
-    print(f"  Attention mask: {batch['attention_mask'].shape}")
-    print(f"  Channel mask: {batch['channel_mask'].shape}")
+        # Sample 50 items and track augmentations
+        print("\n" + "=" * 80)
+        print("SAMPLING 50 EXAMPLES (showing original label → augmented text)")
+        print("=" * 80)
 
-    print("\nBatch metadata:")
-    for i, meta in enumerate(batch['metadata'][:2]):
-        print(f"  Sample {i}: {meta['dataset']}, {meta['num_channels']} channels")
+        from collections import defaultdict
+        augmentation_examples = defaultdict(list)
+        dataset_counts = defaultdict(int)
 
-    print("\n✓ Dataset loader test passed!")
+        for i in range(50):
+            sample = dataset[i]
+            original_label = sample['metadata']['label']
+            # Handle label list or string
+            if isinstance(original_label, list):
+                original_label = ' '.join(str(l) for l in original_label)
+            else:
+                original_label = str(original_label)
+            augmented_label = sample['label_text']
+            dataset_name = sample['metadata']['dataset']
+
+            # Track
+            dataset_counts[dataset_name] += 1
+            key = (dataset_name, original_label)
+            if len(augmentation_examples[key]) < 5:  # Keep up to 5 variations
+                augmentation_examples[key].append(augmented_label)
+
+            # Print
+            if original_label != augmented_label:
+                print(f"{i+1:2d}. [{dataset_name:10s}] {original_label:25s} → {augmented_label}")
+            else:
+                print(f"{i+1:2d}. [{dataset_name:10s}] {original_label:25s} (no augmentation)")
+
+        # Show dataset distribution
+        print("\n" + "=" * 80)
+        print("DATASET DISTRIBUTION IN SAMPLES:")
+        print("=" * 80)
+        for dataset_name, count in sorted(dataset_counts.items()):
+            print(f"  {dataset_name:15s}: {count:2d} samples ({count/50*100:.0f}%)")
+
+        # Show all variations collected for each label
+        print("\n" + "=" * 80)
+        print("LABEL VARIATION EXAMPLES (grouped by dataset and activity):")
+        print("=" * 80)
+
+        for (dataset_name, original_label), variations in sorted(augmentation_examples.items()):
+            if len(variations) > 1 or variations[0] != original_label:
+                print(f"\n{dataset_name.upper()} - '{original_label}':")
+                for j, var in enumerate(variations, 1):
+                    marker = "✓" if var != original_label else "○"
+                    print(f"  {marker} {var}")
+
+        # Sample more to show diversity
+        print("\n" + "=" * 80)
+        print("TESTING AUGMENTATION DIVERSITY (100 more samples per dataset)")
+        print("=" * 80)
+
+        from collections import Counter
+
+        for target_dataset in ['uci_har', 'mhealth', 'pamap2', 'wisdm']:
+            variations_seen = []
+            samples_checked = 0
+            idx = 0
+
+            while samples_checked < 100 and idx < len(dataset):
+                sample = dataset[idx]
+                if sample['metadata']['dataset'] == target_dataset:
+                    variations_seen.append(sample['label_text'])
+                    samples_checked += 1
+                idx += 1
+
+            unique_count = len(set(variations_seen))
+            total_count = len(variations_seen)
+
+            print(f"\n{target_dataset.upper()}:")
+            print(f"  Samples checked: {total_count}")
+            print(f"  Unique texts:    {unique_count}")
+            print(f"  Diversity:       {unique_count/total_count*100:.1f}%")
+
+            # Show most common variations
+            most_common = Counter(variations_seen).most_common(5)
+            print(f"  Most common variations:")
+            for text, count in most_common:
+                print(f"    {count:2d}× {text}")
+
+        print("\n" + "=" * 80)
+        print("✓ Label augmentation debug complete!")
+        print("=" * 80)
+
+    else:
+        # Standard test mode
+        print("=" * 80)
+        print("STANDARD DATASET LOADER TEST")
+        print("=" * 80)
+        print("(Run with --debug-labels to see augmentation details)")
+
+        dataset = IMUPretrainingDataset(split='train', seed=42)
+        print(f"\nDataset size: {len(dataset)}")
+
+        # Test single sample
+        sample = dataset[0]
+        print(f"\nSample 0:")
+        print(f"  Data shape: {sample['data'].shape}")
+        print(f"  Attention mask shape: {sample['attention_mask'].shape}")
+        print(f"  Dataset: {sample['metadata']['dataset']}")
+        print(f"  Channels: {sample['metadata']['num_channels']}")
+        print(f"  Label: {sample['label_text']}")
+
+        # Test dataloader with batching
+        print("\nTesting dataloader with batching...")
+        train_loader, _, _ = create_dataloaders(batch_size=4, num_workers=0)
+
+        batch = next(iter(train_loader))
+        print(f"\nBatch shapes:")
+        print(f"  Data: {batch['data'].shape}")
+        print(f"  Attention mask: {batch['attention_mask'].shape}")
+        print(f"  Channel mask: {batch['channel_mask'].shape}")
+
+        print("\nBatch labels:")
+        for i, (label, meta) in enumerate(zip(batch['label_texts'], batch['metadata'])):
+            print(f"  {i+1}. [{meta['dataset']:10s}] {label}")
+
+        print("\n" + "=" * 80)
+        print("✓ Dataset loader test passed!")
+        print("=" * 80)
