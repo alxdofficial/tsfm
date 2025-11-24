@@ -316,6 +316,8 @@ def create_dataloaders(
     datasets: List[str] = ['uci_har', 'mhealth', 'pamap2', 'wisdm'],
     batch_size: int = 32,
     num_workers: int = 4,
+    prefetch_factor: int = 2,
+    persistent_workers: bool = False,
     patch_size_sec: float = 2.0,
     patch_size_per_dataset: Optional[Dict[str, float]] = None,
     seed: int = 42
@@ -369,6 +371,8 @@ def create_dataloaders(
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
+        persistent_workers=persistent_workers if num_workers > 0 else False,
         collate_fn=IMUPretrainingDataset.collate_fn,
         pin_memory=True,
         worker_init_fn=worker_init_fn
@@ -379,6 +383,8 @@ def create_dataloaders(
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
+        persistent_workers=persistent_workers if num_workers > 0 else False,
         collate_fn=IMUPretrainingDataset.collate_fn,
         pin_memory=True,
         worker_init_fn=worker_init_fn
@@ -389,6 +395,8 @@ def create_dataloaders(
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
+        persistent_workers=persistent_workers if num_workers > 0 else False,
         collate_fn=IMUPretrainingDataset.collate_fn,
         pin_memory=True,
         worker_init_fn=worker_init_fn

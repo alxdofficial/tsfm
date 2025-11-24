@@ -14,8 +14,8 @@ sys.path.insert(0, str(project_root / "tools" / "models"))
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import LambdaLR
 from torch.amp import autocast, GradScaler
 from datetime import datetime
 from tqdm import tqdm
@@ -76,12 +76,15 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
 EPOCHS = 100
-BATCH_SIZE = 96  # Increased from 128 - larger batch sizes help contrastive learning
+BATCH_SIZE = 256  # Increased from 128 - larger batch sizes help contrastive learning
+CHUNK_SIZE = 16  # Process 16 samples at a time (adjust if OOM persists)
 LEARNING_RATE = 5e-4  # Increased from 1e-4 - standard for contrastive learning from scratch
 WARMUP_EPOCHS = 3
 
 # Shared parameters
-NUM_WORKERS = 4
+NUM_WORKERS = 8  # Increased from 4 for better CPU parallelism with large batches
+PREFETCH_FACTOR = 4  # Prefetch 4 batches per worker (32 total batches ahead)
+PERSISTENT_WORKERS = True  # Keep workers alive between epochs
 WEIGHT_DECAY = 1e-5  # Reduced from 0.01 - high weight decay causes representation collapse in contrastive learning (SimCLR uses 1e-6)
 TEMPERATURE = 0.1  # Lower temperature for sharper contrastive gradients (standard for contrastive learning)
 
@@ -92,7 +95,7 @@ SOFT_TARGET_WEIGHT = 0.5  # Balance: 0=hard, 1=pure soft, 0.5=balanced
 
 # Memory bank configuration (MoCo-style queue for more negatives)
 USE_MEMORY_BANK = True  # Enable memory bank for 4096+ negatives
-MEMORY_BANK_SIZE = 1024  # Queue size (provides 4096 additional negatives)
+MEMORY_BANK_SIZE = 512  # Queue size (provides 4096 additional negatives)
 
 # Plotting
 PLOT_EVERY_N_BATCHES = 10
@@ -102,6 +105,9 @@ VISUALIZE_EMBEDDINGS = True  # Generate UMAP plots showing IMU-text alignment
 VISUALIZE_EVERY_N_EPOCHS = 1  # How often to generate embedding plots (1 = every epoch)
 UMAP_N_NEIGHBORS = 15  # UMAP parameter: 5-50, higher = more global structure
 UMAP_MIN_DIST = 0.1  # UMAP parameter: 0.0-0.99, lower = tighter clusters
+
+# Debug configuration
+DEBUG_METRIC_FREQUENCY = 10  # Compute expensive debug metrics every N batches (not every batch)
 
 # =================================================================
 
@@ -116,36 +122,96 @@ class SemanticAlignmentModel(nn.Module):
 
     def forward(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes):
         batch_size = data.shape[0]
-        encoder_outputs, patch_masks = [], []
+        device = data.device
 
-        for i in range(batch_size):
-            with torch.no_grad():
+        # Step 1: Preprocess all samples (must be per-sample due to different sampling rates)
+        all_patches = []
+        all_channel_descs = []
+        valid_samples = []
+
+        with torch.no_grad():
+            for i in range(batch_size):
                 patches, _ = self.encoder.preprocess(
                     data[i], sampling_rate_hz=sampling_rates[i], patch_size_sec=patch_sizes[i]
                 )
-            if patches is None or len(patches) == 0:
-                encoder_outputs.append(None)
-                patch_masks.append(None)
-                continue
 
-            if len(patches) > MAX_PATCHES_PER_SAMPLE:
-                patches = patches[:MAX_PATCHES_PER_SAMPLE]
+                if patches is None or len(patches) == 0:
+                    all_patches.append(None)
+                    all_channel_descs.append(None)
+                    valid_samples.append(False)
+                    continue
 
-            # Pad channel descriptions to match data's channel count (same as pretrain.py)
-            num_channels = data[i].shape[1]  # Total channels including padding
-            channel_descs = channel_descriptions[i]
-            padded_descs = channel_descs + ["[PAD]"] * (num_channels - len(channel_descs))
+                if len(patches) > MAX_PATCHES_PER_SAMPLE:
+                    patches = patches[:MAX_PATCHES_PER_SAMPLE]
 
-            patches_tensor = patches.unsqueeze(0).to(data.device)  # Add batch dimension: (1, patches, 96, channels)
-            encoded = self.encoder(patches_tensor, padded_descs)  # (1, patches, channels, d_model)
-            encoder_outputs.append(encoded.squeeze(0))  # Remove batch dim: (patches, channels, d_model)
-            patch_masks.append(torch.ones(len(patches), dtype=torch.bool, device=data.device))
+                # Pad channel descriptions to match data's channel count
+                num_channels = data[i].shape[1]
+                channel_descs = channel_descriptions[i]
+                padded_descs = channel_descs + ["[PAD]"] * (num_channels - len(channel_descs))
 
-        # Pad
-        max_patches = max(len(p) for p in patch_masks if p is not None)
+                all_patches.append(patches)
+                all_channel_descs.append(padded_descs)
+                valid_samples.append(True)
+
+        # Step 2: Batch all valid patches together
+        valid_indices = [i for i, v in enumerate(valid_samples) if v]
+
+        if len(valid_indices) == 0:
+            # All samples are invalid - return empty output
+            max_channels = data.shape[2]
+            padded_encoder_output = torch.zeros(batch_size, 1, max_channels, D_MODEL, device=device)
+            padded_patch_mask = torch.zeros(batch_size, 1, dtype=torch.bool, device=device)
+            return self.semantic_head(padded_encoder_output, channel_mask=channel_mask,
+                                       patch_mask=padded_patch_mask, normalize=True)
+
+        # Find max patches among valid samples
+        max_patches_valid = max(len(all_patches[i]) for i in valid_indices)
         max_channels = data.shape[2]
-        padded_encoder_output = torch.zeros(batch_size, max_patches, max_channels, D_MODEL, device=data.device)
-        padded_patch_mask = torch.zeros(batch_size, max_patches, dtype=torch.bool, device=data.device)
+
+        # Create batched tensor for valid samples only
+        num_valid = len(valid_indices)
+        batched_patches = torch.zeros(num_valid, max_patches_valid, 96, max_channels, device=device)
+        batched_channel_descs = []
+
+        for batch_idx, sample_idx in enumerate(valid_indices):
+            patches = all_patches[sample_idx]
+            num_patches = len(patches)
+            batched_patches[batch_idx, :num_patches] = patches
+            batched_channel_descs.append(all_channel_descs[sample_idx])
+
+        # Step 3: Process in mini-batches to avoid OOM (still much faster than per-sample!)
+        # Chunk size: how many samples to encode together (tuned for GPU memory)
+        encoded_chunks = []
+
+        for chunk_start in range(0, num_valid, CHUNK_SIZE):
+            chunk_end = min(chunk_start + CHUNK_SIZE, num_valid)
+            chunk_patches = batched_patches[chunk_start:chunk_end]
+            chunk_descs = batched_channel_descs[chunk_start:chunk_end]
+
+            # Wrap in no_grad when encoder is frozen (saves 30-40% training time!)
+            if FREEZE_ENCODER:
+                with torch.no_grad():
+                    encoded_chunk = self.encoder(chunk_patches, chunk_descs)
+            else:
+                encoded_chunk = self.encoder(chunk_patches, chunk_descs)
+            encoded_chunks.append(encoded_chunk)
+
+        encoded_batch = torch.cat(encoded_chunks, dim=0)
+        # encoded_batch shape: (num_valid, max_patches_valid, max_channels, d_model)
+
+        # Step 4: Map outputs back to original batch positions
+        encoder_outputs = [None] * batch_size
+        patch_masks = [None] * batch_size
+
+        for batch_idx, sample_idx in enumerate(valid_indices):
+            num_patches = len(all_patches[sample_idx])
+            encoder_outputs[sample_idx] = encoded_batch[batch_idx, :num_patches]
+            patch_masks[sample_idx] = torch.ones(num_patches, dtype=torch.bool, device=device)
+
+        # Step 5: Final padding to uniform dimensions
+        max_patches = max(len(p) for p in patch_masks if p is not None)
+        padded_encoder_output = torch.zeros(batch_size, max_patches, max_channels, D_MODEL, device=device)
+        padded_patch_mask = torch.zeros(batch_size, max_patches, dtype=torch.bool, device=device)
 
         for i, (enc_out, p_mask) in enumerate(zip(encoder_outputs, patch_masks)):
             if enc_out is not None:
@@ -271,12 +337,15 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
             sampling_rates = [m['sampling_rate_hz'] for m in metadata]
             patch_sizes = [m['patch_size_sec'] for m in metadata]
             channel_descriptions = [m['channel_descriptions'] for m in metadata]
-            
+
+            # Encode text embeddings
+            text_embeddings = label_bank.encode(label_texts, normalize=True)
+
             # Forward pass (no gradients)
             imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
-            
-            # Update memory bank
-            memory_bank.update(imu_embeddings, label_texts)
+
+            # Update memory bank with both embeddings
+            memory_bank.update(imu_embeddings, text_embeddings, label_texts)
             
             # Print progress
             filled = min((batch_idx + 1) * len(label_texts), memory_bank.queue_size)
@@ -288,6 +357,22 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
     # Return model to training mode if it wasn't frozen
     if not FREEZE_ENCODER:
         model.train()
+
+
+def _compute_per_layer_grad_norms(model):
+    """
+    Compute gradient norms for each component of the model.
+
+    Returns:
+        Tuple of (cnn_grad_norm, encoder_grad_norm, head_grad_norm)
+    """
+    cnn_grad_norm = sum(p.grad.norm().item() ** 2 for n, p in model.named_parameters()
+                       if 'feature_extractor' in n and p.grad is not None) ** 0.5
+    encoder_grad_norm = sum(p.grad.norm().item() ** 2 for n, p in model.named_parameters()
+                           if 'encoder' in n and 'feature_extractor' not in n and p.grad is not None) ** 0.5
+    head_grad_norm = sum(p.grad.norm().item() ** 2 for n, p in model.named_parameters()
+                        if 'semantic_head' in n and p.grad is not None) ** 0.5
+    return cnn_grad_norm, encoder_grad_norm, head_grad_norm
 
 
 def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epoch, scaler, plotter=None, stage="stage1", memory_bank=None):
@@ -337,9 +422,10 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
         # Clear gradients BEFORE forward pass
         optimizer.zero_grad()
 
-        # Get queue embeddings from memory bank if enabled
+        # Get queue embeddings from memory bank if enabled (no gradients needed)
         if memory_bank is not None and USE_MEMORY_BANK:
-            imu_queue, text_queue = memory_bank.get_queue_embeddings(label_bank, device)
+            with torch.no_grad():
+                imu_queue, text_queue = memory_bank.get_queue_embeddings(device)
         else:
             imu_queue, text_queue = None, None
 
@@ -348,26 +434,22 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
                                      return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
 
-        # Compute debug metrics (before backward pass, while embeddings are fresh)
-        # Normalize embeddings for accurate similarity measurements (avoids 200-500 range)
-        with torch.no_grad():
-            debug_imu = F.normalize(imu_embeddings, p=2, dim=-1)
-            debug_text = F.normalize(text_embeddings, p=2, dim=-1)
-            debug_queue_imu = F.normalize(imu_queue, p=2, dim=-1) if imu_queue is not None else None
-            debug_queue_text = F.normalize(text_queue, p=2, dim=-1) if text_queue is not None else None
-            debug_metrics = compute_debug_metrics(debug_imu, debug_text, debug_queue_imu, debug_queue_text)
+        # Compute debug metrics periodically (not every batch - expensive)
+        # Embeddings are already normalized by model and label_bank
+        debug_metrics = {}
+        if batch_idx % DEBUG_METRIC_FREQUENCY == 0:
+            with torch.no_grad():
+                debug_metrics = compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue, text_queue)
 
         if scaler is not None:
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)  # Unscale before clipping
 
-            # Per-layer gradient norms (after backward, before clipping)
-            cnn_grad_norm = sum(p.grad.norm().item() ** 2 for n, p in model.named_parameters()
-                               if 'feature_extractor' in n and p.grad is not None) ** 0.5
-            encoder_grad_norm = sum(p.grad.norm().item() ** 2 for n, p in model.named_parameters()
-                                   if 'encoder' in n and 'feature_extractor' not in n and p.grad is not None) ** 0.5
-            head_grad_norm = sum(p.grad.norm().item() ** 2 for n, p in model.named_parameters()
-                                if 'semantic_head' in n and p.grad is not None) ** 0.5
+            # Per-layer gradient norms (expensive - only compute periodically)
+            if batch_idx % DEBUG_METRIC_FREQUENCY == 0:
+                cnn_grad_norm, encoder_grad_norm, head_grad_norm = _compute_per_layer_grad_norms(model)
+            else:
+                cnn_grad_norm = encoder_grad_norm = head_grad_norm = 0.0
 
             grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=MAX_GRAD_NORM)
             scaler.step(optimizer)
@@ -375,20 +457,19 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
         else:
             loss.backward()
 
-            # Per-layer gradient norms (after backward, before clipping)
-            cnn_grad_norm = sum(p.grad.norm().item() ** 2 for n, p in model.named_parameters()
-                               if 'feature_extractor' in n and p.grad is not None) ** 0.5
-            encoder_grad_norm = sum(p.grad.norm().item() ** 2 for n, p in model.named_parameters()
-                                   if 'encoder' in n and 'feature_extractor' not in n and p.grad is not None) ** 0.5
-            head_grad_norm = sum(p.grad.norm().item() ** 2 for n, p in model.named_parameters()
-                                if 'semantic_head' in n and p.grad is not None) ** 0.5
+            # Per-layer gradient norms (expensive - only compute periodically)
+            if batch_idx % DEBUG_METRIC_FREQUENCY == 0:
+                cnn_grad_norm, encoder_grad_norm, head_grad_norm = _compute_per_layer_grad_norms(model)
+            else:
+                cnn_grad_norm = encoder_grad_norm = head_grad_norm = 0.0
 
             grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=MAX_GRAD_NORM)
             optimizer.step()
 
-        # Update memory bank with current batch embeddings
+        # Update memory bank with current batch embeddings (no gradients needed)
         if memory_bank is not None and USE_MEMORY_BANK:
-            memory_bank.update(imu_embeddings, label_texts)
+            with torch.no_grad():
+                memory_bank.update(imu_embeddings.detach(), text_embeddings.detach(), label_texts)
 
         # Accumulate metrics
         total_loss += metrics['loss']
@@ -399,13 +480,14 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
         total_sim_gap += metrics['similarity_gap']
         total_grad_norm += grad_norm.item()
 
-        # Accumulate debug metrics
-        total_imu_std += debug_metrics['imu_std']
-        total_text_std += debug_metrics['text_std']
-        total_imu_diversity += debug_metrics['imu_diversity']
-        total_debug_sim_gap += debug_metrics['sim_gap']
-        if 'queue_diversity' in debug_metrics:
-            total_queue_diversity += debug_metrics['queue_diversity']
+        # Accumulate debug metrics (only when computed)
+        if debug_metrics:
+            total_imu_std += debug_metrics['imu_std']
+            total_text_std += debug_metrics['text_std']
+            total_imu_diversity += debug_metrics['imu_diversity']
+            total_debug_sim_gap += debug_metrics['sim_gap']
+            if 'queue_diversity' in debug_metrics:
+                total_queue_diversity += debug_metrics['queue_diversity']
 
         # Accumulate per-layer gradient norms
         total_cnn_grad_norm += cnn_grad_norm
@@ -417,11 +499,11 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             'acc': f"{metrics['acc_imu_to_text']:.3f}",
             'sim_gap': f"{metrics['similarity_gap']:.3f}",
             'grad': f"{grad_norm.item():.2f}",
-            'imu_std': f"{debug_metrics['imu_std']:.3f}"
+            'imu_std': f"{debug_metrics.get('imu_std', 0.0):.3f}"
         })
 
         # Batch-level plotting (every N batches)
-        if plotter is not None and (batch_idx + 1) % PLOT_EVERY_N_BATCHES == 0:
+        if plotter is not None and batch_idx % PLOT_EVERY_N_BATCHES == 0:
             global_batch = (epoch - 1) * len(dataloader) + batch_idx
             plotter.add_scalar(f'batch/{stage}_loss', metrics['loss'], global_batch)
             plotter.add_scalar(f'batch/{stage}_acc_imu_to_text', metrics['acc_imu_to_text'], global_batch)
@@ -431,21 +513,22 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             plotter.add_scalar(f'batch/{stage}_similarity_gap', metrics['similarity_gap'], global_batch)
             plotter.add_scalar(f'batch/{stage}_grad_norm', grad_norm.item(), global_batch)
 
-            # Debug metrics (use batch/ prefix so they're stored in batch metrics)
-            plotter.add_scalar(f'batch/debug_{stage}_imu_std', debug_metrics['imu_std'], global_batch)
-            plotter.add_scalar(f'batch/debug_{stage}_text_std', debug_metrics['text_std'], global_batch)
-            plotter.add_scalar(f'batch/debug_{stage}_imu_diversity', debug_metrics['imu_diversity'], global_batch)
-            plotter.add_scalar(f'batch/debug_{stage}_pos_sim_mean', debug_metrics['pos_sim_mean'], global_batch)
-            plotter.add_scalar(f'batch/debug_{stage}_neg_sim_mean', debug_metrics['neg_sim_mean'], global_batch)
-            plotter.add_scalar(f'batch/debug_{stage}_sim_gap', debug_metrics['sim_gap'], global_batch)
-            if 'queue_diversity' in debug_metrics:
-                plotter.add_scalar(f'batch/debug_{stage}_queue_diversity', debug_metrics['queue_diversity'], global_batch)
-                plotter.add_scalar(f'batch/debug_{stage}_queue_staleness', debug_metrics['queue_staleness'], global_batch)
+            # Debug metrics (only plot when computed)
+            if debug_metrics:
+                plotter.add_scalar(f'batch/debug_{stage}_imu_std', debug_metrics['imu_std'], global_batch)
+                plotter.add_scalar(f'batch/debug_{stage}_text_std', debug_metrics['text_std'], global_batch)
+                plotter.add_scalar(f'batch/debug_{stage}_imu_diversity', debug_metrics['imu_diversity'], global_batch)
+                plotter.add_scalar(f'batch/debug_{stage}_pos_sim_mean', debug_metrics['pos_sim_mean'], global_batch)
+                plotter.add_scalar(f'batch/debug_{stage}_neg_sim_mean', debug_metrics['neg_sim_mean'], global_batch)
+                plotter.add_scalar(f'batch/debug_{stage}_sim_gap', debug_metrics['sim_gap'], global_batch)
+                if 'queue_diversity' in debug_metrics:
+                    plotter.add_scalar(f'batch/debug_{stage}_queue_diversity', debug_metrics['queue_diversity'], global_batch)
+                    plotter.add_scalar(f'batch/debug_{stage}_queue_staleness', debug_metrics['queue_staleness'], global_batch)
 
-            # Per-layer gradient norms
-            plotter.add_scalar(f'batch/debug_{stage}_cnn_grad_norm', cnn_grad_norm, global_batch)
-            plotter.add_scalar(f'batch/debug_{stage}_encoder_grad_norm', encoder_grad_norm, global_batch)
-            plotter.add_scalar(f'batch/debug_{stage}_head_grad_norm', head_grad_norm, global_batch)
+                # Per-layer gradient norms (only when debug metrics are computed)
+                plotter.add_scalar(f'batch/debug_{stage}_cnn_grad_norm', cnn_grad_norm, global_batch)
+                plotter.add_scalar(f'batch/debug_{stage}_encoder_grad_norm', encoder_grad_norm, global_batch)
+                plotter.add_scalar(f'batch/debug_{stage}_head_grad_norm', head_grad_norm, global_batch)
 
             plotter.plot_all()
 
@@ -493,13 +576,14 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
 
             with autocast('cuda', enabled=device.type == 'cuda'):
                 imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
-                loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts, return_metrics=True)
+                _, metrics = criterion(imu_embeddings, text_embeddings, label_texts, return_metrics=True)
 
             total_loss += metrics['loss']
             total_acc_i2t += metrics['acc_imu_to_text']
             total_acc_t2i += metrics['acc_text_to_imu']
-            all_imu_embeddings.append(imu_embeddings.cpu())
-            all_text_embeddings.append(text_embeddings.cpu())
+            # Keep embeddings on GPU for faster concatenation
+            all_imu_embeddings.append(imu_embeddings)
+            all_text_embeddings.append(text_embeddings)
             all_labels.extend(label_texts)
 
             pbar.set_postfix({'loss': f"{metrics['loss']:.4f}", 'acc_i2t': f"{metrics['acc_imu_to_text']:.3f}"})
@@ -508,8 +592,9 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
     avg_metrics = {'loss': total_loss / num_batches, 'acc_imu_to_text': total_acc_i2t / num_batches,
                    'acc_text_to_imu': total_acc_t2i / num_batches}
 
-    all_imu_embeddings = torch.cat(all_imu_embeddings, dim=0).to(device)
-    all_text_embeddings = torch.cat(all_text_embeddings, dim=0).to(device)
+    # Concatenate on GPU (faster than CPU→GPU transfer)
+    all_imu_embeddings = torch.cat(all_imu_embeddings, dim=0)
+    all_text_embeddings = torch.cat(all_text_embeddings, dim=0)
     retrieval_metrics = compute_retrieval_metrics(all_imu_embeddings, all_text_embeddings, k_values=[1, 5, 10])
     avg_metrics.update(retrieval_metrics)
 
@@ -581,7 +666,7 @@ def main():
         encoder_state_dict = {k.replace('encoder.', ''): v for k, v in checkpoint['model_state_dict'].items()
                               if k.startswith('encoder.')}
         # Use strict=False to ignore channel encoding model weights (loaded dynamically when needed)
-        missing_keys, unexpected_keys = encoder.load_state_dict(encoder_state_dict, strict=False)
+        _, unexpected_keys = encoder.load_state_dict(encoder_state_dict, strict=False)
         if unexpected_keys:
             print(f"  Note: Ignoring {len(unexpected_keys)} channel encoding weights (will be loaded dynamically)")
         print("✓ Pretrained encoder loaded")
@@ -634,7 +719,8 @@ def main():
     # Create dataloaders
     train_loader, val_loader, _ = create_dataloaders(
         data_root=DATA_ROOT, datasets=DATASETS, batch_size=BATCH_SIZE,
-        num_workers=NUM_WORKERS, patch_size_per_dataset=PATCH_SIZE_PER_DATASET, seed=SEED
+        num_workers=NUM_WORKERS, prefetch_factor=PREFETCH_FACTOR,
+        persistent_workers=PERSISTENT_WORKERS, patch_size_per_dataset=PATCH_SIZE_PER_DATASET, seed=SEED
     )
 
     # Setup optimizer (trains semantic head only if encoder is frozen, otherwise all parameters)
@@ -642,7 +728,6 @@ def main():
                      lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     # Setup scheduler with proper warmup + cosine decay
-    import math
     def warmup_cosine_schedule(epoch):
         """Linear warmup followed by cosine decay."""
         if epoch < WARMUP_EPOCHS:
@@ -653,7 +738,6 @@ def main():
             progress = (epoch - WARMUP_EPOCHS) / (EPOCHS - WARMUP_EPOCHS)
             return 0.01 + 0.99 * (1 + math.cos(math.pi * progress)) / 2
 
-    from torch.optim.lr_scheduler import LambdaLR
     scheduler = LambdaLR(optimizer, lr_lambda=warmup_cosine_schedule)
     scaler = GradScaler('cuda') if device.type == 'cuda' else None
     best_val_loss = float('inf')
