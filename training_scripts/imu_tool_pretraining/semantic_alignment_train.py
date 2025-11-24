@@ -16,19 +16,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.amp import autocast, GradScaler
 from datetime import datetime
 from tqdm import tqdm
 import json
+import math
 
 from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders
 from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
 from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
 from training_scripts.imu_tool_pretraining.label_bank import LabelBank
-from training_scripts.imu_tool_pretraining.prototype_manager import PrototypeManager
 from training_scripts.imu_tool_pretraining.semantic_loss import SemanticAlignmentLoss, compute_retrieval_metrics
-from training_scripts.imu_tool_pretraining.plot_utils import TrainingPlotter
+from training_scripts.imu_tool_pretraining.plot_utils import TrainingPlotter, EmbeddingVisualizer
 from training_scripts.imu_tool_pretraining.memory_bank import MemoryBank
 
 
@@ -76,14 +75,14 @@ SEED = 42
 MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
-EPOCHS = 30
-BATCH_SIZE = 16  # Can increase to 32 if encoder is frozen
-LEARNING_RATE = 1e-4  # Good for training semantic head only
+EPOCHS = 100
+BATCH_SIZE = 96  # Increased from 128 - larger batch sizes help contrastive learning
+LEARNING_RATE = 5e-4  # Increased from 1e-4 - standard for contrastive learning from scratch
 WARMUP_EPOCHS = 3
 
 # Shared parameters
 NUM_WORKERS = 4
-WEIGHT_DECAY = 0.01  # Increased from 1e-5 to regularize weights and prevent magnitude explosion
+WEIGHT_DECAY = 1e-5  # Reduced from 0.01 - high weight decay causes representation collapse in contrastive learning (SimCLR uses 1e-6)
 TEMPERATURE = 0.1  # Lower temperature for sharper contrastive gradients (standard for contrastive learning)
 
 # Soft targets configuration
@@ -91,18 +90,18 @@ USE_SOFT_TARGETS = False  # DISABLED: Soft targets were causing collapse (all la
 SOFT_TARGET_TEMPERATURE = 0.5  # Temperature for soft target distribution (higher = smoother)
 SOFT_TARGET_WEIGHT = 0.5  # Balance: 0=hard, 1=pure soft, 0.5=balanced
 
-# Prototype soft targets configuration (DISABLED BY DEFAULT)
-USE_PROTOTYPES = False  # Use cluster-based prototypes for soft targets
-NUM_PROTOTYPE_CLUSTERS = 5  # Number of semantic clusters (e.g., locomotion, stationary, etc.)
-
 # Memory bank configuration (MoCo-style queue for more negatives)
 USE_MEMORY_BANK = True  # Enable memory bank for 4096+ negatives
-MEMORY_BANK_SIZE = 4096  # Queue size (provides 4096 additional negatives)
-PROTOTYPE_UPDATE_INTERVAL = 100  # Update prototypes every N batches
-PROTOTYPE_WEIGHT = 0.5  # Balance between pairwise and prototype (0=pairwise, 1=prototype)
+MEMORY_BANK_SIZE = 1024  # Queue size (provides 4096 additional negatives)
 
 # Plotting
 PLOT_EVERY_N_BATCHES = 10
+
+# Embedding visualization
+VISUALIZE_EMBEDDINGS = True  # Generate UMAP plots showing IMU-text alignment
+VISUALIZE_EVERY_N_EPOCHS = 1  # How often to generate embedding plots (1 = every epoch)
+UMAP_N_NEIGHBORS = 15  # UMAP parameter: 5-50, higher = more global structure
+UMAP_MIN_DIST = 0.1  # UMAP parameter: 0.0-0.99, lower = tighter clusters
 
 # =================================================================
 
@@ -230,7 +229,68 @@ def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_
     return debug_metrics
 
 
-def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epoch, scaler, prototype_manager=None, plotter=None, stage="stage1", memory_bank=None):
+def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_batches=None):
+    """
+    Warmup memory bank by filling the queue with embeddings before training.
+    
+    This reduces volatility in early training by ensuring the queue has diverse
+    negatives from the start, rather than being filled with zeros or early
+    low-quality embeddings.
+    
+    Args:
+        model: The semantic alignment model
+        label_bank: LabelBank for encoding text labels
+        dataloader: Training dataloader
+        memory_bank: MemoryBank instance to fill
+        device: Device to run on
+        num_batches: Number of batches to use (None = fill entire queue)
+    """
+    if memory_bank is None:
+        return
+    
+    print(f"\nWarming up memory bank (queue_size={memory_bank.queue_size})...")
+    model.eval()  # Eval mode during warmup (no training)
+    
+    # Calculate how many batches needed to fill queue
+    if num_batches is None:
+        batch_size = dataloader.batch_size
+        num_batches = math.ceil(memory_bank.queue_size / batch_size)
+    
+    num_batches = min(num_batches, len(dataloader))
+    
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(dataloader):
+            if batch_idx >= num_batches:
+                break
+                
+            data = batch['data'].to(device)
+            channel_mask = batch['channel_mask'].to(device)
+            label_texts = batch['label_texts']
+            metadata = batch['metadata']
+            
+            sampling_rates = [m['sampling_rate_hz'] for m in metadata]
+            patch_sizes = [m['patch_size_sec'] for m in metadata]
+            channel_descriptions = [m['channel_descriptions'] for m in metadata]
+            
+            # Forward pass (no gradients)
+            imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
+            
+            # Update memory bank
+            memory_bank.update(imu_embeddings, label_texts)
+            
+            # Print progress
+            filled = min((batch_idx + 1) * len(label_texts), memory_bank.queue_size)
+            print(f"  Batch {batch_idx + 1}/{num_batches}: Queue filled {filled}/{memory_bank.queue_size} "
+                  f"({100 * filled / memory_bank.queue_size:.1f}%)")
+    
+    print(f"✓ Memory bank warmup complete ({memory_bank.ptr} embeddings)")
+    
+    # Return model to training mode if it wasn't frozen
+    if not FREEZE_ENCODER:
+        model.train()
+
+
+def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epoch, scaler, plotter=None, stage="stage1", memory_bank=None):
     """Train for one epoch."""
     model.train()
 
@@ -273,10 +333,6 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
 
         with torch.no_grad():
             text_embeddings = label_bank.encode(label_texts, normalize=True)
-
-            # Add labels to prototype manager if enabled
-            if prototype_manager is not None:
-                prototype_manager.add_labels(label_texts, text_embeddings)
 
         # Clear gradients BEFORE forward pass
         optimizer.zero_grad()
@@ -414,11 +470,12 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
     }
 
 
-def validate(model, label_bank, dataloader, criterion, device, epoch, stage="stage1"):
+def validate(model, label_bank, dataloader, criterion, device, epoch, stage="stage1", plot_dir=None):
     """Validate for one epoch."""
     model.eval()
     total_loss, total_acc_i2t, total_acc_t2i = 0.0, 0.0, 0.0
     all_imu_embeddings, all_text_embeddings = [], []
+    all_labels = []
     pbar = tqdm(dataloader, desc=f"[{stage}] Epoch {epoch} Validation")
 
     with torch.no_grad():
@@ -443,6 +500,7 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
             total_acc_t2i += metrics['acc_text_to_imu']
             all_imu_embeddings.append(imu_embeddings.cpu())
             all_text_embeddings.append(text_embeddings.cpu())
+            all_labels.extend(label_texts)
 
             pbar.set_postfix({'loss': f"{metrics['loss']:.4f}", 'acc_i2t': f"{metrics['acc_imu_to_text']:.3f}"})
 
@@ -454,6 +512,25 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
     all_text_embeddings = torch.cat(all_text_embeddings, dim=0).to(device)
     retrieval_metrics = compute_retrieval_metrics(all_imu_embeddings, all_text_embeddings, k_values=[1, 5, 10])
     avg_metrics.update(retrieval_metrics)
+
+    # Generate embedding visualization if enabled
+    if VISUALIZE_EMBEDDINGS and plot_dir is not None and (epoch % VISUALIZE_EVERY_N_EPOCHS == 0):
+        print(f"\n[Epoch {epoch}] Generating embedding visualization...")
+        visualizer = EmbeddingVisualizer(
+            output_dir=plot_dir,
+            n_neighbors=UMAP_N_NEIGHBORS,
+            min_dist=UMAP_MIN_DIST
+        )
+        visualizer.plot_embedding_alignment_2d(
+            imu_embeddings=all_imu_embeddings,
+            text_embeddings=all_text_embeddings,
+            labels=all_labels,
+            epoch=epoch,
+            metrics={
+                'alignment_score': avg_metrics.get('acc_imu_to_text', 0.0),
+                'gap': avg_metrics.get('recall@1_avg', 0.0)
+            }
+        )
 
     return avg_metrics
 
@@ -480,8 +557,6 @@ def main():
                      'sentence_bert_model': SENTENCE_BERT_MODEL, 'temperature': TEMPERATURE,
                      'use_soft_targets': USE_SOFT_TARGETS, 'soft_target_temperature': SOFT_TARGET_TEMPERATURE,
                      'soft_target_weight': SOFT_TARGET_WEIGHT,
-                     'use_prototypes': USE_PROTOTYPES, 'num_prototype_clusters': NUM_PROTOTYPE_CLUSTERS,
-                     'prototype_update_interval': PROTOTYPE_UPDATE_INTERVAL, 'prototype_weight': PROTOTYPE_WEIGHT,
                      'use_memory_bank': USE_MEMORY_BANK, 'memory_bank_size': MEMORY_BANK_SIZE},
         'training': {'epochs': EPOCHS, 'batch_size': BATCH_SIZE, 'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS,
                      'max_grad_norm': MAX_GRAD_NORM}
@@ -534,22 +609,9 @@ def main():
     label_bank = LabelBank(model_name=SENTENCE_BERT_MODEL, device=device)
     print(f"✓ Label bank initialized (embedding_dim={label_bank.embedding_dim})")
 
-    # Initialize prototype manager if enabled
-    prototype_manager = None
-    if USE_PROTOTYPES:
-        print(f"Initializing prototype manager ({NUM_PROTOTYPE_CLUSTERS} clusters)...")
-        prototype_manager = PrototypeManager(
-            num_clusters=NUM_PROTOTYPE_CLUSTERS,
-            update_interval=PROTOTYPE_UPDATE_INTERVAL,
-            device=device
-        )
-        print("✓ Prototype manager initialized")
-
     criterion = SemanticAlignmentLoss(
         temperature=TEMPERATURE, use_soft_targets=USE_SOFT_TARGETS,
-        soft_target_temperature=SOFT_TARGET_TEMPERATURE, soft_target_weight=SOFT_TARGET_WEIGHT,
-        use_prototypes=USE_PROTOTYPES, prototype_weight=PROTOTYPE_WEIGHT,
-        prototype_manager=prototype_manager
+        soft_target_temperature=SOFT_TARGET_TEMPERATURE, soft_target_weight=SOFT_TARGET_WEIGHT
     )
 
     # Initialize memory bank if enabled
@@ -565,8 +627,6 @@ def main():
     print("End-to-End Training: Encoder + Semantic Head")
     if USE_SOFT_TARGETS:
         print(f"Using pairwise soft targets (temperature={SOFT_TARGET_TEMPERATURE}, weight={SOFT_TARGET_WEIGHT})")
-    if USE_PROTOTYPES:
-        print(f"Using prototype soft targets ({NUM_PROTOTYPE_CLUSTERS} clusters, weight={PROTOTYPE_WEIGHT})")
     if USE_MEMORY_BANK:
         print(f"Using memory bank with {MEMORY_BANK_SIZE} queue size (effective batch size: {BATCH_SIZE + MEMORY_BANK_SIZE})")
     print("="*70)
@@ -598,11 +658,15 @@ def main():
     scaler = GradScaler('cuda') if device.type == 'cuda' else None
     best_val_loss = float('inf')
 
+    # Warmup memory bank if enabled (reduces early training volatility)
+    if memory_bank is not None and USE_MEMORY_BANK:
+        warmup_memory_bank(model, label_bank, train_loader, memory_bank, device)
+
     # Training loop
     for epoch in range(1, EPOCHS + 1):
         train_metrics = train_epoch(model, label_bank, train_loader, criterion, optimizer,
-                                      device, epoch, scaler, prototype_manager, plotter, "train", memory_bank)
-        val_metrics = validate(model, label_bank, val_loader, criterion, device, epoch, "val")
+                                      device, epoch, scaler, plotter, "train", memory_bank)
+        val_metrics = validate(model, label_bank, val_loader, criterion, device, epoch, "val", plot_dir)
 
         # Step scheduler every epoch (warmup is built into the schedule)
         scheduler.step()

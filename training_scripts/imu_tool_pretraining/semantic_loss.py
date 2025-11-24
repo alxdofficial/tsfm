@@ -7,6 +7,7 @@ Implements InfoNCE contrastive loss for aligning IMU embeddings with text embedd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 from typing import Dict, Optional
 
 
@@ -18,8 +19,6 @@ class InfoNCELoss(nn.Module):
     Supports:
     - Hard targets (one-hot)
     - Pairwise soft targets (semantic similarity)
-    - Prototype soft targets (cluster-based)
-    - Hybrid (blend pairwise + prototype)
     """
 
     def __init__(
@@ -27,10 +26,7 @@ class InfoNCELoss(nn.Module):
         temperature: float = 0.1,
         use_soft_targets: bool = True,
         soft_target_temperature: float = 0.5,
-        soft_target_weight: float = 0.5,
-        use_prototypes: bool = False,
-        prototype_weight: float = 0.5,
-        prototype_manager=None
+        soft_target_weight: float = 0.5
     ):
         """
         Args:
@@ -38,22 +34,14 @@ class InfoNCELoss(nn.Module):
             use_soft_targets: Whether to use soft targets based on label similarity
             soft_target_temperature: Temperature for computing soft target distribution
             soft_target_weight: Weight for soft targets (1-weight goes to hard targets)
-            use_prototypes: Whether to use prototype-based soft targets
-            prototype_weight: When both soft targets and prototypes enabled:
-                             0.0 = pure pairwise, 1.0 = pure prototypes, 0.5 = balanced
-            prototype_manager: PrototypeManager instance (required if use_prototypes=True)
         """
         super().__init__()
-        self.temperature = temperature
+        # Learnable temperature (CLIP-style): initialized to 1/0.07 ≈ 14.3
+        # Temperature is learned as exp(logit_scale) to ensure positivity
+        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1/temperature))
         self.use_soft_targets = use_soft_targets
         self.soft_target_temperature = soft_target_temperature
         self.soft_target_weight = soft_target_weight
-        self.use_prototypes = use_prototypes
-        self.prototype_weight = prototype_weight
-        self.prototype_manager = prototype_manager
-
-        if self.use_prototypes and self.prototype_manager is None:
-            raise ValueError("prototype_manager must be provided when use_prototypes=True")
 
     def forward(
         self,
@@ -70,7 +58,7 @@ class InfoNCELoss(nn.Module):
         Args:
             imu_embeddings: IMU embeddings (batch_size, embedding_dim), L2-normalized
             text_embeddings: Text embeddings (batch_size, embedding_dim), L2-normalized
-            label_texts: Optional list of label text strings (needed for prototypes)
+            label_texts: Optional list of label text strings (unused, kept for API compatibility)
             return_metrics: Whether to return additional metrics
             imu_queue: Optional queue of past IMU embeddings (queue_size, embedding_dim)
             text_queue: Optional queue of past text embeddings (queue_size, embedding_dim)
@@ -98,7 +86,8 @@ class InfoNCELoss(nn.Module):
         # Compute cosine similarity matrix
         # Current batch (queries) vs all embeddings (keys: current + queue)
         # Both embeddings should already be L2-normalized
-        logits = torch.matmul(imu_embeddings, all_text.T) / self.temperature  # (batch, batch+queue)
+        # Scale by learnable temperature (clamped to prevent explosion)
+        logits = torch.matmul(imu_embeddings, all_text.T) * self.logit_scale.exp().clamp(0, 100)  # (batch, batch+queue)
 
         # Start with hard targets (one-hot)
         hard_targets = torch.eye(batch_size, device=imu_embeddings.device)
@@ -115,31 +104,11 @@ class InfoNCELoss(nn.Module):
             # Convert to probability distribution (softmax over each row)
             soft_targets_pairwise = F.softmax(text_similarity, dim=1)
 
-        # Prototype soft targets
-        soft_targets_prototype = None
-        if self.use_prototypes and label_texts is not None:
-            # Get prototype-based soft targets
-            soft_targets_prototype = self.prototype_manager.get_prototype_targets(
-                label_texts,
-                text_embeddings,
-                temperature=self.soft_target_temperature
-            )
-
         # Blend targets based on configuration
-        if self.use_soft_targets and self.use_prototypes:
-            # Hybrid: blend pairwise and prototype soft targets
-            blended_soft = (1 - self.prototype_weight) * soft_targets_pairwise + \
-                          self.prototype_weight * soft_targets_prototype
-            targets = (1 - self.soft_target_weight) * hard_targets + \
-                     self.soft_target_weight * blended_soft
-        elif self.use_soft_targets:
-            # Pairwise only
+        if self.use_soft_targets:
+            # Pairwise soft targets
             targets = (1 - self.soft_target_weight) * hard_targets + \
                      self.soft_target_weight * soft_targets_pairwise
-        elif self.use_prototypes:
-            # Prototype only
-            targets = (1 - self.soft_target_weight) * hard_targets + \
-                     self.soft_target_weight * soft_targets_prototype
 
         # Expand targets to include queue dimension (if queue is used)
         # Queue embeddings are all negatives, so pad with zeros
@@ -149,9 +118,9 @@ class InfoNCELoss(nn.Module):
 
         # Compute loss
         # Text→IMU direction (text queries vs IMU keys)
-        logits_t2i = torch.matmul(text_embeddings, all_imu.T) / self.temperature  # (batch, batch+queue)
+        logits_t2i = torch.matmul(text_embeddings, all_imu.T) * self.logit_scale.exp().clamp(0, 100)  # (batch, batch+queue)
 
-        if self.use_soft_targets or self.use_prototypes:
+        if self.use_soft_targets:
             # Soft targets: use KL divergence
             log_probs = F.log_softmax(logits, dim=1)
             loss_imu_to_text = -(targets * log_probs).sum(dim=1).mean()
@@ -175,14 +144,14 @@ class InfoNCELoss(nn.Module):
                 imu_to_text_acc = (logits.argmax(dim=1) == labels).float().mean().item()
                 text_to_imu_acc = (logits_t2i.argmax(dim=1) == labels).float().mean().item()
 
-                # Average similarity of positive pairs
-                positive_sim = torch.diagonal(logits).mean().item() * self.temperature
+                # Average similarity of positive pairs (unscale by dividing by learned temperature)
+                positive_sim = torch.diagonal(logits).mean().item() / self.logit_scale.exp().item()
 
                 # Average similarity of negative pairs
                 # Create mask for positives (only diagonal of current batch, queue is all negatives)
                 logits_mask = torch.zeros_like(logits, dtype=torch.bool)
                 logits_mask[:, :batch_size] = torch.eye(batch_size, device=logits.device, dtype=torch.bool)
-                negative_sim = logits[~logits_mask].mean().item() * self.temperature
+                negative_sim = logits[~logits_mask].mean().item() / self.logit_scale.exp().item()
 
                 metrics = {
                     'loss': loss.item(),
@@ -218,10 +187,7 @@ class SemanticAlignmentLoss(nn.Module):
         temperature: float = 0.1,
         use_soft_targets: bool = True,
         soft_target_temperature: float = 0.5,
-        soft_target_weight: float = 0.5,
-        use_prototypes: bool = False,
-        prototype_weight: float = 0.5,
-        prototype_manager=None
+        soft_target_weight: float = 0.5
     ):
         """
         Args:
@@ -229,19 +195,13 @@ class SemanticAlignmentLoss(nn.Module):
             use_soft_targets: Whether to use soft targets based on label similarity
             soft_target_temperature: Temperature for computing soft target distribution
             soft_target_weight: Weight for soft targets (0=hard, 1=pure soft, 0.5=balanced)
-            use_prototypes: Whether to use prototype-based soft targets
-            prototype_weight: Balance between pairwise and prototype (0=pairwise, 1=prototype)
-            prototype_manager: PrototypeManager instance
         """
         super().__init__()
         self.infonce = InfoNCELoss(
             temperature=temperature,
             use_soft_targets=use_soft_targets,
             soft_target_temperature=soft_target_temperature,
-            soft_target_weight=soft_target_weight,
-            use_prototypes=use_prototypes,
-            prototype_weight=prototype_weight,
-            prototype_manager=prototype_manager
+            soft_target_weight=soft_target_weight
         )
 
     def forward(

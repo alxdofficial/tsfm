@@ -6,10 +6,11 @@ Replaces TensorBoard with local PNG plots saved to disk.
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
+import numpy as np
 
 
 class TrainingPlotter:
@@ -410,3 +411,203 @@ class TrainingPlotter:
         print(f"  - learning_rate.png")
         print(f"  - dataset_*_detail.png (per dataset)")
         print(f"  - metrics.json (raw data)")
+
+
+class EmbeddingVisualizer:
+    """Visualizes high-dimensional embeddings using dimensionality reduction."""
+
+    def __init__(self, output_dir: Path, n_neighbors: int = 15, min_dist: float = 0.1):
+        """
+        Args:
+            output_dir: Directory to save visualization plots
+            n_neighbors: UMAP n_neighbors parameter (5-50, higher = more global)
+            min_dist: UMAP min_dist parameter (0.0-0.99, lower = tighter clusters)
+        """
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.n_neighbors = n_neighbors
+        self.min_dist = min_dist
+
+    def plot_embedding_alignment_2d(
+        self,
+        imu_embeddings: np.ndarray,
+        text_embeddings: np.ndarray,
+        labels: List[str],
+        epoch: int,
+        metrics: Optional[Dict[str, float]] = None,
+        umap_metric: str = 'cosine'
+    ):
+        """
+        Plot 2D UMAP projection showing alignment between IMU and text embeddings.
+
+        Args:
+            imu_embeddings: IMU embeddings (N, embedding_dim), should be L2-normalized
+            text_embeddings: Text embeddings (N, embedding_dim), should be L2-normalized
+            labels: Ground truth labels for each sample (N,)
+            epoch: Current epoch number
+            metrics: Optional dict of metrics to display (alignment_score, separation, gap, etc.)
+            umap_metric: Distance metric for UMAP ('cosine' for normalized embeddings)
+        """
+        try:
+            import umap
+            from sklearn.metrics import silhouette_score
+        except ImportError:
+            print("Warning: umap-learn or scikit-learn not installed. Skipping embedding visualization.")
+            return
+
+        # Convert to numpy if tensors
+        if hasattr(imu_embeddings, 'cpu'):
+            imu_embeddings = imu_embeddings.cpu().numpy()
+        if hasattr(text_embeddings, 'cpu'):
+            text_embeddings = text_embeddings.cpu().numpy()
+
+        # Create label mapping (text -> integer)
+        unique_labels = sorted(set(labels))
+        label_to_idx = {label: idx for idx, label in enumerate(unique_labels)}
+        label_indices = np.array([label_to_idx[label] for label in labels])
+
+        # Combine embeddings for joint UMAP projection
+        all_embeddings = np.vstack([imu_embeddings, text_embeddings])
+
+        # Fit UMAP
+        print(f"  Computing UMAP projection (n_neighbors={self.n_neighbors}, min_dist={self.min_dist})...")
+        reducer = umap.UMAP(
+            n_neighbors=self.n_neighbors,
+            min_dist=self.min_dist,
+            n_components=2,
+            metric=umap_metric,
+            random_state=42
+        )
+        embedding_2d = reducer.fit_transform(all_embeddings)
+
+        # Split back into IMU and text
+        imu_2d = embedding_2d[:len(imu_embeddings)]
+        text_2d = embedding_2d[len(imu_embeddings):]
+
+        # Compute additional metrics
+        nn_accuracy = self._compute_nn_accuracy(imu_embeddings, text_embeddings)
+
+        # Compute silhouette score (measure of cluster quality)
+        try:
+            silhouette = silhouette_score(imu_2d, label_indices, metric='euclidean')
+        except:
+            silhouette = 0.0
+
+        # Create plot
+        fig, ax = plt.subplots(figsize=(14, 10))
+
+        # Choose colormap based on number of labels
+        if len(unique_labels) <= 10:
+            cmap = plt.cm.tab10
+        else:
+            cmap = plt.cm.tab20
+
+        # Plot IMU embeddings (circles)
+        for idx, label in enumerate(unique_labels):
+            mask = label_indices == idx
+            color = cmap(idx / len(unique_labels))
+
+            # IMU points
+            ax.scatter(
+                imu_2d[mask, 0], imu_2d[mask, 1],
+                c=[color], marker='o', s=30, alpha=0.6,
+                label=f'{label} (IMU)', edgecolors='none'
+            )
+
+            # Text points (larger, more prominent)
+            if mask.any():
+                ax.scatter(
+                    text_2d[mask, 0], text_2d[mask, 1],
+                    c=[color], marker='^', s=80, alpha=0.9,
+                    edgecolors='black', linewidths=0.5
+                )
+
+        # Add metrics text box
+        if metrics is None:
+            metrics = {}
+
+        metrics_text = f'Epoch: {epoch}\n'
+        metrics_text += f"NN Accuracy: {nn_accuracy:.2%}\n"
+        metrics_text += f"Silhouette: {silhouette:.3f}\n"
+
+        if 'alignment_score' in metrics:
+            metrics_text += f"Alignment: {metrics['alignment_score']:.3f}\n"
+        if 'separation' in metrics:
+            metrics_text += f"Separation: {metrics['separation']:.3f}\n"
+        if 'gap' in metrics:
+            metrics_text += f"Gap: {metrics['gap']:.3f}"
+
+        # Place text box in upper right
+        ax.text(
+            0.98, 0.98, metrics_text,
+            transform=ax.transAxes,
+            fontsize=11,
+            verticalalignment='top',
+            horizontalalignment='right',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+        )
+
+        # Styling
+        ax.set_xlabel('UMAP Dimension 1', fontsize=12)
+        ax.set_ylabel('UMAP Dimension 2', fontsize=12)
+        ax.set_title(
+            f'IMU-Text Embedding Alignment (Epoch {epoch})\n'
+            f'Circles: IMU | Triangles: Text Labels',
+            fontsize=14, fontweight='bold'
+        )
+
+        # Legend (only show first occurrence of each label)
+        handles, labels_legend = ax.get_legend_handles_labels()
+        # Keep only IMU labels (remove duplicates)
+        unique_handles = []
+        unique_labels = []
+        seen = set()
+        for h, l in zip(handles, labels_legend):
+            label_name = l.replace(' (IMU)', '')
+            if label_name not in seen:
+                unique_handles.append(h)
+                unique_labels.append(label_name)
+                seen.add(label_name)
+
+        ax.legend(
+            unique_handles, unique_labels,
+            fontsize=9, loc='upper left',
+            framealpha=0.9, ncol=2 if len(unique_labels) > 8 else 1
+        )
+        ax.grid(True, alpha=0.2)
+
+        # Save
+        plt.tight_layout()
+        output_path = self.output_dir / f'embedding_alignment_epoch_{epoch:03d}.png'
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+
+        print(f"  ✓ Saved embedding visualization: {output_path.name}")
+
+    def _compute_nn_accuracy(
+        self,
+        imu_embeddings: np.ndarray,
+        text_embeddings: np.ndarray
+    ) -> float:
+        """
+        Compute nearest neighbor accuracy: % of IMU embeddings whose
+        nearest neighbor is the correct text embedding.
+
+        Args:
+            imu_embeddings: IMU embeddings (N, embedding_dim)
+            text_embeddings: Text embeddings (N, embedding_dim)
+
+        Returns:
+            Nearest neighbor accuracy (0-1)
+        """
+        # Compute cosine similarity (embeddings should already be normalized)
+        similarities = np.matmul(imu_embeddings, text_embeddings.T)
+
+        # For each IMU embedding, find nearest text embedding
+        nearest_text_indices = np.argmax(similarities, axis=1)
+
+        # Correct if index matches (diagonal)
+        correct_indices = np.arange(len(imu_embeddings))
+        correct = (nearest_text_indices == correct_indices).sum()
+
+        return correct / len(imu_embeddings)

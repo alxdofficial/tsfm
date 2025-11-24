@@ -64,56 +64,6 @@ class LabelBank:
         result = torch.stack([self.cache[text] for text in label_texts])
         return result.to(self.device)
 
-    def encode_unique(
-        self,
-        label_texts: List[str],
-        normalize: bool = True
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        Encode only unique labels and return mapping to original positions.
-
-        Useful for batch processing where multiple samples share labels.
-
-        Args:
-            label_texts: List of text labels (may contain duplicates)
-            normalize: Whether to L2-normalize embeddings
-
-        Returns:
-            embeddings: Tensor of unique embeddings (num_unique, embedding_dim)
-            indices: Tensor mapping original positions to unique embeddings
-
-        Example:
-            label_texts = ["walk", "run", "walk"]
-            embeddings, indices = encode_unique(label_texts)
-            # embeddings.shape = (2, 384)  # Only "walk" and "run"
-            # indices = [0, 1, 0]  # Maps back to original order
-            # reconstructed = embeddings[indices]  # Shape (3, 384)
-        """
-        # Get unique labels and their indices
-        unique_labels = []
-        label_to_idx = {}
-        indices = []
-
-        for text in label_texts:
-            if text not in label_to_idx:
-                label_to_idx[text] = len(unique_labels)
-                unique_labels.append(text)
-            indices.append(label_to_idx[text])
-
-        # Encode unique labels
-        embeddings = self.encode(unique_labels, normalize=normalize)
-        indices_tensor = torch.tensor(indices, device=self.device)
-
-        return embeddings, indices_tensor
-
-    def clear_cache(self):
-        """Clear the embedding cache."""
-        self.cache.clear()
-
-    def cache_size(self) -> int:
-        """Return number of cached embeddings."""
-        return len(self.cache)
-
     @property
     def embedding_dim(self) -> int:
         """Return embedding dimension."""

@@ -267,6 +267,9 @@ class CLSAttentionPooling(nn.Module):
 class ProjectionHead(nn.Module):
     """
     MLP projection head for mapping to shared semantic space.
+
+    Uses 3-layer MLP architecture (standard in SimCLR, MoCo v3) for better
+    semantic space transformation in contrastive learning.
     """
 
     def __init__(
@@ -285,18 +288,24 @@ class ProjectionHead(nn.Module):
         """
         super().__init__()
 
+        # 3-layer MLP: input → hidden → hidden → output
+        # No dropout: SimCLR/MoCo papers don't use dropout in projection head
+        # Dropout can hurt contrastive learning by adding noise to similarity computation
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.GELU(),
-            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, hidden_dim),  # Additional hidden layer
+            nn.GELU(),
             nn.Linear(hidden_dim, output_dim)
         )
 
         # Initialize weights with Xavier uniform for better gradient flow
         nn.init.xavier_uniform_(self.mlp[0].weight, gain=1.0)
         nn.init.zeros_(self.mlp[0].bias)
-        nn.init.xavier_uniform_(self.mlp[3].weight, gain=1.0)
-        nn.init.zeros_(self.mlp[3].bias)
+        nn.init.xavier_uniform_(self.mlp[2].weight, gain=1.0)
+        nn.init.zeros_(self.mlp[2].bias)
+        nn.init.xavier_uniform_(self.mlp[4].weight, gain=1.0)
+        nn.init.zeros_(self.mlp[4].bias)
 
     def forward(self, x: torch.Tensor, normalize: bool = True) -> torch.Tensor:
         """
@@ -381,9 +390,6 @@ class SemanticAlignmentHead(nn.Module):
             dropout=dropout
         )
 
-        # Skip connection projection (for gradient highway from encoder to fusion)
-        self.skip_proj = nn.Linear(d_model, d_model_fused)
-
     def forward(
         self,
         encoder_output: torch.Tensor,
@@ -413,28 +419,12 @@ class SemanticAlignmentHead(nn.Module):
             )
             patch_mask = patch_mask.reshape(batch_size, -1)  # (batch, patches*num_bottlenecks)
 
-        # Skip connection from encoder output (mean pool across channels for gradient highway)
-        encoder_pooled = encoder_output.mean(dim=2)  # (batch, patches, d_model)
-        encoder_skip = self.skip_proj(encoder_pooled)  # (batch, patches, d_model_fused)
-
-        # Expand encoder_skip if using multiple bottlenecks to match fused shape
-        if self.cross_channel_fusion.num_bottlenecks > 1:
-            # Repeat skip connection for each bottleneck
-            # (batch, patches, d_model_fused) → (batch, patches, num_bottlenecks, d_model_fused) → (batch, patches*num_bottlenecks, d_model_fused)
-            batch_size, num_patches, d_model_fused = encoder_skip.shape
-            encoder_skip = encoder_skip.unsqueeze(2).expand(
-                -1, -1, self.cross_channel_fusion.num_bottlenecks, -1
-            )
-            encoder_skip = encoder_skip.reshape(batch_size, num_patches * self.cross_channel_fusion.num_bottlenecks, d_model_fused)
-
-        fused = fused + encoder_skip  # Add skip connection
-
-        # Temporal attention with skip connection
+        # Temporal attention with residual connection (standard transformer residual)
         temporal_in = fused
         temporal = self.temporal_attention(fused, patch_mask)  # (batch, patches, d_model_fused)
-        temporal = temporal + temporal_in  # Add skip connection for gradient flow
+        temporal = temporal + temporal_in  # Residual for gradient flow (KEEP this one!)
 
-        # Attention pooling
+        # Attention pooling (transformer already has LayerNorm internally)
         pooled = self.attention_pooling(temporal, patch_mask)  # (batch, d_model_fused)
 
         # Project to semantic space
