@@ -96,6 +96,7 @@ class TrainingPlotter:
     def plot_all(self):
         """Generate all plots and save as PNG files."""
         self._plot_batch_training_losses()  # Real-time training convergence
+        self._plot_debug_metrics()  # Real-time debug metrics (gradients, collapse indicators)
         self._plot_overall_loss()  # Epoch-level train vs val
         self._plot_loss_components()  # Epoch-level MAE vs Contrastive
         self._plot_per_dataset_losses()
@@ -130,6 +131,73 @@ class TrainingPlotter:
 
         plt.tight_layout()
         plt.savefig(self.output_dir / 'batch_training_losses.png', dpi=150)
+        plt.close(fig)
+
+    def _plot_debug_metrics(self):
+        """Plot batch-level debug metrics for monitoring gradient flow and representation collapse."""
+        # Find debug metrics in batch (look for metrics starting with 'debug_')
+        debug_metrics = [k for k in self.metrics['batch'].keys() if k.startswith('debug_')]
+        if not debug_metrics:
+            return
+
+        # Group metrics by category
+        collapse_metrics = [k for k in debug_metrics if 'std' in k or 'diversity' in k]
+        gradient_metrics = [k for k in debug_metrics if 'grad_norm' in k]
+        similarity_metrics = [k for k in debug_metrics if 'sim' in k]
+
+        # Create 3 subplots: collapse indicators, gradient norms, similarity
+        fig, axes = plt.subplots(3, 1, figsize=(14, 12))
+
+        # Plot 1: Representation collapse indicators (std, diversity)
+        ax1 = axes[0]
+        for metric in collapse_metrics:
+            if self.metrics['batch'][metric]:
+                batches, values = zip(*self.metrics['batch'][metric])
+                label = metric.replace('debug_train_', '').replace('debug_', '')
+                ax1.plot(batches, values, linewidth=1.5, alpha=0.8, label=label, marker='o', markersize=2)
+
+        ax1.set_xlabel('Batch', fontsize=11)
+        ax1.set_ylabel('Value', fontsize=11)
+        ax1.set_title('Representation Collapse Indicators (Higher = Better)', fontsize=13, fontweight='bold')
+        ax1.axhline(y=0.1, color='red', linestyle='--', linewidth=1, alpha=0.5, label='Collapse threshold (0.1)')
+        if collapse_metrics:
+            ax1.legend(fontsize=9, loc='best')
+        ax1.grid(True, alpha=0.3)
+
+        # Plot 2: Gradient norms
+        ax2 = axes[1]
+        for metric in gradient_metrics:
+            if self.metrics['batch'][metric]:
+                batches, values = zip(*self.metrics['batch'][metric])
+                label = metric.replace('debug_train_', '').replace('_grad_norm', '').replace('debug_', '')
+                ax2.plot(batches, values, linewidth=1.5, alpha=0.8, label=label, marker='o', markersize=2)
+
+        ax2.set_xlabel('Batch', fontsize=11)
+        ax2.set_ylabel('Gradient Norm', fontsize=11)
+        ax2.set_title('Gradient Flow (Higher = Better)', fontsize=13, fontweight='bold')
+        ax2.axhline(y=0.01, color='red', linestyle='--', linewidth=1, alpha=0.5, label='Vanishing threshold (0.01)')
+        if gradient_metrics:
+            ax2.legend(fontsize=9, loc='best')
+        ax2.grid(True, alpha=0.3)
+        ax2.set_yscale('log')  # Log scale for gradient magnitudes
+
+        # Plot 3: Similarity metrics
+        ax3 = axes[2]
+        for metric in similarity_metrics:
+            if self.metrics['batch'][metric]:
+                batches, values = zip(*self.metrics['batch'][metric])
+                label = metric.replace('debug_train_', '').replace('debug_', '')
+                ax3.plot(batches, values, linewidth=1.5, alpha=0.8, label=label, marker='o', markersize=2)
+
+        ax3.set_xlabel('Batch', fontsize=11)
+        ax3.set_ylabel('Similarity', fontsize=11)
+        ax3.set_title('Contrastive Similarity Metrics', fontsize=13, fontweight='bold')
+        if similarity_metrics:
+            ax3.legend(fontsize=9, loc='best')
+        ax3.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(self.output_dir / 'debug_metrics.png', dpi=150)
         plt.close(fig)
 
     def _plot_overall_loss(self):
@@ -335,6 +403,7 @@ class TrainingPlotter:
         self.plot_all()
         print(f"\n✓ Plots saved to {self.output_dir}")
         print(f"  - batch_training_losses.png (real-time training convergence)")
+        print(f"  - debug_metrics.png (gradients, collapse indicators, similarity)")
         print(f"  - overall_loss.png (epoch-level train vs val)")
         print(f"  - loss_components.png (epoch-level MAE vs contrastive)")
         print(f"  - per_dataset_losses.png")

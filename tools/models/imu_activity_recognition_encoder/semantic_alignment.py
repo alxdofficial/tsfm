@@ -38,8 +38,8 @@ class CrossChannelFusion(nn.Module):
         self.num_bottlenecks = num_bottlenecks
         self.d_model_fused = d_model_fused
 
-        # Learnable bottleneck queries (Xavier-like initialization: std = 1/sqrt(d_model))
-        self.bottleneck_tokens = nn.Parameter(torch.randn(num_bottlenecks, d_model_fused) / (d_model_fused ** 0.5))
+        # Learnable bottleneck queries (stronger initialization for learnable tokens)
+        self.bottleneck_tokens = nn.Parameter(torch.randn(num_bottlenecks, d_model_fused) * 0.02)
 
         # Cross-attention: bottleneck queries attend to channel keys/values
         self.cross_attention = nn.MultiheadAttention(
@@ -61,9 +61,8 @@ class CrossChannelFusion(nn.Module):
             nn.Dropout(dropout)
         )
 
-        # Layer normalization
+        # Layer normalization (reduced from 2 to 1 for better gradient flow)
         self.norm1 = nn.LayerNorm(d_model_fused)
-        self.norm2 = nn.LayerNorm(d_model_fused)
 
     def forward(
         self,
@@ -97,35 +96,40 @@ class CrossChannelFusion(nn.Module):
         kv = kv.reshape(batch_size * num_patches, num_channels, self.d_model_fused)
 
         # Prepare attention mask if provided
-        attn_mask = None
+        # key_padding_mask should be (batch*patches, num_channels) regardless of num_bottlenecks
+        key_padding_mask = None
         if channel_mask is not None:
-            # channel_mask: (batch, channels) -> expand to (batch*patches, 1, channels)
-            attn_mask = channel_mask.unsqueeze(1).expand(-1, num_patches, -1)
-            attn_mask = attn_mask.reshape(batch_size * num_patches, 1, num_channels)
-            attn_mask = attn_mask.expand(-1, self.num_bottlenecks, -1)
+            # channel_mask: (batch, channels) -> expand to (batch*patches, channels)
+            key_padding_mask = channel_mask.unsqueeze(1).expand(-1, num_patches, -1)
+            key_padding_mask = key_padding_mask.reshape(batch_size * num_patches, num_channels)
             # Convert to attention mask format (True = ignore)
-            attn_mask = ~attn_mask
+            key_padding_mask = ~key_padding_mask
 
         # Cross-attention
         attended, _ = self.cross_attention(
             query=queries,
             key=kv,
             value=kv,
-            key_padding_mask=attn_mask.reshape(batch_size * num_patches, num_channels) if attn_mask is not None else None
+            key_padding_mask=key_padding_mask
         )
 
-        # Residual connection and norm
+        # Residual connection and norm (after attention)
         attended = self.norm1(queries + attended)
 
-        # Feedforward
-        output = self.norm2(attended + self.ffn(attended))
+        # Feedforward with residual (no norm to reduce gradient suppression)
+        output = attended + self.ffn(attended)
 
         # Reshape back
         output = output.reshape(batch_size, num_patches, self.num_bottlenecks, self.d_model_fused)
 
-        # If single bottleneck, squeeze the dimension
+        # Handle multiple bottlenecks by flattening into patch dimension
         if self.num_bottlenecks == 1:
             output = output.squeeze(2)  # (batch, patches, d_model_fused)
+        else:
+            # Flatten bottlenecks into patch dimension for temporal processing
+            # (batch, patches, num_bottlenecks, d_model_fused) → (batch, patches*num_bottlenecks, d_model_fused)
+            # Example: (8, 10, 4, 384) → (8, 40, 384)
+            output = output.reshape(batch_size, num_patches * self.num_bottlenecks, self.d_model_fused)
 
         return output
 
@@ -209,8 +213,8 @@ class CLSAttentionPooling(nn.Module):
         """
         super().__init__()
 
-        # Learnable CLS token (Xavier-like initialization: std = 1/sqrt(d_model))
-        self.cls_token = nn.Parameter(torch.randn(1, 1, d_model) / (d_model ** 0.5))
+        # Learnable CLS token (stronger initialization for learnable tokens)
+        self.cls_token = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
 
         # Single transformer layer for CLS attention
         self.attention = nn.TransformerEncoderLayer(
@@ -288,6 +292,12 @@ class ProjectionHead(nn.Module):
             nn.Linear(hidden_dim, output_dim)
         )
 
+        # Initialize weights with Xavier uniform for better gradient flow
+        nn.init.xavier_uniform_(self.mlp[0].weight, gain=1.0)
+        nn.init.zeros_(self.mlp[0].bias)
+        nn.init.xavier_uniform_(self.mlp[3].weight, gain=1.0)
+        nn.init.zeros_(self.mlp[3].bias)
+
     def forward(self, x: torch.Tensor, normalize: bool = True) -> torch.Tensor:
         """
         Args:
@@ -297,10 +307,15 @@ class ProjectionHead(nn.Module):
         Returns:
             Projected embeddings (batch, output_dim)
         """
+        import torch.nn.functional as F
+
         x = self.mlp(x)
 
+        # L2 normalize embeddings to unit length (standard in contrastive learning)
+        # This prevents magnitude explosion AND avoids gradient issues in the loss
+        # By normalizing here instead of in the loss, gradients don't flow through normalization
         if normalize:
-            x = torch.nn.functional.normalize(x, p=2, dim=-1)
+            x = F.normalize(x, p=2, dim=-1)
 
         return x
 
@@ -366,6 +381,9 @@ class SemanticAlignmentHead(nn.Module):
             dropout=dropout
         )
 
+        # Skip connection projection (for gradient highway from encoder to fusion)
+        self.skip_proj = nn.Linear(d_model, d_model_fused)
+
     def forward(
         self,
         encoder_output: torch.Tensor,
@@ -384,10 +402,37 @@ class SemanticAlignmentHead(nn.Module):
             Semantic embedding (batch, output_dim)
         """
         # Cross-channel fusion
-        fused = self.cross_channel_fusion(encoder_output, channel_mask)  # (batch, patches, d_model_fused)
+        fused = self.cross_channel_fusion(encoder_output, channel_mask)  # (batch, patches, d_model_fused) or (batch, patches*num_bottlenecks, d_model_fused)
 
-        # Temporal attention
+        # Expand patch_mask if using multiple bottlenecks
+        if self.cross_channel_fusion.num_bottlenecks > 1 and patch_mask is not None:
+            # Repeat mask for each bottleneck: (batch, patches) → (batch, patches*num_bottlenecks)
+            batch_size, num_patches = patch_mask.shape
+            patch_mask = patch_mask.unsqueeze(2).expand(
+                -1, -1, self.cross_channel_fusion.num_bottlenecks
+            )
+            patch_mask = patch_mask.reshape(batch_size, -1)  # (batch, patches*num_bottlenecks)
+
+        # Skip connection from encoder output (mean pool across channels for gradient highway)
+        encoder_pooled = encoder_output.mean(dim=2)  # (batch, patches, d_model)
+        encoder_skip = self.skip_proj(encoder_pooled)  # (batch, patches, d_model_fused)
+
+        # Expand encoder_skip if using multiple bottlenecks to match fused shape
+        if self.cross_channel_fusion.num_bottlenecks > 1:
+            # Repeat skip connection for each bottleneck
+            # (batch, patches, d_model_fused) → (batch, patches, num_bottlenecks, d_model_fused) → (batch, patches*num_bottlenecks, d_model_fused)
+            batch_size, num_patches, d_model_fused = encoder_skip.shape
+            encoder_skip = encoder_skip.unsqueeze(2).expand(
+                -1, -1, self.cross_channel_fusion.num_bottlenecks, -1
+            )
+            encoder_skip = encoder_skip.reshape(batch_size, num_patches * self.cross_channel_fusion.num_bottlenecks, d_model_fused)
+
+        fused = fused + encoder_skip  # Add skip connection
+
+        # Temporal attention with skip connection
+        temporal_in = fused
         temporal = self.temporal_attention(fused, patch_mask)  # (batch, patches, d_model_fused)
+        temporal = temporal + temporal_in  # Add skip connection for gradient flow
 
         # Attention pooling
         pooled = self.attention_pooling(temporal, patch_mask)  # (batch, d_model_fused)

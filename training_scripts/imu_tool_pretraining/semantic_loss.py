@@ -81,6 +81,12 @@ class InfoNCELoss(nn.Module):
         """
         batch_size = imu_embeddings.shape[0]
 
+        # Embeddings are now normalized in the model's forward pass (ProjectionHead)
+        # This avoids double normalization and keeps gradient flow clean
+        # Text embeddings are already normalized by label_bank.encode()
+        # Queue embeddings were normalized when they were created
+        # So we DON'T normalize again here
+
         # Expand embeddings with queue if provided (for more negatives)
         if imu_queue is not None and text_queue is not None and len(imu_queue) > 0:
             all_imu = torch.cat([imu_embeddings, imu_queue.detach()], dim=0)
@@ -282,6 +288,10 @@ def compute_retrieval_metrics(
     Returns:
         Dictionary with retrieval metrics
     """
+    # Convert to fp32 for mixed precision compatibility
+    imu_embeddings = imu_embeddings.float()
+    text_embeddings = text_embeddings.float()
+
     batch_size = imu_embeddings.shape[0]
 
     # Compute similarity matrix

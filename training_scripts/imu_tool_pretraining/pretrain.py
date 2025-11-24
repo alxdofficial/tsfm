@@ -78,7 +78,7 @@ CNN_KERNEL_SIZES = [3, 5, 7]
 OUTPUT_DIR = "training_output/imu_pretraining"
 SAVE_EVERY = 10  # Save checkpoint every N epochs
 EPOCHS = 100
-BATCH_SIZE = 8
+BATCH_SIZE = 6
 NUM_WORKERS = 4
 SEED = 42
 

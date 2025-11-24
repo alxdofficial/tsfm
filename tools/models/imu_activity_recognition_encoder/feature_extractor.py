@@ -55,7 +55,7 @@ class MultiScaleConv1D(nn.Module):
                     bias=False
                 ),
                 nn.GroupNorm(num_groups=1, num_channels=out_channels),
-                nn.ReLU(inplace=True),
+                nn.GELU(),  # Smooth activation with non-zero gradients everywhere (better than ReLU)
                 nn.Dropout(dropout)
             )
             self.branches.append(branch)
@@ -144,7 +144,7 @@ class ChannelIndependentCNN(nn.Module):
         # Projection to d_model
         self.projection = nn.Sequential(
             nn.Linear(final_cnn_channels, d_model),
-            nn.ReLU(inplace=True),
+            nn.GELU(),  # Smooth activation for better gradient flow
             nn.Dropout(dropout)
         )
 
