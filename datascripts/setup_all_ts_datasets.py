@@ -14,10 +14,11 @@ Usage:
     With dataset_name: process only that dataset
 
 Available datasets:
-    - uci_har
-    - pamap2
-    - mhealth
-    - wisdm
+    - uci_har (6 activities, 6 channels, 50Hz)
+    - pamap2 (12 activities, 27 channels, 100Hz)
+    - mhealth (12 activities, 6 channels, 50Hz)
+    - wisdm (18 activities, 6 channels, 20Hz)
+    - unimib_shar (9 activities, 3 channels ACC ONLY, 50Hz) - uses Kaggle API
     - actionsense (requires manual download first)
 """
 
@@ -51,11 +52,24 @@ DATASETS = {
         "convert_script": "datascripts/wisdm/convert.py",
         "requires_manual": False
     },
+    "unimib_shar": {
+        "name": "UniMiB SHAR",
+        "download_script": "datascripts/shared/download_all_datasets.py",
+        "convert_script": "datascripts/unimib_shar/convert.py",
+        "requires_manual": False,  # Uses Kaggle API
+        "note": "Requires: pip install kaggle && kaggle API key in ~/.kaggle/kaggle.json"
+    },
     "actionsense": {
         "name": "ActionSense",
         "download_script": None,  # Manual download
         "convert_script": "datascripts/actionsense/convert.py",
         "requires_manual": True
+    },
+    "hhar": {
+        "name": "HHAR",
+        "download_script": "datascripts/shared/download_all_datasets.py",
+        "convert_script": "datascripts/hhar/convert.py",
+        "requires_manual": False
     }
 }
 
@@ -113,14 +127,22 @@ def process_dataset(dataset_key: str):
     sessions_dir = output_dir / "sessions"
 
     if manifest_path.exists() and labels_path.exists() and sessions_dir.exists():
-        num_sessions = len(list(sessions_dir.glob("session_*")))
+        # Count session directories (any subdirectory counts as a session)
+        num_sessions = len([d for d in sessions_dir.iterdir() if d.is_dir()])
         print(f"\n✓ {dataset['name']} completed successfully")
         print(f"    Output: {output_dir}")
         print(f"    Sessions: {num_sessions}")
         return True
     else:
         print(f"\n✗ {dataset['name']} validation failed")
-        print(f"    Missing files in {output_dir}")
+        missing = []
+        if not manifest_path.exists():
+            missing.append("manifest.json")
+        if not labels_path.exists():
+            missing.append("labels.json")
+        if not sessions_dir.exists():
+            missing.append("sessions/")
+        print(f"    Missing in {output_dir}: {', '.join(missing)}")
         return False
 
 

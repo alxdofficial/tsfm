@@ -161,7 +161,10 @@ class ChannelSemanticEncoding(nn.Module):
         if self._encoder is None:
             try:
                 from sentence_transformers import SentenceTransformer
-                self._encoder = SentenceTransformer(self.sentence_bert_model)
+                # Use object.__setattr__ to avoid registering as nn.Module submodule
+                # This prevents SentenceBERT weights from being saved in checkpoints
+                encoder = SentenceTransformer(self.sentence_bert_model)
+                object.__setattr__(self, '_encoder', encoder)
                 self._sbert_dim = self._encoder.get_sentence_embedding_dimension()
 
                 # Verify d_model matches Sentence-BERT dimension
@@ -216,23 +219,28 @@ class ChannelSemanticEncoding(nn.Module):
                 non_pad_indices.append(i)
                 embeddings_list.append(None)  # Placeholder
 
-        # Encode non-padded channels using Sentence-BERT
+        # Encode non-padded channels using Sentence-BERT (with per-string caching)
         if non_pad_descriptions:
-            # Check cache for sentence BERT embeddings
-            cache_key = tuple(non_pad_descriptions)
-            if cache_key in self._sbert_embedding_cache:
-                non_pad_embeddings = self._sbert_embedding_cache[cache_key]
-            else:
-                # Encode using Sentence-BERT (frozen, no gradients needed)
-                with torch.no_grad():
-                    non_pad_embeddings = encoder.encode(non_pad_descriptions, convert_to_tensor=True)
-                # Cache the sentence BERT embeddings
-                
-                self._sbert_embedding_cache[cache_key] = non_pad_embeddings
+            # Find which descriptions need encoding (not in cache)
+            to_encode = []
+            to_encode_indices = []
+            for i, desc in enumerate(non_pad_descriptions):
+                if desc not in self._sbert_embedding_cache:
+                    to_encode.append(desc)
+                    to_encode_indices.append(i)
 
-            # Fill in non-padded embeddings
+            # Encode only new descriptions
+            if to_encode:
+                with torch.no_grad():
+                    new_embeddings = encoder.encode(to_encode, convert_to_tensor=True)
+                # Cache each individual description
+                for desc, emb in zip(to_encode, new_embeddings):
+                    self._sbert_embedding_cache[desc] = emb
+
+            # Retrieve all embeddings from cache
             for i, idx in enumerate(non_pad_indices):
-                embeddings_list[idx] = non_pad_embeddings[i]
+                desc = non_pad_descriptions[i]
+                embeddings_list[idx] = self._sbert_embedding_cache[desc]
 
         # Fill in padded embeddings with learned pad token
         for i in range(len(embeddings_list)):

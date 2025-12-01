@@ -60,6 +60,7 @@ class IMUActivityRecognitionEncoder(nn.Module):
         # CNN parameters
         cnn_channels: List[int] = [64, 128],
         cnn_kernel_sizes: List[int] = [3, 5, 7],
+        patch_chunk_size: Optional[int] = None,
 
         # Preprocessing parameters
         target_patch_size: int = 96,
@@ -116,7 +117,8 @@ class IMUActivityRecognitionEncoder(nn.Module):
             d_model=d_model,
             cnn_channels=cnn_channels,
             kernel_sizes=cnn_kernel_sizes,
-            dropout=dropout
+            dropout=dropout,
+            patch_chunk_size=patch_chunk_size
         )
 
         # Positional encoding

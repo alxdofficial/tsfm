@@ -197,17 +197,29 @@ class PatchContrastiveLoss(nn.Module):
         feat1 = F.normalize(feat1, dim=-1)  # (batch, patches, d_model)
         feat2 = F.normalize(feat2, dim=-1)
 
-        # Create mask for valid, unmasked patches
-        # Only use patches that are valid AND not masked by MAE
+        # Create mask for valid patches
+        # Only exclude padding (not MAE-masked patches)
+        # MAE-masked patches still have valid encoder features for contrastive learning
         if mae_mask is not None:
-            # Exclude MAE-masked patches and padding
-            valid_for_contrast = attention_mask & (~mae_mask)
+            # Only exclude padding, keep MAE-masked patches
+            valid_for_contrast = attention_mask
         else:
             valid_for_contrast = attention_mask
 
         # Flatten to patch level: (batch, patches, d_model) -> (num_valid_patches, d_model)
         feat1_flat = feat1[valid_for_contrast]  # Gather only valid, unmasked patches
         feat2_flat = feat2[valid_for_contrast]
+
+        # Handle empty batch case (all patches masked/padded) to prevent NaN
+        if feat1_flat.shape[0] == 0:
+            # No valid patches - return zero loss with warning
+            loss = torch.tensor(0.0, device=feat1.device, dtype=feat1.dtype)
+            metrics = {
+                'contrastive_loss': 0.0,
+                'effective_batch_size': 0,
+                'warning': 'empty_batch'
+            }
+            return loss, metrics
 
         # Compute InfoNCE loss at patch level
         loss = self._info_nce_loss(feat1_flat, feat2_flat)

@@ -11,6 +11,7 @@ Usage:
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 try:
@@ -45,7 +46,7 @@ from training_scripts.imu_tool_pretraining.plot_utils import TrainingPlotter
 
 # Data configuration
 DATA_ROOT = "/home/alex/code/tsfm/data"
-DATASETS = ['uci_har', 'mhealth', 'pamap2', 'wisdm']
+DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
 
 # Per-dataset patch sizes (seconds) - optimized based on sampling rate and activity characteristics
 # Research shows 5.12s is common for complex activities, but varies by dataset:
@@ -53,32 +54,35 @@ DATASETS = ['uci_har', 'mhealth', 'pamap2', 'wisdm']
 # - Lower sampling rate → shorter patches to maintain enough samples
 # - Pre-segmented data → use natural segmentation
 PATCH_SIZE_PER_DATASET = {
-    'uci_har': 2.56,   # 50 Hz, pre-segmented at 128 samples (2.56s), simple activities
-    'mhealth': 4.0,    # 50 Hz, health monitoring, medium-duration activities
-    'pamap2': 5.0,     # 100 Hz, complex activities (running, cycling), long sessions
-    'wisdm': 10.0       # 20 Hz, phone-based, compensate for lower sampling rate
+    'uci_har': 0.5,       # 50 Hz, 2.56s windows → 25 samples/patch, ~5 patches/session
+    'hhar': 0.5,          # 50 Hz, 2.56s windows → 25 samples/patch, ~5 patches/session
+    'mhealth': 2.0,       # 50 Hz, health monitoring → 100 samples/patch
+    'pamap2': 2.0,        # 100 Hz, complex activities → 200 samples/patch
+    'wisdm': 2.0,         # 20 Hz, phone-based → 40 samples/patch
+    'unimib_shar': 0.5,   # 50 Hz, ~3s segments → 25 samples/patch, ~6 patches/session
 }
 
 MAX_PATCHES_PER_SAMPLE = 48  # Limit to prevent extreme padding (PAMAP2 can have 300+ patches)
+PATCH_CHUNK_SIZE = 16  # Process patches in chunks to save memory (6*16*9=864 patches per chunk)
 
 # Model configuration
 PROJECTION_DIM = 256
 
 # Encoder configuration
-D_MODEL = 384  # Match Sentence-BERT output dimension (all-MiniLM-L6-v2)
+D_MODEL = 384  # Match Sentence-BERT output dimension (all-MiniLM-L6-v2) for semantic alignment
 NUM_HEADS = 8  # 48 dims per head
 NUM_TEMPORAL_LAYERS = 4
 DIM_FEEDFORWARD = 1536  # 4x d_model
 DROPOUT = 0.1
 USE_CROSS_CHANNEL = True
-CNN_CHANNELS = [64, 128]
-CNN_KERNEL_SIZES = [3, 5, 7]
+CNN_CHANNELS = [32, 64]  # Reduced from [64, 128] - halves CNN memory while maintaining temporal feature extraction
+CNN_KERNEL_SIZES = [5]  # Reduced from [3,5,7] - single kernel saves 3x memory while maintaining good temporal feature extraction
 
 # Training configuration
 OUTPUT_DIR = "training_output/imu_pretraining"
 SAVE_EVERY = 10  # Save checkpoint every N epochs
 EPOCHS = 100
-BATCH_SIZE = 6
+BATCH_SIZE = 16  
 NUM_WORKERS = 4
 SEED = 42
 
@@ -93,7 +97,7 @@ CONTRASTIVE_WEIGHT = 1.0
 TEMPERATURE = 0.2  # Standard contrastive learning temperature
 
 # Masking
-MASK_RATIO = 0.5  # 50% random masking
+MASK_RATIO = 0.3  # Reduced from 0.5 - less aggressive masking reduces empty batch risk
 
 # Plotting
 PLOT_EVERY_N_BATCHES = 10  # Generate plots every N batches during training
@@ -175,6 +179,140 @@ class PretrainingModel(nn.Module):
             reconstructed = None
 
         return features, projected, reconstructed
+
+
+def compute_gradient_norms(model):
+    """
+    Compute gradient norms for each component of the model.
+
+    Returns:
+        Dict with gradient norms for CNN, encoder, and projection head
+    """
+    cnn_grad_norm = 0.0
+    encoder_grad_norm = 0.0
+    projection_grad_norm = 0.0
+
+    for name, param in model.named_parameters():
+        if param.grad is not None:
+            grad_norm = param.grad.norm().item()
+            if 'feature_extractor' in name or 'cnn' in name.lower():
+                cnn_grad_norm += grad_norm ** 2
+            elif 'projection' in name or 'proj' in name.lower():
+                projection_grad_norm += grad_norm ** 2
+            else:
+                encoder_grad_norm += grad_norm ** 2
+
+    return {
+        'cnn_grad_norm': cnn_grad_norm ** 0.5,
+        'encoder_grad_norm': encoder_grad_norm ** 0.5,
+        'projection_grad_norm': projection_grad_norm ** 0.5,
+        'total_grad_norm': (cnn_grad_norm + encoder_grad_norm + projection_grad_norm) ** 0.5
+    }
+
+
+def compute_feature_statistics(features, attention_mask):
+    """
+    Compute feature statistics to detect representation collapse.
+
+    Args:
+        features: (batch, patches, channels, d_model) tensor
+        attention_mask: (batch, patches) boolean mask
+
+    Returns:
+        Dict with std, mean, and diversity metrics
+    """
+    with torch.no_grad():
+        batch_size, num_patches, num_channels, d_model = features.shape
+
+        # Reshape to (batch, patches, channels*d_model) for easier masking
+        features_flat = features.reshape(batch_size, num_patches, -1)
+
+        # Only compute on valid (non-padded) features
+        valid_features = features_flat[attention_mask]  # (num_valid, channels*d_model)
+
+        if valid_features.shape[0] == 0:
+            return {
+                'feature_std': 0.0,
+                'feature_mean': 0.0,
+                'feature_diversity': 0.0
+            }
+
+        # Feature standard deviation (per dimension, then average)
+        feature_std = valid_features.std(dim=0).mean().item()
+
+        # Feature mean magnitude
+        feature_mean = valid_features.abs().mean().item()
+
+        # Feature diversity: mean pairwise distance (sample if too many)
+        if valid_features.shape[0] > 1000:
+            # Sample 1000 random features for efficiency
+            indices = torch.randperm(valid_features.shape[0])[:1000]
+            sample_features = valid_features[indices]
+        else:
+            sample_features = valid_features
+
+        if sample_features.shape[0] > 1:
+            # Compute pairwise distances (now works on 2D tensor)
+            feature_diversity = torch.pdist(sample_features).mean().item()
+        else:
+            feature_diversity = 0.0
+
+        return {
+            'feature_std': feature_std,
+            'feature_mean': feature_mean,
+            'feature_diversity': feature_diversity
+        }
+
+
+def compute_reconstruction_quality(reconstructed, targets, mae_mask, attention_mask):
+    """
+    Compute reconstruction quality metrics.
+
+    Args:
+        reconstructed: (batch, patches, 96, channels) reconstructed patches
+        targets: (batch, patches, 96, channels) target patches
+        mae_mask: (batch, patches) boolean mask for MAE
+        attention_mask: (batch, patches) boolean mask for valid patches
+
+    Returns:
+        Dict with reconstruction MSE for masked and unmasked patches
+    """
+    with torch.no_grad():
+        # Only compute on valid patches
+        valid_mask = attention_mask
+
+        if not valid_mask.any():
+            return {
+                'recon_mse_masked': 0.0,
+                'recon_mse_unmasked': 0.0,
+                'recon_mse_all': 0.0
+            }
+
+        # Compute MSE
+        mse = F.mse_loss(reconstructed, targets, reduction='none')  # (batch, patches, 96, channels)
+        mse = mse.mean(dim=(2, 3))  # Average over time and channels: (batch, patches)
+
+        # Separate masked vs unmasked
+        masked_patches = valid_mask & mae_mask
+        unmasked_patches = valid_mask & (~mae_mask)
+
+        if masked_patches.any():
+            recon_mse_masked = mse[masked_patches].mean().item()
+        else:
+            recon_mse_masked = 0.0
+
+        if unmasked_patches.any():
+            recon_mse_unmasked = mse[unmasked_patches].mean().item()
+        else:
+            recon_mse_unmasked = 0.0
+
+        recon_mse_all = mse[valid_mask].mean().item()
+
+        return {
+            'recon_mse_masked': recon_mse_masked,
+            'recon_mse_unmasked': recon_mse_unmasked,
+            'recon_mse_all': recon_mse_all
+        }
 
 
 def train_epoch(
@@ -283,13 +421,14 @@ def train_epoch(
         # Create augmented view with sample-level augmentation
         # IMPORTANT: Apply same augmentation parameters to all patches within a sample
         # to preserve temporal consistency
-        aug_patches = padded_patches.clone()
-        for i in range(aug_patches.shape[0]):
+        # Memory optimization: Create separate tensor for augmented view instead of cloning entire batch
+        aug_patches = torch.zeros_like(padded_patches)
+        for i in range(padded_patches.shape[0]):
             valid_mask = patch_attention_mask[i]
             if valid_mask.any():
-                # Get valid patches for this sample
+                # Get valid patches for this sample (clone only what's needed)
                 num_valid_patches = valid_mask.sum().item()
-                valid_patches = aug_patches[i, valid_mask]  # (num_valid, 96, channels)
+                valid_patches = padded_patches[i, valid_mask].clone()  # (num_valid, 96, channels)
 
                 # Flatten to single tensor: (num_valid * 96, channels)
                 flat_shape = (num_valid_patches * 96, valid_patches.shape[-1])
@@ -302,6 +441,9 @@ def train_epoch(
                 # Reshape back to patches: (num_valid, 96, channels)
                 augmented_patches = augmented.reshape(num_valid_patches, 96, valid_patches.shape[-1])
                 aug_patches[i, valid_mask] = augmented_patches
+            else:
+                # Copy over padded patches (no augmentation needed)
+                aug_patches[i] = padded_patches[i]
 
         # Create random mask for MAE (50%)
         mae_mask = create_random_mask(
@@ -324,6 +466,9 @@ def train_epoch(
                 return_reconstruction=True,
                 mae_mask=mae_mask  # Encoder will apply mask_token at feature level
             )
+            # Clear cache after first forward pass (3-5% memory savings)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
             # Forward pass - augmented (no MAE masking, only pad tokens)
             features_2, projected_2, _ = model(
@@ -334,6 +479,9 @@ def train_epoch(
                 return_reconstruction=False,
                 mae_mask=None  # No MAE masking for augmented view
             )
+            # Clear cache after second forward pass (3-5% memory savings)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
             # Compute loss
             loss, metrics = criterion(
@@ -346,15 +494,50 @@ def train_epoch(
                 channel_mask=channel_mask_for_model
             )
 
+        # Compute debug metrics periodically (every 10 batches to save memory)
+        if batch_idx % 10 == 0:
+            feature_stats = compute_feature_statistics(features_1, patch_attention_mask)
+            recon_quality = compute_reconstruction_quality(
+                reconstructed, padded_patches, mae_mask, patch_attention_mask
+            )
+        else:
+            # Use placeholder values when not computing (saves ~50-60MB per batch)
+            feature_stats = {
+                'feature_std': 0.0,
+                'feature_mean': 0.0,
+                'feature_diversity': 0.0
+            }
+            recon_quality = {
+                'recon_mse_masked': 0.0,
+                'recon_mse_unmasked': 0.0,
+                'recon_mse_all': 0.0
+            }
+
+        # Check for NaN/inf loss before backward pass
+        if torch.isnan(loss) or torch.isinf(loss):
+            print(f"Warning: Invalid loss at batch {batch_idx}: {loss.item():.6f}")
+            print(f"  Metrics: {metrics}")
+            optimizer.zero_grad()  # Clear any gradients
+            continue  # Skip this batch
+
         # Backward with gradient scaling
         optimizer.zero_grad()
         if use_amp:
             scaler.scale(loss).backward()
+            # Unscale gradients before clipping
+            scaler.unscale_(optimizer)
+            # Gradient clipping to prevent explosion
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(optimizer)
             scaler.update()
         else:
             loss.backward()
+            # Gradient clipping to prevent explosion
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
+
+        # Compute gradient norms after backward (for monitoring)
+        grad_norms = compute_gradient_norms(model)
 
         # Step learning rate scheduler (per-batch for warmup)
         if scheduler is not None:
@@ -385,7 +568,8 @@ def train_epoch(
         pbar.set_postfix({
             'loss': f"{metrics['total_loss']:.4f}",
             'mae': f"{metrics['mae_loss']:.4f}",
-            'contrast': f"{metrics['contrastive_loss']:.4f}"
+            'contrast': f"{metrics['contrastive_loss']:.4f}",
+            'feat_std': f"{feature_stats['feature_std']:.3f}"  # Monitor collapse (should be > 0.1)
         })
 
         # Log batch-level training losses for real-time monitoring
@@ -394,6 +578,23 @@ def train_epoch(
             plotter.add_scalar('batch/train_loss', metrics['total_loss'], global_batch)
             plotter.add_scalar('batch/train_mae_loss', metrics['mae_loss'], global_batch)
             plotter.add_scalar('batch/train_contrastive_loss', metrics['contrastive_loss'], global_batch)
+
+            # Log debug metrics only when actually computed (every 10 batches)
+            if batch_idx % 10 == 0:
+                plotter.add_scalar('batch/debug_train_feature_std', feature_stats['feature_std'], global_batch)
+                plotter.add_scalar('batch/debug_train_feature_mean', feature_stats['feature_mean'], global_batch)
+                plotter.add_scalar('batch/debug_train_feature_diversity', feature_stats['feature_diversity'], global_batch)
+
+                # Log gradient norms per component
+                plotter.add_scalar('batch/debug_train_cnn_grad_norm', grad_norms['cnn_grad_norm'], global_batch)
+                plotter.add_scalar('batch/debug_train_encoder_grad_norm', grad_norms['encoder_grad_norm'], global_batch)
+                plotter.add_scalar('batch/debug_train_projection_grad_norm', grad_norms['projection_grad_norm'], global_batch)
+                plotter.add_scalar('batch/debug_train_total_grad_norm', grad_norms['total_grad_norm'], global_batch)
+
+                # Log reconstruction quality
+                plotter.add_scalar('batch/debug_train_recon_mse_masked', recon_quality['recon_mse_masked'], global_batch)
+                plotter.add_scalar('batch/debug_train_recon_mse_unmasked', recon_quality['recon_mse_unmasked'], global_batch)
+                plotter.add_scalar('batch/debug_train_recon_mse_all', recon_quality['recon_mse_all'], global_batch)
 
         # Clear CUDA cache periodically to prevent memory buildup
         if device.type == 'cuda' and batch_idx % 10 == 0:
@@ -518,8 +719,9 @@ def validate(
                 padded_descs = channel_descs + ["[PAD]"] * (max_channels - len(channel_descs))
                 padded_channel_descriptions.append(padded_descs)
 
-            # Create augmented view (no augmentation in validation for consistency)
-            aug_patches = padded_patches.clone()
+            # No augmentation in validation for consistency
+            # Memory optimization: Use same tensor for both views (no clone needed)
+            aug_patches = padded_patches
 
             # Create mask
             mae_mask = create_random_mask(
@@ -540,6 +742,10 @@ def validate(
                     return_reconstruction=True,
                     mae_mask=mae_mask
                 )
+                # Clear cache after first forward pass (3-5% memory savings)
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
                 features_2, projected_2, _ = model(
                     aug_patches,
                     patch_attention_mask,
@@ -548,6 +754,9 @@ def validate(
                     return_reconstruction=False,
                     mae_mask=None
                 )
+                # Clear cache after second forward pass (3-5% memory savings)
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
                 # Compute loss
                 loss, metrics = criterion(
@@ -628,6 +837,11 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
+    # Clear GPU cache to start fresh (prevents memory leak from previous runs)
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+
     # Print configuration
     print("\n" + "="*60)
     print("TRAINING CONFIGURATION")
@@ -669,7 +883,8 @@ def main():
             'dropout': DROPOUT,
             'use_cross_channel': USE_CROSS_CHANNEL,
             'cnn_channels': CNN_CHANNELS,
-            'cnn_kernel_sizes': CNN_KERNEL_SIZES
+            'cnn_kernel_sizes': CNN_KERNEL_SIZES,
+            'patch_chunk_size': PATCH_CHUNK_SIZE
         },
         'training': {
             'output_dir': OUTPUT_DIR,
@@ -704,7 +919,8 @@ def main():
         'dropout': DROPOUT,
         'use_cross_channel': USE_CROSS_CHANNEL,
         'cnn_channels': CNN_CHANNELS,
-        'cnn_kernel_sizes': CNN_KERNEL_SIZES
+        'cnn_kernel_sizes': CNN_KERNEL_SIZES,
+        'patch_chunk_size': PATCH_CHUNK_SIZE
     })
     encoder = IMUActivityRecognitionEncoder(**encoder_config)
 

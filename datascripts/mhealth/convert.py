@@ -9,10 +9,15 @@ Output: data/mhealth/
 """
 
 import os
+import sys
 import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
+
+# Add datascripts to path for shared imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared.windowing import create_variable_windows, get_window_range
 
 
 # Activity mapping
@@ -83,7 +88,7 @@ def segment_continuous_activity(df: pd.DataFrame, min_duration_sec: float = 3.0)
 
 
 def convert_subject(subject_file: Path):
-    """Convert one subject file to sessions."""
+    """Convert one subject file to sessions with variable-length windowing."""
     print(f"  Processing: {subject_file.name}")
 
     # Load data (tab/space-separated, 24 columns)
@@ -96,15 +101,19 @@ def convert_subject(subject_file: Path):
     # Segment into sessions
     sessions = segment_continuous_activity(df)
 
-    print(f"    Found {len(sessions)} sessions")
+    print(f"    Found {len(sessions)} activity segments")
 
     subject_id = subject_file.stem.replace('mHealth_subject', '')
     session_data = []
     labels_dict = {}
+    sample_rate = 50.0  # MHEALTH is 50Hz
+
+    total_windows = 0
 
     for idx, session in enumerate(sessions):
-        # Create session ID
-        session_id = f"subject{subject_id}_seg{idx:03d}"
+        # Create base session ID
+        base_session_id = f"subject{subject_id}_seg{idx:03d}"
+        activity_name = ACTIVITIES.get(session['activity_id'], 'unknown')
 
         # Prepare DataFrame
         data = session['data'].copy()
@@ -115,19 +124,28 @@ def convert_subject(subject_file: Path):
         # Drop activity_id (it's in labels.json)
         data = data.drop(columns=['activity_id'])
 
-        # Save to parquet
-        session_dir = OUTPUT_DIR / "sessions" / session_id
-        session_dir.mkdir(parents=True, exist_ok=True)
+        # Apply variable-length windowing
+        windows = create_variable_windows(
+            df=data,
+            session_prefix=base_session_id,
+            activity=activity_name,
+            sample_rate=sample_rate,
+        )
 
-        parquet_path = session_dir / "data.parquet"
-        data.to_parquet(parquet_path, index=False)
+        # Save each window
+        for window_id, window_df, window_activity in windows:
+            session_dir = OUTPUT_DIR / "sessions" / window_id
+            session_dir.mkdir(parents=True, exist_ok=True)
 
-        # Store label
-        activity_name = ACTIVITIES.get(session['activity_id'], 'unknown')
-        labels_dict[session_id] = [activity_name]
+            parquet_path = session_dir / "data.parquet"
+            window_df.to_parquet(parquet_path, index=False)
 
-        session_data.append(session_id)
+            # Store label
+            labels_dict[window_id] = [window_activity]
+            session_data.append(window_id)
+            total_windows += 1
 
+    print(f"    Created {total_windows} windows from {len(sessions)} segments")
     return session_data, labels_dict
 
 

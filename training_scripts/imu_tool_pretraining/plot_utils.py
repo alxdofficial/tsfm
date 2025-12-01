@@ -94,6 +94,27 @@ class TrainingPlotter:
         with open(metrics_file, 'w') as f:
             json.dump(self.metrics, f, indent=2)
 
+    def load_metrics(self, metrics_file: Path = None):
+        """Load metrics from JSON file to resume plotting.
+
+        Args:
+            metrics_file: Path to metrics.json. If None, uses output_dir/metrics.json
+        """
+        if metrics_file is None:
+            metrics_file = self.output_dir / 'metrics.json'
+
+        if metrics_file.exists():
+            with open(metrics_file, 'r') as f:
+                self.metrics = json.load(f)
+            print(f"✓ Loaded existing metrics from {metrics_file}")
+
+            # Print summary of loaded data
+            n_epochs = len(self.metrics.get('epoch', {}).get('train_loss', []))
+            n_batches = len(self.metrics.get('batch', {}).get('train_loss', []))
+            print(f"  Resuming from: {n_epochs} epochs, {n_batches} batch records")
+            return True
+        return False
+
     def plot_all(self):
         """Generate all plots and save as PNG files."""
         self._plot_batch_training_losses()  # Real-time training convergence

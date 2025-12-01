@@ -140,6 +140,80 @@ WISDM_TEMPLATES = [
 ]
 
 # ============================================================================
+# MotionSense: Phone pocket activities (similar to UCI-HAR)
+# ============================================================================
+
+MOTIONSENSE_SYNONYMS = {
+    "walking": ["walking", "strolling", "ambulating", "taking steps"],
+    "walking_downstairs": ["walking downstairs", "descending stairs", "going downstairs", "stair descent"],
+    "walking_upstairs": ["walking upstairs", "climbing stairs", "going upstairs", "ascending stairs"],
+    "jogging": ["jogging", "light running", "slow running", "jog"],
+    "sitting": ["sitting", "seated", "sitting down", "in a seated position"],
+    "standing": ["standing", "upright", "standing still", "on feet"],
+}
+
+MOTIONSENSE_TEMPLATES = [
+    "{}",
+    "person {}",
+    "person is {}",
+    "individual {}",
+    "smartphone user {}",
+    "{} activity",
+    "mobile phone sensing {}",
+    "phone in pocket {}",
+]
+
+# ============================================================================
+# UniMiB SHAR: ADL and postural transitions
+# ============================================================================
+
+UNIMIB_SHAR_SYNONYMS = {
+    "standing_up_from_sitting": ["standing up from sitting", "rising from chair", "getting up from seated", "sit-to-stand"],
+    "standing_up_from_laying": ["standing up from laying", "getting out of bed", "rising from horizontal", "lay-to-stand"],
+    "walking": ["walking", "strolling", "ambulating", "taking steps"],
+    "running": ["running", "jogging", "sprinting", "fast movement"],
+    "going_up_stairs": ["going up stairs", "climbing stairs", "ascending stairs", "stair ascent"],
+    "jumping": ["jumping", "hopping", "leaping", "vertical jump"],
+    "going_down_stairs": ["going down stairs", "descending stairs", "walking downstairs", "stair descent"],
+    "lying_down_from_standing": ["lying down from standing", "going to bed", "laying down", "stand-to-lay"],
+    "sitting_down_from_standing": ["sitting down from standing", "taking a seat", "sitting down", "stand-to-sit"],
+}
+
+UNIMIB_SHAR_TEMPLATES = [
+    "{}",
+    "person {}",
+    "person is {}",
+    "{} transition",
+    "postural transition: {}",
+    "activity: {}",
+    "daily movement: {}",
+]
+
+# ============================================================================
+# HHAR: Heterogeneity Activity Recognition (multi-device)
+# ============================================================================
+
+HHAR_SYNONYMS = {
+    "standing": ["standing", "upright", "standing still", "on feet"],
+    "sitting": ["sitting", "seated", "sitting down", "in a seated position"],
+    "walking": ["walking", "strolling", "ambulating", "taking steps"],
+    "cycling": ["cycling", "biking", "riding bicycle", "pedaling"],
+    "walking_upstairs": ["walking upstairs", "climbing stairs", "ascending stairs", "going upstairs"],
+    "walking_downstairs": ["walking downstairs", "descending stairs", "going downstairs", "stair descent"],
+}
+
+HHAR_TEMPLATES = [
+    "{}",
+    "person {}",
+    "person is {}",
+    "individual {}",
+    "smartphone user {}",
+    "{} activity",
+    "heterogeneous device {}",
+    "mobile sensing {}",
+]
+
+# ============================================================================
 # Main augmentation function
 # ============================================================================
 
@@ -160,6 +234,14 @@ DATASET_CONFIGS = {
     "wisdm": {
         "synonyms": WISDM_SYNONYMS,
         "templates": WISDM_TEMPLATES,
+    },
+    "unimib_shar": {
+        "synonyms": UNIMIB_SHAR_SYNONYMS,
+        "templates": UNIMIB_SHAR_TEMPLATES,
+    },
+    "hhar": {
+        "synonyms": HHAR_SYNONYMS,
+        "templates": HHAR_TEMPLATES,
     },
 }
 
@@ -288,6 +370,7 @@ if __name__ == "__main__":
         ("eating_pasta", "wisdm"),
         ("cycling", "pamap2"),
         ("jogging", "mhealth"),
+        ("standing_up_from_sitting", "unimib_shar"),
     ]
 
     for label, dataset in test_cases:
@@ -301,7 +384,8 @@ if __name__ == "__main__":
     print("Augmentation Statistics per Dataset:")
     print("=" * 70)
 
-    for dataset_name in ["uci_har", "mhealth", "pamap2", "wisdm"]:
+    all_datasets = ["uci_har", "mhealth", "pamap2", "wisdm", "unimib_shar"]
+    for dataset_name in all_datasets:
         stats = get_augmentation_stats(dataset_name)
         print(f"\n{dataset_name.upper()}:")
         print(f"  Activities:      {stats['num_activities']}")

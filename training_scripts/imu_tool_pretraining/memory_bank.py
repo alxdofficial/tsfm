@@ -3,6 +3,11 @@ Memory Bank for MoCo-style contrastive learning.
 
 Maintains a queue of past embeddings to use as additional negatives
 in contrastive loss, enabling large effective batch sizes with limited GPU memory.
+
+Note: Queue items are treated as hard negatives (standard MoCo practice).
+Text labels are NOT stored - computing soft targets for queue negatives would
+require re-encoding 512+ labels every batch, which is computationally expensive
+and not supported by literature (MoCo, CLIP use hard negatives for queues).
 """
 
 import torch
@@ -13,7 +18,7 @@ class MemoryBank:
     """
     MoCo-style memory bank for storing past embeddings as negatives.
 
-    Maintains a FIFO queue of (IMU embeddings, labels) from previous batches
+    Maintains a FIFO queue of (IMU embeddings, text embeddings) from previous batches
     to provide many more negative samples for InfoNCE contrastive loss.
 
     Example:
@@ -36,20 +41,18 @@ class MemoryBank:
         # Initialize queues
         self.imu_queue = torch.zeros(queue_size, embedding_dim)
         self.text_queue = torch.zeros(queue_size, embedding_dim)  # Cache text embeddings
-        self.label_queue = [""] * queue_size
         self.ptr = 0  # Pointer to next position to fill
         self.is_full = False  # Whether queue has been filled once
 
-    def update(self, imu_emb: torch.Tensor, text_emb: torch.Tensor, labels: List[str]):
+    def update(self, imu_emb: torch.Tensor, text_emb: torch.Tensor):
         """
         Add new embeddings to queue (FIFO - First In First Out).
 
         Args:
             imu_emb: IMU embeddings to add (batch_size, embedding_dim)
             text_emb: Text embeddings to add (batch_size, embedding_dim)
-            labels: Corresponding label texts (batch_size,)
         """
-        batch_size = len(labels)
+        batch_size = imu_emb.shape[0]
 
         # Move embeddings to CPU to save GPU memory
         imu_emb_cpu = imu_emb.detach().cpu()
@@ -62,7 +65,6 @@ class MemoryBank:
             # Simple case: no wraparound
             self.imu_queue[self.ptr:end_ptr] = imu_emb_cpu
             self.text_queue[self.ptr:end_ptr] = text_emb_cpu
-            self.label_queue[self.ptr:end_ptr] = labels
         else:
             # Wraparound case: split across boundary
             first_part_size = self.queue_size - self.ptr
@@ -70,13 +72,11 @@ class MemoryBank:
             # Fill to end of queue
             self.imu_queue[self.ptr:] = imu_emb_cpu[:first_part_size]
             self.text_queue[self.ptr:] = text_emb_cpu[:first_part_size]
-            self.label_queue[self.ptr:] = labels[:first_part_size]
 
             # Wrap around to beginning
             remainder = batch_size - first_part_size
             self.imu_queue[:remainder] = imu_emb_cpu[first_part_size:]
             self.text_queue[:remainder] = text_emb_cpu[first_part_size:]
-            self.label_queue[:remainder] = labels[first_part_size:]
 
             self.is_full = True
 
@@ -123,3 +123,26 @@ class MemoryBank:
     def __repr__(self) -> str:
         """String representation."""
         return f"MemoryBank(size={len(self)}/{self.queue_size}, dim={self.embedding_dim})"
+
+    def state_dict(self) -> dict:
+        """Return state for checkpointing."""
+        return {
+            'imu_queue': self.imu_queue.clone(),
+            'text_queue': self.text_queue.clone(),
+            'ptr': self.ptr,
+            'is_full': self.is_full,
+            'queue_size': self.queue_size,
+            'embedding_dim': self.embedding_dim
+        }
+
+    def load_state_dict(self, state_dict: dict):
+        """Load state from checkpoint."""
+        self.imu_queue = state_dict['imu_queue']
+        self.text_queue = state_dict['text_queue']
+        self.ptr = state_dict['ptr']
+        self.is_full = state_dict['is_full']
+        # Verify dimensions match
+        if state_dict.get('queue_size') != self.queue_size:
+            print(f"  Warning: Queue size mismatch (checkpoint={state_dict.get('queue_size')}, current={self.queue_size})")
+        if state_dict.get('embedding_dim') != self.embedding_dim:
+            print(f"  Warning: Embedding dim mismatch (checkpoint={state_dict.get('embedding_dim')}, current={self.embedding_dim})")

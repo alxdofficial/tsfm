@@ -100,7 +100,8 @@ class ChannelIndependentCNN(nn.Module):
         d_model: int = 128,
         cnn_channels: List[int] = [64, 128],
         kernel_sizes: List[int] = [5],
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        patch_chunk_size: Optional[int] = None
     ):
         """
         Args:
@@ -108,12 +109,14 @@ class ChannelIndependentCNN(nn.Module):
             cnn_channels: Number of channels in each CNN layer
             kernel_sizes: Kernel sizes for convolutions (default [5] for simplicity)
             dropout: Dropout probability
+            patch_chunk_size: Process patches in chunks to save memory (None = process all at once)
         """
         super().__init__()
 
         self.d_model = d_model
         self.cnn_channels = cnn_channels
         self.num_scales = len(kernel_sizes)
+        self.patch_chunk_size = patch_chunk_size
 
         # Build CNN layers dynamically
         self.layers = nn.ModuleList()
@@ -160,7 +163,7 @@ class ChannelIndependentCNN(nn.Module):
 
         Processing:
             1. Reshape to process each (patch, channel) independently
-            2. Apply CNN layers
+            2. Apply CNN layers (in chunks if patch_chunk_size is set)
             3. Pool temporal dimension
             4. Project to d_model
             5. Reshape back to (batch, patches, channels, features)
@@ -170,23 +173,54 @@ class ChannelIndependentCNN(nn.Module):
         # Verify input is 96 timesteps
         assert seq_len == 96, f"Expected 96 timesteps, got {seq_len}"
 
-        # Reshape to (batch * patches * channels, 1, 96) to process independently
-        x = x.permute(0, 1, 3, 2)  # (batch, patches, channels, 96)
-        x = x.reshape(batch_size * num_patches * num_channels, 1, seq_len)
+        # Permute to (batch, patches, channels, 96)
+        x = x.permute(0, 1, 3, 2)
 
-        # Apply CNN layers sequentially
-        for layer in self.layers:
-            x = layer(x)
+        # Process patches in chunks to save memory
+        if self.patch_chunk_size is not None and num_patches > self.patch_chunk_size:
+            # Process in chunks
+            all_features = []
 
-        # Global average pooling over temporal dimension
-        x = self.adaptive_pool(x)  # (batch*patches*channels, final_cnn_channels, 1)
-        x = x.squeeze(-1)  # (batch*patches*channels, final_cnn_channels)
+            for start_idx in range(0, num_patches, self.patch_chunk_size):
+                end_idx = min(start_idx + self.patch_chunk_size, num_patches)
+                chunk = x[:, start_idx:end_idx, :, :]  # (batch, chunk_patches, channels, 96)
 
-        # Project to d_model
-        x = self.projection(x)  # (batch*patches*channels, d_model)
+                chunk_patches = end_idx - start_idx
+                # Reshape chunk: (batch * chunk_patches * channels, 1, 96)
+                chunk = chunk.reshape(batch_size * chunk_patches * num_channels, 1, seq_len)
 
-        # Reshape back to (batch, patches, channels, d_model)
-        x = x.reshape(batch_size, num_patches, num_channels, self.d_model)
+                # Apply CNN layers
+                for layer in self.layers:
+                    chunk = layer(chunk)
+
+                # Pool and project
+                chunk = self.adaptive_pool(chunk)  # (batch*chunk_patches*channels, final_cnn_channels, 1)
+                chunk = chunk.squeeze(-1)  # (batch*chunk_patches*channels, final_cnn_channels)
+                chunk = self.projection(chunk)  # (batch*chunk_patches*channels, d_model)
+
+                # Reshape to (batch, chunk_patches, channels, d_model)
+                chunk = chunk.reshape(batch_size, chunk_patches, num_channels, self.d_model)
+                all_features.append(chunk)
+
+            # Concatenate all chunks along patch dimension
+            x = torch.cat(all_features, dim=1)  # (batch, num_patches, channels, d_model)
+        else:
+            # Process all patches at once (original behavior)
+            x = x.reshape(batch_size * num_patches * num_channels, 1, seq_len)
+
+            # Apply CNN layers sequentially
+            for layer in self.layers:
+                x = layer(x)
+
+            # Global average pooling over temporal dimension
+            x = self.adaptive_pool(x)  # (batch*patches*channels, final_cnn_channels, 1)
+            x = x.squeeze(-1)  # (batch*patches*channels, final_cnn_channels)
+
+            # Project to d_model
+            x = self.projection(x)  # (batch*patches*channels, d_model)
+
+            # Reshape back to (batch, patches, channels, d_model)
+            x = x.reshape(batch_size, num_patches, num_channels, self.d_model)
 
         return x
 
@@ -210,7 +244,8 @@ class FixedPatchCNN(nn.Module):
         d_model: int = 128,
         cnn_channels: List[int] = [64, 128],
         kernel_sizes: List[int] = [5],
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        patch_chunk_size: Optional[int] = None
     ):
         """
         Args:
@@ -218,6 +253,7 @@ class FixedPatchCNN(nn.Module):
             cnn_channels: Channel progression through CNN layers (e.g., [64, 128])
             kernel_sizes: Kernel sizes for convolution (default [5] for simplicity)
             dropout: Dropout probability
+            patch_chunk_size: Process patches in chunks to save memory (None = process all at once)
         """
         super().__init__()
 
@@ -227,7 +263,8 @@ class FixedPatchCNN(nn.Module):
             d_model=d_model,
             cnn_channels=cnn_channels,
             kernel_sizes=kernel_sizes,
-            dropout=dropout
+            dropout=dropout,
+            patch_chunk_size=patch_chunk_size
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

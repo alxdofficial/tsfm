@@ -9,10 +9,15 @@ Output: data/wisdm/
 """
 
 import os
+import sys
 import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
+
+# Add datascripts to path for shared imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from shared.windowing import create_variable_windows, get_window_range
 
 
 # Activity mapping (A-S, excluding N)
@@ -141,12 +146,16 @@ def merge_device_sensors():
 
 
 def save_sessions(sessions):
-    """Save all sessions to parquet."""
+    """Save all sessions to parquet with variable-length windowing."""
     labels_dict = {}
+    sample_rate = 20.0  # WISDM is 20Hz
+
+    total_windows = 0
 
     for session in sessions:
-        session_id = session['session_id']
+        base_session_id = session['session_id']
         data = session['data'].copy()
+        activity = session['activity_name']
 
         # Reset timestamp to start from 0 (convert from nanoseconds to seconds)
         min_timestamp = data['timestamp'].min()
@@ -168,16 +177,27 @@ def save_sessions(sessions):
         cols = ['timestamp_sec', f'{device}_{sensor}_x', f'{device}_{sensor}_y', f'{device}_{sensor}_z']
         data = data[cols].astype(float)
 
-        # Save to parquet
-        session_dir = OUTPUT_DIR / "sessions" / session_id
-        session_dir.mkdir(parents=True, exist_ok=True)
+        # Apply variable-length windowing
+        windows = create_variable_windows(
+            df=data,
+            session_prefix=base_session_id,
+            activity=activity,
+            sample_rate=sample_rate,
+        )
 
-        parquet_path = session_dir / "data.parquet"
-        data.to_parquet(parquet_path, index=False)
+        # Save each window
+        for window_id, window_df, window_activity in windows:
+            session_dir = OUTPUT_DIR / "sessions" / window_id
+            session_dir.mkdir(parents=True, exist_ok=True)
 
-        # Store label
-        labels_dict[session_id] = [session['activity_name']]
+            parquet_path = session_dir / "data.parquet"
+            window_df.to_parquet(parquet_path, index=False)
 
+            # Store label
+            labels_dict[window_id] = [window_activity]
+            total_windows += 1
+
+    print(f"  Created {total_windows} windows from {len(sessions)} original sessions")
     return labels_dict
 
 

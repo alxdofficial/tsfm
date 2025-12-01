@@ -1,13 +1,22 @@
 """
 Multi-Dataset Loader for IMU Pretraining.
 
-Loads from UCI HAR, MHEALTH, PAMAP2, and WISDM datasets with:
+Loads from multiple activity recognition datasets with:
 - Random dataset selection per batch
 - Random channel subset selection
 - Train/val/test splits (70/15/15)
 - Padding and attention masks for variable-length sequences
+
+Supported datasets:
+- UCI HAR: 6 activities, 6 channels (acc + gyro), 50Hz
+- MHEALTH: 12 activities, 6 channels (acc + gyro), 50Hz
+- PAMAP2: 12 activities, 27 IMU channels, 100Hz
+- WISDM: 18 activities, 6 channels (acc + gyro), 20Hz
+- UniMiB SHAR: 9 activities, 3 channels (acc only), 50Hz
+- HHAR: 6 activities, 6 channels (acc + gyro), 50Hz
 """
 
+import re
 import torch
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
@@ -18,6 +27,86 @@ from typing import Dict, List, Tuple, Optional
 import random
 
 from datasets.imu_pretraining_dataset.label_augmentation import augment_label
+
+
+def group_channels_by_sensor(channel_names: List[str]) -> Dict[str, List[str]]:
+    """
+    Group channels by sensor type (accelerometer, gyroscope, etc.) and location.
+
+    Channels are grouped by their prefix, excluding the axis suffix (x/y/z or 1/2/3/4).
+    For example:
+        - acc_x, acc_y, acc_z -> group "acc"
+        - hand_gyro_x, hand_gyro_y, hand_gyro_z -> group "hand_gyro"
+        - chest_acc_x, chest_acc_y, chest_acc_z -> group "chest_acc"
+
+    Args:
+        channel_names: List of channel names
+
+    Returns:
+        Dict mapping group name to list of channel names in that group
+    """
+    groups = {}
+
+    # Pattern to match axis suffix: _x, _y, _z, _1, _2, _3, _4
+    axis_pattern = re.compile(r'_([xyz]|[1-4])$')
+
+    for channel in channel_names:
+        # Extract group name by removing axis suffix
+        match = axis_pattern.search(channel)
+        if match:
+            group_name = channel[:match.start()]
+        else:
+            # Channel without axis suffix (treat as its own group)
+            group_name = channel
+
+        if group_name not in groups:
+            groups[group_name] = []
+        groups[group_name].append(channel)
+
+    # Sort channels within each group for consistency (x before y before z, etc.)
+    for group_name in groups:
+        groups[group_name] = sorted(groups[group_name])
+
+    return groups
+
+
+def select_channel_groups(
+    channel_groups: Dict[str, List[str]],
+    min_groups: int = 1,
+    max_groups: int = None
+) -> List[str]:
+    """
+    Randomly select channel groups and return flattened channel list.
+
+    Args:
+        channel_groups: Dict mapping group name to list of channels
+        min_groups: Minimum number of groups to select
+        max_groups: Maximum number of groups to select (None = all)
+
+    Returns:
+        Flattened list of selected channel names
+    """
+    group_names = list(channel_groups.keys())
+
+    if max_groups is None:
+        max_groups = len(group_names)
+
+    # Clamp to available groups
+    max_groups = min(max_groups, len(group_names))
+    min_groups = min(min_groups, max_groups)
+
+    # Randomly select number of groups
+    num_groups = random.randint(min_groups, max_groups)
+
+    # Randomly select which groups
+    selected_group_names = random.sample(group_names, num_groups)
+
+    # Flatten to channel list
+    selected_channels = []
+    for group_name in sorted(selected_group_names):  # Sort for consistency
+        selected_channels.extend(channel_groups[group_name])
+
+    return selected_channels
 
 
 class IMUPretrainingDataset(Dataset):
@@ -31,13 +120,13 @@ class IMUPretrainingDataset(Dataset):
     def __init__(
         self,
         data_root: str = "/home/alex/code/tsfm/data",
-        datasets: List[str] = ['uci_har', 'mhealth', 'pamap2', 'wisdm'],
+        datasets: List[str] = ['uci_har', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'hhar'],
         split: str = 'train',
         split_ratios: Tuple[float, float, float] = (0.7, 0.15, 0.15),
         patch_size_sec: float = 2.0,
         patch_size_per_dataset: Optional[Dict[str, float]] = None,
-        min_channels: int = 6,
-        max_channels: int = 40,
+        min_channel_groups: int = 1,  # Minimum number of sensor groups to select
+        max_channel_groups: int = None,  # Maximum groups (None = all available)
         seed: int = 42
     ):
         """
@@ -48,9 +137,17 @@ class IMUPretrainingDataset(Dataset):
             split_ratios: (train, val, test) split ratios
             patch_size_sec: Default patch size in seconds (used if patch_size_per_dataset not provided)
             patch_size_per_dataset: Optional dict mapping dataset name to patch size in seconds
-            min_channels: Minimum number of channels to sample
-            max_channels: Maximum number of channels to sample
+            min_channel_groups: Minimum number of sensor groups to sample (e.g., acc, gyro)
+            max_channel_groups: Maximum number of sensor groups (None = all available)
             seed: Random seed for reproducibility
+
+        Note on channel groups:
+            Channels are grouped by sensor type and location. For example:
+            - acc_x, acc_y, acc_z -> group "acc"
+            - hand_gyro_x, hand_gyro_y, hand_gyro_z -> group "hand_gyro"
+
+            When sampling, entire groups are selected (not individual channels).
+            This ensures physically meaningful data (e.g., all 3 axes of an accelerometer).
         """
         self.data_root = Path(data_root)
         self.datasets = datasets
@@ -58,8 +155,8 @@ class IMUPretrainingDataset(Dataset):
         self.split_ratios = split_ratios
         self.patch_size_sec = patch_size_sec
         self.patch_size_per_dataset = patch_size_per_dataset or {}
-        self.min_channels = min_channels
-        self.max_channels = max_channels
+        self.min_channel_groups = min_channel_groups
+        self.max_channel_groups = max_channel_groups
 
         # Set random seed
         random.seed(seed)
@@ -156,17 +253,29 @@ class IMUPretrainingDataset(Dataset):
         # Load session data
         df = pd.read_parquet(session_info['path'])
 
-        # Get available channels (exclude timestamp_sec)
-        available_channels = [col for col in df.columns if col != 'timestamp_sec']
+        # Get available channels (exclude timestamp_sec and non-IMU channels)
+        # Filter to only IMU channels: accelerometer, gyroscope, magnetometer, orientation
+        # This excludes heart_rate (9 Hz in PAMAP2) and temperature sensors
+        IMU_PATTERNS = ['acc', 'gyro', 'mag', 'ori']
+        available_channels = [
+            col for col in df.columns
+            if col != 'timestamp_sec'
+            and any(p in col.lower() for p in IMU_PATTERNS)
+        ]
 
-        # Determine channel count for this sample
-        max_possible = min(len(available_channels), self.max_channels)
-        min_possible = min(self.min_channels, max_possible)
-        num_channels = random.randint(min_possible, max_possible)
+        # Group channels by sensor type and location
+        # e.g., acc_x, acc_y, acc_z -> group "acc"
+        # e.g., hand_gyro_x, hand_gyro_y, hand_gyro_z -> group "hand_gyro"
+        channel_groups = group_channels_by_sensor(available_channels)
 
-        # Randomly select channels
-        selected_channels = random.sample(available_channels, num_channels)
-        selected_channels = sorted(selected_channels)  # Sort for consistency
+        # Randomly select channel groups (not individual channels)
+        # This ensures we get complete sensor data (all axes together)
+        selected_channels = select_channel_groups(
+            channel_groups,
+            min_groups=self.min_channel_groups,
+            max_groups=self.max_channel_groups
+        )
+        num_channels = len(selected_channels)
 
         # Extract data for selected channels
         data = df[selected_channels].values  # (timesteps, num_channels)
@@ -180,14 +289,24 @@ class IMUPretrainingDataset(Dataset):
         # Create attention mask (all valid for now, padding handled in collate)
         attention_mask = torch.ones(len(data), dtype=torch.bool)
 
-        # Get channel descriptions (with fallback for missing entries)
+        # Get dataset description for context
+        dataset_desc = dataset_info['manifest'].get('description', '')
+
+        # Get channel descriptions with dataset context prepended
         channel_descriptions = []
         for ch in selected_channels:
             if ch in dataset_info['channel_info']:
-                channel_descriptions.append(dataset_info['channel_info'][ch]['description'])
+                ch_desc = dataset_info['channel_info'][ch]['description']
             else:
                 # Fallback for missing channel info
-                channel_descriptions.append(f"Channel: {ch}")
+                ch_desc = f"Channel: {ch}"
+
+            # Prepend dataset description for richer semantic context
+            if dataset_desc:
+                full_desc = f"{dataset_desc} {ch_desc}"
+            else:
+                full_desc = ch_desc
+            channel_descriptions.append(full_desc)
 
         # Get patch size for this dataset (use per-dataset if available, otherwise default)
         patch_size_sec = self.patch_size_per_dataset.get(dataset_name, self.patch_size_sec)
@@ -313,7 +432,7 @@ def worker_init_fn(worker_id: int) -> None:
 
 def create_dataloaders(
     data_root: str = "/home/alex/code/tsfm/data",
-    datasets: List[str] = ['uci_har', 'mhealth', 'pamap2', 'wisdm'],
+    datasets: List[str] = ['uci_har', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'hhar'],
     batch_size: int = 32,
     num_workers: int = 4,
     prefetch_factor: int = 2,
@@ -480,7 +599,7 @@ if __name__ == "__main__":
 
         from collections import Counter
 
-        for target_dataset in ['uci_har', 'mhealth', 'pamap2', 'wisdm']:
+        for target_dataset in ['uci_har', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']:
             variations_seen = []
             samples_checked = 0
             idx = 0

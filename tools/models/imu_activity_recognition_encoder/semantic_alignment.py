@@ -419,10 +419,8 @@ class SemanticAlignmentHead(nn.Module):
             )
             patch_mask = patch_mask.reshape(batch_size, -1)  # (batch, patches*num_bottlenecks)
 
-        # Temporal attention with residual connection (standard transformer residual)
-        temporal_in = fused
+        # Temporal attention (TransformerEncoder has internal residuals - no external residual needed)
         temporal = self.temporal_attention(fused, patch_mask)  # (batch, patches, d_model_fused)
-        temporal = temporal + temporal_in  # Residual for gradient flow (KEEP this one!)
 
         # Attention pooling (transformer already has LayerNorm internally)
         pooled = self.attention_pooling(temporal, patch_mask)  # (batch, d_model_fused)

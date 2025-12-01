@@ -89,32 +89,44 @@ class InfoNCELoss(nn.Module):
         # Scale by learnable temperature (clamped to prevent explosion)
         logits = torch.matmul(imu_embeddings, all_text.T) * self.logit_scale.exp().clamp(0, 100)  # (batch, batch+queue)
 
-        # Start with hard targets (one-hot)
-        hard_targets = torch.eye(batch_size, device=imu_embeddings.device)
-        targets = hard_targets
-
-        # Pairwise soft targets
-        soft_targets_pairwise = None
+        # Compute soft targets over ENTIRE dimension (batch + queue) for proper normalization
+        sim_mean_for_metrics = None  # Track for monitoring
         if self.use_soft_targets:
-            # Compute semantic similarity between text labels
-            # This captures relationships like "walking" is similar to "running"
-            text_similarity = torch.matmul(text_embeddings, text_embeddings.T)
-            text_similarity = text_similarity / self.soft_target_temperature
+            # Compute text similarity over full dimension (batch + queue)
+            # Key insight: Queue text embeddings don't go stale (from frozen SentenceBERT)
+            text_similarity_full = torch.matmul(text_embeddings, all_text.T)  # (batch, batch+queue)
 
-            # Convert to probability distribution (softmax over each row)
-            soft_targets_pairwise = F.softmax(text_similarity, dim=1)
+            # Adaptive soft targets: normalize similarities to z-scores
+            # Problem: SentenceBERT gives 0.4-0.9 for ALL human activities → weak discrimination
+            # Solution: Convert to z-scores so differences are amplified
+            # - True synonyms (walking/strolling): z ≈ +2 → high weight
+            # - Different activities (walking/sitting): z ≈ -1 → low weight
+            sim_mean = text_similarity_full.mean()
+            sim_std = text_similarity_full.std() + 1e-6
+            sim_mean_for_metrics = sim_mean.item()
+            text_similarity_full = (text_similarity_full - sim_mean) / sim_std / self.soft_target_temperature
 
-        # Blend targets based on configuration
-        if self.use_soft_targets:
-            # Pairwise soft targets
-            targets = (1 - self.soft_target_weight) * hard_targets + \
-                     self.soft_target_weight * soft_targets_pairwise
+            # Apply softmax over FULL dimension to get proper probability distribution
+            soft_targets_full = F.softmax(text_similarity_full, dim=1)  # Sums to 1.0 per row ✓
 
-        # Expand targets to include queue dimension (if queue is used)
-        # Queue embeddings are all negatives, so pad with zeros
-        if imu_queue is not None and text_queue is not None and len(imu_queue) > 0:
-            queue_size = imu_queue.shape[0]
-            targets = torch.cat([targets, torch.zeros(batch_size, queue_size, device=targets.device)], dim=1)
+            # Create hard targets (identity for batch, zeros for queue)
+            queue_size = all_text.shape[0] - batch_size
+            hard_targets_batch = torch.eye(batch_size, device=imu_embeddings.device)
+            hard_targets_queue = torch.zeros(batch_size, queue_size, device=imu_embeddings.device)
+            hard_targets_full = torch.cat([hard_targets_batch, hard_targets_queue], dim=1)
+
+            # Blend: (1-w) * hard + w * soft (still sums to 1.0 per row)
+            targets = (1 - self.soft_target_weight) * hard_targets_full + \
+                     self.soft_target_weight * soft_targets_full
+        else:
+            # Hard targets only: identity for batch, zeros for queue
+            queue_size = all_text.shape[0] - batch_size
+            hard_targets_batch = torch.eye(batch_size, device=imu_embeddings.device)
+            if queue_size > 0:
+                hard_targets_queue = torch.zeros(batch_size, queue_size, device=imu_embeddings.device)
+                targets = torch.cat([hard_targets_batch, hard_targets_queue], dim=1)
+            else:
+                targets = hard_targets_batch
 
         # Compute loss
         # Text→IMU direction (text queries vs IMU keys)
@@ -171,6 +183,9 @@ class InfoNCELoss(nn.Module):
                     batch_mask = torch.eye(batch_size, device=logits.device, dtype=torch.bool)
                     label_similarity = text_similarity[~batch_mask].mean().item()
                     metrics['label_semantic_similarity'] = label_similarity
+                    # Track the mean/std similarity used for adaptive normalization
+                    if sim_mean_for_metrics is not None:
+                        metrics['soft_target_sim_mean'] = sim_mean_for_metrics
 
         return loss, metrics
 
