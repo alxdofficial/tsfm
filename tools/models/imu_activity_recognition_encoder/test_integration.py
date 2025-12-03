@@ -78,9 +78,9 @@ def test_actionsense_dataset():
     # Verify shapes
     assert features.shape == (5, 30, 128), f"Expected (5, 30, 128), got {features.shape}"
 
-    # Verify interpolation worked (400 timesteps -> 96)
+    # Verify interpolation worked (400 timesteps -> 64)
     assert metadata['per_sample_metadata'][0]['original_patch_size'] == 400
-    assert metadata['per_sample_metadata'][0]['target_patch_size'] == 96
+    assert metadata['per_sample_metadata'][0]['target_patch_size'] == 64
 
     print("✓ ActionSense test passed!")
 

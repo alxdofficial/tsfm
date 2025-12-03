@@ -127,6 +127,7 @@ class IMUPretrainingDataset(Dataset):
         patch_size_per_dataset: Optional[Dict[str, float]] = None,
         min_channel_groups: int = 1,  # Minimum number of sensor groups to select
         max_channel_groups: int = None,  # Maximum groups (None = all available)
+        max_sessions_per_dataset: Optional[int] = None,  # Limit sessions per dataset for faster experiments
         seed: int = 42
     ):
         """
@@ -139,6 +140,8 @@ class IMUPretrainingDataset(Dataset):
             patch_size_per_dataset: Optional dict mapping dataset name to patch size in seconds
             min_channel_groups: Minimum number of sensor groups to sample (e.g., acc, gyro)
             max_channel_groups: Maximum number of sensor groups (None = all available)
+            max_sessions_per_dataset: Maximum sessions to load per dataset (None = all).
+                                      Useful for faster experimentation with large datasets.
             seed: Random seed for reproducibility
 
         Note on channel groups:
@@ -157,6 +160,7 @@ class IMUPretrainingDataset(Dataset):
         self.patch_size_per_dataset = patch_size_per_dataset or {}
         self.min_channel_groups = min_channel_groups
         self.max_channel_groups = max_channel_groups
+        self.max_sessions_per_dataset = max_sessions_per_dataset
 
         # Set random seed
         random.seed(seed)
@@ -203,15 +207,25 @@ class IMUPretrainingDataset(Dataset):
 
             # Collect all sessions
             sessions_dir = dataset_path / "sessions"
+            dataset_sessions = []
             for session_dir in sorted(sessions_dir.iterdir()):
                 if session_dir.is_dir():
                     session_id = session_dir.name
-                    self.sessions.append({
+                    dataset_sessions.append({
                         'dataset': dataset_name,
                         'session_id': session_id,
                         'path': session_dir / "data.parquet",
                         'label': labels.get(session_id, ['unknown'])
                     })
+
+            # Apply max_sessions_per_dataset limit if specified
+            if self.max_sessions_per_dataset is not None and len(dataset_sessions) > self.max_sessions_per_dataset:
+                # Shuffle before limiting to get diverse samples
+                random.shuffle(dataset_sessions)
+                dataset_sessions = dataset_sessions[:self.max_sessions_per_dataset]
+                print(f"  {dataset_name}: limited to {self.max_sessions_per_dataset} sessions (from {len(list(sessions_dir.iterdir()))})")
+
+            self.sessions.extend(dataset_sessions)
 
     def _create_splits(self):
         """Create train/val/test splits."""
@@ -439,6 +453,7 @@ def create_dataloaders(
     persistent_workers: bool = False,
     patch_size_sec: float = 2.0,
     patch_size_per_dataset: Optional[Dict[str, float]] = None,
+    max_sessions_per_dataset: Optional[int] = None,
     seed: int = 42
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """
@@ -451,6 +466,7 @@ def create_dataloaders(
         num_workers: Number of worker processes
         patch_size_sec: Default patch duration in seconds
         patch_size_per_dataset: Optional dict mapping dataset name to patch size
+        max_sessions_per_dataset: Max sessions per dataset (None = all)
         seed: Random seed
 
     Returns:
@@ -463,6 +479,7 @@ def create_dataloaders(
         split='train',
         patch_size_sec=patch_size_sec,
         patch_size_per_dataset=patch_size_per_dataset,
+        max_sessions_per_dataset=max_sessions_per_dataset,
         seed=seed
     )
 
@@ -472,6 +489,7 @@ def create_dataloaders(
         split='val',
         patch_size_sec=patch_size_sec,
         patch_size_per_dataset=patch_size_per_dataset,
+        max_sessions_per_dataset=max_sessions_per_dataset,
         seed=seed
     )
 
@@ -481,6 +499,7 @@ def create_dataloaders(
         split='test',
         patch_size_sec=patch_size_sec,
         patch_size_per_dataset=patch_size_per_dataset,
+        max_sessions_per_dataset=max_sessions_per_dataset,
         seed=seed
     )
 

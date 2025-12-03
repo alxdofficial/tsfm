@@ -191,8 +191,13 @@ class TrainingPlotter:
         for metric in gradient_metrics:
             if self.metrics['batch'][metric]:
                 batches, values = zip(*self.metrics['batch'][metric])
-                label = metric.replace('debug_train_', '').replace('_grad_norm', '').replace('debug_', '')
-                ax2.plot(batches, values, linewidth=1.5, alpha=0.8, label=label, marker='o', markersize=2)
+                # Filter out zero values (not computed on that step)
+                filtered = [(b, v) for b, v in zip(batches, values) if v > 0]
+                if filtered:
+                    batches, values = zip(*filtered)
+                    label = metric.replace('debug_train_', '').replace('_grad_norm', '').replace('debug_', '')
+                    # Use scatter for sparse gradient data (cleaner visualization)
+                    ax2.scatter(batches, values, alpha=0.7, label=label, s=15)
 
         ax2.set_xlabel('Batch', fontsize=11)
         ax2.set_ylabel('Gradient Norm', fontsize=11)

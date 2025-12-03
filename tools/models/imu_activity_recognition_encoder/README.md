@@ -1,6 +1,6 @@
 # IMU Activity Recognition Encoder
 
-A patch-based transformer encoder for IMU sensor data with fixed 96-timestep processing.
+A patch-based transformer encoder for IMU sensor data with fixed 64-timestep processing.
 
 ## Overview
 
@@ -9,7 +9,7 @@ This encoder processes raw IMU sensor data through multiple stages to produce ri
 ### Key Features
 
 - **Variable input support**: Works with 6-40 channels and any sampling rate (50-200 Hz)
-- **Fixed patch size**: All patches interpolated to 96 timesteps for consistent architecture
+- **Fixed patch size**: All patches interpolated to 64 timesteps for consistent architecture
 - **Channel-independent processing**: Scales efficiently to many channels
 - **Multi-scale feature extraction**: Uses parallel CNN branches with different kernel sizes
 - **Temporal attention**: Models dependencies across time patches
@@ -22,7 +22,7 @@ Raw IMU Data (timesteps × channels)
     ↓
 1. Preprocessing
    - Patching: Split into fixed-duration windows
-   - Interpolation: Resize to 96 timesteps
+   - Interpolation: Resize to 64 timesteps
    - Normalization: Z-score per patch, per channel
     ↓
 2. Feature Extraction
@@ -167,7 +167,7 @@ encoder = IMUActivityRecognitionEncoder(
     cnn_kernel_sizes=[3, 5, 7],
 
     # Preprocessing
-    target_patch_size=96,
+    target_patch_size=64,
     normalization_method='zscore',
     interpolation_method='linear',
 
@@ -195,7 +195,7 @@ The encoder has been tested on the following datasets:
 imu_activity_recognition_encoder/
 ├── __init__.py                 # Package initialization
 ├── preprocessing.py            # Patching, interpolation, normalization
-├── feature_extractor.py        # Fixed 1D CNN for 96 timesteps
+├── feature_extractor.py        # Fixed 1D CNN for 64 timesteps
 ├── positional_encoding.py      # Temporal + channel semantic encoding
 ├── transformer.py              # Temporal attention transformer
 ├── encoder.py                  # Main encoder class
@@ -219,7 +219,7 @@ imu_activity_recognition_encoder/
 - `cnn_kernel_sizes` (List[int]): Multi-scale kernels (default: [3, 5, 7])
 
 ### Preprocessing
-- `target_patch_size` (int): Fixed size after interpolation (default: 96)
+- `target_patch_size` (int): Fixed size after interpolation (default: 64)
 - `normalization_method` (str): 'zscore', 'minmax', or 'none' (default: 'zscore')
 - `interpolation_method` (str): 'linear', 'cubic', or 'nearest' (default: 'linear')
 

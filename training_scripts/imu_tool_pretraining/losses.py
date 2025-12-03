@@ -279,29 +279,41 @@ class CombinedPretrainingLoss(nn.Module):
     Combined loss for pretraining: MAE + Contrastive.
 
     Balances masked autoencoding and contrastive learning objectives.
+    Supports dynamic loss balancing via EMA normalization.
     """
 
     def __init__(
         self,
         mae_weight: float = 1.0,
-        contrastive_weight: float = 0.5,
+        contrastive_weight: float = 1.0,
         temperature: float = 0.2,
-        norm_target: bool = True
+        norm_target: bool = True,
+        dynamic_balance: bool = True,
+        ema_decay: float = 0.99
     ):
         """
         Args:
-            mae_weight: Weight for MAE loss
-            contrastive_weight: Weight for contrastive loss
+            mae_weight: Weight for MAE loss (relative importance)
+            contrastive_weight: Weight for contrastive loss (relative importance)
             temperature: Temperature for contrastive loss
             norm_target: Whether to normalize MAE targets
+            dynamic_balance: If True, normalize losses by their EMA to balance magnitudes
+            ema_decay: Decay rate for EMA (0.99 = smooth, 0.9 = faster adaptation)
         """
         super().__init__()
 
         self.mae_weight = mae_weight
         self.contrastive_weight = contrastive_weight
+        self.dynamic_balance = dynamic_balance
+        self.ema_decay = ema_decay
 
         self.mae_loss_fn = MaskedReconstructionLoss(norm_target=norm_target)
         self.contrastive_loss_fn = PatchContrastiveLoss(temperature=temperature)
+
+        # EMA trackers for dynamic balancing (not saved in state_dict)
+        self.register_buffer('mae_ema', torch.tensor(1.0))
+        self.register_buffer('contrastive_ema', torch.tensor(1.0))
+        self.register_buffer('ema_initialized', torch.tensor(False))
 
     def forward(
         self,
@@ -341,11 +353,43 @@ class CombinedPretrainingLoss(nn.Module):
             mae_mask=mae_mask
         )
 
-        # Combine losses
-        total_loss = (
-            self.mae_weight * mae_loss +
-            self.contrastive_weight * contrastive_loss
-        )
+        # Dynamic loss balancing via EMA normalization
+        if self.dynamic_balance:
+            with torch.no_grad():
+                mae_val = mae_loss.detach()
+                cont_val = contrastive_loss.detach()
+
+                if not self.ema_initialized:
+                    # Initialize EMA with first values
+                    self.mae_ema = mae_val
+                    self.contrastive_ema = cont_val
+                    self.ema_initialized = torch.tensor(True)
+                else:
+                    # Update EMA
+                    self.mae_ema = self.ema_decay * self.mae_ema + (1 - self.ema_decay) * mae_val
+                    self.contrastive_ema = self.ema_decay * self.contrastive_ema + (1 - self.ema_decay) * cont_val
+
+            # Normalize losses by their EMA (so both contribute ~1.0 on average)
+            # Then apply user-specified weights for relative importance
+            mae_normalized = mae_loss / (self.mae_ema + 1e-8)
+            contrastive_normalized = contrastive_loss / (self.contrastive_ema + 1e-8)
+
+            total_loss = (
+                self.mae_weight * mae_normalized +
+                self.contrastive_weight * contrastive_normalized
+            )
+
+            # Effective weights for logging
+            effective_mae_weight = self.mae_weight / (self.mae_ema.item() + 1e-8)
+            effective_contrastive_weight = self.contrastive_weight / (self.contrastive_ema.item() + 1e-8)
+        else:
+            # Static weighting (original behavior)
+            total_loss = (
+                self.mae_weight * mae_loss +
+                self.contrastive_weight * contrastive_loss
+            )
+            effective_mae_weight = self.mae_weight
+            effective_contrastive_weight = self.contrastive_weight
 
         # Combined metrics
         metrics = {
@@ -353,8 +397,14 @@ class CombinedPretrainingLoss(nn.Module):
             **mae_metrics,
             **contrastive_metrics,
             'mae_weight': self.mae_weight,
-            'contrastive_weight': self.contrastive_weight
+            'contrastive_weight': self.contrastive_weight,
+            'effective_mae_weight': effective_mae_weight,
+            'effective_contrastive_weight': effective_contrastive_weight,
         }
+
+        if self.dynamic_balance:
+            metrics['mae_ema'] = self.mae_ema.item()
+            metrics['contrastive_ema'] = self.contrastive_ema.item()
 
         return total_loss, metrics
 

@@ -54,16 +54,17 @@ DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
 # - Lower sampling rate → shorter patches to maintain enough samples
 # - Pre-segmented data → use natural segmentation
 PATCH_SIZE_PER_DATASET = {
-    'uci_har': 0.5,       # 50 Hz, 2.56s windows → 25 samples/patch, ~5 patches/session
-    'hhar': 0.5,          # 50 Hz, 2.56s windows → 25 samples/patch, ~5 patches/session
+    'uci_har': 1.0,       # 50 Hz, 2.56s windows → 50 samples/patch, ~2-3 patches/session
+    'hhar': 1.0,          # 50 Hz, 2.56s windows → 50 samples/patch, ~2-3 patches/session
     'mhealth': 2.0,       # 50 Hz, health monitoring → 100 samples/patch
     'pamap2': 2.0,        # 100 Hz, complex activities → 200 samples/patch
     'wisdm': 2.0,         # 20 Hz, phone-based → 40 samples/patch
-    'unimib_shar': 0.5,   # 50 Hz, ~3s segments → 25 samples/patch, ~6 patches/session
+    'unimib_shar': 1.0,   # 50 Hz, ~3s segments → 50 samples/patch, ~3 patches/session
 }
 
 MAX_PATCHES_PER_SAMPLE = 48  # Limit to prevent extreme padding (PAMAP2 can have 300+ patches)
 PATCH_CHUNK_SIZE = 16  # Process patches in chunks to save memory (6*16*9=864 patches per chunk)
+MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
 # Model configuration
 PROJECTION_DIM = 256
@@ -77,12 +78,14 @@ DROPOUT = 0.1
 USE_CROSS_CHANNEL = True
 CNN_CHANNELS = [32, 64]  # Reduced from [64, 128] - halves CNN memory while maintaining temporal feature extraction
 CNN_KERNEL_SIZES = [5]  # Reduced from [3,5,7] - single kernel saves 3x memory while maintaining good temporal feature extraction
+TARGET_PATCH_SIZE = 64  # Fixed timesteps per patch after interpolation
 
 # Training configuration
 OUTPUT_DIR = "training_output/imu_pretraining"
 SAVE_EVERY = 10  # Save checkpoint every N epochs
 EPOCHS = 100
-BATCH_SIZE = 16  
+BATCH_SIZE = 20
+  
 NUM_WORKERS = 4
 SEED = 42
 
@@ -95,6 +98,8 @@ WARMUP_EPOCHS = 10
 MAE_WEIGHT = 1.0
 CONTRASTIVE_WEIGHT = 1.0
 TEMPERATURE = 0.2  # Standard contrastive learning temperature
+DYNAMIC_LOSS_BALANCE = True  # Normalize losses by EMA to balance magnitudes
+EMA_DECAY = 0.99  # EMA decay for dynamic loss balancing
 
 # Masking
 MASK_RATIO = 0.3  # Reduced from 0.5 - less aggressive masking reduces empty batch risk
@@ -132,7 +137,7 @@ class PretrainingModel(nn.Module):
         ).to(device)
 
         # Reconstruction head for MAE
-        self.reconstruction_head = nn.Linear(self.d_model, 96).to(device)
+        self.reconstruction_head = nn.Linear(self.d_model, TARGET_PATCH_SIZE).to(device)
 
     def forward(
         self,
@@ -147,7 +152,7 @@ class PretrainingModel(nn.Module):
         Forward pass.
 
         Args:
-            patches: (batch, patches, 96, channels)
+            patches: (batch, patches, TARGET_PATCH_SIZE, channels)
             attention_mask: (batch, patches) valid patch mask
             channel_mask: (batch, channels) valid channel mask (True=valid, False=padded)
             channel_descriptions: List of channel description lists per sample in batch
@@ -172,9 +177,9 @@ class PretrainingModel(nn.Module):
 
         # Reconstruct for MAE
         if return_reconstruction:
-            reconstructed = self.reconstruction_head(features)  # (batch, patches, channels, 96)
+            reconstructed = self.reconstruction_head(features)  # (batch, patches, channels, TARGET_PATCH_SIZE)
             # Transpose to match input format
-            reconstructed = reconstructed.permute(0, 1, 3, 2)  # (batch, patches, 96, channels)
+            reconstructed = reconstructed.permute(0, 1, 3, 2)  # (batch, patches, TARGET_PATCH_SIZE, channels)
         else:
             reconstructed = None
 
@@ -269,8 +274,8 @@ def compute_reconstruction_quality(reconstructed, targets, mae_mask, attention_m
     Compute reconstruction quality metrics.
 
     Args:
-        reconstructed: (batch, patches, 96, channels) reconstructed patches
-        targets: (batch, patches, 96, channels) target patches
+        reconstructed: (batch, patches, TARGET_PATCH_SIZE, channels) reconstructed patches
+        targets: (batch, patches, TARGET_PATCH_SIZE, channels) target patches
         mae_mask: (batch, patches) boolean mask for MAE
         attention_mask: (batch, patches) boolean mask for valid patches
 
@@ -289,7 +294,7 @@ def compute_reconstruction_quality(reconstructed, targets, mae_mask, attention_m
             }
 
         # Compute MSE
-        mse = F.mse_loss(reconstructed, targets, reduction='none')  # (batch, patches, 96, channels)
+        mse = F.mse_loss(reconstructed, targets, reduction='none')  # (batch, patches, TARGET_PATCH_SIZE, channels)
         mse = mse.mean(dim=(2, 3))  # Average over time and channels: (batch, patches)
 
         # Separate masked vs unmasked
@@ -393,7 +398,7 @@ def train_epoch(
         max_channels = max(p.shape[2] for p in batch_patches)           
 
         padded_patches = torch.zeros(
-            len(batch_patches), max_patches, 96, max_channels
+            len(batch_patches), max_patches, TARGET_PATCH_SIZE, max_channels
         ).to(device)
 
         patch_attention_mask = torch.zeros(
@@ -428,18 +433,18 @@ def train_epoch(
             if valid_mask.any():
                 # Get valid patches for this sample (clone only what's needed)
                 num_valid_patches = valid_mask.sum().item()
-                valid_patches = padded_patches[i, valid_mask].clone()  # (num_valid, 96, channels)
+                valid_patches = padded_patches[i, valid_mask].clone()  # (num_valid, TARGET_PATCH_SIZE, channels)
 
-                # Flatten to single tensor: (num_valid * 96, channels)
-                flat_shape = (num_valid_patches * 96, valid_patches.shape[-1])
+                # Flatten to single tensor: (num_valid * TARGET_PATCH_SIZE, channels)
+                flat_shape = (num_valid_patches * TARGET_PATCH_SIZE, valid_patches.shape[-1])
                 flat_data = valid_patches.reshape(flat_shape)
 
                 # Apply augmentation ONCE with same parameters for entire sample
                 augmented = augmentation.apply(flat_data.unsqueeze(0), None)
                 augmented = augmented.squeeze(0)
 
-                # Reshape back to patches: (num_valid, 96, channels)
-                augmented_patches = augmented.reshape(num_valid_patches, 96, valid_patches.shape[-1])
+                # Reshape back to patches: (num_valid, TARGET_PATCH_SIZE, channels)
+                augmented_patches = augmented.reshape(num_valid_patches, TARGET_PATCH_SIZE, valid_patches.shape[-1])
                 aug_patches[i, valid_mask] = augmented_patches
             else:
                 # Copy over padded patches (no augmentation needed)
@@ -579,6 +584,13 @@ def train_epoch(
             plotter.add_scalar('batch/train_mae_loss', metrics['mae_loss'], global_batch)
             plotter.add_scalar('batch/train_contrastive_loss', metrics['contrastive_loss'], global_batch)
 
+            # Log dynamic loss balancing metrics if available
+            if 'mae_ema' in metrics:
+                plotter.add_scalar('batch/mae_ema', metrics['mae_ema'], global_batch)
+                plotter.add_scalar('batch/contrastive_ema', metrics['contrastive_ema'], global_batch)
+                plotter.add_scalar('batch/effective_mae_weight', metrics['effective_mae_weight'], global_batch)
+                plotter.add_scalar('batch/effective_contrastive_weight', metrics['effective_contrastive_weight'], global_batch)
+
             # Log debug metrics only when actually computed (every 10 batches)
             if batch_idx % 10 == 0:
                 plotter.add_scalar('batch/debug_train_feature_std', feature_stats['feature_std'], global_batch)
@@ -700,7 +712,7 @@ def validate(
             max_patches = max(p.shape[0] for p in batch_patches)
             max_channels = max(p.shape[2] for p in batch_patches)
 
-            padded_patches = torch.zeros(len(batch_patches), max_patches, 96, max_channels).to(device)
+            padded_patches = torch.zeros(len(batch_patches), max_patches, TARGET_PATCH_SIZE, max_channels).to(device)
             patch_attention_mask = torch.zeros(len(batch_patches), max_patches, dtype=torch.bool).to(device)
 
             # Create channel mask for the encoder
@@ -941,6 +953,7 @@ def main():
         num_workers=NUM_WORKERS,
         patch_size_sec=2.0,  # Default (not used since we provide per-dataset sizes)
         patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
+        max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
         seed=SEED
     )
 
@@ -951,7 +964,9 @@ def main():
     criterion = CombinedPretrainingLoss(
         mae_weight=MAE_WEIGHT,
         contrastive_weight=CONTRASTIVE_WEIGHT,
-        temperature=TEMPERATURE
+        temperature=TEMPERATURE,
+        dynamic_balance=DYNAMIC_LOSS_BALANCE,
+        ema_decay=EMA_DECAY
     )
 
     # Create optimizer

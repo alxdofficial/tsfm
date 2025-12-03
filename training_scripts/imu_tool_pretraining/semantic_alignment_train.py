@@ -38,15 +38,16 @@ DATA_ROOT = "/home/alex/code/tsfm/data"
 DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
 
 PATCH_SIZE_PER_DATASET = {
-    'uci_har': 0.5,       # 50 Hz, 2.56s windows → 25 samples/patch, ~5 patches/session
-    'hhar': 0.5,          # 50 Hz, 2.56s windows → 25 samples/patch, ~5 patches/session
+    'uci_har': 1.0,       # 50 Hz, 2.56s windows → 50 samples/patch, ~2-3 patches/session
+    'hhar': 1.0,          # 50 Hz, 2.56s windows → 50 samples/patch, ~2-3 patches/session
     'mhealth': 2.0,       # 50 Hz, health monitoring → 100 samples/patch
     'pamap2': 2.0,        # 100 Hz, complex activities → 200 samples/patch
     'wisdm': 2.0,         # 20 Hz, phone-based → 40 samples/patch
-    'unimib_shar': 0.5,   # 50 Hz, ~3s segments → 25 samples/patch, ~6 patches/session
+    'unimib_shar': 1.0,   # 50 Hz, ~3s segments → 50 samples/patch, ~3 patches/session
 }
 
 MAX_PATCHES_PER_SAMPLE = 48
+MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
 # Encoder configuration (must match pretrained model)
 D_MODEL = 384
@@ -57,6 +58,7 @@ DROPOUT = 0.1
 USE_CROSS_CHANNEL = True
 CNN_CHANNELS = [32, 64]  # MUST match checkpoint: good_20251124_193747
 CNN_KERNEL_SIZES = [5]  # MUST match checkpoint: single kernel (not multi-scale)
+TARGET_PATCH_SIZE = 64  # Fixed timesteps per patch after interpolation
 
 # Semantic alignment configuration
 D_MODEL_FUSED = 384  # Dimension after cross-channel fusion (match D_MODEL to avoid bottleneck)
@@ -70,20 +72,20 @@ SENTENCE_BERT_MODEL = 'all-MiniLM-L6-v2'  # 384-dim embeddings, fast
 # Training configuration
 OUTPUT_DIR = "training_output/semantic_alignment"  # Note: plots go to semantic_alignment/<timestamp>/plots/
 CHECKPOINT_DIR = None  # Will be set in main()
-PRETRAINED_ENCODER_PATH = "training_output/imu_pretraining/good_20251124_193747/best.pt"  # Pretrained tokenizer (8 epochs, converged)
-FREEZE_ENCODER = True  # Freeze encoder weights, only train semantic head (recommended)
+PRETRAINED_ENCODER_PATH = "training_output/imu_pretraining/20251201_201049/latest.pt"  # Pretrained tokenizer
+FREEZE_ENCODER = False  # Unfreeze encoder to learn discriminative representations
 SAVE_EVERY = 5
 
 # Resume configuration - set to a folder path to resume training from that checkpoint
 # Example: RESUME_FROM = "training_output/semantic_alignment/20251124_234942"
-RESUME_FROM = "training_output/semantic_alignment/20251124_234942"  # Set to folder path to resume, or None to start fresh
+RESUME_FROM = None  # Set to folder path to resume, or None to start fresh
 SEED = 42
 MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
 EPOCHS = 100
-BATCH_SIZE = 256  # Increased from 128 - larger batch sizes help contrastive learning
-CHUNK_SIZE = 32  # Process 16 samples at a time (adjust if OOM persists)
+BATCH_SIZE = 32  # Micro-batch size
+ACCUMULATION_STEPS = 16  # Effective batch = 32 × 16 = 512
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
 WARMUP_EPOCHS = 3
 
@@ -99,12 +101,15 @@ TEMPERATURE = 0.07  # CLIP default - sharper discrimination for better gradient 
 # With augmentation, batch contains duplicates like "walking", "strolling", "person walking"
 # Hard targets treat these as negatives (contradictory!) → Soft targets weight by semantic similarity (correct!)
 USE_SOFT_TARGETS = True  # ENABLED: Essential for label augmentation (prevents collapse from contradictory gradients)
-SOFT_TARGET_TEMPERATURE = 1.0  # No extra sharpening - z-score normalization already handles discrimination
+SOFT_TARGET_TEMPERATURE = 0.5  # Sharpen soft targets - gives ~7x more weight to exact match
 SOFT_TARGET_WEIGHT = 1.0  # Pure soft targets with adaptive recalibration
 
 # Memory bank configuration (MoCo-style queue for more negatives)
-USE_MEMORY_BANK = True  # Enable memory bank for 4096+ negatives
-MEMORY_BANK_SIZE = 1024  # Increased from 512 - more negatives improve contrastive learning
+# With soft targets, queue items with same semantic labels share probability mass.
+# This is actually CORRECT for foundation models: any "walking" IMU should match any "walking" text.
+# Gradient direction is preserved (0.99 cosine similarity), magnitude slightly diluted.
+USE_MEMORY_BANK = True
+MEMORY_BANK_SIZE = 256  # Provides 32 + 256 = 288 negatives per step
 
 # Plotting
 PLOT_EVERY_N_BATCHES = 10
@@ -179,7 +184,7 @@ class SemanticAlignmentModel(nn.Module):
 
         # Create batched tensor for valid samples only
         num_valid = len(valid_indices)
-        batched_patches = torch.zeros(num_valid, max_patches_valid, 96, max_channels, device=device)
+        batched_patches = torch.zeros(num_valid, max_patches_valid, TARGET_PATCH_SIZE, max_channels, device=device)
         batched_channel_descs = []
 
         for batch_idx, sample_idx in enumerate(valid_indices):
@@ -188,24 +193,13 @@ class SemanticAlignmentModel(nn.Module):
             batched_patches[batch_idx, :num_patches] = patches
             batched_channel_descs.append(all_channel_descs[sample_idx])
 
-        # Step 3: Process in mini-batches to avoid OOM (still much faster than per-sample!)
-        # Chunk size: how many samples to encode together (tuned for GPU memory)
-        encoded_chunks = []
-
-        for chunk_start in range(0, num_valid, CHUNK_SIZE):
-            chunk_end = min(chunk_start + CHUNK_SIZE, num_valid)
-            chunk_patches = batched_patches[chunk_start:chunk_end]
-            chunk_descs = batched_channel_descs[chunk_start:chunk_end]
-
-            # Wrap in no_grad when encoder is frozen (saves 30-40% training time!)
-            if FREEZE_ENCODER:
-                with torch.no_grad():
-                    encoded_chunk = self.encoder(chunk_patches, chunk_descs)
-            else:
-                encoded_chunk = self.encoder(chunk_patches, chunk_descs)
-            encoded_chunks.append(encoded_chunk)
-
-        encoded_batch = torch.cat(encoded_chunks, dim=0)
+        # Step 3: Encode all valid samples
+        # Wrap in no_grad when encoder is frozen (saves 30-40% training time!)
+        if FREEZE_ENCODER:
+            with torch.no_grad():
+                encoded_batch = self.encoder(batched_patches, batched_channel_descs)
+        else:
+            encoded_batch = self.encoder(batched_patches, batched_channel_descs)
         # encoded_batch shape: (num_valid, max_patches_valid, max_channels, d_model)
 
         # Step 4: Map outputs back to original batch positions
@@ -231,6 +225,55 @@ class SemanticAlignmentModel(nn.Module):
         return self.semantic_head(padded_encoder_output, channel_mask=channel_mask,
                                    patch_mask=padded_patch_mask, normalize=True)
 
+    def get_attention_stats(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes):
+        """Get attention statistics from cross-channel fusion (for debugging)."""
+        # Re-run forward up to encoder output (without gradient)
+        batch_size = data.shape[0]
+        device = data.device
+
+        with torch.no_grad():
+            all_patches = []
+            all_channel_descs = []
+            valid_samples = []
+
+            for i in range(batch_size):
+                patches, _ = self.encoder.preprocess(
+                    data[i], sampling_rate_hz=sampling_rates[i], patch_size_sec=patch_sizes[i]
+                )
+                if patches is None or len(patches) == 0:
+                    valid_samples.append(False)
+                    continue
+                if len(patches) > MAX_PATCHES_PER_SAMPLE:
+                    patches = patches[:MAX_PATCHES_PER_SAMPLE]
+                num_channels = data[i].shape[1]
+                channel_descs = channel_descriptions[i]
+                padded_descs = channel_descs + ["[PAD]"] * (num_channels - len(channel_descs))
+                all_patches.append(patches)
+                all_channel_descs.append(padded_descs)
+                valid_samples.append(True)
+
+            valid_indices = [i for i, v in enumerate(valid_samples) if v]
+            if len(valid_indices) == 0:
+                return {}
+
+            max_patches_valid = max(len(all_patches[i]) for i in valid_indices)
+            max_channels = data.shape[2]
+            num_valid = len(valid_indices)
+
+            batched_patches = torch.zeros(num_valid, max_patches_valid, TARGET_PATCH_SIZE, max_channels, device=device)
+            batched_channel_descs = []
+
+            for batch_idx, sample_idx in enumerate(valid_indices):
+                patches = all_patches[sample_idx]
+                num_patches = len(patches)
+                batched_patches[batch_idx, :num_patches] = patches
+                batched_channel_descs.append(all_channel_descs[sample_idx])
+
+            encoded_batch = self.encoder(batched_patches, batched_channel_descs)
+
+            # Get attention stats from semantic head
+            return self.semantic_head.get_attention_stats(encoded_batch, channel_mask)
+
 
 def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_queue=None):
     """
@@ -240,6 +283,8 @@ def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_
     - Representation collapse indicators (std, diversity)
     - Similarity distributions (positive vs negative)
     - Memory bank quality (if queue provided)
+    - Intra-batch similarity (collapse detection)
+    - Hard negative analysis
     """
     # Convert to fp32 for all operations (mixed precision compatibility)
     imu_embeddings = imu_embeddings.float()
@@ -254,10 +299,11 @@ def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_
 
     # 1. Representation Collapse Detection
     # Check if embeddings are diverse or collapsed to similar vectors
-    debug_metrics['imu_std'] = imu_embeddings.std(dim=0).mean().item()  # Should be > 0.1
+    # For L2-normalized d=384 vectors, expected std ≈ 1/sqrt(384) ≈ 0.051
+    debug_metrics['imu_std'] = imu_embeddings.std(dim=0).mean().item()
     debug_metrics['text_std'] = text_embeddings.std(dim=0).mean().item()
 
-    # Pairwise distances (diversity) - should be > 0.5 for diverse embeddings
+    # Pairwise distances (diversity) - for uniform on hypersphere, expected ~1.0-1.4
     if batch_size > 1:
         debug_metrics['imu_diversity'] = torch.pdist(imu_embeddings).mean().item()
         debug_metrics['text_diversity'] = torch.pdist(text_embeddings).mean().item()
@@ -265,7 +311,20 @@ def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_
         debug_metrics['imu_diversity'] = 0.0
         debug_metrics['text_diversity'] = 0.0
 
-    # 2. Similarity Distribution Analysis
+    # 2. Intra-batch similarity (collapse detection)
+    # IMU embeddings should be diverse (low intra-batch similarity)
+    # Text embeddings may have higher similarity (same labels)
+    imu_sim_matrix = torch.matmul(imu_embeddings, imu_embeddings.T)
+    if batch_size > 1:
+        imu_intra_mask = ~torch.eye(batch_size, dtype=torch.bool, device=imu_sim_matrix.device)
+        debug_metrics['imu_intra_batch_sim'] = imu_sim_matrix[imu_intra_mask].mean().item()
+        # Collapse indicator: if all IMU embeddings become same vector, this approaches 1.0
+        debug_metrics['imu_intra_batch_sim_max'] = imu_sim_matrix[imu_intra_mask].max().item()
+    else:
+        debug_metrics['imu_intra_batch_sim'] = 0.0
+        debug_metrics['imu_intra_batch_sim_max'] = 0.0
+
+    # 3. Similarity Distribution Analysis
     sim_matrix = torch.matmul(imu_embeddings, text_embeddings.T)  # (batch, batch)
 
     # Positive pairs (diagonal - matched IMU and text)
@@ -285,13 +344,33 @@ def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_
 
         # Similarity gap (should be positive and growing during training)
         debug_metrics['sim_gap'] = debug_metrics['pos_sim_mean'] - debug_metrics['neg_sim_mean']
+
+        # 4. Hard negative analysis
+        # How many negatives have higher similarity than the positive?
+        # This indicates samples where model is confused
+        pos_expanded = pos_sims.unsqueeze(1)  # (batch, 1)
+        hard_negatives_per_sample = (sim_matrix > pos_expanded).sum(dim=1).float()  # Exclude diagonal
+        debug_metrics['hard_negative_count'] = hard_negatives_per_sample.mean().item()
+        # Rank of positive pair (0 = correct, higher = worse)
+        debug_metrics['positive_rank'] = hard_negatives_per_sample.mean().item()
+
+        # Margin: how much does positive exceed the hardest negative
+        # For each row, find max negative similarity
+        neg_max_per_row = (sim_matrix * neg_mask.float()).max(dim=1)[0]
+        margin = pos_sims - neg_max_per_row
+        debug_metrics['margin_mean'] = margin.mean().item()
+        debug_metrics['margin_min'] = margin.min().item()  # Worst case margin
     else:
         debug_metrics['neg_sim_mean'] = 0.0
         debug_metrics['neg_sim_std'] = 0.0
         debug_metrics['neg_sim_max'] = 0.0
         debug_metrics['sim_gap'] = 0.0
+        debug_metrics['hard_negative_count'] = 0.0
+        debug_metrics['positive_rank'] = 0.0
+        debug_metrics['margin_mean'] = 0.0
+        debug_metrics['margin_min'] = 0.0
 
-    # 3. Memory Bank Quality (if queue provided)
+    # 5. Memory Bank Quality (if queue provided)
     if imu_queue is not None and len(imu_queue) > 0:
         # Queue diversity
         queue_sample = imu_queue[:min(100, len(imu_queue))]  # Sample to avoid expensive computation
@@ -300,6 +379,11 @@ def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_
         # Queue staleness: how different is queue from current batch?
         queue_vs_current = torch.cdist(imu_embeddings, imu_queue[:100]).mean().item()
         debug_metrics['queue_staleness'] = queue_vs_current
+
+        # Queue similarity to current batch (for hard negative mining from queue)
+        queue_sim = torch.matmul(imu_embeddings, imu_queue.T)  # (batch, queue_size)
+        debug_metrics['queue_sim_mean'] = queue_sim.mean().item()
+        debug_metrics['queue_sim_max'] = queue_sim.max().item()  # Hardest negative from queue
 
     return debug_metrics
 
@@ -368,7 +452,7 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
         model.train()
 
 
-def _compute_per_layer_grad_norms(model):
+def _compute_per_layer_grad_norms(model, criterion=None):
     """
     Compute gradient norms for each sub-component of the semantic head.
 
@@ -377,6 +461,8 @@ def _compute_per_layer_grad_norms(model):
     - temporal_attention: TransformerEncoder over patches
     - attention_pooling: CLS token attention pooling
     - projection_head: 3-layer MLP to semantic space
+
+    Also tracks logit_scale gradient if criterion is provided.
 
     Returns:
         Dict mapping component name to gradient norm
@@ -398,6 +484,14 @@ def _compute_per_layer_grad_norms(model):
             if prefix in n and p.grad is not None
         ) ** 0.5
         grad_norms[name] = grad_norm
+
+    # Track logit_scale gradient (learnable temperature)
+    if criterion is not None and hasattr(criterion, 'infonce'):
+        logit_scale = criterion.infonce.logit_scale
+        if logit_scale.grad is not None:
+            grad_norms['logit_scale'] = logit_scale.grad.abs().item()
+        else:
+            grad_norms['logit_scale'] = 0.0
 
     return grad_norms
 
@@ -432,9 +526,16 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
         'temporal_attention': 0.0,
         'attention_pooling': 0.0,
         'projection_head': 0.0,
+        'logit_scale': 0.0,  # Learnable temperature
     }
 
     pbar = tqdm(dataloader, desc=f"[{stage}] Epoch {epoch} Training")
+
+    # Initialize gradients at start of epoch
+    optimizer.zero_grad()
+
+    # Track accumulation steps for proper gradient logging
+    accum_step_count = 0
 
     for batch_idx, batch in enumerate(pbar):
         data = batch['data'].to(device)
@@ -449,9 +550,6 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
         with torch.no_grad():
             text_embeddings = label_bank.encode(label_texts, normalize=True)
 
-        # Clear gradients BEFORE forward pass
-        optimizer.zero_grad()
-
         # Get queue embeddings from memory bank if enabled (no gradients needed)
         if memory_bank is not None and USE_MEMORY_BANK:
             with torch.no_grad():
@@ -464,37 +562,70 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
                                      return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
 
+        # Scale loss for gradient accumulation
+        scaled_loss = loss / ACCUMULATION_STEPS
+
         # Compute debug metrics periodically (not every batch - expensive)
         # Embeddings are already normalized by model and label_bank
         debug_metrics = {}
         if batch_idx % DEBUG_METRIC_FREQUENCY == 0:
             with torch.no_grad():
                 debug_metrics = compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue, text_queue)
+                # Add attention stats from cross-channel fusion
+                attn_stats = model.get_attention_stats(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
+                debug_metrics.update(attn_stats)
 
+        # Backward pass (accumulate gradients)
         if scaler is not None:
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)  # Unscale before clipping
-
-            # Per-layer gradient norms (expensive - only compute periodically)
-            if batch_idx % DEBUG_METRIC_FREQUENCY == 0:
-                batch_grad_norms = _compute_per_layer_grad_norms(model)
-            else:
-                batch_grad_norms = {k: 0.0 for k in total_grad_norms}
-
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=MAX_GRAD_NORM)
-            scaler.step(optimizer)
-            scaler.update()
+            scaler.scale(scaled_loss).backward()
         else:
-            loss.backward()
+            scaled_loss.backward()
 
-            # Per-layer gradient norms (expensive - only compute periodically)
-            if batch_idx % DEBUG_METRIC_FREQUENCY == 0:
-                batch_grad_norms = _compute_per_layer_grad_norms(model)
+        # Initialize grad_norm for this batch (will be set on optimizer step)
+        grad_norm = torch.tensor(0.0)
+        batch_grad_norms = {k: 0.0 for k in total_grad_norms}
+
+        # Step optimizer every ACCUMULATION_STEPS or at end of epoch
+        is_accumulation_step = (batch_idx + 1) % ACCUMULATION_STEPS == 0
+        is_last_batch = (batch_idx + 1) == len(dataloader)
+
+        if is_accumulation_step or is_last_batch:
+            # Compute per-layer gradient norms periodically (based on accumulation steps, not batch idx)
+            # This ensures we actually capture gradients when they exist (after accumulation)
+            should_log_grads = accum_step_count % DEBUG_METRIC_FREQUENCY == 0
+
+            if scaler is not None:
+                scaler.unscale_(optimizer)
+
+                # Per-layer gradient norms (expensive - only compute periodically)
+                if should_log_grads:
+                    batch_grad_norms = _compute_per_layer_grad_norms(model, criterion)
+
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=MAX_GRAD_NORM)
+                scaler.step(optimizer)
+                scaler.update()
             else:
-                batch_grad_norms = {k: 0.0 for k in total_grad_norms}
+                # Per-layer gradient norms (expensive - only compute periodically)
+                if should_log_grads:
+                    batch_grad_norms = _compute_per_layer_grad_norms(model, criterion)
 
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=MAX_GRAD_NORM)
-            optimizer.step()
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=MAX_GRAD_NORM)
+                optimizer.step()
+
+            # Reset gradients for next accumulation window
+            optimizer.zero_grad()
+
+            # Increment accumulation step counter
+            accum_step_count += 1
+
+            # Log gradient norms immediately after optimizer step (when gradients exist)
+            if plotter is not None:
+                global_batch_for_grad = (epoch - 1) * len(dataloader) + batch_idx
+                plotter.add_scalar(f'batch/{stage}_grad_norm', grad_norm.item(), global_batch_for_grad)
+                # Per-layer gradient norms (only when actually computed, not zeros)
+                if should_log_grads:
+                    for comp_name, comp_grad_norm in batch_grad_norms.items():
+                        plotter.add_scalar(f'batch/debug_{stage}_{comp_name}_grad_norm', comp_grad_norm, global_batch_for_grad)
 
         # Update memory bank with current batch embeddings (no gradients needed)
         if memory_bank is not None and USE_MEMORY_BANK:
@@ -540,23 +671,57 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             plotter.add_scalar(f'batch/{stage}_positive_similarity', metrics['positive_similarity'], global_batch)
             plotter.add_scalar(f'batch/{stage}_negative_similarity', metrics['negative_similarity'], global_batch)
             plotter.add_scalar(f'batch/{stage}_similarity_gap', metrics['similarity_gap'], global_batch)
-            plotter.add_scalar(f'batch/{stage}_grad_norm', grad_norm.item(), global_batch)
+            # Note: grad_norm is logged separately in the accumulation step block (where gradients actually exist)
+
+            # Loss component metrics
+            if 'loss_imu_to_text' in metrics:
+                plotter.add_scalar(f'batch/{stage}_loss_imu_to_text', metrics['loss_imu_to_text'], global_batch)
+                plotter.add_scalar(f'batch/{stage}_loss_text_to_imu', metrics['loss_text_to_imu'], global_batch)
+            if 'logit_scale' in metrics:
+                plotter.add_scalar(f'batch/{stage}_logit_scale', metrics['logit_scale'], global_batch)
+            if 'logits_std' in metrics:
+                plotter.add_scalar(f'batch/{stage}_logits_mean', metrics['logits_mean'], global_batch)
+                plotter.add_scalar(f'batch/{stage}_logits_std', metrics['logits_std'], global_batch)
+
+            # Soft target diagnostics
+            if 'soft_target_entropy_ratio' in metrics:
+                plotter.add_scalar(f'batch/{stage}_soft_target_entropy_ratio', metrics['soft_target_entropy_ratio'], global_batch)
+                plotter.add_scalar(f'batch/{stage}_true_positive_target_prob', metrics['true_positive_target_prob'], global_batch)
 
             # Debug metrics (only plot when computed)
             if debug_metrics:
+                # Collapse detection metrics
                 plotter.add_scalar(f'batch/debug_{stage}_imu_std', debug_metrics['imu_std'], global_batch)
                 plotter.add_scalar(f'batch/debug_{stage}_text_std', debug_metrics['text_std'], global_batch)
                 plotter.add_scalar(f'batch/debug_{stage}_imu_diversity', debug_metrics['imu_diversity'], global_batch)
+                plotter.add_scalar(f'batch/debug_{stage}_imu_intra_batch_sim', debug_metrics['imu_intra_batch_sim'], global_batch)
+                plotter.add_scalar(f'batch/debug_{stage}_imu_intra_batch_sim_max', debug_metrics['imu_intra_batch_sim_max'], global_batch)
+
+                # Similarity distribution metrics
                 plotter.add_scalar(f'batch/debug_{stage}_pos_sim_mean', debug_metrics['pos_sim_mean'], global_batch)
                 plotter.add_scalar(f'batch/debug_{stage}_neg_sim_mean', debug_metrics['neg_sim_mean'], global_batch)
                 plotter.add_scalar(f'batch/debug_{stage}_sim_gap', debug_metrics['sim_gap'], global_batch)
+
+                # Hard negative analysis
+                plotter.add_scalar(f'batch/debug_{stage}_hard_negative_count', debug_metrics['hard_negative_count'], global_batch)
+                plotter.add_scalar(f'batch/debug_{stage}_positive_rank', debug_metrics['positive_rank'], global_batch)
+                plotter.add_scalar(f'batch/debug_{stage}_margin_mean', debug_metrics['margin_mean'], global_batch)
+                plotter.add_scalar(f'batch/debug_{stage}_margin_min', debug_metrics['margin_min'], global_batch)
+
+                # Memory bank metrics
                 if 'queue_diversity' in debug_metrics:
                     plotter.add_scalar(f'batch/debug_{stage}_queue_diversity', debug_metrics['queue_diversity'], global_batch)
                     plotter.add_scalar(f'batch/debug_{stage}_queue_staleness', debug_metrics['queue_staleness'], global_batch)
+                    plotter.add_scalar(f'batch/debug_{stage}_queue_sim_mean', debug_metrics['queue_sim_mean'], global_batch)
+                    plotter.add_scalar(f'batch/debug_{stage}_queue_sim_max', debug_metrics['queue_sim_max'], global_batch)
 
-                # Per-layer gradient norms (only when debug metrics are computed)
-                for comp_name, comp_grad_norm in batch_grad_norms.items():
-                    plotter.add_scalar(f'batch/debug_{stage}_{comp_name}_grad_norm', comp_grad_norm, global_batch)
+                # Cross-channel attention stats
+                if 'cross_channel_attn_entropy_ratio' in debug_metrics:
+                    plotter.add_scalar(f'batch/debug_{stage}_attn_entropy_ratio', debug_metrics['cross_channel_attn_entropy_ratio'], global_batch)
+                    plotter.add_scalar(f'batch/debug_{stage}_attn_max', debug_metrics['cross_channel_attn_max'], global_batch)
+                    plotter.add_scalar(f'batch/debug_{stage}_attn_std', debug_metrics['cross_channel_attn_std'], global_batch)
+
+                # Note: Per-layer gradient norms are logged in the accumulation step block
 
             plotter.plot_all()
 
@@ -696,8 +861,9 @@ def main():
                      'use_soft_targets': USE_SOFT_TARGETS, 'soft_target_temperature': SOFT_TARGET_TEMPERATURE,
                      'soft_target_weight': SOFT_TARGET_WEIGHT,
                      'use_memory_bank': USE_MEMORY_BANK, 'memory_bank_size': MEMORY_BANK_SIZE},
-        'training': {'epochs': EPOCHS, 'batch_size': BATCH_SIZE, 'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS,
-                     'max_grad_norm': MAX_GRAD_NORM}
+        'training': {'epochs': EPOCHS, 'batch_size': BATCH_SIZE, 'accumulation_steps': ACCUMULATION_STEPS,
+                     'effective_batch_size': BATCH_SIZE * ACCUMULATION_STEPS,
+                     'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS, 'max_grad_norm': MAX_GRAD_NORM}
     }
     with open(CHECKPOINT_DIR / 'hyperparameters.json', 'w') as f:
         json.dump(hyperparams, f, indent=2)
@@ -785,22 +951,26 @@ def main():
 
     print("\n" + "="*70)
     print("End-to-End Training: Encoder + Semantic Head")
+    effective_batch = BATCH_SIZE * ACCUMULATION_STEPS
+    print(f"Gradient accumulation: {ACCUMULATION_STEPS} steps (micro-batch={BATCH_SIZE}, effective={effective_batch})")
     if USE_SOFT_TARGETS:
         print(f"Using pairwise soft targets (temperature={SOFT_TARGET_TEMPERATURE}, weight={SOFT_TARGET_WEIGHT})")
     if USE_MEMORY_BANK:
-        print(f"Using memory bank with {MEMORY_BANK_SIZE} queue size (effective batch size: {BATCH_SIZE + MEMORY_BANK_SIZE})")
+        print(f"Using memory bank with {MEMORY_BANK_SIZE} queue size (negatives per step: {BATCH_SIZE + MEMORY_BANK_SIZE})")
     print("="*70)
 
     # Create dataloaders
     train_loader, val_loader, _ = create_dataloaders(
         data_root=DATA_ROOT, datasets=DATASETS, batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS, prefetch_factor=PREFETCH_FACTOR,
-        persistent_workers=PERSISTENT_WORKERS, patch_size_per_dataset=PATCH_SIZE_PER_DATASET, seed=SEED
+        persistent_workers=PERSISTENT_WORKERS, patch_size_per_dataset=PATCH_SIZE_PER_DATASET, seed=SEED,
+        max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET
     )
 
     # Setup optimizer (trains semantic head only if encoder is frozen, otherwise all parameters)
-    optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()),
-                     lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+    # IMPORTANT: Include criterion.parameters() for learnable temperature (logit_scale)
+    all_params = list(filter(lambda p: p.requires_grad, model.parameters())) + list(criterion.parameters())
+    optimizer = AdamW(all_params, lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     # Setup scheduler with proper warmup + cosine decay
     def warmup_cosine_schedule(epoch):
@@ -826,6 +996,11 @@ def main():
             best_val_loss = resume_checkpoint['val_metrics'].get('loss', float('inf'))
         print(f"✓ Loaded optimizer and scheduler states")
         print(f"  Best val loss so far: {best_val_loss:.4f}")
+
+        # Load criterion state if available (for learnable temperature)
+        if 'criterion_state_dict' in resume_checkpoint:
+            criterion.load_state_dict(resume_checkpoint['criterion_state_dict'])
+            print(f"✓ Loaded criterion state (logit_scale={criterion.infonce.logit_scale.exp().item():.2f})")
 
         # Load memory bank state if available
         if memory_bank is not None and 'memory_bank_state_dict' in resume_checkpoint:
@@ -889,6 +1064,7 @@ def main():
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
+                'criterion_state_dict': criterion.state_dict(),  # Save learnable temperature
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'memory_bank_state_dict': memory_bank.state_dict() if memory_bank else None,

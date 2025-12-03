@@ -23,7 +23,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "cnn_kernel_sizes": [3, 5, 7],
 
     # Preprocessing parameters
-    "target_patch_size": 96,
+    "target_patch_size": 64,
     "normalization_method": "zscore",
     "interpolation_method": "linear",
 
@@ -48,7 +48,7 @@ SMALL_CONFIG: Dict[str, Any] = {
     "use_cross_channel": False,  # Enable cross-channel attention
     "cnn_channels": [32, 64],
     "cnn_kernel_sizes": [3, 5, 7],
-    "target_patch_size": 96,
+    "target_patch_size": 64,
     "normalization_method": "zscore",
     "interpolation_method": "linear",
     "temporal_init_scale": 0.1,
@@ -68,7 +68,7 @@ LARGE_CONFIG: Dict[str, Any] = {
     "use_cross_channel": False,  # Enable cross-channel attention
     "cnn_channels": [64, 128, 256],
     "cnn_kernel_sizes": [3, 5, 7],
-    "target_patch_size": 96,
+    "target_patch_size": 64,
     "normalization_method": "zscore",
     "interpolation_method": "linear",
     "temporal_init_scale": 0.1,

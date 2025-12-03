@@ -5,6 +5,8 @@ Transforms patch-level encoder outputs into a single semantic representation
 that can be aligned with text embeddings via contrastive learning.
 """
 
+import math
+
 import torch
 import torch.nn as nn
 from typing import Optional
@@ -38,7 +40,10 @@ class CrossChannelFusion(nn.Module):
         self.num_bottlenecks = num_bottlenecks
         self.d_model_fused = d_model_fused
 
-        # Learnable bottleneck queries (stronger initialization for learnable tokens)
+        # Learnable bottleneck queries - small initialization (0.02 scale) prevents representation
+        # collapse at initialization. With default randn (std=1), norm ~sqrt(d_model_fused) ~20
+        # dominates attended values (norm ~2), causing all outputs to be identical.
+        # Reference: krasserm/perceiver-io uses init_scale=0.02 as default.
         self.bottleneck_tokens = nn.Parameter(torch.randn(num_bottlenecks, d_model_fused) * 0.02)
 
         # Cross-attention: bottleneck queries attend to channel keys/values
@@ -67,17 +72,20 @@ class CrossChannelFusion(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        channel_mask: Optional[torch.Tensor] = None
+        channel_mask: Optional[torch.Tensor] = None,
+        return_attention_weights: bool = False
     ) -> torch.Tensor:
         """
         Args:
             x: Input features (batch, patches, channels, d_model)
             channel_mask: Optional mask for padding channels (batch, channels)
                          True = valid, False = padding
+            return_attention_weights: If True, return attention weights for debugging
 
         Returns:
             Fused features (batch, patches, d_model_fused) if num_bottlenecks=1
             or (batch, patches, num_bottlenecks, d_model_fused) if num_bottlenecks>1
+            If return_attention_weights=True, returns (output, attention_weights)
         """
         batch_size, num_patches, num_channels, d_model = x.shape
 
@@ -106,11 +114,13 @@ class CrossChannelFusion(nn.Module):
             key_padding_mask = ~key_padding_mask
 
         # Cross-attention
-        attended, _ = self.cross_attention(
+        attended, attn_weights = self.cross_attention(
             query=queries,
             key=kv,
             value=kv,
-            key_padding_mask=key_padding_mask
+            key_padding_mask=key_padding_mask,
+            need_weights=return_attention_weights,
+            average_attn_weights=True  # Average across heads
         )
 
         # Residual connection and norm (after attention)
@@ -131,6 +141,8 @@ class CrossChannelFusion(nn.Module):
             # Example: (8, 10, 4, 384) → (8, 40, 384)
             output = output.reshape(batch_size, num_patches * self.num_bottlenecks, self.d_model_fused)
 
+        if return_attention_weights:
+            return output, attn_weights
         return output
 
 
@@ -213,8 +225,8 @@ class CLSAttentionPooling(nn.Module):
         """
         super().__init__()
 
-        # Learnable CLS token (stronger initialization for learnable tokens)
-        self.cls_token = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
+        # Learnable CLS token (Xavier-scale initialization for proper attention scores)
+        self.cls_token = nn.Parameter(torch.randn(1, 1, d_model) / math.sqrt(d_model))
 
         # Single transformer layer for CLS attention
         self.attention = nn.TransformerEncoderLayer(
@@ -429,3 +441,39 @@ class SemanticAlignmentHead(nn.Module):
         embedding = self.projection_head(pooled, normalize=normalize)  # (batch, output_dim)
 
         return embedding
+
+    def get_attention_stats(
+        self,
+        encoder_output: torch.Tensor,
+        channel_mask: Optional[torch.Tensor] = None
+    ) -> dict:
+        """
+        Get attention statistics for debugging.
+
+        Returns dict with:
+            - cross_channel_attn_entropy: How uniform is attention over channels (higher = more uniform)
+            - cross_channel_attn_max: Max attention weight (higher = more focused)
+        """
+        import torch.nn.functional as F
+
+        # Get attention weights from cross-channel fusion
+        _, attn_weights = self.cross_channel_fusion(
+            encoder_output, channel_mask, return_attention_weights=True
+        )
+
+        if attn_weights is None:
+            return {}
+
+        # attn_weights shape: (batch*patches, num_bottlenecks, num_channels)
+        # Compute entropy of attention distribution
+        # Entropy = -sum(p * log(p)), max entropy = log(num_channels)
+        attn_entropy = -(attn_weights * torch.log(attn_weights + 1e-10)).sum(dim=-1).mean().item()
+        num_channels = attn_weights.shape[-1]
+        max_entropy = math.log(num_channels)
+
+        return {
+            'cross_channel_attn_entropy': attn_entropy,
+            'cross_channel_attn_entropy_ratio': attn_entropy / max_entropy,  # 1.0 = uniform
+            'cross_channel_attn_max': attn_weights.max(dim=-1)[0].mean().item(),  # Avg max weight
+            'cross_channel_attn_std': attn_weights.std(dim=-1).mean().item(),  # How spread out
+        }

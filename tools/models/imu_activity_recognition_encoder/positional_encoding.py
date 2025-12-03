@@ -6,6 +6,8 @@ Provides two types of positional information:
 2. Channel semantic encoding: Semantic meaning of each channel (e.g., "accelerometer x-axis")
 """
 
+import math
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -151,7 +153,7 @@ class ChannelSemanticEncoding(nn.Module):
 
         # Learnable padding embedding for padded channels
         # Will match Sentence-BERT dimension (384 for all-MiniLM-L6-v2)
-        self.pad_channel_embedding = nn.Parameter(torch.randn(d_model) * 0.01)
+        self.pad_channel_embedding = nn.Parameter(torch.randn(d_model) / math.sqrt(d_model))
 
         # Cache for sentence BERT embeddings
         self._sbert_embedding_cache: Dict[str, torch.Tensor] = {}
@@ -280,8 +282,9 @@ class ChannelSemanticEncoding(nn.Module):
         if channel_descriptions is not None:
             channel_enc = self.encode_channel_descriptions(channel_descriptions)
         else:
-            # Use learnable embeddings as fallback - create per channel count
+            # Use zeros as fallback when no channel descriptions provided
             print("Warning: No channel descriptions provided.")
+            channel_enc = torch.zeros(num_channels, self.d_model)
 
         # Ensure channel encoding is on same device as input
         channel_enc = channel_enc.to(x.device)

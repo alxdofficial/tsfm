@@ -1,7 +1,7 @@
 """
 Feature Extractor module for IMU Activity Recognition Encoder
 
-Fixed 1D CNN architecture for 96-timestep patches.
+Fixed 1D CNN architecture for fixed-length timestep patches (default: 64).
 Uses multi-scale convolutions to capture patterns at different temporal scales.
 """
 
@@ -82,14 +82,14 @@ class MultiScaleConv1D(nn.Module):
 
 class ChannelIndependentCNN(nn.Module):
     """
-    Channel-independent 1D CNN for fixed 96-timestep patches.
+    Channel-independent 1D CNN for fixed-length timestep patches.
 
     This module processes each input channel independently through the same CNN,
     extracting temporal features without mixing information across channels.
     Cross-channel interactions are handled later by the transformer.
 
     Architecture:
-    - Input: (batch, num_patches, 96, num_channels)
+    - Input: (batch, num_patches, seq_len, num_channels)
     - Process each channel independently
     - Convolutions with increasing depth (default kernel size 5)
     - Output: (batch, num_patches, num_channels, d_model)
@@ -156,7 +156,7 @@ class ChannelIndependentCNN(nn.Module):
         Forward pass through channel-independent CNN.
 
         Args:
-            x: Input tensor of shape (batch_size, num_patches, 96, num_channels)
+            x: Input tensor of shape (batch_size, num_patches, seq_len, num_channels)
 
         Returns:
             Features of shape (batch_size, num_patches, num_channels, d_model)
@@ -170,10 +170,7 @@ class ChannelIndependentCNN(nn.Module):
         """
         batch_size, num_patches, seq_len, num_channels = x.shape
 
-        # Verify input is 96 timesteps
-        assert seq_len == 96, f"Expected 96 timesteps, got {seq_len}"
-
-        # Permute to (batch, patches, channels, 96)
+        # Permute to (batch, patches, channels, seq_len)
         x = x.permute(0, 1, 3, 2)
 
         # Process patches in chunks to save memory
@@ -183,10 +180,10 @@ class ChannelIndependentCNN(nn.Module):
 
             for start_idx in range(0, num_patches, self.patch_chunk_size):
                 end_idx = min(start_idx + self.patch_chunk_size, num_patches)
-                chunk = x[:, start_idx:end_idx, :, :]  # (batch, chunk_patches, channels, 96)
+                chunk = x[:, start_idx:end_idx, :, :]  # (batch, chunk_patches, channels, seq_len)
 
                 chunk_patches = end_idx - start_idx
-                # Reshape chunk: (batch * chunk_patches * channels, 1, 96)
+                # Reshape chunk: (batch * chunk_patches * channels, 1, seq_len)
                 chunk = chunk.reshape(batch_size * chunk_patches * num_channels, 1, seq_len)
 
                 # Apply CNN layers
@@ -227,13 +224,13 @@ class ChannelIndependentCNN(nn.Module):
 
 class FixedPatchCNN(nn.Module):
     """
-    Fixed CNN architecture for 96-timestep patches.
+    Fixed CNN architecture for fixed-length timestep patches.
 
     This is the main feature extraction module that transforms raw sensor patches
     into learned feature representations.
 
     Key properties:
-    - Fixed input size: 96 timesteps
+    - Fixed input size: configurable timesteps (default: 64)
     - Channel-independent processing
     - Temporal feature extraction with CNN (default kernel size 5)
     - Output: dense feature vectors per patch per channel
@@ -269,17 +266,17 @@ class FixedPatchCNN(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Extract features from 96-timestep patches.
+        Extract features from fixed-length timestep patches.
 
         Args:
-            x: Input patches of shape (batch_size, num_patches, 96, num_channels)
+            x: Input patches of shape (batch_size, num_patches, seq_len, num_channels)
 
         Returns:
             Features of shape (batch_size, num_patches, num_channels, d_model)
 
         Example:
             >>> cnn = FixedPatchCNN(d_model=128)
-            >>> x = torch.randn(32, 10, 96, 9)  # 32 samples, 10 patches, 9 channels
+            >>> x = torch.randn(32, 10, 64, 9)  # 32 samples, 10 patches, 9 channels
             >>> features = cnn(x)
             >>> features.shape  # (32, 10, 9, 128)
         """
@@ -299,7 +296,7 @@ def test_feature_extractor():
     batch_size = 4
     num_patches = 10
     num_channels = 9
-    seq_len = 96
+    seq_len = 64  # Default target_patch_size
 
     cnn = FixedPatchCNN(d_model=128, cnn_channels=[64, 128], kernel_sizes=[3, 5, 7])
     x = torch.randn(batch_size, num_patches, seq_len, num_channels)
@@ -312,7 +309,7 @@ def test_feature_extractor():
     # Test 2: Different channel counts
     print("\n2. Testing variable channel counts...")
     for nc in [6, 9, 23, 30, 40]:
-        x = torch.randn(2, 5, 96, nc)
+        x = torch.randn(2, 5, 64, nc)
         features = cnn(x)
         assert features.shape == (2, 5, nc, 128)
     print(f"   ✓ Tested channel counts: 6, 9, 23, 30, 40")
@@ -321,7 +318,7 @@ def test_feature_extractor():
     print("\n3. Testing different d_model sizes...")
     for d_model in [64, 128, 256]:
         cnn = FixedPatchCNN(d_model=d_model)
-        x = torch.randn(2, 5, 96, 9)
+        x = torch.randn(2, 5, 64, 9)
         features = cnn(x)
         assert features.shape == (2, 5, 9, d_model)
     print(f"   ✓ Tested d_model sizes: 64, 128, 256")
@@ -329,29 +326,27 @@ def test_feature_extractor():
     # Test 4: Single-layer CNN
     print("\n4. Testing single-layer CNN...")
     cnn = FixedPatchCNN(d_model=128, cnn_channels=[64])
-    x = torch.randn(2, 5, 96, 9)
+    x = torch.randn(2, 5, 64, 9)
     features = cnn(x)
     assert features.shape == (2, 5, 9, 128)
     print(f"   ✓ Single-layer CNN works")
 
-    # Test 5: Verify fixed 96 timesteps requirement
-    print("\n5. Testing fixed 96 timesteps requirement...")
+    # Test 5: Variable sequence lengths (adaptive pooling handles any length)
+    print("\n5. Testing variable sequence lengths...")
     cnn = FixedPatchCNN(d_model=128)
-    try:
-        x = torch.randn(2, 5, 100, 9)  # Wrong size
+    for seq_len in [32, 64, 96, 128]:
+        x = torch.randn(2, 5, seq_len, 9)
         features = cnn(x)
-        assert False, "Should have raised assertion error"
-    except AssertionError as e:
-        assert "Expected 96 timesteps" in str(e)
-    print(f"   ✓ Correctly enforces 96 timesteps")
+        assert features.shape == (2, 5, 9, 128)
+    print(f"   ✓ Works with sequence lengths: 32, 64, 96, 128")
 
     # Test 6: Channel independence
     print("\n6. Testing channel independence...")
     cnn = FixedPatchCNN(d_model=128)
-    x = torch.randn(1, 1, 96, 2)
+    x = torch.randn(1, 1, 64, 2)
 
     # Set one channel to all zeros, one to random values
-    x[:, :, :, 0] = torch.randn(1, 1, 96)
+    x[:, :, :, 0] = torch.randn(1, 1, 64)
     x[:, :, :, 1] = 0.0
 
     features = cnn(x)

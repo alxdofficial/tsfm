@@ -73,7 +73,7 @@ def create_patches(
 
 def interpolate_patches(
     patches: torch.Tensor,
-    target_size: int = 96,
+    target_size: int = 64,
     method: str = 'linear'
 ) -> torch.Tensor:
     """

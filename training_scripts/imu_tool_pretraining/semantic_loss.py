@@ -87,7 +87,7 @@ class InfoNCELoss(nn.Module):
         # Current batch (queries) vs all embeddings (keys: current + queue)
         # Both embeddings should already be L2-normalized
         # Scale by learnable temperature (clamped to prevent explosion)
-        logits = torch.matmul(imu_embeddings, all_text.T) * self.logit_scale.exp().clamp(0, 100)  # (batch, batch+queue)
+        logits = torch.matmul(imu_embeddings, all_text.T) * self.logit_scale.exp().clamp(1, 50)  # (batch, batch+queue)
 
         # Compute soft targets over ENTIRE dimension (batch + queue) for proper normalization
         sim_mean_for_metrics = None  # Track for monitoring
@@ -102,7 +102,7 @@ class InfoNCELoss(nn.Module):
             # - True synonyms (walking/strolling): z ≈ +2 → high weight
             # - Different activities (walking/sitting): z ≈ -1 → low weight
             sim_mean = text_similarity_full.mean()
-            sim_std = text_similarity_full.std() + 1e-6
+            sim_std = text_similarity_full.std().clamp(min=0.1)
             sim_mean_for_metrics = sim_mean.item()
             text_similarity_full = (text_similarity_full - sim_mean) / sim_std / self.soft_target_temperature
 
@@ -130,7 +130,7 @@ class InfoNCELoss(nn.Module):
 
         # Compute loss
         # Text→IMU direction (text queries vs IMU keys)
-        logits_t2i = torch.matmul(text_embeddings, all_imu.T) * self.logit_scale.exp().clamp(0, 100)  # (batch, batch+queue)
+        logits_t2i = torch.matmul(text_embeddings, all_imu.T) * self.logit_scale.exp().clamp(1, 50)  # (batch, batch+queue)
 
         if self.use_soft_targets:
             # Soft targets: use KL divergence
@@ -186,6 +186,28 @@ class InfoNCELoss(nn.Module):
                     # Track the mean/std similarity used for adaptive normalization
                     if sim_mean_for_metrics is not None:
                         metrics['soft_target_sim_mean'] = sim_mean_for_metrics
+
+                # Track learnable temperature (logit_scale)
+                metrics['logit_scale'] = self.logit_scale.exp().item()
+
+                # Track soft target distribution stats (how concentrated vs uniform)
+                if self.use_soft_targets:
+                    # Entropy of soft targets (higher = more uniform, lower = more concentrated)
+                    # Max entropy for N classes = log(N)
+                    soft_target_entropy = -(targets * torch.log(targets + 1e-10)).sum(dim=1).mean().item()
+                    max_entropy = np.log(targets.shape[1])
+                    metrics['soft_target_entropy'] = soft_target_entropy
+                    metrics['soft_target_entropy_ratio'] = soft_target_entropy / max_entropy  # 1.0 = uniform
+
+                    # How much probability mass is on the true positive?
+                    true_positive_prob = torch.diagonal(targets[:, :batch_size]).mean().item()
+                    metrics['true_positive_target_prob'] = true_positive_prob
+
+                # Track logit statistics (before softmax)
+                metrics['logits_mean'] = logits.mean().item()
+                metrics['logits_std'] = logits.std().item()
+                metrics['logits_max'] = logits.max().item()
+                metrics['logits_min'] = logits.min().item()
 
         return loss, metrics
 

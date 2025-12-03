@@ -3,7 +3,7 @@ Main encoder module for IMU Activity Recognition.
 
 Assembles all components into a complete encoder:
 - Preprocessing: Patching, interpolation, normalization
-- Feature Extraction: Fixed 1D CNN for 96 timesteps
+- Feature Extraction: Fixed 1D CNN for 64 timesteps
 - Positional Encoding: Temporal + channel semantic
 - Transformer: Channel-independent temporal attention
 """
@@ -30,7 +30,7 @@ class IMUActivityRecognitionEncoder(nn.Module):
     Complete encoder for IMU activity recognition.
 
     This encoder processes raw IMU sensor data through multiple stages:
-    1. Preprocessing: Patches, interpolates to 96 timesteps, normalizes
+    1. Preprocessing: Patches, interpolates to 64 timesteps, normalizes
     2. Feature Extraction: Multi-scale 1D CNN per channel
     3. Positional Encoding: Temporal position + channel semantics
     4. Transformer: Temporal attention for sequence modeling
@@ -44,7 +44,7 @@ class IMUActivityRecognitionEncoder(nn.Module):
     - Variable channel support (6-40 channels)
     - Variable sampling rates (automatically handled)
     - Channel-independent processing (scales to many channels)
-    - Fixed 96-timestep patches (consistent architecture)
+    - Fixed 64-timestep patches (consistent architecture)
     """
 
     def __init__(
@@ -63,7 +63,7 @@ class IMUActivityRecognitionEncoder(nn.Module):
         patch_chunk_size: Optional[int] = None,
 
         # Preprocessing parameters
-        target_patch_size: int = 96,
+        target_patch_size: int = 64,
         normalization_method: str = 'zscore',
         interpolation_method: str = 'linear',
 
@@ -91,7 +91,7 @@ class IMUActivityRecognitionEncoder(nn.Module):
             cnn_channels: Channel progression in CNN (e.g., [64, 128])
             cnn_kernel_sizes: Kernel sizes for multi-scale CNN (e.g., [3, 5, 7])
 
-            target_patch_size: Fixed size after interpolation (default: 96)
+            target_patch_size: Fixed size after interpolation (default: 64)
             normalization_method: 'zscore', 'minmax', or 'none'
             interpolation_method: 'linear', 'cubic', or 'nearest'
 
