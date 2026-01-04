@@ -125,24 +125,30 @@ class ChannelSemanticEncoding(nn.Module):
     which helps the model understand what type of sensor data each channel represents.
 
     Uses Sentence-BERT to encode channel descriptions into dense vectors.
+    Optionally includes a learnable projection layer to adapt embeddings for the task.
     """
 
     def __init__(
         self,
         d_model: int,
         init_scale: float = 0.1,
-        sentence_bert_model: str = 'all-MiniLM-L6-v2'
+        sentence_bert_model: str = 'all-MiniLM-L6-v2',
+        learnable_projection: bool = True,
+        projection_hidden_dim: int = None
     ):
         """
         Args:
             d_model: Feature dimension
             init_scale: Initial scaling factor for channel encodings
             sentence_bert_model: Name of Sentence-BERT model to use
+            learnable_projection: If True, add a learnable MLP after frozen SentenceBERT
+            projection_hidden_dim: Hidden dimension for projection MLP (default: d_model)
         """
         super().__init__()
 
         self.d_model = d_model
         self.sentence_bert_model = sentence_bert_model
+        self.learnable_projection = learnable_projection
 
         # Initialize Sentence-BERT lazily (only when needed)
         self._encoder = None
@@ -155,7 +161,22 @@ class ChannelSemanticEncoding(nn.Module):
         # Will match Sentence-BERT dimension (384 for all-MiniLM-L6-v2)
         self.pad_channel_embedding = nn.Parameter(torch.randn(d_model) / math.sqrt(d_model))
 
-        # Cache for sentence BERT embeddings
+        # Learnable projection layer after frozen SentenceBERT
+        # This allows task-specific adaptation while preserving pretrained semantics
+        if learnable_projection:
+            hidden_dim = projection_hidden_dim or d_model
+            self.projection = nn.Sequential(
+                nn.Linear(d_model, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, d_model),
+            )
+            # Initialize projection close to identity (residual-style)
+            nn.init.zeros_(self.projection[2].weight)
+            nn.init.zeros_(self.projection[2].bias)
+        else:
+            self.projection = None
+
+        # Cache for sentence BERT embeddings (stores frozen embeddings before projection)
         self._sbert_embedding_cache: Dict[str, torch.Tensor] = {}
 
     def _get_encoder(self):
@@ -252,6 +273,16 @@ class ChannelSemanticEncoding(nn.Module):
         # Stack all embeddings
         embeddings = torch.stack(embeddings_list)
 
+        # Apply learnable projection if enabled
+        # This adapts the frozen SentenceBERT embeddings for the task
+        if self.projection is not None:
+            # Ensure embeddings are on same device as projection layer
+            proj_device = next(self.projection.parameters()).device
+            embeddings = embeddings.to(proj_device)
+            # Residual connection: embeddings + projection(embeddings)
+            # Initialized to identity, so starts with original embeddings
+            embeddings = embeddings + self.projection(embeddings)
+
         return embeddings
 
     def forward(
@@ -314,7 +345,9 @@ class IMUPositionalEncoding(nn.Module):
         temporal_init_scale: float = 0.1,
         channel_init_scale: float = 0.1,
         sentence_bert_model: str = 'all-MiniLM-L6-v2',
-        use_channel_encoding: bool = True
+        use_channel_encoding: bool = True,
+        channel_projection: bool = True,
+        channel_projection_hidden_dim: int = None
     ):
         """
         Args:
@@ -324,6 +357,8 @@ class IMUPositionalEncoding(nn.Module):
             channel_init_scale: Initial scale for channel encoding
             sentence_bert_model: Sentence-BERT model name
             use_channel_encoding: Whether to use channel semantic encoding
+            channel_projection: If True, add learnable projection after frozen SentenceBERT
+            channel_projection_hidden_dim: Hidden dimension for channel projection MLP
         """
         super().__init__()
 
@@ -342,7 +377,9 @@ class IMUPositionalEncoding(nn.Module):
             self.channel_encoding = ChannelSemanticEncoding(
                 d_model=d_model,
                 init_scale=channel_init_scale,
-                sentence_bert_model=sentence_bert_model
+                sentence_bert_model=sentence_bert_model,
+                learnable_projection=channel_projection,
+                projection_hidden_dim=channel_projection_hidden_dim
             )
         else:
             self.channel_encoding = None

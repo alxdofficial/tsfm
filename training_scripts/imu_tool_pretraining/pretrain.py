@@ -104,6 +104,11 @@ EMA_DECAY = 0.99  # EMA decay for dynamic loss balancing
 # Masking
 MASK_RATIO = 0.3  # Reduced from 0.5 - less aggressive masking reduces empty batch risk
 
+# Channel augmentation (random subsampling and shuffling)
+# When True: randomly select subset of channels and shuffle order (data augmentation)
+# When False: use all channels in consistent sorted order (for stable training with semantic channel encoding)
+CHANNEL_AUGMENTATION = False
+
 # Plotting
 PLOT_EVERY_N_BATCHES = 10  # Generate plots every N batches during training
 
@@ -353,7 +358,7 @@ def train_epoch(
     for batch_idx, batch in enumerate(pbar):
         # Get data
         data = batch['data'].to(device)  # (batch, timesteps, channels)
-        attention_mask_seq = batch['attention_mask'].to(device)  # (batch, timesteps)
+        # Note: batch['attention_mask'] (per-timestep) is not used; preprocessing creates patch-level masks
         channel_mask = batch.get('channel_mask', None)  # (batch, channels) - may not exist in all batches
         if channel_mask is not None:
             channel_mask = channel_mask.to(device)
@@ -860,7 +865,7 @@ def main():
     print("="*60)
     print(f"Data root: {DATA_ROOT}")
     print(f"Datasets: {DATASETS}")
-    print(f"Per-dataset patch sizes:")
+    print("Per-dataset patch sizes:")
     for dataset, patch_size in PATCH_SIZE_PER_DATASET.items():
         print(f"  {dataset}: {patch_size} sec")
     print(f"Max patches per sample: {MAX_PATCHES_PER_SAMPLE}")
@@ -954,6 +959,7 @@ def main():
         patch_size_sec=2.0,  # Default (not used since we provide per-dataset sizes)
         patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
         max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
+        channel_augmentation=CHANNEL_AUGMENTATION,
         seed=SEED
     )
 

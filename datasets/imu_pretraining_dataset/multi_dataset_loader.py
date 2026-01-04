@@ -73,7 +73,8 @@ def group_channels_by_sensor(channel_names: List[str]) -> Dict[str, List[str]]:
 def select_channel_groups(
     channel_groups: Dict[str, List[str]],
     min_groups: int = 1,
-    max_groups: int = None
+    max_groups: int = None,
+    shuffle_channels: bool = False
 ) -> List[str]:
     """
     Randomly select channel groups and return flattened channel list.
@@ -82,6 +83,7 @@ def select_channel_groups(
         channel_groups: Dict mapping group name to list of channels
         min_groups: Minimum number of groups to select
         max_groups: Maximum number of groups to select (None = all)
+        shuffle_channels: If True, randomize channel order; if False, use sorted order
 
     Returns:
         Flattened list of selected channel names
@@ -103,8 +105,12 @@ def select_channel_groups(
 
     # Flatten to channel list
     selected_channels = []
-    for group_name in sorted(selected_group_names):  # Sort for consistency
+    for group_name in sorted(selected_group_names):  # Sort groups for consistency
         selected_channels.extend(channel_groups[group_name])
+
+    # Optionally shuffle channel order
+    if shuffle_channels:
+        random.shuffle(selected_channels)
 
     return selected_channels
 
@@ -128,6 +134,7 @@ class IMUPretrainingDataset(Dataset):
         min_channel_groups: int = 1,  # Minimum number of sensor groups to select
         max_channel_groups: int = None,  # Maximum groups (None = all available)
         max_sessions_per_dataset: Optional[int] = None,  # Limit sessions per dataset for faster experiments
+        channel_augmentation: bool = True,  # Enable random channel subsampling and shuffling
         seed: int = 42
     ):
         """
@@ -142,6 +149,8 @@ class IMUPretrainingDataset(Dataset):
             max_channel_groups: Maximum number of sensor groups (None = all available)
             max_sessions_per_dataset: Maximum sessions to load per dataset (None = all).
                                       Useful for faster experimentation with large datasets.
+            channel_augmentation: If True, randomly subsample and shuffle channels.
+                                  If False, use all channels in consistent sorted order.
             seed: Random seed for reproducibility
 
         Note on channel groups:
@@ -161,6 +170,7 @@ class IMUPretrainingDataset(Dataset):
         self.min_channel_groups = min_channel_groups
         self.max_channel_groups = max_channel_groups
         self.max_sessions_per_dataset = max_sessions_per_dataset
+        self.channel_augmentation = channel_augmentation
 
         # Set random seed
         random.seed(seed)
@@ -282,13 +292,23 @@ class IMUPretrainingDataset(Dataset):
         # e.g., hand_gyro_x, hand_gyro_y, hand_gyro_z -> group "hand_gyro"
         channel_groups = group_channels_by_sensor(available_channels)
 
-        # Randomly select channel groups (not individual channels)
-        # This ensures we get complete sensor data (all axes together)
-        selected_channels = select_channel_groups(
-            channel_groups,
-            min_groups=self.min_channel_groups,
-            max_groups=self.max_channel_groups
-        )
+        if self.channel_augmentation:
+            # Randomly select channel groups (not individual channels)
+            # This ensures we get complete sensor data (all axes together)
+            selected_channels = select_channel_groups(
+                channel_groups,
+                min_groups=self.min_channel_groups,
+                max_groups=self.max_channel_groups,
+                shuffle_channels=True  # Also randomize channel order
+            )
+        else:
+            # Use all channels in consistent sorted order (no augmentation)
+            selected_channels = select_channel_groups(
+                channel_groups,
+                min_groups=len(channel_groups),  # All groups
+                max_groups=len(channel_groups),  # All groups
+                shuffle_channels=False  # Keep sorted order
+            )
         num_channels = len(selected_channels)
 
         # Extract data for selected channels
@@ -454,6 +474,7 @@ def create_dataloaders(
     patch_size_sec: float = 2.0,
     patch_size_per_dataset: Optional[Dict[str, float]] = None,
     max_sessions_per_dataset: Optional[int] = None,
+    channel_augmentation: bool = True,
     seed: int = 42
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """
@@ -467,6 +488,8 @@ def create_dataloaders(
         patch_size_sec: Default patch duration in seconds
         patch_size_per_dataset: Optional dict mapping dataset name to patch size
         max_sessions_per_dataset: Max sessions per dataset (None = all)
+        channel_augmentation: If True, randomly subsample and shuffle channels.
+                              If False, use all channels in consistent sorted order.
         seed: Random seed
 
     Returns:
@@ -480,6 +503,7 @@ def create_dataloaders(
         patch_size_sec=patch_size_sec,
         patch_size_per_dataset=patch_size_per_dataset,
         max_sessions_per_dataset=max_sessions_per_dataset,
+        channel_augmentation=channel_augmentation,
         seed=seed
     )
 
@@ -490,6 +514,7 @@ def create_dataloaders(
         patch_size_sec=patch_size_sec,
         patch_size_per_dataset=patch_size_per_dataset,
         max_sessions_per_dataset=max_sessions_per_dataset,
+        channel_augmentation=False,  # Always use all channels for validation
         seed=seed
     )
 
@@ -500,6 +525,7 @@ def create_dataloaders(
         patch_size_sec=patch_size_sec,
         patch_size_per_dataset=patch_size_per_dataset,
         max_sessions_per_dataset=max_sessions_per_dataset,
+        channel_augmentation=False,  # Always use all channels for test
         seed=seed
     )
 

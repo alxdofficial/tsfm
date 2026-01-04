@@ -145,11 +145,11 @@ WISDM_TEMPLATES = [
 
 MOTIONSENSE_SYNONYMS = {
     "walking": ["walking", "strolling", "ambulating", "taking steps"],
-    "walking_downstairs": ["walking downstairs", "descending stairs", "going downstairs", "stair descent"],
-    "walking_upstairs": ["walking upstairs", "climbing stairs", "going upstairs", "ascending stairs"],
-    "jogging": ["jogging", "light running", "slow running", "jog"],
+    "walking_downstairs": ["walking downstairs", "descending stairs", "going downstairs", "stair descent", "walking down stairs"],
+    "walking_upstairs": ["walking upstairs", "climbing stairs", "going upstairs", "ascending stairs", "walking up stairs"],
+    "jogging": ["jogging", "light running", "slow running", "jog", "light jog"],
     "sitting": ["sitting", "seated", "sitting down", "in a seated position"],
-    "standing": ["standing", "upright", "standing still", "on feet"],
+    "standing": ["standing", "upright", "standing still", "on feet", "standing up"],
 }
 
 MOTIONSENSE_TEMPLATES = [
@@ -242,6 +242,10 @@ DATASET_CONFIGS = {
     "hhar": {
         "synonyms": HHAR_SYNONYMS,
         "templates": HHAR_TEMPLATES,
+    },
+    "motionsense": {
+        "synonyms": MOTIONSENSE_SYNONYMS,
+        "templates": MOTIONSENSE_TEMPLATES,
     },
 }
 
@@ -371,6 +375,7 @@ if __name__ == "__main__":
         ("cycling", "pamap2"),
         ("jogging", "mhealth"),
         ("standing_up_from_sitting", "unimib_shar"),
+        ("jogging", "motionsense"),
     ]
 
     for label, dataset in test_cases:
@@ -384,7 +389,7 @@ if __name__ == "__main__":
     print("Augmentation Statistics per Dataset:")
     print("=" * 70)
 
-    all_datasets = ["uci_har", "mhealth", "pamap2", "wisdm", "unimib_shar"]
+    all_datasets = ["uci_har", "mhealth", "pamap2", "wisdm", "unimib_shar", "hhar", "motionsense"]
     for dataset_name in all_datasets:
         stats = get_augmentation_stats(dataset_name)
         print(f"\n{dataset_name.upper()}:")

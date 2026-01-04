@@ -29,14 +29,14 @@ from training_scripts.imu_tool_pretraining.label_bank import LabelBank
 from training_scripts.imu_tool_pretraining.semantic_loss import SemanticAlignmentLoss, compute_retrieval_metrics
 from training_scripts.imu_tool_pretraining.plot_utils import TrainingPlotter, EmbeddingVisualizer
 from training_scripts.imu_tool_pretraining.memory_bank import MemoryBank
-
+import random
 
 # ======================== HYPERPARAMETERS ========================
 
 # Data configuration
 DATA_ROOT = "/home/alex/code/tsfm/data"
 DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
-
+random.seed(42)
 PATCH_SIZE_PER_DATASET = {
     'uci_har': 1.0,       # 50 Hz, 2.56s windows → 50 samples/patch, ~2-3 patches/session
     'hhar': 1.0,          # 50 Hz, 2.56s windows → 50 samples/patch, ~2-3 patches/session
@@ -72,7 +72,8 @@ SENTENCE_BERT_MODEL = 'all-MiniLM-L6-v2'  # 384-dim embeddings, fast
 # Training configuration
 OUTPUT_DIR = "training_output/semantic_alignment"  # Note: plots go to semantic_alignment/<timestamp>/plots/
 CHECKPOINT_DIR = None  # Will be set in main()
-PRETRAINED_ENCODER_PATH = "training_output/imu_pretraining/20251201_201049/latest.pt"  # Pretrained tokenizer
+# PRETRAINED_ENCODER_PATH = "training_output/imu_pretraining/20251201_201049/latest.pt"  # Pretrained tokenizer
+PRETRAINED_ENCODER_PATH = "training_output/imu_pretraining/original/latest.pt"  # Pretrained tokenizer
 FREEZE_ENCODER = False  # Unfreeze encoder to learn discriminative representations
 SAVE_EVERY = 5
 
@@ -110,6 +111,17 @@ SOFT_TARGET_WEIGHT = 1.0  # Pure soft targets with adaptive recalibration
 # Gradient direction is preserved (0.99 cosine similarity), magnitude slightly diluted.
 USE_MEMORY_BANK = True
 MEMORY_BANK_SIZE = 256  # Provides 32 + 256 = 288 negatives per step
+
+# Channel augmentation (random subsampling and shuffling)
+# When True: randomly select subset of channels and shuffle order (data augmentation)
+# When False: use all channels in consistent sorted order (for evaluation or stable training)
+CHANNEL_AUGMENTATION = True  # Disabled for stable training with semantic channel encoding
+
+# Channel semantic projection
+# Learnable projection layer after frozen SentenceBERT channel embeddings
+# Allows task-specific adaptation while preserving pretrained semantic knowledge
+CHANNEL_PROJECTION = True  # Enable learnable projection after SentenceBERT
+CHANNEL_PROJECTION_HIDDEN_DIM = None  # None = use d_model (384 by default)
 
 # Plotting
 PLOT_EVERY_N_BATCHES = 10
@@ -863,7 +875,9 @@ def main():
                      'use_memory_bank': USE_MEMORY_BANK, 'memory_bank_size': MEMORY_BANK_SIZE},
         'training': {'epochs': EPOCHS, 'batch_size': BATCH_SIZE, 'accumulation_steps': ACCUMULATION_STEPS,
                      'effective_batch_size': BATCH_SIZE * ACCUMULATION_STEPS,
-                     'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS, 'max_grad_norm': MAX_GRAD_NORM}
+                     'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS, 'max_grad_norm': MAX_GRAD_NORM},
+        'data': {'channel_augmentation': CHANNEL_AUGMENTATION},
+        'channel_projection': {'enabled': CHANNEL_PROJECTION, 'hidden_dim': CHANNEL_PROJECTION_HIDDEN_DIM}
     }
     with open(CHECKPOINT_DIR / 'hyperparameters.json', 'w') as f:
         json.dump(hyperparams, f, indent=2)
@@ -876,7 +890,9 @@ def main():
         d_model=D_MODEL, num_heads=NUM_HEADS,
         num_temporal_layers=NUM_TEMPORAL_LAYERS, dim_feedforward=DIM_FEEDFORWARD,
         dropout=DROPOUT, use_cross_channel=USE_CROSS_CHANNEL,
-        cnn_channels=CNN_CHANNELS, cnn_kernel_sizes=CNN_KERNEL_SIZES
+        cnn_channels=CNN_CHANNELS, cnn_kernel_sizes=CNN_KERNEL_SIZES,
+        channel_projection=CHANNEL_PROJECTION,
+        channel_projection_hidden_dim=CHANNEL_PROJECTION_HIDDEN_DIM
     ).to(device)
 
     if PRETRAINED_ENCODER_PATH and Path(PRETRAINED_ENCODER_PATH).exists():
@@ -925,7 +941,7 @@ def main():
                 print(f"  Warning: Unexpected keys in checkpoint: {other_unexpected}")
         if missing_keys:
             print(f"  Warning: Missing keys in checkpoint: {missing_keys}")
-        print(f"✓ Loaded model state from checkpoint")
+        print("✓ Loaded model state from checkpoint")
 
     print(f"Initializing label bank with {SENTENCE_BERT_MODEL}...")
     label_bank = LabelBank(model_name=SENTENCE_BERT_MODEL, device=device)
@@ -964,7 +980,8 @@ def main():
         data_root=DATA_ROOT, datasets=DATASETS, batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS, prefetch_factor=PREFETCH_FACTOR,
         persistent_workers=PERSISTENT_WORKERS, patch_size_per_dataset=PATCH_SIZE_PER_DATASET, seed=SEED,
-        max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET
+        max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
+        channel_augmentation=CHANNEL_AUGMENTATION
     )
 
     # Setup optimizer (trains semantic head only if encoder is frozen, otherwise all parameters)
@@ -994,7 +1011,7 @@ def main():
         # Get best_val_loss from checkpoint's val_metrics
         if 'val_metrics' in resume_checkpoint and resume_checkpoint['val_metrics']:
             best_val_loss = resume_checkpoint['val_metrics'].get('loss', float('inf'))
-        print(f"✓ Loaded optimizer and scheduler states")
+        print("✓ Loaded optimizer and scheduler states")
         print(f"  Best val loss so far: {best_val_loss:.4f}")
 
         # Load criterion state if available (for learnable temperature)
