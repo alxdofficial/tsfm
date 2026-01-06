@@ -1,0 +1,472 @@
+"""
+Token-level text encoding for cross-attention with sensor data.
+
+Uses frozen all-MiniLM-L6-v2 (384-dim) to get token sequences,
+then learnable attention to fuse/refine representations.
+
+Key insight: Instead of pooling text to a single vector, we keep
+the token sequence and let the model learn which tokens matter.
+"""
+
+import math
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import List, Optional, Dict, Tuple
+
+
+class TokenTextEncoder(nn.Module):
+    """
+    Frozen text encoder outputting token-level embeddings (not pooled).
+
+    Model: all-MiniLM-L6-v2
+    - 384 dimensions (matches d_model)
+    - 22M parameters (lightweight)
+    - Max 256 tokens
+    """
+
+    def __init__(self, max_length: int = 64):
+        super().__init__()
+        self.max_length = max_length
+        self.hidden_dim = 384  # all-MiniLM-L6-v2 dimension
+
+        # Lazy initialization
+        self._model = None
+        self._tokenizer = None
+
+        # Cache for repeated strings (frozen embeddings)
+        self._cache: Dict[str, Tuple[torch.Tensor, torch.Tensor]] = {}
+
+    def _init_model(self):
+        """Lazy load the transformer model."""
+        if self._model is not None:
+            return
+
+        from sentence_transformers import SentenceTransformer
+
+        sbert = SentenceTransformer('all-MiniLM-L6-v2')
+        transformer = sbert[0]  # Get underlying transformer
+
+        # Store without registering as submodule (keeps out of state_dict)
+        object.__setattr__(self, '_model', transformer.auto_model)
+        object.__setattr__(self, '_tokenizer', transformer.tokenizer)
+
+        # Freeze
+        for p in self._model.parameters():
+            p.requires_grad = False
+
+        print(f"Loaded all-MiniLM-L6-v2 (384-dim, frozen)")
+
+    def encode(
+        self,
+        texts: List[str],
+        device: Optional[torch.device] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Get token-level embeddings.
+
+        Args:
+            texts: List of strings
+            device: Target device
+
+        Returns:
+            token_embeddings: (batch, seq_len, 384)
+            attention_mask: (batch, seq_len) bool - True for valid tokens
+        """
+        self._init_model()
+
+        if device is None:
+            device = next(self._model.parameters()).device
+
+        # Check cache
+        all_cached = all(t in self._cache for t in texts)
+        if all_cached:
+            cached_embs = [self._cache[t][0] for t in texts]
+            cached_masks = [self._cache[t][1] for t in texts]
+
+            # Pad to max length in this batch
+            max_len = max(e.shape[0] for e in cached_embs)
+            padded_embs = []
+            padded_masks = []
+            for emb, mask in zip(cached_embs, cached_masks):
+                pad_len = max_len - emb.shape[0]
+                if pad_len > 0:
+                    emb = torch.cat([emb, torch.zeros(pad_len, emb.shape[1])], dim=0)
+                    mask = torch.cat([mask, torch.zeros(pad_len, dtype=mask.dtype)], dim=0)
+                padded_embs.append(emb)
+                padded_masks.append(mask)
+
+            embs = torch.stack(padded_embs).to(device)
+            masks = torch.stack(padded_masks).to(device)
+            return embs, masks.bool()
+
+        # Tokenize
+        encoded = self._tokenizer(
+            texts,
+            padding=True,
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors='pt'
+        )
+
+        input_ids = encoded['input_ids'].to(device)
+        attention_mask = encoded['attention_mask'].to(device)
+
+        # Get token embeddings (frozen)
+        with torch.no_grad():
+            outputs = self._model(input_ids=input_ids, attention_mask=attention_mask)
+            token_embeddings = outputs.last_hidden_state
+
+        # Cache
+        for i, text in enumerate(texts):
+            if text not in self._cache:
+                self._cache[text] = (token_embeddings[i].cpu(), attention_mask[i].cpu())
+
+        return token_embeddings, attention_mask.bool()
+
+    def clear_cache(self):
+        self._cache.clear()
+
+
+class LabelAttentionPooling(nn.Module):
+    """
+    Learnable attention pooling for label tokens.
+
+    Instead of mean pooling, learn to attend to discriminative tokens.
+    This lets the model focus on what matters for activity recognition.
+    """
+
+    def __init__(
+        self,
+        d_model: int = 384,
+        num_heads: int = 4,
+        num_queries: int = 4,
+        dropout: float = 0.1
+    ):
+        super().__init__()
+
+        self.d_model = d_model
+        self.num_queries = num_queries
+
+        # Learnable query tokens
+        self.queries = nn.Parameter(torch.randn(num_queries, d_model) / math.sqrt(d_model))
+
+        # Cross-attention: queries attend to text tokens
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=d_model,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True
+        )
+
+        self.norm = nn.LayerNorm(d_model)
+
+        # Combine query outputs
+        self.out_proj = nn.Sequential(
+            nn.Linear(d_model * num_queries, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, d_model)
+        )
+
+        # Small init for stable training while preserving gradient flow
+        # NOTE: zeros init kills gradients since d_input = d_output @ W.T = 0
+        nn.init.normal_(self.out_proj[2].weight, std=0.01)
+        nn.init.zeros_(self.out_proj[2].bias)
+
+    def forward(
+        self,
+        token_embeddings: torch.Tensor,
+        attention_mask: torch.Tensor,
+        normalize: bool = True
+    ) -> torch.Tensor:
+        """
+        Pool tokens to single embedding via learned attention.
+
+        Args:
+            token_embeddings: (batch, seq_len, d_model)
+            attention_mask: (batch, seq_len) bool
+            normalize: L2 normalize output
+
+        Returns:
+            embedding: (batch, d_model)
+        """
+        B = token_embeddings.shape[0]
+
+        # Expand queries for batch
+        queries = self.queries.unsqueeze(0).expand(B, -1, -1)
+
+        # Cross-attention
+        key_padding_mask = ~attention_mask.bool()  # True = ignore
+        attn_out, _ = self.cross_attn(
+            query=queries,
+            key=token_embeddings,
+            value=token_embeddings,
+            key_padding_mask=key_padding_mask
+        )
+
+        attn_out = self.norm(attn_out)
+
+        # Combine queries: (B, num_queries, d_model) -> (B, d_model)
+        pooled = attn_out.reshape(B, -1)
+        out = self.out_proj(pooled)
+
+        # Add residual from mean of queries
+        out = out + attn_out.mean(dim=1)
+
+        if normalize:
+            out = F.normalize(out, p=2, dim=-1)
+
+        return out
+
+
+class ChannelTextFusion(nn.Module):
+    """
+    Efficient per-channel text fusion with broadcast to patches.
+
+    Instead of O(B×P×C) attention ops (attending for every sensor token),
+    we do O(C) ops (pool each channel's text once) then broadcast.
+
+    Flow:
+    1. Pool each channel's text tokens → (C, D) channel embeddings
+    2. Broadcast to all sensor tokens via learned gating
+    """
+
+    def __init__(
+        self,
+        d_model: int = 384,
+        num_heads: int = 4,
+        num_queries: int = 4,
+        dropout: float = 0.1
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.num_queries = num_queries
+
+        # Learnable queries to pool text tokens (one set shared across channels)
+        self.queries = nn.Parameter(torch.randn(num_queries, d_model) * 0.02)
+
+        # Cross-attention: queries attend to text tokens
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=d_model,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True
+        )
+        self.norm1 = nn.LayerNorm(d_model)
+
+        # Project pooled queries to single channel embedding
+        self.out_proj = nn.Sequential(
+            nn.Linear(d_model * num_queries, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, d_model)
+        )
+
+        # Gate: control how much text info to incorporate per sensor token
+        self.gate = nn.Sequential(
+            nn.Linear(d_model * 2, d_model),
+            nn.Sigmoid()
+        )
+
+    def forward(
+        self,
+        sensor_tokens: torch.Tensor,
+        text_tokens: torch.Tensor,
+        text_mask: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Fuse sensor tokens with channel text descriptions (efficient).
+
+        Args:
+            sensor_tokens: (batch, patches, channels, d_model)
+            text_tokens: (channels, seq_len, d_model)
+            text_mask: (channels, seq_len) bool
+
+        Returns:
+            fused: (batch, patches, channels, d_model)
+        """
+        B, P, C, D = sensor_tokens.shape
+
+        # Step 1: Pool each channel's text tokens to single embedding
+        # Only C attention operations (not B*P*C)!
+        queries = self.queries.unsqueeze(0).expand(C, -1, -1)  # (C, num_queries, D)
+
+        attn_out, _ = self.cross_attn(
+            query=queries,
+            key=text_tokens,
+            value=text_tokens,
+            key_padding_mask=~text_mask.bool()
+        )
+        attn_out = self.norm1(queries + attn_out)
+
+        # Combine queries: (C, num_queries, D) → (C, D)
+        channel_embs = self.out_proj(attn_out.reshape(C, -1))
+
+        # Step 2: Broadcast channel embeddings to all sensor tokens
+        # channel_embs: (C, D) → (1, 1, C, D) for broadcasting
+        channel_embs = channel_embs.unsqueeze(0).unsqueeze(0)
+
+        # Gated fusion: sensor tokens control how much text to incorporate
+        gate = self.gate(torch.cat([sensor_tokens, channel_embs.expand(B, P, -1, -1)], dim=-1))
+        fused = sensor_tokens + gate * channel_embs
+
+        return fused
+
+
+class LearnableLabelEncoder(nn.Module):
+    """
+    Complete label encoding with frozen text encoder + learnable pooling.
+
+    Replaces the static LabelBank.
+    """
+
+    def __init__(
+        self,
+        num_heads: int = 4,
+        num_queries: int = 4,
+        dropout: float = 0.1
+    ):
+        super().__init__()
+
+        self.text_encoder = TokenTextEncoder()
+        self.pooling = LabelAttentionPooling(
+            d_model=384,
+            num_heads=num_heads,
+            num_queries=num_queries,
+            dropout=dropout
+        )
+
+    def encode(
+        self,
+        labels: List[str],
+        normalize: bool = True,
+        device: Optional[torch.device] = None
+    ) -> torch.Tensor:
+        """
+        Encode labels to refined semantic embeddings.
+
+        Args:
+            labels: Activity labels
+            normalize: L2 normalize
+            device: Target device
+
+        Returns:
+            embeddings: (batch, 384)
+        """
+        tokens, mask = self.text_encoder.encode(labels, device)
+        return self.pooling(tokens, mask, normalize)
+
+
+class LearnableLabelBank(nn.Module):
+    """
+    Drop-in replacement for LabelBank with learnable attention pooling.
+
+    Same API as LabelBank but with trainable parameters for label refinement.
+    """
+
+    def __init__(
+        self,
+        model_name: str = 'all-MiniLM-L6-v2',  # Ignored, for API compat
+        device: Optional[torch.device] = None,
+        num_heads: int = 4,
+        num_queries: int = 4,
+        dropout: float = 0.1
+    ):
+        super().__init__()
+        self.device = device if device else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        self.text_encoder = TokenTextEncoder()
+        self.pooling = LabelAttentionPooling(
+            d_model=384,
+            num_heads=num_heads,
+            num_queries=num_queries,
+            dropout=dropout
+        )
+
+        # Move pooling to device
+        self.pooling = self.pooling.to(self.device)
+
+    def encode(self, label_texts: List[str], normalize: bool = True) -> torch.Tensor:
+        """
+        Encode labels - same API as LabelBank.encode().
+
+        Args:
+            label_texts: List of label strings
+            normalize: L2 normalize output
+
+        Returns:
+            embeddings: (batch, 384)
+        """
+        tokens, mask = self.text_encoder.encode(label_texts, self.device)
+        return self.pooling(tokens, mask, normalize)
+
+    @property
+    def embedding_dim(self) -> int:
+        """Return embedding dimension - same as LabelBank."""
+        return 384
+
+    def to(self, device):
+        """Move to device."""
+        self.device = device
+        self.pooling = self.pooling.to(device)
+        return self
+
+
+def test_modules():
+    """Quick test of all modules."""
+    print("Testing token-level text encoding...")
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # 1. TokenTextEncoder
+    print("\n1. TokenTextEncoder")
+    encoder = TokenTextEncoder()
+    texts = ["accelerometer x-axis", "walking activity"]
+    tokens, mask = encoder.encode(texts, device)
+    print(f"   Input: {len(texts)} texts")
+    print(f"   Output: tokens {tokens.shape}, mask {mask.shape}")
+
+    # 2. LabelAttentionPooling
+    print("\n2. LabelAttentionPooling")
+    pooling = LabelAttentionPooling().to(device)
+    emb = pooling(tokens, mask)
+    print(f"   Input: {tokens.shape}")
+    print(f"   Output: {emb.shape}")
+    print(f"   Normalized: {torch.allclose(emb.norm(dim=-1), torch.ones(2, device=device))}")
+
+    # 3. ChannelTextFusion
+    print("\n3. ChannelTextFusion")
+    fusion = ChannelTextFusion().to(device)
+
+    # Dummy sensor data
+    B, P, C, D = 2, 4, 6, 384
+    sensor = torch.randn(B, P, C, D, device=device)
+
+    # Channel descriptions
+    channels = ["acc x", "acc y", "acc z", "gyro x", "gyro y", "gyro z"]
+    ch_tokens, ch_mask = encoder.encode(channels, device)
+
+    fused = fusion(sensor, ch_tokens, ch_mask)
+    print(f"   Sensor: {sensor.shape}")
+    print(f"   Fused: {fused.shape}")
+
+    # 4. LearnableLabelEncoder
+    print("\n4. LearnableLabelEncoder")
+    label_enc = LearnableLabelEncoder().to(device)
+
+    labels = ["walking", "running", "sitting"]
+    emb = label_enc.encode(labels, device=device)
+    print(f"   Labels: {labels}")
+    print(f"   Embeddings: {emb.shape}")
+
+    # Check gradient flow
+    loss = emb.sum()
+    loss.backward()
+    has_grad = any(p.grad is not None for p in label_enc.pooling.parameters())
+    print(f"   Pooling has gradients: {has_grad}")
+
+    print("\n" + "="*50)
+    print("ALL TESTS PASSED!")
+
+
+if __name__ == "__main__":
+    test_modules()

@@ -1,4 +1,4 @@
-"""
+which"""
 Interactive session explorer for semantic alignment model.
 
 Loads a random session, displays its info, runs inference,
@@ -45,26 +45,11 @@ def load_model_and_data(checkpoint_path: str, device: torch.device):
     epoch = checkpoint.get('epoch', 'unknown')
     print(f"Loaded checkpoint from epoch {epoch}")
 
-    # Read hyperparameters to get model config
-    checkpoint_dir = Path(checkpoint_path).parent
-    hyperparams_path = checkpoint_dir / 'hyperparameters.json'
-    channel_projection = False  # Default for older models
-    channel_projection_hidden_dim = None
-    if hyperparams_path.exists():
-        with open(hyperparams_path) as f:
-            hyperparams = json.load(f)
-        if 'channel_projection' in hyperparams:
-            channel_projection = hyperparams['channel_projection'].get('enabled', False)
-            channel_projection_hidden_dim = hyperparams['channel_projection'].get('hidden_dim', None)
-        print(f"Channel projection: {channel_projection}")
-
-    # Create model
+    # Create model (standard architecture)
     encoder = IMUActivityRecognitionEncoder(
         d_model=384, num_heads=8, num_temporal_layers=4, dim_feedforward=1536,
         dropout=0.1, use_cross_channel=True, cnn_channels=[32, 64], cnn_kernel_sizes=[5],
-        target_patch_size=64,
-        channel_projection=channel_projection,
-        channel_projection_hidden_dim=channel_projection_hidden_dim
+        target_patch_size=64
     )
     semantic_head = SemanticAlignmentHead(
         d_model=384, d_model_fused=384, output_dim=384, num_bottlenecks=4,

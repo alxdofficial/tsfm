@@ -72,8 +72,6 @@ class IMUActivityRecognitionEncoder(nn.Module):
         channel_init_scale: float = 0.1,
         use_channel_encoding: bool = True,
         sentence_bert_model: str = 'all-MiniLM-L6-v2',
-        channel_projection: bool = True,
-        channel_projection_hidden_dim: int = None,
 
         # Learnable token initialization
         mask_token_init_scale: float = 0.1,
@@ -101,8 +99,6 @@ class IMUActivityRecognitionEncoder(nn.Module):
             channel_init_scale: Initial scale for channel semantic encoding
             use_channel_encoding: Whether to use channel semantic encoding
             sentence_bert_model: Sentence-BERT model for channel encoding
-            channel_projection: If True, add learnable MLP after frozen SentenceBERT channel embeddings
-            channel_projection_hidden_dim: Hidden dimension for channel projection (default: d_model)
 
             mask_token_init_scale: Initialization scale for mask/pad tokens (scales with sqrt(d_model))
 
@@ -125,16 +121,14 @@ class IMUActivityRecognitionEncoder(nn.Module):
             patch_chunk_size=patch_chunk_size
         )
 
-        # Positional encoding
+        # Positional encoding (channel_projection=True always for better generalization)
         self.positional_encoding = IMUPositionalEncoding(
             d_model=d_model,
             max_patches=max_patches,
             temporal_init_scale=temporal_init_scale,
             channel_init_scale=channel_init_scale,
             sentence_bert_model=sentence_bert_model,
-            use_channel_encoding=use_channel_encoding,
-            channel_projection=channel_projection,
-            channel_projection_hidden_dim=channel_projection_hidden_dim
+            use_channel_encoding=use_channel_encoding
         )
 
         # Transformer

@@ -162,13 +162,20 @@ class TrainingPlotter:
         if not debug_metrics:
             return
 
-        # Group metrics by category
-        collapse_metrics = [k for k in debug_metrics if 'std' in k or 'diversity' in k]
+        # Group metrics by category (attention metrics first to exclude from other groups)
+        attention_metrics = [k for k in debug_metrics if 'attn' in k]
+        # Collapse includes std, diversity, and queue staleness (representation health)
+        collapse_metrics = [k for k in debug_metrics if
+                          ('std' in k or 'diversity' in k or 'staleness' in k)
+                          and 'attn' not in k]
         gradient_metrics = [k for k in debug_metrics if 'grad_norm' in k]
-        similarity_metrics = [k for k in debug_metrics if 'sim' in k]
+        # Similarity includes: sim, margin, hard_negative, positive_rank
+        similarity_metrics = [k for k in debug_metrics if
+                             ('sim' in k or 'margin' in k or 'negative' in k or 'rank' in k)
+                             and 'attn' not in k]
 
-        # Create 3 subplots: collapse indicators, gradient norms, similarity
-        fig, axes = plt.subplots(3, 1, figsize=(14, 12))
+        # Create 4 subplots: collapse indicators, gradient norms, similarity, attention
+        fig, axes = plt.subplots(4, 1, figsize=(14, 16))
 
         # Plot 1: Representation collapse indicators (std, diversity)
         ax1 = axes[0]
@@ -180,7 +187,7 @@ class TrainingPlotter:
 
         ax1.set_xlabel('Batch', fontsize=11)
         ax1.set_ylabel('Value', fontsize=11)
-        ax1.set_title('Representation Collapse Indicators (Higher = Better)', fontsize=13, fontweight='bold')
+        ax1.set_title('Representation Health (std/diversity: Higher=Better)', fontsize=13, fontweight='bold')
         ax1.axhline(y=0.1, color='red', linestyle='--', linewidth=1, alpha=0.5, label='Collapse threshold (0.1)')
         if collapse_metrics:
             ax1.legend(fontsize=9, loc='best')
@@ -222,6 +229,21 @@ class TrainingPlotter:
         if similarity_metrics:
             ax3.legend(fontsize=9, loc='best')
         ax3.grid(True, alpha=0.3)
+
+        # Plot 4: Attention metrics (cross-channel attention stats)
+        ax4 = axes[3]
+        for metric in attention_metrics:
+            if self.metrics['batch'][metric]:
+                batches, values = zip(*self.metrics['batch'][metric])
+                label = metric.replace('debug_train_', '').replace('debug_', '')
+                ax4.plot(batches, values, linewidth=1.5, alpha=0.8, label=label, marker='o', markersize=2)
+
+        ax4.set_xlabel('Batch', fontsize=11)
+        ax4.set_ylabel('Value', fontsize=11)
+        ax4.set_title('Cross-Channel Attention Stats', fontsize=13, fontweight='bold')
+        if attention_metrics:
+            ax4.legend(fontsize=9, loc='best')
+        ax4.grid(True, alpha=0.3)
 
         plt.tight_layout()
         plt.savefig(self.output_dir / 'debug_metrics.png', dpi=150)
@@ -430,7 +452,7 @@ class TrainingPlotter:
         self.plot_all()
         print(f"\n✓ Plots saved to {self.output_dir}")
         print(f"  - batch_training_losses.png (real-time training convergence)")
-        print(f"  - debug_metrics.png (gradients, collapse indicators, similarity)")
+        print(f"  - debug_metrics.png (gradients, collapse, similarity, attention)")
         print(f"  - overall_loss.png (epoch-level train vs val)")
         print(f"  - loss_components.png (epoch-level MAE vs contrastive)")
         print(f"  - per_dataset_losses.png")

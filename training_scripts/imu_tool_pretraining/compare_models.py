@@ -3,22 +3,19 @@ Compare multiple semantic alignment models on validation/test sets.
 
 Supports:
 - Loading N models from checkpoint paths
-- Testing with shuffled vs unshuffled channels
 - Comparing performance metrics side by side
 - Testing on unseen datasets for zero-shot generalization
 
 Usage:
     # Compare on training datasets
     python training_scripts/imu_tool_pretraining/compare_models.py \
-        --models original=training_output/semantic_alignment/original/best.pt \
-                 shuffling_off=training_output/semantic_alignment/shufllingoff/best.pt \
-        --channel_modes unshuffled \
+        --models model1=training_output/semantic_alignment/run1/best.pt \
+                 model2=training_output/semantic_alignment/run2/best.pt \
         --output_dir training_output/model_comparison
 
     # Test zero-shot on unseen MotionSense dataset
     python training_scripts/imu_tool_pretraining/compare_models.py \
-        --models original=training_output/semantic_alignment/original/best.pt \
-                 shuffling_off=training_output/semantic_alignment/shufllingoff/best.pt \
+        --models model1=training_output/semantic_alignment/run1/best.pt \
         --unseen_datasets motionsense \
         --output_dir training_output/model_comparison_zeroshot
 """
@@ -57,15 +54,13 @@ def create_eval_dataloader(
     data_root: str,
     datasets: List[str],
     batch_size: int,
-    channel_augmentation: bool,
     max_sessions_per_dataset: Optional[int] = None,
     seed: int = 42
 ) -> DataLoader:
     """
-    Create a dataloader for evaluation with explicit channel_augmentation control.
+    Create a dataloader for evaluation.
 
-    Unlike create_dataloaders(), this function respects the channel_augmentation
-    parameter for evaluation (val/test) data.
+    Uses consistent channel order (no augmentation) for reproducible evaluation.
     """
     # Use 'val' split for evaluation
     dataset = IMUPretrainingDataset(
@@ -73,7 +68,6 @@ def create_eval_dataloader(
         datasets=datasets,
         split='val',
         max_sessions_per_dataset=max_sessions_per_dataset,
-        channel_augmentation=channel_augmentation,
         seed=seed
     )
 
@@ -90,33 +84,16 @@ def create_eval_dataloader(
 
 
 def load_model(checkpoint_path: str, device: torch.device) -> Tuple[SemanticAlignmentModel, dict]:
-    """Load model from checkpoint, auto-detecting architecture from hyperparameters."""
+    """Load model from checkpoint."""
     checkpoint_path = Path(checkpoint_path)
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
     epoch = checkpoint.get('epoch', 'unknown')
 
-    # Read hyperparameters to get model config
-    hyperparams_path = checkpoint_path.parent / 'hyperparameters.json'
-    channel_projection = False
-    channel_projection_hidden_dim = None
-    channel_augmentation = True  # Default to True (original behavior)
-
-    if hyperparams_path.exists():
-        with open(hyperparams_path) as f:
-            hyperparams = json.load(f)
-        if 'channel_projection' in hyperparams:
-            channel_projection = hyperparams['channel_projection'].get('enabled', False)
-            channel_projection_hidden_dim = hyperparams['channel_projection'].get('hidden_dim', None)
-        if 'data' in hyperparams:
-            channel_augmentation = hyperparams['data'].get('channel_augmentation', True)
-
-    # Create model
+    # Create model (standard architecture - channel_projection always enabled)
     encoder = IMUActivityRecognitionEncoder(
         d_model=384, num_heads=8, num_temporal_layers=4, dim_feedforward=1536,
         dropout=0.1, use_cross_channel=True, cnn_channels=[32, 64], cnn_kernel_sizes=[5],
-        target_patch_size=64,
-        channel_projection=channel_projection,
-        channel_projection_hidden_dim=channel_projection_hidden_dim
+        target_patch_size=64
     )
     semantic_head = SemanticAlignmentHead(
         d_model=384, d_model_fused=384, output_dim=384, num_bottlenecks=4,
@@ -129,8 +106,6 @@ def load_model(checkpoint_path: str, device: torch.device) -> Tuple[SemanticAlig
 
     model_info = {
         'epoch': epoch,
-        'channel_projection': channel_projection,
-        'channel_augmentation': channel_augmentation,
         'checkpoint_path': str(checkpoint_path)
     }
 
@@ -290,7 +265,6 @@ def get_raw_labels_for_dataset(dataset_name: str) -> List[str]:
 
 def run_comparison(
     models: Dict[str, str],
-    channel_modes: List[str],
     datasets: List[str],
     output_dir: Path,
     batch_size: int = 32,
@@ -298,7 +272,7 @@ def run_comparison(
     max_sessions: int = None,
     unseen_datasets: List[str] = None
 ):
-    """Run comparison across models and channel modes."""
+    """Run comparison across models."""
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
@@ -317,7 +291,6 @@ def run_comparison(
         model, info = load_model(checkpoint_path, device)
         loaded_models[name] = {'model': model, 'info': info}
         print(f"  Epoch: {info['epoch']}")
-        print(f"  Channel projection: {info['channel_projection']}")
 
     # Initialize label bank
     label_bank = LabelBank(model_name='all-MiniLM-L6-v2', device=device)
@@ -329,63 +302,57 @@ def run_comparison(
     if unseen_only:
         print("\nSkipping training dataset evaluation (--unseen_only flag set)")
     else:
-        for channel_mode in channel_modes:
-            print("\n" + "=" * 70)
-            print(f"TESTING WITH CHANNEL MODE: {channel_mode.upper()}")
-            print("=" * 70)
+        print("\n" + "=" * 70)
+        print("EVALUATING ON TRAINING DATASETS")
+        print("=" * 70)
 
-            channel_augmentation = (channel_mode == 'shuffled')
+        # Create dataloader (consistent channel order, no augmentation)
+        _, val_loader, _ = create_dataloaders(
+            data_root='data',
+            datasets=datasets,
+            batch_size=batch_size,
+            max_sessions_per_dataset=max_sessions,
+            num_workers=0,
+            seed=42  # Fixed seed for reproducibility
+        )
 
-            # Create dataloader
-            _, val_loader, _ = create_dataloaders(
-                data_root='data',
-                datasets=datasets,
-                batch_size=batch_size,
-                max_sessions_per_dataset=max_sessions,
-                channel_augmentation=channel_augmentation,
-                num_workers=0,
-                seed=42  # Fixed seed for reproducibility
+        # Get all unique labels
+        print("Collecting unique labels...")
+        all_labels = get_all_unique_labels(val_loader)
+        print(f"Found {len(all_labels)} unique labels")
+
+        # Recreate dataloader (consumed by label collection)
+        _, val_loader, _ = create_dataloaders(
+            data_root='data',
+            datasets=datasets,
+            batch_size=batch_size,
+            max_sessions_per_dataset=max_sessions,
+            num_workers=0,
+            seed=42
+        )
+
+        all_results['evaluation'] = {}
+
+        for model_name, model_data in loaded_models.items():
+            print(f"\nTesting {model_name}...")
+            metrics = compute_metrics(
+                model_data['model'],
+                val_loader,
+                label_bank,
+                device,
+                all_labels
             )
+            all_results['evaluation'][model_name] = metrics
 
-            # Get all unique labels
-            print("Collecting unique labels...")
-            all_labels = get_all_unique_labels(val_loader)
-            print(f"Found {len(all_labels)} unique labels")
-
-            # Recreate dataloader (consumed by label collection)
+            # Recreate dataloader for next model
             _, val_loader, _ = create_dataloaders(
                 data_root='data',
                 datasets=datasets,
                 batch_size=batch_size,
                 max_sessions_per_dataset=max_sessions,
-                channel_augmentation=channel_augmentation,
                 num_workers=0,
                 seed=42
             )
-
-            all_results[channel_mode] = {}
-
-            for model_name, model_data in loaded_models.items():
-                print(f"\nTesting {model_name}...")
-                metrics = compute_metrics(
-                    model_data['model'],
-                    val_loader,
-                    label_bank,
-                    device,
-                    all_labels
-                )
-                all_results[channel_mode][model_name] = metrics
-
-                # Recreate dataloader for next model
-                _, val_loader, _ = create_dataloaders(
-                    data_root='data',
-                    datasets=datasets,
-                    batch_size=batch_size,
-                    max_sessions_per_dataset=max_sessions,
-                    channel_augmentation=channel_augmentation,
-                    num_workers=0,
-                    seed=42
-                )
 
     # Evaluate on unseen datasets for zero-shot generalization
     unseen_results = {}
@@ -394,10 +361,6 @@ def run_comparison(
         print("ZERO-SHOT GENERALIZATION ON UNSEEN DATASETS")
         print("=" * 70)
         print(f"Unseen datasets: {unseen_datasets}")
-        print("\nEach model tested with its OWN training channel mode:")
-        for model_name, model_data in loaded_models.items():
-            ch_aug = model_data['info']['channel_augmentation']
-            print(f"  {model_name}: channel_augmentation={ch_aug} ({'shuffled' if ch_aug else 'unshuffled'})")
 
         # For zero-shot evaluation, use RAW/canonical labels (not augmented)
         # This ensures fair evaluation against the same labels the model was trained with
@@ -411,19 +374,13 @@ def run_comparison(
         print(f"Testing with {len(combined_labels)} total raw labels in retrieval set")
 
         for model_name, model_data in loaded_models.items():
-            # Use this model's training channel_augmentation setting
-            model_channel_aug = model_data['info']['channel_augmentation']
-            mode_str = "shuffled" if model_channel_aug else "unshuffled"
-            print(f"\nTesting {model_name} on unseen datasets (channels: {mode_str})...")
+            print(f"\nTesting {model_name} on unseen datasets...")
 
-            # Create dataloader with this model's channel mode
-            # NOTE: Using create_eval_dataloader instead of create_dataloaders
-            # because create_dataloaders hardcodes channel_augmentation=False for val/test
+            # Create dataloader (consistent channel order)
             unseen_loader = create_eval_dataloader(
                 data_root='data',
                 datasets=unseen_datasets,
                 batch_size=batch_size,
-                channel_augmentation=model_channel_aug,
                 max_sessions_per_dataset=max_sessions,
                 seed=42
             )
@@ -445,47 +402,45 @@ def run_comparison(
     model_names = list(models.keys())
 
     # Only print training dataset results if we have them
-    if all_results:
-        for channel_mode in channel_modes:
-            print(f"\n--- Channel Mode: {channel_mode.upper()} ---")
-            print(f"{'Metric':<25}", end="")
+    if all_results and 'evaluation' in all_results:
+        print(f"\n--- Training Dataset Evaluation ---")
+        print(f"{'Metric':<25}", end="")
+        for name in model_names:
+            print(f"{name:>15}", end="")
+        print()
+        print("-" * (25 + 15 * len(model_names)))
+
+        # Key metrics to display
+        key_metrics = ['recall@1', 'recall@5', 'recall@10', 'group_recall@1',
+                       'group_recall@5', 'mrr', 'group_mrr', 'mean_positive_sim']
+
+        for metric in key_metrics:
+            print(f"{metric:<25}", end="")
             for name in model_names:
-                print(f"{name:>15}", end="")
-            print()
-            print("-" * (25 + 15 * len(model_names)))
-
-            # Key metrics to display
-            key_metrics = ['recall@1', 'recall@5', 'recall@10', 'group_recall@1',
-                           'group_recall@5', 'mrr', 'group_mrr', 'mean_positive_sim']
-
-            for metric in key_metrics:
-                print(f"{metric:<25}", end="")
-                for name in model_names:
-                    val = all_results[channel_mode][name].get(metric, 0)
-                    if 'sim' in metric:
-                        print(f"{val:>15.4f}", end="")
-                    else:
-                        print(f"{val*100:>14.2f}%", end="")
-                print()
-
-            # Per-dataset metrics
-            print(f"\n{'Per-dataset group_acc:':<25}")
-            dataset_metrics = [k for k in all_results[channel_mode][model_names[0]].keys()
-                             if k.endswith('_group_acc')]
-            for metric in sorted(dataset_metrics):
-                dataset_name = metric.replace('_group_acc', '')
-                print(f"  {dataset_name:<23}", end="")
-                for name in model_names:
-                    val = all_results[channel_mode][name].get(metric, 0)
+                val = all_results['evaluation'][name].get(metric, 0)
+                if 'sim' in metric:
+                    print(f"{val:>15.4f}", end="")
+                else:
                     print(f"{val*100:>14.2f}%", end="")
-                print()
+            print()
+
+        # Per-dataset metrics
+        print(f"\n{'Per-dataset group_acc:':<25}")
+        dataset_metrics = [k for k in all_results['evaluation'][model_names[0]].keys()
+                         if k.endswith('_group_acc')]
+        for metric in sorted(dataset_metrics):
+            dataset_name = metric.replace('_group_acc', '')
+            print(f"  {dataset_name:<23}", end="")
+            for name in model_names:
+                val = all_results['evaluation'][name].get(metric, 0)
+                print(f"{val*100:>14.2f}%", end="")
+            print()
 
     # Print unseen dataset results (zero-shot generalization)
     if unseen_results:
         print("\n" + "=" * 70)
         print("ZERO-SHOT GENERALIZATION RESULTS")
         print("=" * 70)
-        print(f"(Each model tested with its own training channel mode)")
 
         print(f"\n{'Metric':<25}", end="")
         for name in model_names:
@@ -535,8 +490,8 @@ def run_comparison(
     print(f"\nResults saved to {results_path}")
 
     # Create comparison plot only if we have training dataset results
-    if all_results:
-        create_comparison_plot(all_results, model_names, channel_modes, output_dir)
+    if all_results and 'evaluation' in all_results:
+        create_comparison_plot(all_results['evaluation'], model_names, output_dir)
 
     # Create zero-shot comparison plot if we have unseen results
     if unseen_results:
@@ -548,7 +503,6 @@ def run_comparison(
 def create_comparison_plot(
     results: Dict,
     model_names: List[str],
-    channel_modes: List[str],
     output_dir: Path
 ):
     """Create bar chart comparing models."""
@@ -558,39 +512,36 @@ def create_comparison_plot(
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     axes = axes.flatten()
 
-    x = np.arange(len(channel_modes))
-    width = 0.8 / len(model_names)
+    x = np.arange(len(model_names))
+    width = 0.6
 
     colors = plt.cm.tab10(np.linspace(0, 1, len(model_names)))
 
     for ax_idx, metric in enumerate(metrics_to_plot):
         ax = axes[ax_idx]
 
-        for i, model_name in enumerate(model_names):
-            values = [results[mode][model_name].get(metric, 0) for mode in channel_modes]
-            if 'sim' not in metric:
-                values = [v * 100 for v in values]  # Convert to percentage
+        values = [results[model_name].get(metric, 0) for model_name in model_names]
+        if 'sim' not in metric:
+            values = [v * 100 for v in values]  # Convert to percentage
 
-            offset = (i - len(model_names) / 2 + 0.5) * width
-            bars = ax.bar(x + offset, values, width, label=model_name, color=colors[i])
+        bars = ax.bar(x, values, width, color=colors)
 
-            # Add value labels on bars
-            for bar, val in zip(bars, values):
-                height = bar.get_height()
-                ax.annotate(f'{val:.1f}' if 'sim' not in metric else f'{val:.3f}',
-                           xy=(bar.get_x() + bar.get_width() / 2, height),
-                           xytext=(0, 3), textcoords="offset points",
-                           ha='center', va='bottom', fontsize=8)
+        # Add value labels on bars
+        for bar, val in zip(bars, values):
+            height = bar.get_height()
+            ax.annotate(f'{val:.1f}' if 'sim' not in metric else f'{val:.3f}',
+                       xy=(bar.get_x() + bar.get_width() / 2, height),
+                       xytext=(0, 3), textcoords="offset points",
+                       ha='center', va='bottom', fontsize=10)
 
-        ax.set_xlabel('Channel Mode')
+        ax.set_xlabel('Model')
         ax.set_ylabel('Percentage (%)' if 'sim' not in metric else 'Similarity')
         ax.set_title(metric)
         ax.set_xticks(x)
-        ax.set_xticklabels(channel_modes)
-        ax.legend()
+        ax.set_xticklabels(model_names, rotation=15, ha='right')
         ax.grid(axis='y', alpha=0.3)
 
-    plt.suptitle('Model Comparison Across Channel Modes', fontsize=14, fontweight='bold')
+    plt.suptitle('Model Comparison', fontsize=14, fontweight='bold')
     plt.tight_layout()
 
     plot_path = output_dir / 'comparison_plot.png'
@@ -655,9 +606,6 @@ def main():
     parser = argparse.ArgumentParser(description='Compare multiple semantic alignment models')
     parser.add_argument('--models', nargs='+', required=True,
                         help='Model specifications as name=checkpoint_path pairs')
-    parser.add_argument('--channel_modes', nargs='+', default=['unshuffled', 'shuffled'],
-                        choices=['unshuffled', 'shuffled'],
-                        help='Channel modes to test')
     parser.add_argument('--datasets', nargs='+',
                         default=['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar'],
                         help='Datasets to test on')
@@ -688,7 +636,6 @@ def main():
 
     run_comparison(
         models=models,
-        channel_modes=args.channel_modes,
         datasets=args.datasets,
         output_dir=Path(args.output_dir),
         batch_size=args.batch_size,

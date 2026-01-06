@@ -9,65 +9,136 @@ import math
 
 import torch
 import torch.nn as nn
-from typing import Optional
+import torch.nn.functional as F
+from typing import Optional, Tuple
+
+
+class MultiQueryAttention(nn.Module):
+    """
+    Multi-query attention for sequence-to-vector transformation.
+
+    Uses multiple learnable query tokens that:
+    1. Cross-attend to input sequence
+    2. Self-attend among themselves (optional)
+    3. Concatenate and project to single output vector
+
+    This is the core building block for both channel fusion and temporal pooling.
+
+    Reference: Set Transformer (ICML 2019), Perceiver, PMA (Pooling by Multihead Attention)
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        num_queries: int = 4,
+        num_heads: int = 8,
+        dropout: float = 0.1,
+        use_self_attention: bool = True
+    ):
+        super().__init__()
+
+        self.d_model = d_model
+        self.num_queries = num_queries
+        self.use_self_attention = use_self_attention
+
+        # Learnable query tokens (small init prevents representation collapse)
+        self.queries = nn.Parameter(torch.randn(num_queries, d_model) * 0.02)
+
+        # Cross-attention: queries attend to input sequence
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=d_model, num_heads=num_heads, dropout=dropout, batch_first=True
+        )
+        self.norm1 = nn.LayerNorm(d_model)
+
+        # Self-attention: queries coordinate with each other
+        if use_self_attention:
+            self.self_attn = nn.MultiheadAttention(
+                embed_dim=d_model, num_heads=num_heads, dropout=dropout, batch_first=True
+            )
+            self.norm2 = nn.LayerNorm(d_model)
+
+        # Output projection: concat queries → single vector
+        self.out_proj = nn.Sequential(
+            nn.Linear(d_model * num_queries, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, d_model)
+        )
+        # Small init for stable training while preserving gradient flow
+        # NOTE: zeros init kills gradients since d_input = d_output @ W.T = 0
+        nn.init.normal_(self.out_proj[2].weight, std=0.01)
+        nn.init.zeros_(self.out_proj[2].bias)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+        need_weights: bool = False
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """
+        Args:
+            x: Input (batch, seq_len, d_model)
+            mask: Valid positions (batch, seq_len), True=valid, False=padding
+            need_weights: Return attention weights for visualization
+
+        Returns:
+            output: (batch, d_model)
+            attn_weights: (batch, num_queries, seq_len) if need_weights else None
+        """
+        B = x.shape[0]
+        queries = self.queries.unsqueeze(0).expand(B, -1, -1)
+        key_padding_mask = ~mask if mask is not None else None
+
+        # Cross-attention
+        attended, attn_weights = self.cross_attn(
+            query=queries, key=x, value=x,
+            key_padding_mask=key_padding_mask,
+            need_weights=need_weights, average_attn_weights=True
+        )
+        attended = self.norm1(queries + attended)
+
+        # Self-attention
+        if self.use_self_attention:
+            self_out, _ = self.self_attn(query=attended, key=attended, value=attended)
+            attended = self.norm2(attended + self_out)
+
+        # Combine: concat + project + residual
+        out = self.out_proj(attended.reshape(B, -1))
+        out = out + attended.mean(dim=1)
+
+        return out, attn_weights if need_weights else None
 
 
 class CrossChannelFusion(nn.Module):
     """
-    Perceiver-style cross-channel fusion using learnable bottleneck tokens.
+    Fuses channels into a single vector per patch using multi-query attention.
 
-    Reduces (batch, patches, channels, d_model) to (batch, patches, d_model_fused)
-    by attending from bottleneck queries to all channel representations.
+    Reduces (batch, patches, channels, d_model) to (batch, patches, d_model_fused).
     """
 
     def __init__(
         self,
         d_model: int,
         d_model_fused: int,
-        num_bottlenecks: int = 1,
         num_heads: int = 8,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        num_queries: int = 4,
+        use_self_attention: bool = True
     ):
-        """
-        Args:
-            d_model: Input dimension per channel
-            d_model_fused: Output fused dimension
-            num_bottlenecks: Number of learnable bottleneck tokens per patch
-            num_heads: Number of attention heads
-            dropout: Dropout rate
-        """
         super().__init__()
-        self.num_bottlenecks = num_bottlenecks
         self.d_model_fused = d_model_fused
+        self.num_queries = num_queries
 
-        # Learnable bottleneck queries - small initialization (0.02 scale) prevents representation
-        # collapse at initialization. With default randn (std=1), norm ~sqrt(d_model_fused) ~20
-        # dominates attended values (norm ~2), causing all outputs to be identical.
-        # Reference: krasserm/perceiver-io uses init_scale=0.02 as default.
-        self.bottleneck_tokens = nn.Parameter(torch.randn(num_bottlenecks, d_model_fused) * 0.02)
-
-        # Cross-attention: bottleneck queries attend to channel keys/values
-        self.cross_attention = nn.MultiheadAttention(
-            embed_dim=d_model_fused,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
-        )
-
-        # Input projection (project channel features to d_model_fused)
+        # Project input channels to fused dimension
         self.input_proj = nn.Linear(d_model, d_model_fused)
 
-        # Feedforward network
-        self.ffn = nn.Sequential(
-            nn.Linear(d_model_fused, d_model_fused * 4),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(d_model_fused * 4, d_model_fused),
-            nn.Dropout(dropout)
+        # Multi-query attention for channel fusion
+        self.attention = MultiQueryAttention(
+            d_model=d_model_fused,
+            num_queries=num_queries,
+            num_heads=num_heads,
+            dropout=dropout,
+            use_self_attention=use_self_attention
         )
-
-        # Layer normalization (reduced from 2 to 1 for better gradient flow)
-        self.norm1 = nn.LayerNorm(d_model_fused)
 
     def forward(
         self,
@@ -77,73 +148,32 @@ class CrossChannelFusion(nn.Module):
     ) -> torch.Tensor:
         """
         Args:
-            x: Input features (batch, patches, channels, d_model)
-            channel_mask: Optional mask for padding channels (batch, channels)
-                         True = valid, False = padding
-            return_attention_weights: If True, return attention weights for debugging
+            x: Input (batch, patches, channels, d_model)
+            channel_mask: Optional mask (batch, channels), True=valid
 
         Returns:
-            Fused features (batch, patches, d_model_fused) if num_bottlenecks=1
-            or (batch, patches, num_bottlenecks, d_model_fused) if num_bottlenecks>1
-            If return_attention_weights=True, returns (output, attention_weights)
+            Fused (batch, patches, d_model_fused)
         """
-        batch_size, num_patches, num_channels, d_model = x.shape
+        B, P, C, D = x.shape
 
-        # Project input to d_model_fused
-        x_proj = self.input_proj(x)  # (batch, patches, channels, d_model_fused)
+        # Project and reshape for per-patch processing
+        x_proj = self.input_proj(x)  # (B, P, C, d_fused)
+        x_flat = x_proj.reshape(B * P, C, self.d_model_fused)
 
-        # Reshape for cross-attention: flatten patches and channels
-        kv = x_proj.reshape(batch_size, num_patches * num_channels, self.d_model_fused)
-
-        # Prepare bottleneck queries (replicate for batch and patches)
-        queries = self.bottleneck_tokens.unsqueeze(0).unsqueeze(0)  # (1, 1, num_bottlenecks, d_model_fused)
-        queries = queries.expand(batch_size, num_patches, -1, -1)  # (batch, patches, num_bottlenecks, d_model_fused)
-        queries = queries.reshape(batch_size * num_patches, self.num_bottlenecks, self.d_model_fused)
-
-        # Reshape kv for attention
-        kv = kv.reshape(batch_size * num_patches, num_channels, self.d_model_fused)
-
-        # Prepare attention mask if provided
-        # key_padding_mask should be (batch*patches, num_channels) regardless of num_bottlenecks
-        key_padding_mask = None
+        # Expand mask for all patches
+        mask_flat = None
         if channel_mask is not None:
-            # channel_mask: (batch, channels) -> expand to (batch*patches, channels)
-            key_padding_mask = channel_mask.unsqueeze(1).expand(-1, num_patches, -1)
-            key_padding_mask = key_padding_mask.reshape(batch_size * num_patches, num_channels)
-            # Convert to attention mask format (True = ignore)
-            key_padding_mask = ~key_padding_mask
+            mask_flat = channel_mask.unsqueeze(1).expand(-1, P, -1).reshape(B * P, C)
 
-        # Cross-attention
-        attended, attn_weights = self.cross_attention(
-            query=queries,
-            key=kv,
-            value=kv,
-            key_padding_mask=key_padding_mask,
-            need_weights=return_attention_weights,
-            average_attn_weights=True  # Average across heads
-        )
+        # Apply multi-query attention
+        out, attn_weights = self.attention(x_flat, mask_flat, need_weights=return_attention_weights)
 
-        # Residual connection and norm (after attention)
-        attended = self.norm1(queries + attended)
-
-        # Feedforward with residual (no norm to reduce gradient suppression)
-        output = attended + self.ffn(attended)
-
-        # Reshape back
-        output = output.reshape(batch_size, num_patches, self.num_bottlenecks, self.d_model_fused)
-
-        # Handle multiple bottlenecks by flattening into patch dimension
-        if self.num_bottlenecks == 1:
-            output = output.squeeze(2)  # (batch, patches, d_model_fused)
-        else:
-            # Flatten bottlenecks into patch dimension for temporal processing
-            # (batch, patches, num_bottlenecks, d_model_fused) → (batch, patches*num_bottlenecks, d_model_fused)
-            # Example: (8, 10, 4, 384) → (8, 40, 384)
-            output = output.reshape(batch_size, num_patches * self.num_bottlenecks, self.d_model_fused)
+        # Reshape back to per-patch
+        out = out.reshape(B, P, self.d_model_fused)
 
         if return_attention_weights:
-            return output, attn_weights
-        return output
+            return out, attn_weights
+        return out
 
 
 class TemporalAttention(nn.Module):
@@ -204,76 +234,47 @@ class TemporalAttention(nn.Module):
         return self.transformer(x, src_key_padding_mask=src_key_padding_mask)
 
 
-class CLSAttentionPooling(nn.Module):
+class MultiQueryPooling(nn.Module):
     """
-    Attention pooling using a learnable CLS token.
+    Pools a sequence to a single vector using multi-query attention.
 
-    Prepends a CLS token to the sequence and extracts it after attention.
+    Thin wrapper around MultiQueryAttention for API compatibility.
     """
 
     def __init__(
         self,
         d_model: int,
+        num_queries: int = 4,
         num_heads: int = 8,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        use_self_attention: bool = True
     ):
-        """
-        Args:
-            d_model: Feature dimension
-            num_heads: Number of attention heads
-            dropout: Dropout rate
-        """
         super().__init__()
+        self.num_queries = num_queries
 
-        # Learnable CLS token (Xavier-scale initialization for proper attention scores)
-        self.cls_token = nn.Parameter(torch.randn(1, 1, d_model) / math.sqrt(d_model))
-
-        # Single transformer layer for CLS attention
-        self.attention = nn.TransformerEncoderLayer(
+        self.attention = MultiQueryAttention(
             d_model=d_model,
-            nhead=num_heads,
-            dim_feedforward=d_model * 4,
+            num_queries=num_queries,
+            num_heads=num_heads,
             dropout=dropout,
-            activation='gelu',
-            batch_first=True,
-            norm_first=True
+            use_self_attention=use_self_attention
         )
 
     def forward(
         self,
         x: torch.Tensor,
-        patch_mask: Optional[torch.Tensor] = None
+        mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
         Args:
-            x: Input features (batch, patches, d_model)
-            patch_mask: Optional mask for padding patches (batch, patches)
-                       True = valid, False = padding
+            x: Input (batch, seq_len, d_model)
+            mask: Optional mask (batch, seq_len), True=valid
 
         Returns:
-            Pooled representation (batch, d_model)
+            Pooled (batch, d_model)
         """
-        batch_size = x.shape[0]
-
-        # Prepend CLS token
-        cls_tokens = self.cls_token.expand(batch_size, -1, -1)  # (batch, 1, d_model)
-        x_with_cls = torch.cat([cls_tokens, x], dim=1)  # (batch, 1+patches, d_model)
-
-        # Prepare mask (CLS token is never masked)
-        if patch_mask is not None:
-            cls_mask = torch.ones(batch_size, 1, dtype=torch.bool, device=x.device)
-            mask_with_cls = torch.cat([cls_mask, patch_mask], dim=1)  # (batch, 1+patches)
-            src_key_padding_mask = ~mask_with_cls
-        else:
-            src_key_padding_mask = None
-
-        # Apply attention
-        attended = self.attention(x_with_cls, src_key_padding_mask=src_key_padding_mask)
-
-        # Extract CLS token
-        cls_output = attended[:, 0, :]  # (batch, d_model)
-
-        return cls_output
+        out, _ = self.attention(x, mask)
+        return out
 
 
 class ProjectionHead(nn.Module):
@@ -354,31 +355,39 @@ class SemanticAlignmentHead(nn.Module):
         d_model: int,
         d_model_fused: int = 256,
         output_dim: int = 256,
-        num_bottlenecks: int = 1,
         num_temporal_layers: int = 2,
         num_heads: int = 8,
         dim_feedforward: int = 1024,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        num_fusion_queries: int = 4,
+        use_fusion_self_attention: bool = True,
+        num_pool_queries: int = 4,
+        use_pool_self_attention: bool = True
     ):
         """
         Args:
             d_model: Input dimension per channel from encoder
             d_model_fused: Dimension after cross-channel fusion
             output_dim: Final embedding dimension
-            num_bottlenecks: Number of bottleneck tokens for fusion
             num_temporal_layers: Number of temporal attention layers
             num_heads: Number of attention heads
             dim_feedforward: Feedforward dimension
             dropout: Dropout rate
+            num_fusion_queries: Number of query tokens for channel fusion
+            use_fusion_self_attention: Whether fusion queries coordinate via self-attention
+            num_pool_queries: Number of query tokens for temporal pooling
+            use_pool_self_attention: Whether pooling queries coordinate via self-attention
         """
         super().__init__()
 
+        # Multi-query channel fusion: fuses all channels into one vector per patch
         self.cross_channel_fusion = CrossChannelFusion(
             d_model=d_model,
             d_model_fused=d_model_fused,
-            num_bottlenecks=num_bottlenecks,
             num_heads=num_heads,
-            dropout=dropout
+            dropout=dropout,
+            num_queries=num_fusion_queries,
+            use_self_attention=use_fusion_self_attention
         )
 
         self.temporal_attention = TemporalAttention(
@@ -389,10 +398,13 @@ class SemanticAlignmentHead(nn.Module):
             dropout=dropout
         )
 
-        self.attention_pooling = CLSAttentionPooling(
+        # Multi-query pooling: pools temporal sequence to single vector
+        self.attention_pooling = MultiQueryPooling(
             d_model=d_model_fused,
+            num_queries=num_pool_queries,
             num_heads=num_heads,
-            dropout=dropout
+            dropout=dropout,
+            use_self_attention=use_pool_self_attention
         )
 
         self.projection_head = ProjectionHead(
@@ -419,22 +431,13 @@ class SemanticAlignmentHead(nn.Module):
         Returns:
             Semantic embedding (batch, output_dim)
         """
-        # Cross-channel fusion
-        fused = self.cross_channel_fusion(encoder_output, channel_mask)  # (batch, patches, d_model_fused) or (batch, patches*num_bottlenecks, d_model_fused)
+        # Cross-channel fusion: (batch, patches, channels, d_model) -> (batch, patches, d_model_fused)
+        fused = self.cross_channel_fusion(encoder_output, channel_mask)
 
-        # Expand patch_mask if using multiple bottlenecks
-        if self.cross_channel_fusion.num_bottlenecks > 1 and patch_mask is not None:
-            # Repeat mask for each bottleneck: (batch, patches) → (batch, patches*num_bottlenecks)
-            batch_size, num_patches = patch_mask.shape
-            patch_mask = patch_mask.unsqueeze(2).expand(
-                -1, -1, self.cross_channel_fusion.num_bottlenecks
-            )
-            patch_mask = patch_mask.reshape(batch_size, -1)  # (batch, patches*num_bottlenecks)
-
-        # Temporal attention (TransformerEncoder has internal residuals - no external residual needed)
+        # Temporal attention across patches
         temporal = self.temporal_attention(fused, patch_mask)  # (batch, patches, d_model_fused)
 
-        # Attention pooling (transformer already has LayerNorm internally)
+        # Multi-query pooling to single vector
         pooled = self.attention_pooling(temporal, patch_mask)  # (batch, d_model_fused)
 
         # Project to semantic space

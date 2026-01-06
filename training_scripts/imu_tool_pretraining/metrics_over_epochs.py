@@ -46,28 +46,11 @@ def load_checkpoint_and_compute_metrics(
     print(f"Computing metrics for epoch {epoch}")
     print(f"{'='*60}")
 
-    # Read hyperparameters to get model config (like compare_models.py)
-    hyperparams_path = checkpoint_path.parent / 'hyperparameters.json'
-    channel_projection = False  # Default
-    channel_projection_hidden_dim = None
-
-    if hyperparams_path.exists():
-        with open(hyperparams_path) as f:
-            hyperparams = json.load(f)
-        if 'channel_projection' in hyperparams:
-            channel_projection = hyperparams['channel_projection'].get('enabled', False)
-            channel_projection_hidden_dim = hyperparams['channel_projection'].get('hidden_dim', None)
-        print(f"  Loaded hyperparameters: channel_projection={channel_projection}")
-    else:
-        print(f"  Warning: No hyperparameters.json found, using defaults")
-
-    # Create model with correct architecture
+    # Create model (standard architecture)
     encoder = IMUActivityRecognitionEncoder(
         d_model=384, num_heads=8, num_temporal_layers=4, dim_feedforward=1536,
         dropout=0.1, use_cross_channel=True, cnn_channels=[32, 64], cnn_kernel_sizes=[5],
-        target_patch_size=64,
-        channel_projection=channel_projection,
-        channel_projection_hidden_dim=channel_projection_hidden_dim
+        target_patch_size=64
     )
     semantic_head = SemanticAlignmentHead(
         d_model=384, d_model_fused=384, output_dim=384, num_bottlenecks=4,

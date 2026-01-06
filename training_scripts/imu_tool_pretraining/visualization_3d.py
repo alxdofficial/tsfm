@@ -63,13 +63,11 @@ def load_checkpoint_embeddings(
     epoch = checkpoint.get('epoch', 'unknown')
     print(f"Loading epoch {epoch} from {checkpoint_path}")
 
-    # Create model
+    # Create model (standard architecture)
     encoder = IMUActivityRecognitionEncoder(
         d_model=384, num_heads=8, num_temporal_layers=4, dim_feedforward=1536,
         dropout=0.1, use_cross_channel=True, cnn_channels=[32, 64], cnn_kernel_sizes=[5],
-        target_patch_size=64,
-        channel_projection=True,  # Learnable projection after SentenceBERT
-        channel_projection_hidden_dim=None
+        target_patch_size=64
     )
     semantic_head = SemanticAlignmentHead(
         d_model=384, d_model_fused=384, output_dim=384, num_bottlenecks=4,

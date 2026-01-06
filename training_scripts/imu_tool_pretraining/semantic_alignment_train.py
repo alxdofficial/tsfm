@@ -25,7 +25,9 @@ import math
 from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders
 from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
 from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
-from training_scripts.imu_tool_pretraining.label_bank import LabelBank
+from imu_activity_recognition_encoder.token_text_encoder import (
+    TokenTextEncoder, ChannelTextFusion, LearnableLabelBank
+)
 from training_scripts.imu_tool_pretraining.semantic_loss import SemanticAlignmentLoss, compute_retrieval_metrics
 from training_scripts.imu_tool_pretraining.plot_utils import TrainingPlotter, EmbeddingVisualizer
 from training_scripts.imu_tool_pretraining.memory_bank import MemoryBank
@@ -63,8 +65,13 @@ TARGET_PATCH_SIZE = 64  # Fixed timesteps per patch after interpolation
 # Semantic alignment configuration
 D_MODEL_FUSED = 384  # Dimension after cross-channel fusion (match D_MODEL to avoid bottleneck)
 SEMANTIC_DIM = 384  # Final embedding dimension (must match SentenceBERT)
-NUM_BOTTLENECKS = 4  # Multiple bottlenecks to reduce information bottleneck (9:1 → 2.25:1 compression)
 NUM_SEMANTIC_TEMPORAL_LAYERS = 2  # Temporal attention layers in semantic head
+
+# Multi-query fusion/pooling configuration (symmetric architecture)
+NUM_FUSION_QUERIES = 4  # Query tokens for channel fusion (channels → 1 vector per patch)
+USE_FUSION_SELF_ATTENTION = True  # Fusion queries coordinate via self-attention
+NUM_POOL_QUERIES = 4  # Query tokens for temporal pooling (patches → 1 vector)
+USE_POOL_SELF_ATTENTION = True  # Pooling queries coordinate via self-attention
 
 # Text encoder configuration
 SENTENCE_BERT_MODEL = 'all-MiniLM-L6-v2'  # 384-dim embeddings, fast
@@ -72,8 +79,7 @@ SENTENCE_BERT_MODEL = 'all-MiniLM-L6-v2'  # 384-dim embeddings, fast
 # Training configuration
 OUTPUT_DIR = "training_output/semantic_alignment"  # Note: plots go to semantic_alignment/<timestamp>/plots/
 CHECKPOINT_DIR = None  # Will be set in main()
-# PRETRAINED_ENCODER_PATH = "training_output/imu_pretraining/20251201_201049/latest.pt"  # Pretrained tokenizer
-PRETRAINED_ENCODER_PATH = "training_output/imu_pretraining/original/latest.pt"  # Pretrained tokenizer
+PRETRAINED_ENCODER_PATH = "training_output/imu_pretraining/20260104_085259/latest.pt"  # Pretrained tokenizer
 FREEZE_ENCODER = False  # Unfreeze encoder to learn discriminative representations
 SAVE_EVERY = 5
 
@@ -85,8 +91,8 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
 EPOCHS = 100
-BATCH_SIZE = 32  # Micro-batch size
-ACCUMULATION_STEPS = 16  # Effective batch = 32 × 16 = 512
+BATCH_SIZE = 8  # Micro-batch size (reduced for 48-channel datasets like PAMAP2)
+ACCUMULATION_STEPS = 32  # Effective batch = 8 × 32 = 256
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
 WARMUP_EPOCHS = 3
 
@@ -112,16 +118,11 @@ SOFT_TARGET_WEIGHT = 1.0  # Pure soft targets with adaptive recalibration
 USE_MEMORY_BANK = True
 MEMORY_BANK_SIZE = 256  # Provides 32 + 256 = 288 negatives per step
 
-# Channel augmentation (random subsampling and shuffling)
-# When True: randomly select subset of channels and shuffle order (data augmentation)
-# When False: use all channels in consistent sorted order (for evaluation or stable training)
-CHANNEL_AUGMENTATION = True  # Disabled for stable training with semantic channel encoding
+# NOTE: Channel augmentation (random subsampling/shuffling) is DISABLED.
+# Experiments showed better zero-shot generalization with consistent channel order.
 
-# Channel semantic projection
-# Learnable projection layer after frozen SentenceBERT channel embeddings
-# Allows task-specific adaptation while preserving pretrained semantic knowledge
-CHANNEL_PROJECTION = True  # Enable learnable projection after SentenceBERT
-CHANNEL_PROJECTION_HIDDEN_DIM = None  # None = use d_model (384 by default)
+# NOTE: Channel projection (learnable MLP after SentenceBERT) is ENABLED.
+# This allows task-specific adaptation of frozen semantic embeddings.
 
 # Plotting
 PLOT_EVERY_N_BATCHES = 10
@@ -135,22 +136,50 @@ UMAP_MIN_DIST = 0.1  # UMAP parameter: 0.0-0.99, lower = tighter clusters
 # Debug configuration
 DEBUG_METRIC_FREQUENCY = 10  # Compute expensive debug metrics every N batches (not every batch)
 
+# Token-level text encoding configuration
+# Uses cross-attention between sensor tokens and channel description tokens,
+# plus learnable attention pooling for label refinement.
+TOKEN_TEXT_NUM_HEADS = 4     # Attention heads for text fusion/pooling
+TOKEN_TEXT_NUM_QUERIES = 4   # Learnable query tokens for label pooling
+
 # =================================================================
 
 
 class SemanticAlignmentModel(nn.Module):
-    """Complete model for semantic alignment combining encoder + semantic head."""
+    """
+    Semantic alignment model with token-level text encoding.
 
-    def __init__(self, encoder: IMUActivityRecognitionEncoder, semantic_head: SemanticAlignmentHead):
+    Features:
+    - ChannelTextFusion: cross-attention between sensor tokens and channel description tokens
+    - Works with LearnableLabelBank: learnable attention pooling for label refinement
+    """
+
+    def __init__(
+        self,
+        encoder: IMUActivityRecognitionEncoder,
+        semantic_head: SemanticAlignmentHead,
+        num_heads: int = 4,
+        dropout: float = 0.1
+    ):
         super().__init__()
         self.encoder = encoder
         self.semantic_head = semantic_head
+
+        # Token-level text encoder (frozen backbone)
+        self.text_encoder = TokenTextEncoder()
+
+        # Channel text fusion (learnable cross-attention)
+        self.channel_fusion = ChannelTextFusion(
+            d_model=D_MODEL,
+            num_heads=num_heads,
+            dropout=dropout
+        )
 
     def forward(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes):
         batch_size = data.shape[0]
         device = data.device
 
-        # Step 1: Preprocess all samples (must be per-sample due to different sampling rates)
+        # Step 1: Preprocess all samples
         all_patches = []
         all_channel_descs = []
         valid_samples = []
@@ -170,7 +199,6 @@ class SemanticAlignmentModel(nn.Module):
                 if len(patches) > MAX_PATCHES_PER_SAMPLE:
                     patches = patches[:MAX_PATCHES_PER_SAMPLE]
 
-                # Pad channel descriptions to match data's channel count
                 num_channels = data[i].shape[1]
                 channel_descs = channel_descriptions[i]
                 padded_descs = channel_descs + ["[PAD]"] * (num_channels - len(channel_descs))
@@ -179,22 +207,19 @@ class SemanticAlignmentModel(nn.Module):
                 all_channel_descs.append(padded_descs)
                 valid_samples.append(True)
 
-        # Step 2: Batch all valid patches together
+        # Step 2: Batch valid patches
         valid_indices = [i for i, v in enumerate(valid_samples) if v]
 
         if len(valid_indices) == 0:
-            # All samples are invalid - return empty output
             max_channels = data.shape[2]
             padded_encoder_output = torch.zeros(batch_size, 1, max_channels, D_MODEL, device=device)
             padded_patch_mask = torch.zeros(batch_size, 1, dtype=torch.bool, device=device)
             return self.semantic_head(padded_encoder_output, channel_mask=channel_mask,
                                        patch_mask=padded_patch_mask, normalize=True)
 
-        # Find max patches among valid samples
         max_patches_valid = max(len(all_patches[i]) for i in valid_indices)
         max_channels = data.shape[2]
 
-        # Create batched tensor for valid samples only
         num_valid = len(valid_indices)
         batched_patches = torch.zeros(num_valid, max_patches_valid, TARGET_PATCH_SIZE, max_channels, device=device)
         batched_channel_descs = []
@@ -205,16 +230,23 @@ class SemanticAlignmentModel(nn.Module):
             batched_patches[batch_idx, :num_patches] = patches
             batched_channel_descs.append(all_channel_descs[sample_idx])
 
-        # Step 3: Encode all valid samples
-        # Wrap in no_grad when encoder is frozen (saves 30-40% training time!)
+        # Step 3: Encode with frozen/unfrozen encoder
         if FREEZE_ENCODER:
             with torch.no_grad():
                 encoded_batch = self.encoder(batched_patches, batched_channel_descs)
         else:
             encoded_batch = self.encoder(batched_patches, batched_channel_descs)
-        # encoded_batch shape: (num_valid, max_patches_valid, max_channels, d_model)
 
-        # Step 4: Map outputs back to original batch positions
+        # Step 4: Apply channel text fusion (NEW)
+        # Get token-level embeddings for channel descriptions (use first sample's descs as template)
+        # All samples in this batch have same max_channels, so we use unified channel descs
+        unified_channel_descs = batched_channel_descs[0][:max_channels]
+        channel_tokens, channel_mask_text = self.text_encoder.encode(unified_channel_descs, device)
+
+        # Cross-attention between sensor tokens and channel text tokens
+        encoded_batch = self.channel_fusion(encoded_batch, channel_tokens, channel_mask_text)
+
+        # Step 5: Map outputs back to original batch positions
         encoder_outputs = [None] * batch_size
         patch_masks = [None] * batch_size
 
@@ -223,7 +255,7 @@ class SemanticAlignmentModel(nn.Module):
             encoder_outputs[sample_idx] = encoded_batch[batch_idx, :num_patches]
             patch_masks[sample_idx] = torch.ones(num_patches, dtype=torch.bool, device=device)
 
-        # Step 5: Final padding to uniform dimensions
+        # Step 6: Final padding
         max_patches = max(len(p) for p in patch_masks if p is not None)
         padded_encoder_output = torch.zeros(batch_size, max_patches, max_channels, D_MODEL, device=device)
         padded_patch_mask = torch.zeros(batch_size, max_patches, dtype=torch.bool, device=device)
@@ -239,7 +271,6 @@ class SemanticAlignmentModel(nn.Module):
 
     def get_attention_stats(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes):
         """Get attention statistics from cross-channel fusion (for debugging)."""
-        # Re-run forward up to encoder output (without gradient)
         batch_size = data.shape[0]
         device = data.device
 
@@ -464,15 +495,18 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
         model.train()
 
 
-def _compute_per_layer_grad_norms(model, criterion=None):
+def _compute_per_layer_grad_norms(model, criterion=None, label_bank=None):
     """
-    Compute gradient norms for each sub-component of the semantic head.
+    Compute gradient norms for each sub-component of the semantic head and label_bank.
 
     SemanticAlignmentHead sub-components:
     - cross_channel_fusion: Perceiver-style bottleneck attention
     - temporal_attention: TransformerEncoder over patches
     - attention_pooling: CLS token attention pooling
     - projection_head: 3-layer MLP to semantic space
+
+    LearnableLabelBank sub-components (if provided):
+    - label_pooling: LabelAttentionPooling with learnable queries
 
     Also tracks logit_scale gradient if criterion is provided.
 
@@ -504,6 +538,15 @@ def _compute_per_layer_grad_norms(model, criterion=None):
             grad_norms['logit_scale'] = logit_scale.grad.abs().item()
         else:
             grad_norms['logit_scale'] = 0.0
+
+    # Track label_bank gradients (LearnableLabelBank with LabelAttentionPooling)
+    if label_bank is not None:
+        label_grad_norm = sum(
+            p.grad.norm().item() ** 2
+            for p in label_bank.parameters()
+            if p.grad is not None
+        ) ** 0.5
+        grad_norms['label_pooling'] = label_grad_norm
 
     return grad_norms
 
@@ -539,6 +582,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
         'attention_pooling': 0.0,
         'projection_head': 0.0,
         'logit_scale': 0.0,  # Learnable temperature
+        'label_pooling': 0.0,  # LearnableLabelBank attention pooling
     }
 
     pbar = tqdm(dataloader, desc=f"[{stage}] Epoch {epoch} Training")
@@ -559,8 +603,9 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
         patch_sizes = [m['patch_size_sec'] for m in metadata]
         channel_descriptions = [m['channel_descriptions'] for m in metadata]
 
-        with torch.no_grad():
-            text_embeddings = label_bank.encode(label_texts, normalize=True)
+        # NOTE: label_bank.encode() needs gradients for learnable pooling!
+        # The frozen SentenceBERT tokens are cached (no grad), but LabelAttentionPooling is trainable
+        text_embeddings = label_bank.encode(label_texts, normalize=True)
 
         # Get queue embeddings from memory bank if enabled (no gradients needed)
         if memory_bank is not None and USE_MEMORY_BANK:
@@ -611,7 +656,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
 
                 # Per-layer gradient norms (expensive - only compute periodically)
                 if should_log_grads:
-                    batch_grad_norms = _compute_per_layer_grad_norms(model, criterion)
+                    batch_grad_norms = _compute_per_layer_grad_norms(model, criterion, label_bank)
 
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=MAX_GRAD_NORM)
                 scaler.step(optimizer)
@@ -619,7 +664,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             else:
                 # Per-layer gradient norms (expensive - only compute periodically)
                 if should_log_grads:
-                    batch_grad_norms = _compute_per_layer_grad_norms(model, criterion)
+                    batch_grad_norms = _compute_per_layer_grad_norms(model, criterion, label_bank)
 
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=MAX_GRAD_NORM)
                 optimizer.step()
@@ -876,8 +921,12 @@ def main():
         'training': {'epochs': EPOCHS, 'batch_size': BATCH_SIZE, 'accumulation_steps': ACCUMULATION_STEPS,
                      'effective_batch_size': BATCH_SIZE * ACCUMULATION_STEPS,
                      'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS, 'max_grad_norm': MAX_GRAD_NORM},
-        'data': {'channel_augmentation': CHANNEL_AUGMENTATION},
-        'channel_projection': {'enabled': CHANNEL_PROJECTION, 'hidden_dim': CHANNEL_PROJECTION_HIDDEN_DIM}
+        'data': {'channel_augmentation': False},  # Hardcoded: no random channel shuffling
+        'channel_projection': {'enabled': True, 'hidden_dim': None},  # Hardcoded: projection enabled
+        'token_level_text': {'num_heads': TOKEN_TEXT_NUM_HEADS, 'num_queries': TOKEN_TEXT_NUM_QUERIES},
+        'semantic_head': {'num_temporal_layers': NUM_SEMANTIC_TEMPORAL_LAYERS,
+                          'num_fusion_queries': NUM_FUSION_QUERIES, 'use_fusion_self_attention': USE_FUSION_SELF_ATTENTION,
+                          'num_pool_queries': NUM_POOL_QUERIES, 'use_pool_self_attention': USE_POOL_SELF_ATTENTION}
     }
     with open(CHECKPOINT_DIR / 'hyperparameters.json', 'w') as f:
         json.dump(hyperparams, f, indent=2)
@@ -891,8 +940,6 @@ def main():
         num_temporal_layers=NUM_TEMPORAL_LAYERS, dim_feedforward=DIM_FEEDFORWARD,
         dropout=DROPOUT, use_cross_channel=USE_CROSS_CHANNEL,
         cnn_channels=CNN_CHANNELS, cnn_kernel_sizes=CNN_KERNEL_SIZES,
-        channel_projection=CHANNEL_PROJECTION,
-        channel_projection_hidden_dim=CHANNEL_PROJECTION_HIDDEN_DIM
     ).to(device)
 
     if PRETRAINED_ENCODER_PATH and Path(PRETRAINED_ENCODER_PATH).exists():
@@ -919,11 +966,18 @@ def main():
     print("Initializing semantic alignment head...")
     semantic_head = SemanticAlignmentHead(
         d_model=D_MODEL, d_model_fused=D_MODEL_FUSED, output_dim=SEMANTIC_DIM,
-        num_bottlenecks=NUM_BOTTLENECKS, num_temporal_layers=NUM_SEMANTIC_TEMPORAL_LAYERS,
-        num_heads=NUM_HEADS, dim_feedforward=D_MODEL_FUSED * 4, dropout=DROPOUT
+        num_temporal_layers=NUM_SEMANTIC_TEMPORAL_LAYERS,
+        num_heads=NUM_HEADS, dim_feedforward=D_MODEL_FUSED * 4, dropout=DROPOUT,
+        num_fusion_queries=NUM_FUSION_QUERIES, use_fusion_self_attention=USE_FUSION_SELF_ATTENTION,
+        num_pool_queries=NUM_POOL_QUERIES, use_pool_self_attention=USE_POOL_SELF_ATTENTION
     ).to(device)
 
-    model = SemanticAlignmentModel(encoder, semantic_head).to(device)
+    print("Using token-level text encoding with cross-attention")
+    model = SemanticAlignmentModel(
+        encoder, semantic_head,
+        num_heads=TOKEN_TEXT_NUM_HEADS,
+        dropout=DROPOUT
+    ).to(device)
 
     # Load model state if resuming
     if resume_checkpoint is not None:
@@ -943,9 +997,15 @@ def main():
             print(f"  Warning: Missing keys in checkpoint: {missing_keys}")
         print("✓ Loaded model state from checkpoint")
 
-    print(f"Initializing label bank with {SENTENCE_BERT_MODEL}...")
-    label_bank = LabelBank(model_name=SENTENCE_BERT_MODEL, device=device)
-    print(f"✓ Label bank initialized (embedding_dim={label_bank.embedding_dim})")
+    # Initialize learnable label bank (token-level attention pooling)
+    print(f"Initializing learnable label bank (token-level attention pooling)...")
+    label_bank = LearnableLabelBank(
+        device=device,
+        num_heads=TOKEN_TEXT_NUM_HEADS,
+        num_queries=TOKEN_TEXT_NUM_QUERIES,
+        dropout=DROPOUT
+    )
+    print(f"✓ Learnable label bank initialized (embedding_dim={label_bank.embedding_dim})")
 
     criterion = SemanticAlignmentLoss(
         temperature=TEMPERATURE, use_soft_targets=USE_SOFT_TARGETS,
@@ -975,18 +1035,21 @@ def main():
         print(f"Using memory bank with {MEMORY_BANK_SIZE} queue size (negatives per step: {BATCH_SIZE + MEMORY_BANK_SIZE})")
     print("="*70)
 
-    # Create dataloaders
+    # Create dataloaders (channel_augmentation=False - consistent channel order for better generalization)
     train_loader, val_loader, _ = create_dataloaders(
         data_root=DATA_ROOT, datasets=DATASETS, batch_size=BATCH_SIZE,
         num_workers=NUM_WORKERS, prefetch_factor=PREFETCH_FACTOR,
         persistent_workers=PERSISTENT_WORKERS, patch_size_per_dataset=PATCH_SIZE_PER_DATASET, seed=SEED,
-        max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
-        channel_augmentation=CHANNEL_AUGMENTATION
+        max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET
     )
 
     # Setup optimizer (trains semantic head only if encoder is frozen, otherwise all parameters)
     # IMPORTANT: Include criterion.parameters() for learnable temperature (logit_scale)
+    # and label_bank.parameters() for learnable attention pooling
     all_params = list(filter(lambda p: p.requires_grad, model.parameters())) + list(criterion.parameters())
+    all_params += list(label_bank.parameters())
+    print(f"✓ Label bank parameters added to optimizer ({sum(p.numel() for p in label_bank.parameters())} params)")
+
     optimizer = AdamW(all_params, lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     # Setup scheduler with proper warmup + cosine decay
@@ -1063,8 +1126,8 @@ def main():
         plotter.add_scalar('epoch/debug_imu_diversity', train_metrics['imu_diversity'], epoch)
         plotter.add_scalar('epoch/debug_sim_gap', train_metrics['debug_sim_gap'], epoch)
         plotter.add_scalar('epoch/debug_queue_diversity', train_metrics['queue_diversity'], epoch)
-        # Log per-component gradient norms
-        for comp_name in ['cross_channel_fusion', 'temporal_attention', 'attention_pooling', 'projection_head']:
+        # Log per-component gradient norms (including label_pooling for LearnableLabelBank)
+        for comp_name in ['cross_channel_fusion', 'temporal_attention', 'attention_pooling', 'projection_head', 'label_pooling']:
             plotter.add_scalar(f'epoch/debug_{comp_name}_grad_norm', train_metrics[f'{comp_name}_grad_norm'], epoch)
 
         plotter.add_scalar('epoch/val_loss', val_metrics['loss'], epoch)

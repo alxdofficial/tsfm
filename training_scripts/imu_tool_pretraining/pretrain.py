@@ -104,10 +104,8 @@ EMA_DECAY = 0.99  # EMA decay for dynamic loss balancing
 # Masking
 MASK_RATIO = 0.3  # Reduced from 0.5 - less aggressive masking reduces empty batch risk
 
-# Channel augmentation (random subsampling and shuffling)
-# When True: randomly select subset of channels and shuffle order (data augmentation)
-# When False: use all channels in consistent sorted order (for stable training with semantic channel encoding)
-CHANNEL_AUGMENTATION = False
+# NOTE: Channel augmentation (random subsampling/shuffling) is DISABLED.
+# Experiments showed better zero-shot generalization with consistent channel order.
 
 # Plotting
 PLOT_EVERY_N_BATCHES = 10  # Generate plots every N batches during training
@@ -959,7 +957,6 @@ def main():
         patch_size_sec=2.0,  # Default (not used since we provide per-dataset sizes)
         patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
         max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
-        channel_augmentation=CHANNEL_AUGMENTATION,
         seed=SEED
     )
 
