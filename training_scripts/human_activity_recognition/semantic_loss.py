@@ -151,29 +151,49 @@ class InfoNCELoss(nn.Module):
         metrics = None
         if return_metrics:
             with torch.no_grad():
-                # Accuracy: how often is the correct match the highest similarity?
-                labels = torch.arange(batch_size, device=imu_embeddings.device)
-                imu_to_text_acc = (logits.argmax(dim=1) == labels).float().mean().item()
-                text_to_imu_acc = (logits_t2i.argmax(dim=1) == labels).float().mean().item()
+                # Raw similarity matrix (unscaled) for metrics
+                raw_sim = torch.matmul(imu_embeddings, text_embeddings.T)  # (batch, batch)
 
-                # Average similarity of positive pairs (unscale by dividing by learned temperature)
-                positive_sim = torch.diagonal(logits).mean().item() / self.logit_scale.exp().item()
+                # Positive similarity: diagonal pairs (matched IMU-text)
+                positive_sim = torch.diagonal(raw_sim).mean().item()
 
-                # Average similarity of negative pairs
-                # Create mask for positives (only diagonal of current batch, queue is all negatives)
-                logits_mask = torch.zeros_like(logits, dtype=torch.bool)
-                logits_mask[:, :batch_size] = torch.eye(batch_size, device=logits.device, dtype=torch.bool)
-                negative_sim = logits[~logits_mask].mean().item() / self.logit_scale.exp().item()
+                # Label-aware negative similarity:
+                # Use actual label strings (mapped to groups) to identify same-activity pairs
+                # This handles synonyms like "walking"/"nordic_walking" → same group
+                if label_texts is not None and len(label_texts) == batch_size:
+                    # Map labels to groups (synonyms → same group)
+                    from val_scripts.human_activity_recognition.evaluation_metrics import get_label_to_group_mapping
+                    label_to_group = get_label_to_group_mapping()
+                    label_groups = [label_to_group.get(lbl, lbl) for lbl in label_texts]
+
+                    # Build same-group mask
+                    # same_label_mask[i,j] = True if labels belong to same group
+                    same_label_mask = torch.zeros(batch_size, batch_size, dtype=torch.bool, device=raw_sim.device)
+                    for i in range(batch_size):
+                        for j in range(batch_size):
+                            same_label_mask[i, j] = (label_groups[i] == label_groups[j])
+                else:
+                    # Fallback: only exclude diagonal (self-pairs)
+                    same_label_mask = torch.eye(batch_size, dtype=torch.bool, device=raw_sim.device)
+
+                # True negatives: different labels
+                diff_label_mask = ~same_label_mask
+                if diff_label_mask.any():
+                    true_neg_sim = raw_sim[diff_label_mask].mean().item()
+                else:
+                    # Fallback if all pairs are same-label (unlikely)
+                    true_neg_sim = 0.0
+
+                # Similarity gap: positive vs TRUE negatives (label-aware)
+                similarity_gap = positive_sim - true_neg_sim
 
                 metrics = {
                     'loss': loss.item(),
                     'loss_imu_to_text': loss_imu_to_text.item(),
                     'loss_text_to_imu': loss_text_to_imu.item(),
-                    'acc_imu_to_text': imu_to_text_acc,
-                    'acc_text_to_imu': text_to_imu_acc,
                     'positive_similarity': positive_sim,
-                    'negative_similarity': negative_sim,
-                    'similarity_gap': positive_sim - negative_sim
+                    'negative_similarity': true_neg_sim,
+                    'similarity_gap': similarity_gap
                 }
 
                 # Add soft target metrics if used
@@ -269,57 +289,3 @@ class SemanticAlignmentLoss(nn.Module):
                            imu_queue, text_queue)
 
 
-def compute_retrieval_metrics(
-    imu_embeddings: torch.Tensor,
-    text_embeddings: torch.Tensor,
-    k_values: list[int] = [1, 5, 10]
-) -> Dict[str, float]:
-    """
-    Compute retrieval metrics (recall@k) for evaluation.
-
-    Args:
-        imu_embeddings: IMU embeddings (N, embedding_dim), L2-normalized
-        text_embeddings: Text embeddings (N, embedding_dim), L2-normalized
-        k_values: List of k values for recall@k
-
-    Returns:
-        Dictionary with retrieval metrics
-    """
-    # Convert to fp32 for mixed precision compatibility
-    imu_embeddings = imu_embeddings.float()
-    text_embeddings = text_embeddings.float()
-
-    batch_size = imu_embeddings.shape[0]
-
-    # Compute similarity matrix
-    similarities = torch.matmul(imu_embeddings, text_embeddings.T)
-
-    metrics = {}
-
-    # IMU-to-text retrieval
-    for k in k_values:
-        if k <= batch_size:
-            # Get top-k indices
-            _, top_k_indices = torch.topk(similarities, k=k, dim=1)
-            # Check if correct index is in top-k
-            correct = torch.arange(batch_size, device=similarities.device).unsqueeze(1)
-            recall_at_k = (top_k_indices == correct).any(dim=1).float().mean().item()
-            metrics[f'recall@{k}_imu_to_text'] = recall_at_k
-
-    # Text-to-IMU retrieval
-    similarities_T = similarities.T
-    for k in k_values:
-        if k <= batch_size:
-            _, top_k_indices = torch.topk(similarities_T, k=k, dim=1)
-            correct = torch.arange(batch_size, device=similarities.device).unsqueeze(1)
-            recall_at_k = (top_k_indices == correct).any(dim=1).float().mean().item()
-            metrics[f'recall@{k}_text_to_imu'] = recall_at_k
-
-    # Average recall across both directions
-    for k in k_values:
-        if k <= batch_size:
-            imu_to_text = metrics[f'recall@{k}_imu_to_text']
-            text_to_imu = metrics[f'recall@{k}_text_to_imu']
-            metrics[f'recall@{k}_avg'] = (imu_to_text + text_to_imu) / 2.0
-
-    return metrics

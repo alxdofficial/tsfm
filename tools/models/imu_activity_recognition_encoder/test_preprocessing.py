@@ -278,12 +278,12 @@ class TestPreprocessIMUData:
             patch_size_sec=2.0
         )
 
-        # Should have 5 patches of 96 timesteps each
-        assert patches.shape == (5, 96, 9)
+        # Should have 5 patches of 64 timesteps each (default target_patch_size)
+        assert patches.shape == (5, 64, 9)
 
         # Check metadata
         assert metadata['original_patch_size'] == 100
-        assert metadata['target_patch_size'] == 96
+        assert metadata['target_patch_size'] == 64
         assert metadata['sampling_rate_hz'] == 50.0
         assert metadata['patch_size_sec'] == 2.0
         assert metadata['num_channels'] == 9
@@ -301,8 +301,8 @@ class TestPreprocessIMUData:
             patch_size_sec=2.0
         )
 
-        # Should have 5 patches of 96 timesteps each
-        assert patches.shape == (5, 96, 6)
+        # Should have 5 patches of 64 timesteps each (default target_patch_size)
+        assert patches.shape == (5, 64, 6)
         assert metadata['original_patch_size'] == 200
         assert metadata['num_channels'] == 6
 
@@ -317,8 +317,8 @@ class TestPreprocessIMUData:
             patch_size_sec=2.0
         )
 
-        # Should have 5 patches of 96 timesteps each
-        assert patches.shape == (5, 96, 40)
+        # Should have 5 patches of 64 timesteps each (default target_patch_size)
+        assert patches.shape == (5, 64, 40)
         assert metadata['original_patch_size'] == 400
         assert metadata['num_channels'] == 40
 
@@ -354,7 +354,7 @@ class TestPreprocessIMUData:
         )
 
         # Should have 9 overlapping patches
-        assert patches.shape == (9, 96, 9)
+        assert patches.shape == (9, 64, 9)
 
 
 def test_integration_all_datasets():
@@ -367,7 +367,7 @@ def test_integration_all_datasets():
         sampling_rate_hz=50.0,
         patch_size_sec=2.0
     )
-    assert uci_har_patches.shape == (5, 96, 9)
+    assert uci_har_patches.shape == (5, 64, 9)
 
     # ActionSense: 200 Hz, variable channels (let's say 30)
     actionsense_data = torch.randn(2000, 30)
@@ -376,7 +376,7 @@ def test_integration_all_datasets():
         sampling_rate_hz=200.0,
         patch_size_sec=2.0
     )
-    assert actionsense_patches.shape == (5, 96, 30)
+    assert actionsense_patches.shape == (5, 64, 30)
 
     # MHEALTH: 50 Hz, 23 channels
     mhealth_data = torch.randn(500, 23)
@@ -385,7 +385,7 @@ def test_integration_all_datasets():
         sampling_rate_hz=50.0,
         patch_size_sec=2.0
     )
-    assert mhealth_patches.shape == (5, 96, 23)
+    assert mhealth_patches.shape == (5, 64, 23)
 
     # PAMAP2: 100 Hz, 40 channels
     pamap2_data = torch.randn(1000, 40)
@@ -394,7 +394,7 @@ def test_integration_all_datasets():
         sampling_rate_hz=100.0,
         patch_size_sec=2.0
     )
-    assert pamap2_patches.shape == (5, 96, 40)
+    assert pamap2_patches.shape == (5, 64, 40)
 
     print("✓ All dataset integration tests passed!")
 

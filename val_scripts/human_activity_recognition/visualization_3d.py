@@ -5,24 +5,54 @@ Creates a 2x2 grid showing embedding space evolution with:
 - Consistent PCA axes computed from final epoch
 - Both IMU and text embeddings color-coded by activity class
 - Activity groups for cleaner visualization
+
+Usage:
+    # Edit RUN_DIR and EPOCHS below, then run:
+    python val_scripts/human_activity_recognition/visualization_3d.py
 """
 
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 - required for projection='3d'
 from sklearn.decomposition import PCA
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 from pathlib import Path
 import sys
+import json
 
-# Add project root to path
+# Add project root to path (val_scripts -> tsfm)
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / 'tools' / 'models'))
 
-from evaluation_metrics import LABEL_GROUPS, get_label_to_group_mapping
+from val_scripts.human_activity_recognition.evaluation_metrics import get_label_to_group_mapping
 
+# =============================================================================
+# CONFIGURATION - Edit these values instead of using CLI args
+# =============================================================================
+
+# Training run directory containing checkpoints
+RUN_DIR = "training_output/semantic_alignment/20260107_102025"
+
+# Epochs to visualize (2x2 grid, so typically 4 epochs)
+EPOCHS = [15, 30, 45, 60]
+
+# Output directory for plots
+OUTPUT_DIR = "test_output/visualization_3d"
+
+# Number of samples to visualize (for clarity)
+SAMPLE_SIZE = 1000
+
+# Datasets to use for evaluation
+EVAL_DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
+
+# Label grouping: True = simplified (~12 groups), False = fine-grained (~25 groups)
+USE_SIMPLE_GROUPS = False
+
+# =============================================================================
+# Constants
+# =============================================================================
 
 # Color scheme for activity groups
 ACTIVITY_COLORS = {
@@ -38,6 +68,11 @@ ACTIVITY_COLORS = {
     'eating': '#795548',        # brown
     'other': '#95a5a6',         # gray for ungrouped activities
 }
+
+
+# =============================================================================
+# Model Loading
+# =============================================================================
 
 
 def load_checkpoint_embeddings(
@@ -56,25 +91,76 @@ def load_checkpoint_embeddings(
     """
     from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
     from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
-    from training_scripts.imu_tool_pretraining.semantic_alignment_train import SemanticAlignmentModel
+    from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
 
     # Load checkpoint
+    checkpoint_path = Path(checkpoint_path)
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
     epoch = checkpoint.get('epoch', 'unknown')
     print(f"Loading epoch {epoch} from {checkpoint_path}")
 
-    # Create model (standard architecture)
+    # Load hyperparameters from checkpoint directory
+    hyperparams_path = checkpoint_path.parent / 'hyperparameters.json'
+    if hyperparams_path.exists():
+        with open(hyperparams_path) as f:
+            hyperparams = json.load(f)
+        enc_cfg = hyperparams.get('encoder', {})
+        head_cfg = hyperparams.get('semantic_head', {})
+        token_cfg = hyperparams.get('token_level_text', {})
+    else:
+        raise FileNotFoundError(
+            f"hyperparameters.json not found at {hyperparams_path}. "
+            "This checkpoint may be from an older incompatible version."
+        )
+
+    # Create encoder
     encoder = IMUActivityRecognitionEncoder(
-        d_model=384, num_heads=8, num_temporal_layers=4, dim_feedforward=1536,
-        dropout=0.1, use_cross_channel=True, cnn_channels=[32, 64], cnn_kernel_sizes=[5],
-        target_patch_size=64
+        d_model=enc_cfg.get('d_model', 384),
+        num_heads=enc_cfg.get('num_heads', 8),
+        num_temporal_layers=enc_cfg.get('num_temporal_layers', 4),
+        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
+        dropout=enc_cfg.get('dropout', 0.1),
+        use_cross_channel=enc_cfg.get('use_cross_channel', True),
+        cnn_channels=enc_cfg.get('cnn_channels', [32, 64]),
+        cnn_kernel_sizes=enc_cfg.get('cnn_kernel_sizes', [5]),
+        target_patch_size=enc_cfg.get('target_patch_size', 64),
+        use_channel_encoding=enc_cfg.get('use_channel_encoding', False)
     )
+
+    # Create semantic head
     semantic_head = SemanticAlignmentHead(
-        d_model=384, d_model_fused=384, output_dim=384, num_bottlenecks=4,
-        num_temporal_layers=2, num_heads=8, dim_feedforward=1536, dropout=0.1
+        d_model=enc_cfg.get('d_model', 384),
+        d_model_fused=384,
+        output_dim=384,
+        num_temporal_layers=head_cfg.get('num_temporal_layers', 2),
+        num_heads=enc_cfg.get('num_heads', 8),
+        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
+        dropout=enc_cfg.get('dropout', 0.1),
+        num_fusion_queries=head_cfg.get('num_fusion_queries', 4),
+        use_fusion_self_attention=head_cfg.get('use_fusion_self_attention', True),
+        num_pool_queries=head_cfg.get('num_pool_queries', 4),
+        use_pool_self_attention=head_cfg.get('use_pool_self_attention', True)
     )
-    model = SemanticAlignmentModel(encoder, semantic_head)
-    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+
+    # Create full model with token-level text encoding
+    model = SemanticAlignmentModel(
+        encoder,
+        semantic_head,
+        num_heads=token_cfg.get('num_heads', 4),
+        dropout=enc_cfg.get('dropout', 0.1)
+    )
+
+    # Load state dict
+    missing_keys, unexpected_keys = model.load_state_dict(
+        checkpoint['model_state_dict'], strict=False
+    )
+    if unexpected_keys:
+        other_unexpected = [k for k in unexpected_keys if 'channel_encoding' not in k]
+        if other_unexpected:
+            print(f"  Warning: Unexpected keys: {other_unexpected[:5]}...")
+    if missing_keys:
+        print(f"  Warning: Missing keys: {missing_keys[:5]}...")
+
     model.eval()
     model = model.to(device)
 
@@ -115,6 +201,41 @@ def load_checkpoint_embeddings(
     return all_imu_embeddings, all_text_embeddings, all_labels
 
 
+def load_label_bank(checkpoint: dict, device: torch.device, hyperparams_path: Path):
+    """Load LearnableLabelBank with trained state from checkpoint."""
+    from imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
+
+    # Get config from hyperparameters
+    if hyperparams_path.exists():
+        with open(hyperparams_path) as f:
+            hyperparams = json.load(f)
+        token_cfg = hyperparams.get('token_level_text', {})
+    else:
+        token_cfg = {}
+
+    label_bank = LearnableLabelBank(
+        device=device,
+        num_heads=token_cfg.get('num_heads', 4),
+        num_queries=token_cfg.get('num_queries', 4),
+        dropout=0.1
+    )
+
+    # Load trained weights if available
+    if 'label_bank_state_dict' in checkpoint:
+        label_bank.load_state_dict(checkpoint['label_bank_state_dict'])
+        print("Loaded trained LearnableLabelBank from checkpoint")
+    else:
+        print("Warning: No label_bank_state_dict in checkpoint, using untrained LearnableLabelBank")
+
+    label_bank.eval()
+    return label_bank
+
+
+# =============================================================================
+# PCA and Visualization
+# =============================================================================
+
+
 def compute_consistent_pca(
     reference_embeddings: np.ndarray,
     n_components: int = 3
@@ -136,6 +257,35 @@ def get_label_color(label: str, label_to_group: Dict[str, str]) -> str:
     return ACTIVITY_COLORS.get(group, ACTIVITY_COLORS['other'])
 
 
+def build_group_labels_text(labels: List[str], label_to_group: Dict[str, str]) -> str:
+    """
+    Build a text showing which labels belong to which groups.
+    Only includes groups that are actually present in the data.
+    """
+    from collections import defaultdict
+
+    # Group labels by their group
+    group_to_labels = defaultdict(set)
+    for label in set(labels):
+        group = label_to_group.get(label, label)
+        group_to_labels[group].add(label)
+
+    # Build text, sorted by group name
+    lines = []
+    for group in sorted(group_to_labels.keys()):
+        group_labels = sorted(group_to_labels[group])
+        # Show group and its member labels
+        if len(group_labels) == 1 and group_labels[0] == group:
+            # Single label that is its own group
+            lines.append(f"{group}")
+        else:
+            # Group with multiple labels or different name
+            labels_str = ', '.join(group_labels)
+            lines.append(f"{group}: {labels_str}")
+
+    return '\n'.join(lines)
+
+
 def create_3d_visualization(
     epochs_data: Dict[int, Tuple[np.ndarray, np.ndarray, List[str]]],
     pca: PCA,
@@ -153,7 +303,7 @@ def create_3d_visualization(
         show_text_embeddings: Whether to overlay text embeddings
         sample_size: Number of samples to visualize (for clarity)
     """
-    label_to_group = get_label_to_group_mapping()
+    label_to_group = get_label_to_group_mapping(use_simple=USE_SIMPLE_GROUPS)
     epochs = sorted(epochs_data.keys())
 
     fig = plt.figure(figsize=(16, 14))
@@ -219,7 +369,7 @@ def create_3d_visualization(
         ax.set_ylim(ylim)
         ax.set_zlim(zlim)
 
-    # Create legend
+    # Create legend with group colors
     legend_elements = []
     for group, color in ACTIVITY_COLORS.items():
         if group != 'other':
@@ -229,6 +379,16 @@ def create_3d_visualization(
 
     fig.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(0.99, 0.99),
                ncol=2, fontsize=9)
+
+    # Add text box showing label-to-group mapping
+    # Get all labels from the final epoch
+    final_epoch = max(epochs_data.keys())
+    all_labels = epochs_data[final_epoch][2]
+    group_text = build_group_labels_text(all_labels, label_to_group)
+
+    fig.text(0.01, 0.01, f"Label Groups:\n{group_text}", fontsize=7, family='monospace',
+             verticalalignment='bottom', horizontalalignment='left',
+             bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
 
     plt.suptitle('Semantic Embedding Space Evolution During Training',
                  fontsize=16, fontweight='bold', y=1.02)
@@ -248,7 +408,7 @@ def create_2d_projections(
     """
     Create 2D projections (PC1 vs PC2, PC1 vs PC3, PC2 vs PC3) for each epoch.
     """
-    label_to_group = get_label_to_group_mapping()
+    label_to_group = get_label_to_group_mapping(use_simple=USE_SIMPLE_GROUPS)
     epochs = sorted(epochs_data.keys())
 
     fig, axes = plt.subplots(len(epochs), 3, figsize=(18, 4 * len(epochs)))
@@ -276,6 +436,15 @@ def create_2d_projections(
             if col == 1:
                 ax.set_title(f'Epoch {epoch}', fontsize=12, fontweight='bold')
 
+    # Add text box showing label-to-group mapping
+    final_epoch = max(epochs_data.keys())
+    all_labels = epochs_data[final_epoch][2]
+    group_text = build_group_labels_text(all_labels, label_to_group)
+
+    fig.text(0.01, 0.01, f"Label Groups:\n{group_text}", fontsize=7, family='monospace',
+             verticalalignment='bottom', horizontalalignment='left',
+             bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
+
     plt.suptitle('2D Projections of Embedding Space', fontsize=14, fontweight='bold')
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
@@ -283,45 +452,57 @@ def create_2d_projections(
     plt.close()
 
 
+# =============================================================================
+# Main
+# =============================================================================
+
+
 def main():
     """Main visualization script."""
-    import argparse
+    from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders
 
-    parser = argparse.ArgumentParser(description='3D visualization of semantic embeddings')
-    parser.add_argument('--run_dir', type=str, required=True,
-                        help='Training run directory containing checkpoints')
-    parser.add_argument('--epochs', type=int, nargs='+', default=[15, 30, 45, 60],
-                        help='Epochs to visualize')
-    parser.add_argument('--output_dir', type=str, default=None,
-                        help='Output directory (defaults to run_dir/plots)')
-    parser.add_argument('--sample_size', type=int, default=1000,
-                        help='Number of samples to visualize')
-    args = parser.parse_args()
-
-    run_dir = Path(args.run_dir)
-    output_dir = Path(args.output_dir) if args.output_dir else run_dir / 'plots'
+    run_dir = Path(RUN_DIR)
+    output_dir = Path(OUTPUT_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Run directory: {run_dir}")
+    print(f"Output directory: {output_dir}")
+    print(f"Epochs to visualize: {EPOCHS}")
+    print(f"Sample size: {SAMPLE_SIZE}")
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
     # Load validation data loader
-    from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders
-    from training_scripts.imu_tool_pretraining.label_bank import LabelBank
-
     _, val_loader, _ = create_dataloaders(
         data_root='data',
-        datasets=['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar'],
+        datasets=EVAL_DATASETS,
         batch_size=64,
         max_sessions_per_dataset=10000,
         num_workers=4
     )
 
-    label_bank = LabelBank(model_name='all-MiniLM-L6-v2', device=device)
+    # Load label_bank from the final epoch checkpoint
+    final_epoch = max(EPOCHS)
+    final_checkpoint_path = run_dir / f'epoch_{final_epoch}.pt'
+    hyperparams_path = run_dir / 'hyperparameters.json'
+
+    if final_checkpoint_path.exists():
+        final_checkpoint = torch.load(final_checkpoint_path, map_location='cpu')
+    else:
+        # Fall back to any available checkpoint
+        final_checkpoint = {}
+        for ep in sorted(EPOCHS, reverse=True):
+            cp_path = run_dir / f'epoch_{ep}.pt'
+            if cp_path.exists():
+                final_checkpoint = torch.load(cp_path, map_location='cpu')
+                break
+
+    label_bank = load_label_bank(final_checkpoint, device, hyperparams_path)
 
     # Load embeddings for each epoch
     epochs_data = {}
-    for epoch in args.epochs:
+    for epoch in EPOCHS:
         checkpoint_path = run_dir / f'epoch_{epoch}.pt'
         if not checkpoint_path.exists():
             print(f"Warning: Checkpoint for epoch {epoch} not found at {checkpoint_path}")
@@ -348,17 +529,19 @@ def main():
     create_3d_visualization(
         epochs_data, pca,
         output_path=str(output_dir / 'embedding_evolution_3d.png'),
-        sample_size=args.sample_size
+        sample_size=SAMPLE_SIZE
     )
 
     print("Creating 2D projections...")
     create_2d_projections(
         epochs_data, pca,
         output_path=str(output_dir / 'embedding_evolution_2d.png'),
-        sample_size=args.sample_size
+        sample_size=SAMPLE_SIZE
     )
 
-    print("\nDone!")
+    print(f"\n{'='*70}")
+    print(f"Visualization complete. Plots saved to {output_dir}")
+    print(f"{'='*70}")
 
 
 if __name__ == '__main__':

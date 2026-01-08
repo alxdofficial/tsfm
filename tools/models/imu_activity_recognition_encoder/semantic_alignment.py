@@ -329,8 +329,6 @@ class ProjectionHead(nn.Module):
         Returns:
             Projected embeddings (batch, output_dim)
         """
-        import torch.nn.functional as F
-
         x = self.mlp(x)
 
         # L2 normalize embeddings to unit length (standard in contrastive learning)
@@ -457,8 +455,6 @@ class SemanticAlignmentHead(nn.Module):
             - cross_channel_attn_entropy: How uniform is attention over channels (higher = more uniform)
             - cross_channel_attn_max: Max attention weight (higher = more focused)
         """
-        import torch.nn.functional as F
-
         # Get attention weights from cross-channel fusion
         _, attn_weights = self.cross_channel_fusion(
             encoder_output, channel_mask, return_attention_weights=True
@@ -467,7 +463,7 @@ class SemanticAlignmentHead(nn.Module):
         if attn_weights is None:
             return {}
 
-        # attn_weights shape: (batch*patches, num_bottlenecks, num_channels)
+        # attn_weights shape: (batch*patches, num_queries, num_channels)
         # Compute entropy of attention distribution
         # Entropy = -sum(p * log(p)), max entropy = log(num_channels)
         attn_entropy = -(attn_weights * torch.log(attn_weights + 1e-10)).sum(dim=-1).mean().item()

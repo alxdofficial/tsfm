@@ -10,7 +10,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Import and run
-from training_scripts.imu_tool_pretraining import compare_models
+from training_scripts.human_activity_recognition import compare_models
 
 if __name__ == '__main__':
     # Set up arguments

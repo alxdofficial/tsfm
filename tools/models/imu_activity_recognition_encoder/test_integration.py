@@ -222,8 +222,8 @@ def test_gradient_flow():
 
     encoder = IMUActivityRecognitionEncoder(**get_config("small"))
 
-    # Create patches with gradients enabled
-    patches = torch.randn(2, 5, 96, 9, requires_grad=True)
+    # Create patches with gradients enabled (must match target_patch_size=64)
+    patches = torch.randn(2, 5, 64, 9, requires_grad=True)
 
     # Forward pass
     features = encoder(patches)

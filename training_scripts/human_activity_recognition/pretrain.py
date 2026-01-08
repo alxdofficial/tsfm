@@ -35,11 +35,11 @@ from tools.models.imu_activity_recognition_encoder.encoder import IMUActivityRec
 from tools.models.imu_activity_recognition_encoder.config import get_config as get_encoder_config
 from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders
 from datasets.imu_pretraining_dataset.augmentations import get_weak_augmentation
-from training_scripts.imu_tool_pretraining.losses import (
+from training_scripts.human_activity_recognition.losses import (
     CombinedPretrainingLoss,
     create_random_mask
 )
-from training_scripts.imu_tool_pretraining.plot_utils import TrainingPlotter
+from val_scripts.human_activity_recognition.plot_utils import TrainingPlotter
 
 
 # ======================== HYPERPARAMETERS ========================

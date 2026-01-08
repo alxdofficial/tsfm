@@ -22,15 +22,17 @@ from tqdm import tqdm
 import json
 import math
 
-from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders
+from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders, IMUPretrainingDataset
+from torch.utils.data import DataLoader
 from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
 from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
 from imu_activity_recognition_encoder.token_text_encoder import (
     TokenTextEncoder, ChannelTextFusion, LearnableLabelBank
 )
-from training_scripts.imu_tool_pretraining.semantic_loss import SemanticAlignmentLoss, compute_retrieval_metrics
-from training_scripts.imu_tool_pretraining.plot_utils import TrainingPlotter, EmbeddingVisualizer
-from training_scripts.imu_tool_pretraining.memory_bank import MemoryBank
+from training_scripts.human_activity_recognition.semantic_loss import SemanticAlignmentLoss
+from val_scripts.human_activity_recognition.plot_utils import TrainingPlotter, EmbeddingVisualizer
+from training_scripts.human_activity_recognition.memory_bank import MemoryBank
+from val_scripts.human_activity_recognition.evaluation_metrics import compute_group_accuracy
 import random
 
 # ======================== HYPERPARAMETERS ========================
@@ -91,8 +93,8 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
 EPOCHS = 100
-BATCH_SIZE = 8  # Micro-batch size (reduced for 48-channel datasets like PAMAP2)
-ACCUMULATION_STEPS = 32  # Effective batch = 8 × 32 = 256
+BATCH_SIZE = 16  # Micro-batch size (reduced for 48-channel datasets like PAMAP2)
+ACCUMULATION_STEPS = 32  # Effective batch = 16 × 32 = 512
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
 WARMUP_EPOCHS = 3
 
@@ -116,7 +118,7 @@ SOFT_TARGET_WEIGHT = 1.0  # Pure soft targets with adaptive recalibration
 # This is actually CORRECT for foundation models: any "walking" IMU should match any "walking" text.
 # Gradient direction is preserved (0.99 cosine similarity), magnitude slightly diluted.
 USE_MEMORY_BANK = True
-MEMORY_BANK_SIZE = 256  # Provides 32 + 256 = 288 negatives per step
+MEMORY_BANK_SIZE = 256  # Provides 16 + 256 = 272 negatives per step
 
 # NOTE: Channel augmentation (random subsampling/shuffling) is DISABLED.
 # Experiments showed better zero-shot generalization with consistent channel order.
@@ -130,6 +132,11 @@ PLOT_EVERY_N_BATCHES = 10
 # Embedding visualization
 VISUALIZE_EMBEDDINGS = True  # Generate UMAP plots showing IMU-text alignment
 VISUALIZE_EVERY_N_EPOCHS = 1  # How often to generate embedding plots (1 = every epoch)
+
+# Classification metrics during training
+COMPUTE_CLASSIFICATION_METRICS = True  # Compute group-aware accuracy during validation
+UNSEEN_DATASET = 'motionsense'  # Dataset for zero-shot evaluation (not in training)
+EVAL_UNSEEN_EVERY = 5  # Evaluate on unseen dataset every N epochs
 UMAP_N_NEIGHBORS = 15  # UMAP parameter: 5-50, higher = more global structure
 UMAP_MIN_DIST = 0.1  # UMAP parameter: 0.0-0.99, lower = tighter clusters
 
@@ -237,14 +244,16 @@ class SemanticAlignmentModel(nn.Module):
         else:
             encoded_batch = self.encoder(batched_patches, batched_channel_descs)
 
-        # Step 4: Apply channel text fusion (NEW)
-        # Get token-level embeddings for channel descriptions (use first sample's descs as template)
-        # All samples in this batch have same max_channels, so we use unified channel descs
-        unified_channel_descs = batched_channel_descs[0][:max_channels]
-        channel_tokens, channel_mask_text = self.text_encoder.encode(unified_channel_descs, device)
-
-        # Cross-attention between sensor tokens and channel text tokens
-        encoded_batch = self.channel_fusion(encoded_batch, channel_tokens, channel_mask_text)
+        # Step 4: Apply channel text fusion per sample (each sample has different channel descriptions)
+        # Text encoding is cached, so per-sample loop has minimal overhead
+        fused_samples = []
+        for i in range(num_valid):
+            sample_channel_descs = batched_channel_descs[i][:max_channels]
+            channel_tokens, channel_mask_text = self.text_encoder.encode(sample_channel_descs, device)
+            # Cross-attention between this sample's sensor tokens and its channel text tokens
+            fused_sample = self.channel_fusion(encoded_batch[i:i+1], channel_tokens, channel_mask_text)
+            fused_samples.append(fused_sample)
+        encoded_batch = torch.cat(fused_samples, dim=0)
 
         # Step 5: Map outputs back to original batch positions
         encoder_outputs = [None] * batch_size
@@ -320,22 +329,21 @@ class SemanticAlignmentModel(nn.Module):
 
 def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_queue=None):
     """
-    Compute comprehensive debugging metrics for diagnosing training issues.
+    Compute debug metrics for diagnosing training issues.
 
     Returns dict with:
     - Representation collapse indicators (std, diversity)
-    - Similarity distributions (positive vs negative)
     - Memory bank quality (if queue provided)
-    - Intra-batch similarity (collapse detection)
-    - Hard negative analysis
+
+    NOTE: Similarity metrics (pos_sim, neg_sim, sim_gap) are computed in the loss
+    function with proper label-aware masking. This function only computes
+    collapse/health indicators that don't depend on labels.
     """
     # Convert to fp32 for all operations (mixed precision compatibility)
     imu_embeddings = imu_embeddings.float()
     text_embeddings = text_embeddings.float()
     if imu_queue is not None:
         imu_queue = imu_queue.float()
-    if text_queue is not None:
-        text_queue = text_queue.float()
 
     batch_size = imu_embeddings.shape[0]
     debug_metrics = {}
@@ -349,84 +357,14 @@ def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_
     # Pairwise distances (diversity) - for uniform on hypersphere, expected ~1.0-1.4
     if batch_size > 1:
         debug_metrics['imu_diversity'] = torch.pdist(imu_embeddings).mean().item()
-        debug_metrics['text_diversity'] = torch.pdist(text_embeddings).mean().item()
     else:
         debug_metrics['imu_diversity'] = 0.0
-        debug_metrics['text_diversity'] = 0.0
 
-    # 2. Intra-batch similarity (collapse detection)
-    # IMU embeddings should be diverse (low intra-batch similarity)
-    # Text embeddings may have higher similarity (same labels)
-    imu_sim_matrix = torch.matmul(imu_embeddings, imu_embeddings.T)
-    if batch_size > 1:
-        imu_intra_mask = ~torch.eye(batch_size, dtype=torch.bool, device=imu_sim_matrix.device)
-        debug_metrics['imu_intra_batch_sim'] = imu_sim_matrix[imu_intra_mask].mean().item()
-        # Collapse indicator: if all IMU embeddings become same vector, this approaches 1.0
-        debug_metrics['imu_intra_batch_sim_max'] = imu_sim_matrix[imu_intra_mask].max().item()
-    else:
-        debug_metrics['imu_intra_batch_sim'] = 0.0
-        debug_metrics['imu_intra_batch_sim_max'] = 0.0
-
-    # 3. Similarity Distribution Analysis
-    sim_matrix = torch.matmul(imu_embeddings, text_embeddings.T)  # (batch, batch)
-
-    # Positive pairs (diagonal - matched IMU and text)
-    pos_sims = torch.diagonal(sim_matrix)
-    debug_metrics['pos_sim_mean'] = pos_sims.mean().item()
-    debug_metrics['pos_sim_std'] = pos_sims.std().item()
-    debug_metrics['pos_sim_min'] = pos_sims.min().item()
-    debug_metrics['pos_sim_max'] = pos_sims.max().item()
-
-    # Negative pairs (off-diagonal - mismatched IMU and text)
-    if batch_size > 1:
-        neg_mask = ~torch.eye(batch_size, dtype=torch.bool, device=sim_matrix.device)
-        neg_sims = sim_matrix[neg_mask]
-        debug_metrics['neg_sim_mean'] = neg_sims.mean().item()
-        debug_metrics['neg_sim_std'] = neg_sims.std().item()
-        debug_metrics['neg_sim_max'] = neg_sims.max().item()  # Hardest negative
-
-        # Similarity gap (should be positive and growing during training)
-        debug_metrics['sim_gap'] = debug_metrics['pos_sim_mean'] - debug_metrics['neg_sim_mean']
-
-        # 4. Hard negative analysis
-        # How many negatives have higher similarity than the positive?
-        # This indicates samples where model is confused
-        pos_expanded = pos_sims.unsqueeze(1)  # (batch, 1)
-        hard_negatives_per_sample = (sim_matrix > pos_expanded).sum(dim=1).float()  # Exclude diagonal
-        debug_metrics['hard_negative_count'] = hard_negatives_per_sample.mean().item()
-        # Rank of positive pair (0 = correct, higher = worse)
-        debug_metrics['positive_rank'] = hard_negatives_per_sample.mean().item()
-
-        # Margin: how much does positive exceed the hardest negative
-        # For each row, find max negative similarity
-        neg_max_per_row = (sim_matrix * neg_mask.float()).max(dim=1)[0]
-        margin = pos_sims - neg_max_per_row
-        debug_metrics['margin_mean'] = margin.mean().item()
-        debug_metrics['margin_min'] = margin.min().item()  # Worst case margin
-    else:
-        debug_metrics['neg_sim_mean'] = 0.0
-        debug_metrics['neg_sim_std'] = 0.0
-        debug_metrics['neg_sim_max'] = 0.0
-        debug_metrics['sim_gap'] = 0.0
-        debug_metrics['hard_negative_count'] = 0.0
-        debug_metrics['positive_rank'] = 0.0
-        debug_metrics['margin_mean'] = 0.0
-        debug_metrics['margin_min'] = 0.0
-
-    # 5. Memory Bank Quality (if queue provided)
+    # 2. Memory Bank Quality (if queue provided)
     if imu_queue is not None and len(imu_queue) > 0:
         # Queue diversity
-        queue_sample = imu_queue[:min(100, len(imu_queue))]  # Sample to avoid expensive computation
+        queue_sample = imu_queue[:min(100, len(imu_queue))]
         debug_metrics['queue_diversity'] = torch.pdist(queue_sample).mean().item()
-
-        # Queue staleness: how different is queue from current batch?
-        queue_vs_current = torch.cdist(imu_embeddings, imu_queue[:100]).mean().item()
-        debug_metrics['queue_staleness'] = queue_vs_current
-
-        # Queue similarity to current batch (for hard negative mining from queue)
-        queue_sim = torch.matmul(imu_embeddings, imu_queue.T)  # (batch, queue_size)
-        debug_metrics['queue_sim_mean'] = queue_sim.mean().item()
-        debug_metrics['queue_sim_max'] = queue_sim.max().item()  # Hardest negative from queue
 
     return debug_metrics
 
@@ -452,6 +390,7 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
     
     print(f"\nWarming up memory bank (queue_size={memory_bank.queue_size})...")
     model.eval()  # Eval mode during warmup (no training)
+    label_bank.eval()
     
     # Calculate how many batches needed to fill queue
     if num_batches is None:
@@ -488,7 +427,7 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
             print(f"  Batch {batch_idx + 1}/{num_batches}: Queue filled {filled}/{memory_bank.queue_size} "
                   f"({100 * filled / memory_bank.queue_size:.1f}%)")
     
-    print(f"✓ Memory bank warmup complete ({memory_bank.ptr} embeddings)")
+    print(f"✓ Memory bank warmup complete ({len(memory_bank)} embeddings)")
     
     # Return model to training mode if it wasn't frozen
     if not FREEZE_ENCODER:
@@ -554,6 +493,7 @@ def _compute_per_layer_grad_norms(model, criterion=None, label_bank=None):
 def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epoch, scaler, plotter=None, stage="stage1", memory_bank=None):
     """Train for one epoch."""
     model.train()
+    label_bank.train()  # Enable dropout in learnable attention pooling
 
     # Keep encoder in evaluation mode if frozen (prevents dropout and batch norm updates)
     if FREEZE_ENCODER and hasattr(model, 'encoder'):
@@ -561,18 +501,15 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
 
     # Track all metrics
     total_loss = 0.0
-    total_acc_i2t = 0.0
-    total_acc_t2i = 0.0
     total_pos_sim = 0.0
     total_neg_sim = 0.0
     total_sim_gap = 0.0
     total_grad_norm = 0.0
 
-    # Track debug metrics
+    # Track debug metrics (collapse detection only - similarity is in loss metrics)
     total_imu_std = 0.0
     total_text_std = 0.0
     total_imu_diversity = 0.0
-    total_debug_sim_gap = 0.0
     total_queue_diversity = 0.0
 
     # Track per-layer gradient norms (dict for each sub-component)
@@ -651,6 +588,13 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             # This ensures we actually capture gradients when they exist (after accumulation)
             should_log_grads = accum_step_count % DEBUG_METRIC_FREQUENCY == 0
 
+            # Collect all trainable parameters for gradient clipping
+            all_trainable_params = (
+                list(filter(lambda p: p.requires_grad, model.parameters())) +
+                list(criterion.parameters()) +
+                list(label_bank.parameters())
+            )
+
             if scaler is not None:
                 scaler.unscale_(optimizer)
 
@@ -658,7 +602,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
                 if should_log_grads:
                     batch_grad_norms = _compute_per_layer_grad_norms(model, criterion, label_bank)
 
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=MAX_GRAD_NORM)
+                grad_norm = torch.nn.utils.clip_grad_norm_(all_trainable_params, max_norm=MAX_GRAD_NORM)
                 scaler.step(optimizer)
                 scaler.update()
             else:
@@ -666,7 +610,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
                 if should_log_grads:
                     batch_grad_norms = _compute_per_layer_grad_norms(model, criterion, label_bank)
 
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=MAX_GRAD_NORM)
+                grad_norm = torch.nn.utils.clip_grad_norm_(all_trainable_params, max_norm=MAX_GRAD_NORM)
                 optimizer.step()
 
             # Reset gradients for next accumulation window
@@ -691,8 +635,6 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
 
         # Accumulate metrics
         total_loss += metrics['loss']
-        total_acc_i2t += metrics['acc_imu_to_text']
-        total_acc_t2i += metrics['acc_text_to_imu']
         total_pos_sim += metrics['positive_similarity']
         total_neg_sim += metrics['negative_similarity']
         total_sim_gap += metrics['similarity_gap']
@@ -703,7 +645,6 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             total_imu_std += debug_metrics['imu_std']
             total_text_std += debug_metrics['text_std']
             total_imu_diversity += debug_metrics['imu_diversity']
-            total_debug_sim_gap += debug_metrics['sim_gap']
             if 'queue_diversity' in debug_metrics:
                 total_queue_diversity += debug_metrics['queue_diversity']
 
@@ -713,18 +654,15 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
 
         pbar.set_postfix({
             'loss': f"{metrics['loss']:.4f}",
-            'acc': f"{metrics['acc_imu_to_text']:.3f}",
             'sim_gap': f"{metrics['similarity_gap']:.3f}",
-            'grad': f"{grad_norm.item():.2f}",
-            'imu_std': f"{debug_metrics.get('imu_std', 0.0):.3f}"
+            'pos_sim': f"{metrics['positive_similarity']:.3f}",
+            'grad': f"{grad_norm.item():.2f}"
         })
 
         # Batch-level plotting (every N batches)
         if plotter is not None and batch_idx % PLOT_EVERY_N_BATCHES == 0:
             global_batch = (epoch - 1) * len(dataloader) + batch_idx
             plotter.add_scalar(f'batch/{stage}_loss', metrics['loss'], global_batch)
-            plotter.add_scalar(f'batch/{stage}_acc_imu_to_text', metrics['acc_imu_to_text'], global_batch)
-            plotter.add_scalar(f'batch/{stage}_acc_text_to_imu', metrics['acc_text_to_imu'], global_batch)
             plotter.add_scalar(f'batch/{stage}_positive_similarity', metrics['positive_similarity'], global_batch)
             plotter.add_scalar(f'batch/{stage}_negative_similarity', metrics['negative_similarity'], global_batch)
             plotter.add_scalar(f'batch/{stage}_similarity_gap', metrics['similarity_gap'], global_batch)
@@ -746,39 +684,19 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
                 plotter.add_scalar(f'batch/{stage}_true_positive_target_prob', metrics['true_positive_target_prob'], global_batch)
 
             # Debug metrics (only plot when computed)
+            # NOTE: Similarity metrics are computed in the loss function with label-aware masking
+            # Debug metrics only track collapse indicators (representation health)
             if debug_metrics:
-                # Collapse detection metrics
                 plotter.add_scalar(f'batch/debug_{stage}_imu_std', debug_metrics['imu_std'], global_batch)
                 plotter.add_scalar(f'batch/debug_{stage}_text_std', debug_metrics['text_std'], global_batch)
                 plotter.add_scalar(f'batch/debug_{stage}_imu_diversity', debug_metrics['imu_diversity'], global_batch)
-                plotter.add_scalar(f'batch/debug_{stage}_imu_intra_batch_sim', debug_metrics['imu_intra_batch_sim'], global_batch)
-                plotter.add_scalar(f'batch/debug_{stage}_imu_intra_batch_sim_max', debug_metrics['imu_intra_batch_sim_max'], global_batch)
-
-                # Similarity distribution metrics
-                plotter.add_scalar(f'batch/debug_{stage}_pos_sim_mean', debug_metrics['pos_sim_mean'], global_batch)
-                plotter.add_scalar(f'batch/debug_{stage}_neg_sim_mean', debug_metrics['neg_sim_mean'], global_batch)
-                plotter.add_scalar(f'batch/debug_{stage}_sim_gap', debug_metrics['sim_gap'], global_batch)
-
-                # Hard negative analysis
-                plotter.add_scalar(f'batch/debug_{stage}_hard_negative_count', debug_metrics['hard_negative_count'], global_batch)
-                plotter.add_scalar(f'batch/debug_{stage}_positive_rank', debug_metrics['positive_rank'], global_batch)
-                plotter.add_scalar(f'batch/debug_{stage}_margin_mean', debug_metrics['margin_mean'], global_batch)
-                plotter.add_scalar(f'batch/debug_{stage}_margin_min', debug_metrics['margin_min'], global_batch)
-
-                # Memory bank metrics
                 if 'queue_diversity' in debug_metrics:
                     plotter.add_scalar(f'batch/debug_{stage}_queue_diversity', debug_metrics['queue_diversity'], global_batch)
-                    plotter.add_scalar(f'batch/debug_{stage}_queue_staleness', debug_metrics['queue_staleness'], global_batch)
-                    plotter.add_scalar(f'batch/debug_{stage}_queue_sim_mean', debug_metrics['queue_sim_mean'], global_batch)
-                    plotter.add_scalar(f'batch/debug_{stage}_queue_sim_max', debug_metrics['queue_sim_max'], global_batch)
-
-                # Cross-channel attention stats
-                if 'cross_channel_attn_entropy_ratio' in debug_metrics:
-                    plotter.add_scalar(f'batch/debug_{stage}_attn_entropy_ratio', debug_metrics['cross_channel_attn_entropy_ratio'], global_batch)
-                    plotter.add_scalar(f'batch/debug_{stage}_attn_max', debug_metrics['cross_channel_attn_max'], global_batch)
-                    plotter.add_scalar(f'batch/debug_{stage}_attn_std', debug_metrics['cross_channel_attn_std'], global_batch)
-
-                # Note: Per-layer gradient norms are logged in the accumulation step block
+                # Cross-channel attention stats (from SemanticAlignmentHead)
+                for attn_key in ['cross_channel_attn_entropy', 'cross_channel_attn_entropy_ratio',
+                                 'cross_channel_attn_max', 'cross_channel_attn_std']:
+                    if attn_key in debug_metrics:
+                        plotter.add_scalar(f'batch/debug_{stage}_{attn_key}', debug_metrics[attn_key], global_batch)
 
             plotter.plot_all()
 
@@ -789,8 +707,6 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
 
     return {
         'loss': total_loss / num_batches,
-        'acc_imu_to_text': total_acc_i2t / num_batches,
-        'acc_text_to_imu': total_acc_t2i / num_batches,
         'positive_similarity': total_pos_sim / num_batches,
         'negative_similarity': total_neg_sim / num_batches,
         'similarity_gap': total_sim_gap / num_batches,
@@ -799,17 +715,21 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
         'imu_std': total_imu_std / debug_count,
         'text_std': total_text_std / debug_count,
         'imu_diversity': total_imu_diversity / debug_count,
-        'debug_sim_gap': total_debug_sim_gap / debug_count,
         'queue_diversity': total_queue_diversity / debug_count if USE_MEMORY_BANK else 0.0,
         # Per-component gradient norms
         **{f'{k}_grad_norm': v / debug_count for k, v in total_grad_norms.items()}
     }
 
 
-def validate(model, label_bank, dataloader, criterion, device, epoch, stage="stage1", plot_dir=None):
-    """Validate for one epoch."""
+def validate(model, label_bank, dataloader, criterion, device, epoch, stage="stage1", plot_dir=None,
+             compute_classification=COMPUTE_CLASSIFICATION_METRICS):
+    """Validate for one epoch and optionally compute classification metrics."""
     model.eval()
-    total_loss, total_acc_i2t, total_acc_t2i = 0.0, 0.0, 0.0
+    label_bank.eval()  # Disable dropout in learnable attention pooling
+    total_loss = 0.0
+    total_pos_sim = 0.0
+    total_neg_sim = 0.0
+    total_sim_gap = 0.0
     all_imu_embeddings, all_text_embeddings = [], []
     all_labels = []
     pbar = tqdm(dataloader, desc=f"[{stage}] Epoch {epoch} Validation")
@@ -832,45 +752,96 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
                 _, metrics = criterion(imu_embeddings, text_embeddings, label_texts, return_metrics=True)
 
             total_loss += metrics['loss']
-            total_acc_i2t += metrics['acc_imu_to_text']
-            total_acc_t2i += metrics['acc_text_to_imu']
+            total_pos_sim += metrics['positive_similarity']
+            total_neg_sim += metrics['negative_similarity']
+            total_sim_gap += metrics['similarity_gap']
             # Keep embeddings on GPU for faster concatenation
             all_imu_embeddings.append(imu_embeddings)
             all_text_embeddings.append(text_embeddings)
             all_labels.extend(label_texts)
 
-            pbar.set_postfix({'loss': f"{metrics['loss']:.4f}", 'acc_i2t': f"{metrics['acc_imu_to_text']:.3f}"})
+            pbar.set_postfix({'loss': f"{metrics['loss']:.4f}", 'sim_gap': f"{metrics['similarity_gap']:.3f}"})
 
     num_batches = len(dataloader)
-    avg_metrics = {'loss': total_loss / num_batches, 'acc_imu_to_text': total_acc_i2t / num_batches,
-                   'acc_text_to_imu': total_acc_t2i / num_batches}
+    avg_metrics = {
+        'loss': total_loss / num_batches,
+        'positive_similarity': total_pos_sim / num_batches,
+        'negative_similarity': total_neg_sim / num_batches,
+        'similarity_gap': total_sim_gap / num_batches
+    }
 
-    # Concatenate on GPU (faster than CPU→GPU transfer)
-    all_imu_embeddings = torch.cat(all_imu_embeddings, dim=0)
-    all_text_embeddings = torch.cat(all_text_embeddings, dim=0)
-    retrieval_metrics = compute_retrieval_metrics(all_imu_embeddings, all_text_embeddings, k_values=[1, 5, 10])
-    avg_metrics.update(retrieval_metrics)
+    # Compute classification metrics and/or visualization if enabled
+    need_concat = compute_classification or (VISUALIZE_EMBEDDINGS and epoch % VISUALIZE_EVERY_N_EPOCHS == 0)
 
-    # Generate embedding visualization if enabled
-    if VISUALIZE_EMBEDDINGS and plot_dir is not None and (epoch % VISUALIZE_EVERY_N_EPOCHS == 0):
-        print(f"\n[Epoch {epoch}] Generating embedding visualization...")
-        visualizer = EmbeddingVisualizer(
-            output_dir=plot_dir,
-            n_neighbors=UMAP_N_NEIGHBORS,
-            min_dist=UMAP_MIN_DIST
-        )
-        visualizer.plot_embedding_alignment_2d(
-            imu_embeddings=all_imu_embeddings,
-            text_embeddings=all_text_embeddings,
-            labels=all_labels,
-            epoch=epoch,
-            metrics={
-                'alignment_score': avg_metrics.get('acc_imu_to_text', 0.0),
-                'gap': avg_metrics.get('recall@1_avg', 0.0)
-            }
-        )
+    if need_concat and len(all_imu_embeddings) > 0:
+        # Concatenate on GPU (faster than CPU→GPU transfer)
+        all_imu_cat = torch.cat(all_imu_embeddings, dim=0)
+        all_text_cat = torch.cat(all_text_embeddings, dim=0)
+
+        # Compute group-aware classification accuracy
+        if compute_classification:
+            with torch.no_grad():
+                class_metrics = compute_group_accuracy(
+                    all_imu_cat, label_bank, all_labels, return_mrr=True
+                )
+            avg_metrics.update(class_metrics)
+
+        # Generate embedding visualization if enabled
+        if VISUALIZE_EMBEDDINGS and plot_dir is not None and (epoch % VISUALIZE_EVERY_N_EPOCHS == 0):
+            print(f"\n[Epoch {epoch}] Generating embedding visualization...")
+            visualizer = EmbeddingVisualizer(
+                output_dir=plot_dir,
+                n_neighbors=UMAP_N_NEIGHBORS,
+                min_dist=UMAP_MIN_DIST
+            )
+            visualizer.plot_embedding_alignment_2d(
+                imu_embeddings=all_imu_cat,
+                text_embeddings=all_text_cat,
+                labels=all_labels,
+                epoch=epoch,
+                metrics={
+                    'pos_sim': avg_metrics['positive_similarity'],
+                    'sim_gap': avg_metrics['similarity_gap']
+                }
+            )
 
     return avg_metrics
+
+
+def evaluate_unseen(model, label_bank, dataloader, device, epoch):
+    """
+    Evaluate on unseen dataset for zero-shot performance.
+
+    Returns classification accuracy and MRR.
+    """
+    model.eval()
+    label_bank.eval()
+    all_imu_embeddings = []
+    all_labels = []
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc=f"[Epoch {epoch}] Unseen eval", leave=False):
+            data = batch['data'].to(device)
+            channel_mask = batch['channel_mask'].to(device)
+            label_texts = batch['label_texts']
+            metadata = batch['metadata']
+
+            sampling_rates = [m['sampling_rate_hz'] for m in metadata]
+            patch_sizes = [m['patch_size_sec'] for m in metadata]
+            channel_descriptions = [m['channel_descriptions'] for m in metadata]
+
+            with autocast('cuda', enabled=device.type == 'cuda'):
+                imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
+
+            all_imu_embeddings.append(imu_embeddings)
+            all_labels.extend(label_texts)
+
+    if len(all_imu_embeddings) > 0:
+        all_imu_cat = torch.cat(all_imu_embeddings, dim=0)
+        metrics = compute_group_accuracy(all_imu_cat, label_bank, all_labels, return_mrr=True)
+        return metrics
+
+    return {'accuracy': 0.0, 'mrr': 0.0}
 
 
 def main():
@@ -912,7 +883,12 @@ def main():
 
     # Save hyperparameters
     hyperparams = {
-        'encoder': {'d_model': D_MODEL, 'num_heads': NUM_HEADS},
+        'encoder': {
+            'd_model': D_MODEL, 'num_heads': NUM_HEADS, 'num_temporal_layers': NUM_TEMPORAL_LAYERS,
+            'dim_feedforward': DIM_FEEDFORWARD, 'dropout': DROPOUT, 'use_cross_channel': USE_CROSS_CHANNEL,
+            'cnn_channels': CNN_CHANNELS, 'cnn_kernel_sizes': CNN_KERNEL_SIZES,
+            'target_patch_size': TARGET_PATCH_SIZE, 'use_channel_encoding': False
+        },
         'semantic': {'d_model_fused': D_MODEL_FUSED, 'semantic_dim': SEMANTIC_DIM,
                      'sentence_bert_model': SENTENCE_BERT_MODEL, 'temperature': TEMPERATURE,
                      'use_soft_targets': USE_SOFT_TARGETS, 'soft_target_temperature': SOFT_TARGET_TEMPERATURE,
@@ -921,7 +897,7 @@ def main():
         'training': {'epochs': EPOCHS, 'batch_size': BATCH_SIZE, 'accumulation_steps': ACCUMULATION_STEPS,
                      'effective_batch_size': BATCH_SIZE * ACCUMULATION_STEPS,
                      'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS, 'max_grad_norm': MAX_GRAD_NORM},
-        'data': {'channel_augmentation': False},  # Hardcoded: no random channel shuffling
+        'data': {'channel_augmentation': False, 'use_channel_encoding': False},  # ChannelTextFusion handles channel semantics
         'channel_projection': {'enabled': True, 'hidden_dim': None},  # Hardcoded: projection enabled
         'token_level_text': {'num_heads': TOKEN_TEXT_NUM_HEADS, 'num_queries': TOKEN_TEXT_NUM_QUERIES},
         'semantic_head': {'num_temporal_layers': NUM_SEMANTIC_TEMPORAL_LAYERS,
@@ -940,6 +916,7 @@ def main():
         num_temporal_layers=NUM_TEMPORAL_LAYERS, dim_feedforward=DIM_FEEDFORWARD,
         dropout=DROPOUT, use_cross_channel=USE_CROSS_CHANNEL,
         cnn_channels=CNN_CHANNELS, cnn_kernel_sizes=CNN_KERNEL_SIZES,
+        use_channel_encoding=False,  # Disabled: ChannelTextFusion handles channel semantics
     ).to(device)
 
     if PRETRAINED_ENCODER_PATH and Path(PRETRAINED_ENCODER_PATH).exists():
@@ -1043,6 +1020,29 @@ def main():
         max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET
     )
 
+    # Create unseen dataset loader for zero-shot evaluation
+    unseen_loader = None
+    if UNSEEN_DATASET:
+        try:
+            unseen_dataset = IMUPretrainingDataset(
+                data_root=DATA_ROOT,
+                datasets=[UNSEEN_DATASET],
+                split='val',
+                max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
+                seed=SEED
+            )
+            unseen_loader = DataLoader(
+                unseen_dataset,
+                batch_size=BATCH_SIZE,
+                shuffle=False,
+                num_workers=0,
+                collate_fn=IMUPretrainingDataset.collate_fn,
+                pin_memory=True
+            )
+            print(f"Loaded unseen dataset '{UNSEEN_DATASET}' with {len(unseen_dataset)} samples")
+        except Exception as e:
+            print(f"Warning: Could not load unseen dataset '{UNSEEN_DATASET}': {e}")
+
     # Setup optimizer (trains semantic head only if encoder is frozen, otherwise all parameters)
     # IMPORTANT: Include criterion.parameters() for learnable temperature (logit_scale)
     # and label_bank.parameters() for learnable attention pooling
@@ -1088,6 +1088,11 @@ def main():
                 memory_bank.load_state_dict(resume_checkpoint['memory_bank_state_dict'])
                 print(f"✓ Loaded memory bank state (size={len(memory_bank)}, ptr={memory_bank.ptr})")
 
+        # Load label_bank state if available (learnable attention pooling weights)
+        if 'label_bank_state_dict' in resume_checkpoint:
+            label_bank.load_state_dict(resume_checkpoint['label_bank_state_dict'])
+            print("✓ Loaded label_bank state (learnable attention pooling)")
+
     # Warmup memory bank if enabled (reduces early training volatility)
     # Skip if resuming since memory bank is restored from checkpoint
     if memory_bank is not None and USE_MEMORY_BANK and resume_checkpoint is None:
@@ -1107,35 +1112,47 @@ def main():
         plotter.add_scalar('epoch/lr', current_lr, epoch)
 
         print(f"\nEpoch {epoch}/{EPOCHS}")
-        print(f"  Train - Loss: {train_metrics['loss']:.4f}, Acc(I2T): {train_metrics['acc_imu_to_text']:.4f}, Sim Gap: {train_metrics['similarity_gap']:.3f}, Grad: {train_metrics['grad_norm']:.2f}")
+        print(f"  Train - Loss: {train_metrics['loss']:.4f}, Sim Gap: {train_metrics['similarity_gap']:.3f}, Pos Sim: {train_metrics['positive_similarity']:.3f}, Grad: {train_metrics['grad_norm']:.2f}")
         print(f"  Debug - IMU std: {train_metrics['imu_std']:.3f}, Diversity: {train_metrics['imu_diversity']:.3f}, Proj grad: {train_metrics['projection_head_grad_norm']:.4f}")
-        print(f"  Val   - Loss: {val_metrics['loss']:.4f}, Recall@1: {val_metrics['recall@1_avg']:.4f}, Recall@5: {val_metrics['recall@5_avg']:.4f}")
+        val_acc_str = f", Acc: {val_metrics['accuracy']:.1%}" if 'accuracy' in val_metrics else ""
+        val_mrr_str = f", MRR: {val_metrics['mrr']:.3f}" if 'mrr' in val_metrics else ""
+        print(f"  Val   - Loss: {val_metrics['loss']:.4f}, Sim Gap: {val_metrics['similarity_gap']:.3f}, Pos Sim: {val_metrics['positive_similarity']:.3f}{val_acc_str}{val_mrr_str}")
+
+        # Evaluate on unseen dataset periodically
+        unseen_metrics = None
+        if unseen_loader is not None and epoch % EVAL_UNSEEN_EVERY == 0:
+            unseen_metrics = evaluate_unseen(model, label_bank, unseen_loader, device, epoch)
+            print(f"  Unseen ({UNSEEN_DATASET}) - Acc: {unseen_metrics['accuracy']:.1%}, MRR: {unseen_metrics['mrr']:.3f}")
 
         # Log comprehensive metrics
         plotter.add_scalar('epoch/train_loss', train_metrics['loss'], epoch)
-        plotter.add_scalar('epoch/train_acc_imu_to_text', train_metrics['acc_imu_to_text'], epoch)
-        plotter.add_scalar('epoch/train_acc_text_to_imu', train_metrics['acc_text_to_imu'], epoch)
         plotter.add_scalar('epoch/train_positive_similarity', train_metrics['positive_similarity'], epoch)
         plotter.add_scalar('epoch/train_negative_similarity', train_metrics['negative_similarity'], epoch)
         plotter.add_scalar('epoch/train_similarity_gap', train_metrics['similarity_gap'], epoch)
         plotter.add_scalar('epoch/train_grad_norm', train_metrics['grad_norm'], epoch)
 
-        # Log debug metrics
+        # Log debug metrics (collapse detection only - similarity_gap is from loss function above)
         plotter.add_scalar('epoch/debug_imu_std', train_metrics['imu_std'], epoch)
         plotter.add_scalar('epoch/debug_text_std', train_metrics['text_std'], epoch)
         plotter.add_scalar('epoch/debug_imu_diversity', train_metrics['imu_diversity'], epoch)
-        plotter.add_scalar('epoch/debug_sim_gap', train_metrics['debug_sim_gap'], epoch)
         plotter.add_scalar('epoch/debug_queue_diversity', train_metrics['queue_diversity'], epoch)
         # Log per-component gradient norms (including label_pooling for LearnableLabelBank)
         for comp_name in ['cross_channel_fusion', 'temporal_attention', 'attention_pooling', 'projection_head', 'label_pooling']:
             plotter.add_scalar(f'epoch/debug_{comp_name}_grad_norm', train_metrics[f'{comp_name}_grad_norm'], epoch)
 
         plotter.add_scalar('epoch/val_loss', val_metrics['loss'], epoch)
-        plotter.add_scalar('epoch/val_acc_imu_to_text', val_metrics['acc_imu_to_text'], epoch)
-        plotter.add_scalar('epoch/val_acc_text_to_imu', val_metrics['acc_text_to_imu'], epoch)
-        plotter.add_scalar('epoch/val_recall@1', val_metrics['recall@1_avg'], epoch)
-        plotter.add_scalar('epoch/val_recall@5', val_metrics['recall@5_avg'], epoch)
-        plotter.add_scalar('epoch/val_recall@10', val_metrics['recall@10_avg'], epoch)
+        plotter.add_scalar('epoch/val_positive_similarity', val_metrics['positive_similarity'], epoch)
+        plotter.add_scalar('epoch/val_negative_similarity', val_metrics['negative_similarity'], epoch)
+        plotter.add_scalar('epoch/val_similarity_gap', val_metrics['similarity_gap'], epoch)
+        if 'accuracy' in val_metrics:
+            plotter.add_scalar('epoch/val_accuracy', val_metrics['accuracy'], epoch)
+        if 'mrr' in val_metrics:
+            plotter.add_scalar('epoch/val_mrr', val_metrics['mrr'], epoch)
+
+        # Log unseen dataset metrics
+        if unseen_metrics is not None:
+            plotter.add_scalar('epoch/unseen_accuracy', unseen_metrics['accuracy'], epoch)
+            plotter.add_scalar('epoch/unseen_mrr', unseen_metrics['mrr'], epoch)
 
         plotter.plot_all()
 
@@ -1144,6 +1161,7 @@ def main():
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
+                'label_bank_state_dict': label_bank.state_dict(),  # Save learnable label embeddings
                 'criterion_state_dict': criterion.state_dict(),  # Save learnable temperature
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),

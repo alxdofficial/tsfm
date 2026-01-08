@@ -6,7 +6,7 @@ Replaces TensorBoard with local PNG plots saved to disk.
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
@@ -159,7 +159,10 @@ class TrainingPlotter:
         """Plot batch-level debug metrics for monitoring gradient flow and representation collapse."""
         # Find debug metrics in batch (look for metrics starting with 'debug_')
         debug_metrics = [k for k in self.metrics['batch'].keys() if k.startswith('debug_')]
-        if not debug_metrics:
+        # Also check for similarity metrics (logged without debug_ prefix)
+        all_batch_keys = self.metrics['batch'].keys()
+        has_similarity = any(('similarity' in k or 'sim_gap' in k) for k in all_batch_keys)
+        if not debug_metrics and not has_similarity:
             return
 
         # Group metrics by category (attention metrics first to exclude from other groups)
@@ -169,10 +172,12 @@ class TrainingPlotter:
                           ('std' in k or 'diversity' in k or 'staleness' in k)
                           and 'attn' not in k]
         gradient_metrics = [k for k in debug_metrics if 'grad_norm' in k]
-        # Similarity includes: sim, margin, hard_negative, positive_rank
-        similarity_metrics = [k for k in debug_metrics if
-                             ('sim' in k or 'margin' in k or 'negative' in k or 'rank' in k)
-                             and 'attn' not in k]
+        # Similarity metrics: include both debug_ prefixed AND regular batch similarity metrics
+        # (loss function computes label-aware similarity metrics logged without debug_ prefix)
+        all_batch_keys = self.metrics['batch'].keys()
+        similarity_metrics = [k for k in all_batch_keys if
+                             ('similarity' in k or 'sim_gap' in k)
+                             and 'attn' not in k and 'loss' not in k]
 
         # Create 4 subplots: collapse indicators, gradient norms, similarity, attention
         fig, axes = plt.subplots(4, 1, figsize=(14, 16))
@@ -533,7 +538,7 @@ class EmbeddingVisualizer:
         text_2d = embedding_2d[len(imu_embeddings):]
 
         # Compute additional metrics
-        nn_accuracy = self._compute_nn_accuracy(imu_embeddings, text_embeddings)
+        nn_accuracy = self._compute_nn_accuracy(imu_embeddings, text_embeddings, labels)
 
         # Compute silhouette score (measure of cluster quality)
         try:
@@ -578,12 +583,10 @@ class EmbeddingVisualizer:
         metrics_text += f"NN Accuracy: {nn_accuracy:.2%}\n"
         metrics_text += f"Silhouette: {silhouette:.3f}\n"
 
-        if 'alignment_score' in metrics:
-            metrics_text += f"Alignment: {metrics['alignment_score']:.3f}\n"
-        if 'separation' in metrics:
-            metrics_text += f"Separation: {metrics['separation']:.3f}\n"
-        if 'gap' in metrics:
-            metrics_text += f"Gap: {metrics['gap']:.3f}"
+        if 'pos_sim' in metrics:
+            metrics_text += f"Pos Sim: {metrics['pos_sim']:.3f}\n"
+        if 'sim_gap' in metrics:
+            metrics_text += f"Sim Gap: {metrics['sim_gap']:.3f}"
 
         # Place text box in upper right
         ax.text(
@@ -635,15 +638,21 @@ class EmbeddingVisualizer:
     def _compute_nn_accuracy(
         self,
         imu_embeddings: np.ndarray,
-        text_embeddings: np.ndarray
+        text_embeddings: np.ndarray,
+        labels: List[str]
     ) -> float:
         """
         Compute nearest neighbor accuracy: % of IMU embeddings whose
-        nearest neighbor is the correct text embedding.
+        nearest text neighbor has the SAME LABEL.
+
+        This is LABEL-BASED matching, not position-based. With label augmentation,
+        multiple samples share the same label, so we check if the retrieved
+        text embedding's label matches the query's label.
 
         Args:
             imu_embeddings: IMU embeddings (N, embedding_dim)
             text_embeddings: Text embeddings (N, embedding_dim)
+            labels: Ground truth labels for each sample (N,)
 
         Returns:
             Nearest neighbor accuracy (0-1)
@@ -654,8 +663,10 @@ class EmbeddingVisualizer:
         # For each IMU embedding, find nearest text embedding
         nearest_text_indices = np.argmax(similarities, axis=1)
 
-        # Correct if index matches (diagonal)
-        correct_indices = np.arange(len(imu_embeddings))
-        correct = (nearest_text_indices == correct_indices).sum()
+        # Correct if retrieved label matches query label (LABEL-BASED)
+        correct = 0
+        for i, nearest_idx in enumerate(nearest_text_indices):
+            if labels[nearest_idx] == labels[i]:
+                correct += 1
 
         return correct / len(imu_embeddings)

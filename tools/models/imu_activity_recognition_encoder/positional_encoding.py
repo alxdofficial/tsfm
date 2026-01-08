@@ -304,7 +304,6 @@ class ChannelSemanticEncoding(nn.Module):
             channel_enc = self.encode_channel_descriptions(channel_descriptions)
         else:
             # Use zeros as fallback when no channel descriptions provided
-            print("Warning: No channel descriptions provided.")
             channel_enc = torch.zeros(num_channels, self.d_model)
 
         # Ensure channel encoding is on same device as input

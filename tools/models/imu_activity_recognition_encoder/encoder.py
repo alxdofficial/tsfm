@@ -206,7 +206,7 @@ class IMUActivityRecognitionEncoder(nn.Module):
 
         Example:
             >>> encoder = IMUActivityRecognitionEncoder(d_model=128)
-            >>> patches = torch.randn(8, 10, 96, 9)  # 8 samples, 10 patches, 9 channels
+            >>> patches = torch.randn(8, 10, 64, 9)  # 8 samples, 10 patches, 64 timesteps, 9 channels
             >>> features = encoder(patches)
             >>> features.shape  # (8, 10, 9, 128)
         """
@@ -216,7 +216,7 @@ class IMUActivityRecognitionEncoder(nn.Module):
             f"Expected patches with {self.target_patch_size} timesteps, got {seq_len}"
 
         # Extract features with CNN
-        # (batch, patches, 96, channels) -> (batch, patches, channels, d_model)
+        # (batch, patches, target_patch_size, channels) -> (batch, patches, channels, d_model)
         features = self.feature_extractor(patches)
 
         # Apply mask_token and pad_token at feature level (AFTER CNN, BEFORE positional encoding)
@@ -370,7 +370,7 @@ def test_encoder():
         num_heads=8
     )
 
-    patches = torch.randn(4, 10, 96, 9)  # 4 samples, 10 patches, 9 channels
+    patches = torch.randn(4, 10, 64, 9)  # 4 samples, 10 patches, 64 timesteps, 9 channels
     features = encoder(patches)
 
     assert features.shape == (4, 10, 9, 128)
@@ -447,7 +447,7 @@ def test_encoder():
         "magnetometer z-axis"
     ]
 
-    patches = torch.randn(2, 10, 96, 9)
+    patches = torch.randn(2, 10, 64, 9)  # Must match target_patch_size=64
     features = encoder(patches, channel_descriptions=channel_descs)
     assert features.shape == (2, 10, 9, 128)
     print(f"   ✓ Channel descriptions used successfully")
@@ -476,7 +476,7 @@ def test_encoder():
     # Test 8: Gradient flow
     print("\n8. Testing gradient flow...")
     encoder = IMUActivityRecognitionEncoder(d_model=128, num_temporal_layers=2)
-    patches = torch.randn(2, 10, 96, 9, requires_grad=True)
+    patches = torch.randn(2, 10, 64, 9, requires_grad=True)  # Must use 64 timesteps
     features = encoder(patches)
     loss = features.sum()
     loss.backward()
@@ -488,7 +488,7 @@ def test_encoder():
     print("\n9. Testing config retrieval...")
     config = encoder.get_config()
     assert 'd_model' in config
-    assert config['target_patch_size'] == 96
+    assert config['target_patch_size'] == 64
     print(f"   ✓ Config: {config}")
 
     print("\n" + "="*80)

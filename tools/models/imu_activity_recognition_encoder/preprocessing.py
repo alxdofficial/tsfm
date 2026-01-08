@@ -209,7 +209,7 @@ def preprocess_imu_data(
     sampling_rate_hz: float,
     patch_size_sec: float,
     stride_sec: Optional[float] = None,
-    target_patch_size: int = 96,
+    target_patch_size: int = 64,
     normalization_method: str = 'zscore',
     interpolation_method: str = 'linear'
 ) -> Tuple[torch.Tensor, dict]:
@@ -226,7 +226,7 @@ def preprocess_imu_data(
         sampling_rate_hz: Sampling rate in Hz
         patch_size_sec: Duration of each patch in seconds
         stride_sec: Stride between patches in seconds (default: patch_size_sec)
-        target_patch_size: Target timesteps per patch after interpolation (default: 96)
+        target_patch_size: Target timesteps per patch after interpolation (default: 64)
         normalization_method: 'zscore', 'minmax', or 'none'
         interpolation_method: 'linear', 'cubic', or 'nearest'
 

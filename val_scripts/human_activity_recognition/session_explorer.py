@@ -1,76 +1,169 @@
-which"""
+"""
 Interactive session explorer for semantic alignment model.
 
-Loads a random session, displays its info, runs inference,
-and shows top-5 predictions with similarities.
+Loads random sessions, displays info, runs inference,
+and shows top-5 predictions with similarities and 3D visualizations.
 
 Usage:
-    python training_scripts/imu_tool_pretraining/session_explorer.py \
-        --checkpoint training_output/semantic_alignment/20251202_105310/epoch_60.pt
+    # Edit CHECKPOINT_PATH below, then run:
+    python val_scripts/human_activity_recognition/session_explorer.py
 """
 
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 - required for projection='3d'
 from sklearn.decomposition import PCA
 from pathlib import Path
 import sys
-import argparse
+import json
 import random
 
-# Add project root to path
+# Add project root to path (val_scripts -> tsfm)
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / 'tools' / 'models'))
 
-from evaluation_metrics import LABEL_GROUPS, get_label_to_group_mapping
+from val_scripts.human_activity_recognition.evaluation_metrics import get_label_to_group_mapping
 
+# =============================================================================
+# CONFIGURATION - Edit these values instead of using CLI args
+# =============================================================================
 
-# All unique labels from the datasets (will be populated dynamically)
+# Path to checkpoint
+CHECKPOINT_PATH = "training_output/semantic_alignment/20260107_102025/epoch_60.pt"
+
+# Output directory for plots
+OUTPUT_DIR = "test_output/session_explorer"
+
+# Number of sessions to explore
+NUM_SESSIONS = 5
+
+# Datasets to sample from
+EVAL_DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
+
+# Whether to pause between sessions (False for batch mode)
+INTERACTIVE = False
+
+# Label grouping: True = simplified (~12 groups), False = fine-grained (~25 groups)
+USE_SIMPLE_GROUPS = False
+
+# All unique labels (populated dynamically)
 ALL_LABELS = None
+
+
+# =============================================================================
+# Model Loading
+# =============================================================================
 
 
 def load_model_and_data(checkpoint_path: str, device: torch.device):
     """Load model and validation data."""
-    import json
     from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
     from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
-    from training_scripts.imu_tool_pretraining.semantic_alignment_train import SemanticAlignmentModel
+    from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
     from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders
-    from training_scripts.imu_tool_pretraining.label_bank import LabelBank
+    from imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
 
     # Load checkpoint
+    checkpoint_path = Path(checkpoint_path)
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
     epoch = checkpoint.get('epoch', 'unknown')
     print(f"Loaded checkpoint from epoch {epoch}")
 
-    # Create model (standard architecture)
+    # Load hyperparameters from checkpoint directory
+    hyperparams_path = checkpoint_path.parent / 'hyperparameters.json'
+    if hyperparams_path.exists():
+        with open(hyperparams_path) as f:
+            hyperparams = json.load(f)
+        enc_cfg = hyperparams.get('encoder', {})
+        head_cfg = hyperparams.get('semantic_head', {})
+        token_cfg = hyperparams.get('token_level_text', {})
+        print(f"Loaded architecture from {hyperparams_path}")
+    else:
+        raise FileNotFoundError(
+            f"hyperparameters.json not found at {hyperparams_path}. "
+            "This checkpoint may be from an older incompatible version."
+        )
+
+    # Create encoder
     encoder = IMUActivityRecognitionEncoder(
-        d_model=384, num_heads=8, num_temporal_layers=4, dim_feedforward=1536,
-        dropout=0.1, use_cross_channel=True, cnn_channels=[32, 64], cnn_kernel_sizes=[5],
-        target_patch_size=64
+        d_model=enc_cfg.get('d_model', 384),
+        num_heads=enc_cfg.get('num_heads', 8),
+        num_temporal_layers=enc_cfg.get('num_temporal_layers', 4),
+        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
+        dropout=enc_cfg.get('dropout', 0.1),
+        use_cross_channel=enc_cfg.get('use_cross_channel', True),
+        cnn_channels=enc_cfg.get('cnn_channels', [32, 64]),
+        cnn_kernel_sizes=enc_cfg.get('cnn_kernel_sizes', [5]),
+        target_patch_size=enc_cfg.get('target_patch_size', 64),
+        use_channel_encoding=enc_cfg.get('use_channel_encoding', False)
     )
+
+    # Create semantic head
     semantic_head = SemanticAlignmentHead(
-        d_model=384, d_model_fused=384, output_dim=384, num_bottlenecks=4,
-        num_temporal_layers=2, num_heads=8, dim_feedforward=1536, dropout=0.1
+        d_model=enc_cfg.get('d_model', 384),
+        d_model_fused=384,
+        output_dim=384,
+        num_temporal_layers=head_cfg.get('num_temporal_layers', 2),
+        num_heads=enc_cfg.get('num_heads', 8),
+        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
+        dropout=enc_cfg.get('dropout', 0.1),
+        num_fusion_queries=head_cfg.get('num_fusion_queries', 4),
+        use_fusion_self_attention=head_cfg.get('use_fusion_self_attention', True),
+        num_pool_queries=head_cfg.get('num_pool_queries', 4),
+        use_pool_self_attention=head_cfg.get('use_pool_self_attention', True)
     )
-    model = SemanticAlignmentModel(encoder, semantic_head)
-    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-    model.train(False)
+
+    # Create full model with token-level text encoding
+    model = SemanticAlignmentModel(
+        encoder,
+        semantic_head,
+        num_heads=token_cfg.get('num_heads', 4),
+        dropout=enc_cfg.get('dropout', 0.1)
+    )
+
+    # Load state dict
+    missing_keys, unexpected_keys = model.load_state_dict(
+        checkpoint['model_state_dict'], strict=False
+    )
+    if unexpected_keys:
+        other_unexpected = [k for k in unexpected_keys if 'channel_encoding' not in k]
+        if other_unexpected:
+            print(f"  Warning: Unexpected keys: {other_unexpected[:5]}...")
+    if missing_keys:
+        print(f"  Warning: Missing keys: {missing_keys[:5]}...")
+
+    model.eval()
     model = model.to(device)
 
     # Load validation data
     _, val_loader, _ = create_dataloaders(
         data_root='data',
-        datasets=['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar'],
+        datasets=EVAL_DATASETS,
         batch_size=1,  # Single sample at a time
         max_sessions_per_dataset=10000,
         num_workers=0,
-        
     )
 
-    label_bank = LabelBank(model_name='all-MiniLM-L6-v2', device=device)
+    # Create label bank and load trained weights
+    label_bank = LearnableLabelBank(
+        device=device,
+        num_heads=token_cfg.get('num_heads', 4),
+        num_queries=token_cfg.get('num_queries', 4),
+        dropout=0.1
+    )
+
+    if 'label_bank_state_dict' in checkpoint:
+        label_bank.load_state_dict(checkpoint['label_bank_state_dict'])
+        print("Loaded trained LearnableLabelBank from checkpoint")
+    else:
+        print("Warning: No label_bank_state_dict in checkpoint, using untrained LearnableLabelBank")
+
+    label_bank.eval()
 
     # Collect all unique labels from the dataset
     global ALL_LABELS
@@ -84,9 +177,14 @@ def load_model_and_data(checkpoint_path: str, device: torch.device):
     return model, val_loader, label_bank, epoch
 
 
+# =============================================================================
+# Session Exploration
+# =============================================================================
+
+
 def get_unique_labels_from_groups(label: str, top_labels: list) -> list:
     """Get top predictions with unique groups (allows ground truth group)."""
-    label_to_group = get_label_to_group_mapping()
+    label_to_group = get_label_to_group_mapping(use_simple=USE_SIMPLE_GROUPS)
 
     unique_labels = []
     seen_groups = set()  # Don't exclude ground truth group
@@ -152,7 +250,6 @@ def explore_session(
     # Get top predictions
     sorted_indices = torch.argsort(similarities, descending=True)
     top_labels = [all_labels[i] for i in sorted_indices[:20]]
-    top_sims = [similarities[i].item() for i in sorted_indices[:20]]
 
     # Get unique top 5 (filtering by group)
     unique_top = get_unique_labels_from_groups(label_text, top_labels)[:5]
@@ -161,7 +258,7 @@ def explore_session(
     print("TOP 5 PREDICTIONS (unique groups)")
     print("-"*70)
 
-    label_to_group = get_label_to_group_mapping()
+    label_to_group = get_label_to_group_mapping(use_simple=USE_SIMPLE_GROUPS)
     gt_group = label_to_group.get(label_text, label_text)
 
     for i, lbl in enumerate(unique_top):
@@ -253,7 +350,7 @@ def create_session_3d_plot(
     )
 
     # Color scheme
-    label_to_group = get_label_to_group_mapping()
+    label_to_group = get_label_to_group_mapping(use_simple=USE_SIMPLE_GROUPS)
     gt_group = label_to_group.get(ground_truth, ground_truth)
 
     # Determine which of the original selected_labels were top-5 predictions
@@ -333,40 +430,41 @@ def create_session_3d_plot(
     plt.close()
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Interactive session explorer')
-    parser.add_argument('--checkpoint', type=str, required=True,
-                        help='Path to model checkpoint')
-    parser.add_argument('--num_sessions', type=int, default=1,
-                        help='Number of sessions to explore')
-    parser.add_argument('--output_dir', type=str, default=None,
-                        help='Output directory for plots')
-    parser.add_argument('--batch_mode', action='store_true',
-                        help='Run without pausing between sessions')
-    args = parser.parse_args()
+# =============================================================================
+# Main
+# =============================================================================
 
+
+def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
+    print(f"Checkpoint: {CHECKPOINT_PATH}")
+    print(f"Output dir: {OUTPUT_DIR}")
+    print(f"Num sessions: {NUM_SESSIONS}")
 
     # Load model and data
-    model, val_loader, label_bank, epoch = load_model_and_data(args.checkpoint, device)
+    model, val_loader, label_bank, epoch = load_model_and_data(CHECKPOINT_PATH, device)
 
-    output_dir = Path(args.output_dir) if args.output_dir else Path(args.checkpoint).parent / 'explorer'
+    output_dir = Path(OUTPUT_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Explore sessions
     val_iter = iter(val_loader)
-    for i in range(args.num_sessions):
+    for i in range(NUM_SESSIONS):
         try:
             batch = next(val_iter)
         except StopIteration:
             val_iter = iter(val_loader)
             batch = next(val_iter)
 
-        result = explore_session(model, batch, label_bank, device, output_dir, session_idx=i)
+        explore_session(model, batch, label_bank, device, output_dir, session_idx=i)
 
-        if i < args.num_sessions - 1 and not args.batch_mode:
+        if i < NUM_SESSIONS - 1 and INTERACTIVE:
             input("\nPress Enter for next session...")
+
+    print(f"\n{'='*70}")
+    print(f"Exploration complete. {NUM_SESSIONS} session plots saved to {output_dir}")
+    print(f"{'='*70}")
 
 
 if __name__ == '__main__':

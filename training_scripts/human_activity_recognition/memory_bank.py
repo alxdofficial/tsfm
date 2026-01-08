@@ -11,7 +11,6 @@ and not supported by literature (MoCo, CLIP use hard negatives for queues).
 """
 
 import torch
-from typing import List
 
 
 class MemoryBank:
