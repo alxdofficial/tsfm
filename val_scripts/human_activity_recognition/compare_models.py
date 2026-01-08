@@ -61,7 +61,7 @@ OUTPUT_DIR = "test_output/model_comparison"
 BATCH_SIZE = 32
 MAX_SESSIONS_PER_DATASET = 10000  # Set to None for all sessions
 EVAL_ON_TRAINING_DATASETS = True  # Set False to only do zero-shot eval
-USE_SIMPLE_GROUPS = False  # True = coarse grouping (~12 groups), False = fine-grained (~25 groups)
+USE_SIMPLE_GROUPS = True  # True = coarse grouping (~12 groups), False = fine-grained (~25 groups)
 
 # =============================================================================
 # Model Loading
@@ -197,7 +197,7 @@ def compute_metrics(
     dataloader: DataLoader,
     device: torch.device,
     all_unique_labels: List[str]
-) -> Dict[str, float]:
+) -> Tuple[Dict[str, float], List[str], List[str]]:
     """
     Compute evaluation metrics matching training validation metrics.
 
@@ -210,6 +210,11 @@ def compute_metrics(
     - recall@k: Exact label recall at k
     - group_recall@k: Group-aware recall at k
     - Per-dataset accuracy breakdown
+
+    Returns:
+        metrics: Dict of metric values
+        gt_groups: List of ground truth group names
+        pred_groups: List of predicted group names
     """
     label_to_group = get_label_to_group_mapping(use_simple=USE_SIMPLE_GROUPS)
 
@@ -263,10 +268,14 @@ def compute_metrics(
     # 1. Group-aware accuracy (matches compute_group_accuracy in training)
     top1_indices = similarity_matrix.argmax(dim=1)
     correct_group = 0
+    gt_groups = []
+    pred_groups = []
     for i, gt_label in enumerate(all_gt_labels):
         gt_group = label_to_group.get(gt_label, gt_label)
         pred_label = all_unique_labels[top1_indices[i]]
         pred_group = label_to_group.get(pred_label, pred_label)
+        gt_groups.append(gt_group)
+        pred_groups.append(pred_group)
         if gt_group == pred_group:
             correct_group += 1
     metrics['accuracy'] = correct_group / N
@@ -344,7 +353,7 @@ def compute_metrics(
         if counts['total'] > 0:
             metrics[f'{dataset}_accuracy'] = counts['correct'] / counts['total']
 
-    return metrics
+    return metrics, gt_groups, pred_groups
 
 
 def get_unique_labels_from_loader(dataloader: DataLoader) -> List[str]:
@@ -363,6 +372,103 @@ def get_raw_labels_for_dataset(dataset_name: str) -> List[str]:
     else:
         print(f"Warning: No config found for {dataset_name}")
         return ['unknown']
+
+
+# =============================================================================
+# Visualization Functions
+# =============================================================================
+
+
+def plot_group_histogram(gt_groups: List[str], output_path: Path, title: str = "Label Group Distribution"):
+    """Plot histogram of label group frequencies."""
+    from collections import Counter
+
+    group_counts = Counter(gt_groups)
+    groups = sorted(group_counts.keys())
+    counts = [group_counts[g] for g in groups]
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    bars = ax.bar(range(len(groups)), counts, color='steelblue', edgecolor='black', alpha=0.8)
+
+    # Add count labels on bars
+    for bar, count in zip(bars, counts):
+        height = bar.get_height()
+        ax.annotate(f'{count}',
+                    xy=(bar.get_x() + bar.get_width() / 2, height),
+                    xytext=(0, 3), textcoords="offset points",
+                    ha='center', va='bottom', fontsize=9)
+
+    ax.set_xticks(range(len(groups)))
+    ax.set_xticklabels(groups, rotation=45, ha='right', fontsize=10)
+    ax.set_ylabel('Count', fontsize=12)
+    ax.set_xlabel('Activity Group', fontsize=12)
+    ax.set_title(title, fontsize=14, fontweight='bold')
+    ax.grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    print(f"✓ Histogram saved to {output_path}")
+    plt.close()
+
+
+def plot_confusion_matrix(
+    gt_groups: List[str],
+    pred_groups: List[str],
+    output_path: Path,
+    title: str = "Confusion Matrix"
+):
+    """Plot confusion matrix for group predictions."""
+    from collections import Counter
+
+    # Get unique groups (sorted for consistent ordering)
+    all_groups = sorted(set(gt_groups) | set(pred_groups))
+    n_groups = len(all_groups)
+    group_to_idx = {g: i for i, g in enumerate(all_groups)}
+
+    # Build confusion matrix
+    conf_matrix = np.zeros((n_groups, n_groups), dtype=int)
+    for gt, pred in zip(gt_groups, pred_groups):
+        conf_matrix[group_to_idx[gt], group_to_idx[pred]] += 1
+
+    # Normalize by row (recall per class)
+    row_sums = conf_matrix.sum(axis=1, keepdims=True)
+    conf_matrix_norm = np.divide(conf_matrix, row_sums, where=row_sums != 0)
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(12, 10))
+
+    im = ax.imshow(conf_matrix_norm, cmap='Blues', aspect='auto', vmin=0, vmax=1)
+
+    # Add colorbar
+    cbar = ax.figure.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.ax.set_ylabel('Recall (row-normalized)', rotation=-90, va="bottom", fontsize=11)
+
+    # Set ticks
+    ax.set_xticks(range(n_groups))
+    ax.set_yticks(range(n_groups))
+    ax.set_xticklabels(all_groups, rotation=45, ha='right', fontsize=9)
+    ax.set_yticklabels(all_groups, fontsize=9)
+
+    # Add text annotations
+    for i in range(n_groups):
+        for j in range(n_groups):
+            count = conf_matrix[i, j]
+            pct = conf_matrix_norm[i, j]
+            if count > 0:
+                # Show count and percentage
+                text_color = 'white' if pct > 0.5 else 'black'
+                ax.text(j, i, f'{count}\n({pct:.0%})',
+                        ha='center', va='center', color=text_color, fontsize=8)
+
+    ax.set_xlabel('Predicted Group', fontsize=12)
+    ax.set_ylabel('True Group', fontsize=12)
+    ax.set_title(title, fontsize=14, fontweight='bold')
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    print(f"✓ Confusion matrix saved to {output_path}")
+    plt.close()
 
 
 # =============================================================================
@@ -408,6 +514,8 @@ def run_comparison():
 
     model_names = list(loaded_models.keys())
     all_results = {}
+    all_predictions = {}  # For histogram/confusion matrix
+    unseen_predictions = {}  # For zero-shot histogram/confusion matrix
 
     # === Evaluation on training datasets ===
     if EVAL_ON_TRAINING_DATASETS and EVAL_DATASETS:
@@ -432,6 +540,7 @@ def run_comparison():
         print(f"Found {len(all_labels)} unique labels")
 
         all_results['training_datasets'] = {}
+        all_predictions = {}  # Store predictions for plotting
 
         for name in model_names:
             print(f"\nEvaluating {name}...")
@@ -446,7 +555,7 @@ def run_comparison():
                 seed=42
             )
 
-            metrics = compute_metrics(
+            metrics, gt_groups, pred_groups = compute_metrics(
                 loaded_models[name]['model'],
                 loaded_models[name]['label_bank'],
                 val_loader,
@@ -454,6 +563,7 @@ def run_comparison():
                 all_labels
             )
             all_results['training_datasets'][name] = metrics
+            all_predictions[name] = {'gt_groups': gt_groups, 'pred_groups': pred_groups}
 
     # === Zero-shot evaluation on unseen datasets ===
     if UNSEEN_DATASETS:
@@ -485,6 +595,7 @@ def run_comparison():
         print(f"Total retrieval set: {len(combined_labels)} unique labels")
 
         all_results['unseen_datasets'] = {}
+        unseen_predictions = {}  # Store predictions for plotting
 
         for name in model_names:
             print(f"\nEvaluating {name} (zero-shot)...")
@@ -504,7 +615,7 @@ def run_comparison():
                 collate_fn=IMUPretrainingDataset.collate_fn
             )
 
-            metrics = compute_metrics(
+            metrics, gt_groups, pred_groups = compute_metrics(
                 loaded_models[name]['model'],
                 loaded_models[name]['label_bank'],
                 unseen_loader,
@@ -512,6 +623,7 @@ def run_comparison():
                 combined_labels
             )
             all_results['unseen_datasets'][name] = metrics
+            unseen_predictions[name] = {'gt_groups': gt_groups, 'pred_groups': pred_groups}
 
     # === Print Results ===
     print("\n" + "=" * 70)
@@ -585,8 +697,42 @@ def run_comparison():
     if 'training_datasets' in all_results and len(model_names) > 0:
         create_comparison_plot(all_results['training_datasets'], model_names, output_dir, "Training Datasets")
 
+        # Create histogram and confusion matrix for each model
+        for name in model_names:
+            if name in all_predictions:
+                preds = all_predictions[name]
+                # Histogram of ground truth groups
+                plot_group_histogram(
+                    preds['gt_groups'],
+                    output_dir / f'histogram_{name}_training.png',
+                    title=f"Label Group Distribution - {name} (Training)"
+                )
+                # Confusion matrix
+                plot_confusion_matrix(
+                    preds['gt_groups'],
+                    preds['pred_groups'],
+                    output_dir / f'confusion_matrix_{name}_training.png',
+                    title=f"Confusion Matrix - {name} (Training)"
+                )
+
     if 'unseen_datasets' in all_results and len(model_names) > 0:
         create_comparison_plot(all_results['unseen_datasets'], model_names, output_dir, "Zero-Shot")
+
+        # Create histogram and confusion matrix for each model (zero-shot)
+        for name in model_names:
+            if name in unseen_predictions:
+                preds = unseen_predictions[name]
+                plot_group_histogram(
+                    preds['gt_groups'],
+                    output_dir / f'histogram_{name}_zeroshot.png',
+                    title=f"Label Group Distribution - {name} (Zero-Shot)"
+                )
+                plot_confusion_matrix(
+                    preds['gt_groups'],
+                    preds['pred_groups'],
+                    output_dir / f'confusion_matrix_{name}_zeroshot.png',
+                    title=f"Confusion Matrix - {name} (Zero-Shot)"
+                )
 
 
 def create_comparison_plot(results: Dict, model_names: List[str], output_dir: Path, title_suffix: str):
