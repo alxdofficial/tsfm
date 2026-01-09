@@ -10,6 +10,7 @@ Usage:
 """
 
 import torch
+from torch.amp import autocast
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 - required for projection='3d'
@@ -41,6 +42,16 @@ NUM_SESSIONS = 5
 
 # Datasets to sample from
 EVAL_DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
+
+# Patch size per dataset - MUST match training config
+PATCH_SIZE_PER_DATASET = {
+    'uci_har': 1.0,
+    'hhar': 1.0,
+    'mhealth': 2.0,
+    'pamap2': 2.0,
+    'wisdm': 2.0,
+    'unimib_shar': 1.0,
+}
 
 # Whether to pause between sessions (False for batch mode)
 INTERACTIVE = False
@@ -145,6 +156,7 @@ def load_model_and_data(checkpoint_path: str, device: torch.device):
         data_root='data',
         datasets=EVAL_DATASETS,
         batch_size=1,  # Single sample at a time
+        patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
         max_sessions_per_dataset=10000,
         num_workers=0,
     )
@@ -230,15 +242,16 @@ def explore_session(
     print(f"Data Shape:     {data.shape}")
     print(f"Channels:       {', '.join(channel_descriptions[:6])}...")
 
-    # Run inference
+    # Run inference (use autocast to match training precision)
     with torch.no_grad():
-        imu_emb = model(
-            data,
-            [channel_descriptions],
-            channel_mask,
-            [sampling_rate],
-            [patch_size]
-        )
+        with autocast('cuda', enabled=device.type == 'cuda'):
+            imu_emb = model(
+                data,
+                [channel_descriptions],
+                channel_mask,
+                [sampling_rate],
+                [patch_size]
+            )
 
     # Encode all labels
     all_labels = ALL_LABELS  # Already unique and sorted
@@ -294,8 +307,8 @@ def explore_session(
         plot_metadata = dict(metadata)
         plot_metadata['data_shape'] = list(data.shape)
         create_session_3d_plot(
-            imu_emb.cpu().numpy(),
-            all_text_embs.cpu().numpy(),
+            imu_emb.detach().cpu().numpy(),
+            all_text_embs.detach().cpu().numpy(),
             all_labels,
             label_text,
             unique_top + random_labels,

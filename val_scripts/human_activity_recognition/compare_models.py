@@ -12,6 +12,7 @@ Usage:
 """
 
 import torch
+from torch.amp import autocast
 import numpy as np
 import json
 from pathlib import Path
@@ -51,6 +52,18 @@ CHECKPOINT_PATHS = {
 # Datasets for evaluation (training datasets)
 EVAL_DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
 
+# Patch size per dataset - MUST match training config for accurate metrics
+# Different datasets have different sampling rates, so patch size in seconds varies
+PATCH_SIZE_PER_DATASET = {
+    'uci_har': 1.0,
+    'hhar': 1.0,
+    'mhealth': 2.0,
+    'pamap2': 2.0,
+    'wisdm': 2.0,
+    'unimib_shar': 1.0,
+    'motionsense': 2.0,  # Unseen dataset
+}
+
 # Unseen datasets for zero-shot evaluation (empty list to skip)
 UNSEEN_DATASETS = ['motionsense']
 
@@ -61,7 +74,7 @@ OUTPUT_DIR = "test_output/model_comparison"
 BATCH_SIZE = 32
 MAX_SESSIONS_PER_DATASET = 10000  # Set to None for all sessions
 EVAL_ON_TRAINING_DATASETS = True  # Set False to only do zero-shot eval
-USE_SIMPLE_GROUPS = True  # True = coarse grouping (~12 groups), False = fine-grained (~25 groups)
+USE_SIMPLE_GROUPS = False  # True = coarse grouping (~12 groups), False = fine-grained (~25 groups)
 
 # =============================================================================
 # Model Loading
@@ -239,7 +252,9 @@ def compute_metrics(
             datasets = [m['dataset'] for m in metadata]
 
             # Get IMU embeddings (model already normalizes)
-            imu_emb = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
+            # Use autocast to match training precision (fp16 on CUDA)
+            with autocast('cuda', enabled=device.type == 'cuda'):
+                imu_emb = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
 
             # Get text embeddings for this batch's labels
             text_emb = label_bank.encode(label_texts, normalize=True)
@@ -416,20 +431,45 @@ def plot_confusion_matrix(
     gt_groups: List[str],
     pred_groups: List[str],
     output_path: Path,
-    title: str = "Confusion Matrix"
+    title: str = "Confusion Matrix",
+    only_gt_labels: bool = False
 ):
-    """Plot confusion matrix for group predictions."""
+    """
+    Plot confusion matrix for group predictions.
+
+    Args:
+        gt_groups: Ground truth group labels
+        pred_groups: Predicted group labels
+        output_path: Path to save the plot
+        title: Plot title
+        only_gt_labels: If True, only show labels that appear in ground truth
+                        (useful for unseen datasets where we don't want to show
+                        all possible prediction targets)
+    """
     from collections import Counter
 
     # Get unique groups (sorted for consistent ordering)
-    all_groups = sorted(set(gt_groups) | set(pred_groups))
+    if only_gt_labels:
+        # Only show groups that exist in ground truth
+        all_groups = sorted(set(gt_groups))
+    else:
+        # Show all groups (GT + predictions)
+        all_groups = sorted(set(gt_groups) | set(pred_groups))
     n_groups = len(all_groups)
     group_to_idx = {g: i for i, g in enumerate(all_groups)}
 
     # Build confusion matrix
     conf_matrix = np.zeros((n_groups, n_groups), dtype=int)
+    other_predictions = 0  # Track predictions outside GT labels
     for gt, pred in zip(gt_groups, pred_groups):
-        conf_matrix[group_to_idx[gt], group_to_idx[pred]] += 1
+        if pred in group_to_idx:
+            conf_matrix[group_to_idx[gt], group_to_idx[pred]] += 1
+        else:
+            # Prediction is outside the displayed labels (only happens with only_gt_labels=True)
+            other_predictions += 1
+
+    if other_predictions > 0:
+        print(f"  Note: {other_predictions} predictions fell outside GT labels (not shown in matrix)")
 
     # Normalize by row (recall per class)
     row_sums = conf_matrix.sum(axis=1, keepdims=True)
@@ -529,6 +569,7 @@ def run_comparison():
             data_root='data',
             datasets=EVAL_DATASETS,
             batch_size=BATCH_SIZE,
+            patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
             max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
             num_workers=0,
             seed=42
@@ -550,6 +591,7 @@ def run_comparison():
                 data_root='data',
                 datasets=EVAL_DATASETS,
                 batch_size=BATCH_SIZE,
+                patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
                 max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
                 num_workers=0,
                 seed=42
@@ -604,6 +646,7 @@ def run_comparison():
                 data_root='data',
                 datasets=UNSEEN_DATASETS,
                 split='val',
+                patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
                 max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
                 seed=42
             )
@@ -731,7 +774,8 @@ def run_comparison():
                     preds['gt_groups'],
                     preds['pred_groups'],
                     output_dir / f'confusion_matrix_{name}_zeroshot.png',
-                    title=f"Confusion Matrix - {name} (Zero-Shot)"
+                    title=f"Confusion Matrix - {name} (Zero-Shot)",
+                    only_gt_labels=True  # Only show labels present in unseen dataset
                 )
 
 
