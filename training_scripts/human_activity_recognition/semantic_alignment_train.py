@@ -148,6 +148,7 @@ DEBUG_METRIC_FREQUENCY = 10  # Compute expensive debug metrics every N batches (
 # plus learnable attention pooling for label refinement.
 TOKEN_TEXT_NUM_HEADS = 4     # Attention heads for text fusion/pooling
 TOKEN_TEXT_NUM_QUERIES = 4   # Learnable query tokens for label pooling
+FREEZE_LABEL_BANK = False    # Ablation: freeze label bank to test impact of learnable text encoding
 
 # =================================================================
 
@@ -899,7 +900,7 @@ def main():
                      'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS, 'max_grad_norm': MAX_GRAD_NORM},
         'data': {'channel_augmentation': False, 'use_channel_encoding': False},  # ChannelTextFusion handles channel semantics
         'channel_projection': {'enabled': True, 'hidden_dim': None},  # Hardcoded: projection enabled
-        'token_level_text': {'num_heads': TOKEN_TEXT_NUM_HEADS, 'num_queries': TOKEN_TEXT_NUM_QUERIES},
+        'token_level_text': {'num_heads': TOKEN_TEXT_NUM_HEADS, 'num_queries': TOKEN_TEXT_NUM_QUERIES, 'frozen': FREEZE_LABEL_BANK},
         'semantic_head': {'num_temporal_layers': NUM_SEMANTIC_TEMPORAL_LAYERS,
                           'num_fusion_queries': NUM_FUSION_QUERIES, 'use_fusion_self_attention': USE_FUSION_SELF_ATTENTION,
                           'num_pool_queries': NUM_POOL_QUERIES, 'use_pool_self_attention': USE_POOL_SELF_ATTENTION}
@@ -1047,8 +1048,15 @@ def main():
     # IMPORTANT: Include criterion.parameters() for learnable temperature (logit_scale)
     # and label_bank.parameters() for learnable attention pooling
     all_params = list(filter(lambda p: p.requires_grad, model.parameters())) + list(criterion.parameters())
-    all_params += list(label_bank.parameters())
-    print(f"✓ Label bank parameters added to optimizer ({sum(p.numel() for p in label_bank.parameters())} params)")
+
+    # Optionally freeze label bank for ablation study
+    if FREEZE_LABEL_BANK:
+        for p in label_bank.parameters():
+            p.requires_grad = False
+        print(f"✓ Label bank FROZEN for ablation ({sum(p.numel() for p in label_bank.parameters())} params frozen)")
+    else:
+        all_params += list(label_bank.parameters())
+        print(f"✓ Label bank parameters added to optimizer ({sum(p.numel() for p in label_bank.parameters())} params)")
 
     optimizer = AdamW(all_params, lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
