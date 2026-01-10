@@ -369,21 +369,28 @@ class LearnableLabelBank(nn.Module):
         device: Optional[torch.device] = None,
         num_heads: int = 4,
         num_queries: int = 4,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        use_mean_pooling: bool = False  # Ablation: use mean pooling instead of learned attention
     ):
         super().__init__()
         self.device = device if device else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.use_mean_pooling = use_mean_pooling
 
         self.text_encoder = TokenTextEncoder()
-        self.pooling = LabelAttentionPooling(
-            d_model=384,
-            num_heads=num_heads,
-            num_queries=num_queries,
-            dropout=dropout
-        )
 
-        # Move pooling to device
-        self.pooling = self.pooling.to(self.device)
+        if use_mean_pooling:
+            # No learnable pooling - use mean pooling like default SentenceBERT
+            self.pooling = None
+            print("LearnableLabelBank: Using MEAN POOLING (no learnable parameters)")
+        else:
+            self.pooling = LabelAttentionPooling(
+                d_model=384,
+                num_heads=num_heads,
+                num_queries=num_queries,
+                dropout=dropout
+            )
+            # Move pooling to device
+            self.pooling = self.pooling.to(self.device)
 
     def encode(self, label_texts: List[str], normalize: bool = True) -> torch.Tensor:
         """
@@ -397,7 +404,20 @@ class LearnableLabelBank(nn.Module):
             embeddings: (batch, 384)
         """
         tokens, mask = self.text_encoder.encode(label_texts, self.device)
-        return self.pooling(tokens, mask, normalize)
+
+        if self.use_mean_pooling:
+            # Mean pooling over valid tokens (SentenceBERT default)
+            # mask: (batch, seq_len) - True for valid tokens
+            mask_expanded = mask.unsqueeze(-1).float()  # (batch, seq_len, 1)
+            sum_embeddings = (tokens * mask_expanded).sum(dim=1)  # (batch, 384)
+            sum_mask = mask_expanded.sum(dim=1).clamp(min=1e-9)  # (batch, 1)
+            embeddings = sum_embeddings / sum_mask  # (batch, 384)
+
+            if normalize:
+                embeddings = F.normalize(embeddings, p=2, dim=-1)
+            return embeddings
+        else:
+            return self.pooling(tokens, mask, normalize)
 
     @property
     def embedding_dim(self) -> int:
@@ -407,7 +427,8 @@ class LearnableLabelBank(nn.Module):
     def to(self, device):
         """Move to device."""
         self.device = device
-        self.pooling = self.pooling.to(device)
+        if self.pooling is not None:
+            self.pooling = self.pooling.to(device)
         return self
 
 
