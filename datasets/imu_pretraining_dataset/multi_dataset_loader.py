@@ -131,6 +131,7 @@ class IMUPretrainingDataset(Dataset):
         split_ratios: Tuple[float, float, float] = (0.7, 0.15, 0.15),
         patch_size_sec: float = 2.0,
         patch_size_per_dataset: Optional[Dict[str, float]] = None,
+        patch_size_range_per_dataset: Optional[Dict[str, Tuple[float, float, float]]] = None,
         min_channel_groups: int = 1,  # Minimum number of sensor groups to select
         max_channel_groups: int = None,  # Maximum groups (None = all available)
         max_sessions_per_dataset: Optional[int] = None,  # Limit sessions per dataset for faster experiments
@@ -144,6 +145,8 @@ class IMUPretrainingDataset(Dataset):
             split_ratios: (train, val, test) split ratios
             patch_size_sec: Default patch size in seconds (used if patch_size_per_dataset not provided)
             patch_size_per_dataset: Optional dict mapping dataset name to patch size in seconds
+            patch_size_range_per_dataset: Optional dict mapping dataset name to (min_sec, max_sec, step_sec)
+                                          for patch size augmentation during training
             min_channel_groups: Minimum number of sensor groups to sample (e.g., acc, gyro)
             max_channel_groups: Maximum number of sensor groups (None = all available)
             max_sessions_per_dataset: Maximum sessions to load per dataset (None = all).
@@ -167,6 +170,7 @@ class IMUPretrainingDataset(Dataset):
         self.split_ratios = split_ratios
         self.patch_size_sec = patch_size_sec
         self.patch_size_per_dataset = patch_size_per_dataset or {}
+        self.patch_size_range_per_dataset = patch_size_range_per_dataset or {}
         self.min_channel_groups = min_channel_groups
         self.max_channel_groups = max_channel_groups
         self.max_sessions_per_dataset = max_sessions_per_dataset
@@ -335,6 +339,10 @@ class IMUPretrainingDataset(Dataset):
         # Get patch size for this dataset (use per-dataset if available, otherwise default)
         patch_size_sec = self.patch_size_per_dataset.get(dataset_name, self.patch_size_sec)
 
+        # Get patch size range for augmentation (if configured)
+        # Format: (min_sec, max_sec, step_sec) or None
+        patch_size_range = self.patch_size_range_per_dataset.get(dataset_name, None)
+
         # Convert label to text string
         # Labels are stored as lists, join them with space if multiple
         label_list = session_info['label']
@@ -367,6 +375,7 @@ class IMUPretrainingDataset(Dataset):
                 'channel_descriptions': channel_descriptions,
                 'sampling_rate_hz': sampling_rate,
                 'patch_size_sec': patch_size_sec,
+                'patch_size_range': patch_size_range,  # For patch size augmentation
                 'num_channels': num_channels
             }
         }
@@ -422,6 +431,71 @@ class IMUPretrainingDataset(Dataset):
             'label_texts': label_texts,
             'metadata': metadata_list
         }
+
+    def compute_group_weights(self) -> torch.Tensor:
+        """
+        Compute per-sample weights for group-balanced sampling.
+
+        Uses LABEL_GROUPS to map raw labels to semantic groups, then computes
+        inverse frequency weights so rare groups get sampled more often.
+
+        Returns:
+            weights: (num_samples,) tensor where weight[i] = 1 / count(group_of_sample_i)
+                     Normalized so weights sum to num_samples.
+        """
+        from collections import defaultdict
+        from datasets.imu_pretraining_dataset.label_groups import get_group_for_label
+
+        # Count samples per group
+        group_counts = defaultdict(int)
+        sample_groups = []
+
+        for session in self.sessions:
+            # Get raw label (stored as list, take first element)
+            label_list = session['label']
+            if isinstance(label_list, list):
+                raw_label = str(label_list[0]) if label_list else 'unknown'
+            else:
+                raw_label = str(label_list)
+
+            # Map to group
+            group = get_group_for_label(raw_label)
+            group_counts[group] += 1
+            sample_groups.append(group)
+
+        # Compute inverse frequency weights
+        weights = torch.zeros(len(self.sessions))
+        for i, group in enumerate(sample_groups):
+            weights[i] = 1.0 / group_counts[group]
+
+        # Normalize so weights sum to num_samples (expected by WeightedRandomSampler)
+        weights = weights / weights.sum() * len(weights)
+
+        return weights
+
+    def get_group_distribution(self) -> Dict[str, int]:
+        """
+        Get the distribution of samples across label groups.
+
+        Returns:
+            Dict mapping group name to sample count.
+        """
+        from collections import defaultdict
+        from datasets.imu_pretraining_dataset.label_groups import get_group_for_label
+
+        group_counts = defaultdict(int)
+
+        for session in self.sessions:
+            label_list = session['label']
+            if isinstance(label_list, list):
+                raw_label = str(label_list[0]) if label_list else 'unknown'
+            else:
+                raw_label = str(label_list)
+
+            group = get_group_for_label(raw_label)
+            group_counts[group] += 1
+
+        return dict(group_counts)
 
 
 def worker_init_fn(worker_id: int) -> None:

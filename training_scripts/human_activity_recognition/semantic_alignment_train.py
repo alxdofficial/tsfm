@@ -22,8 +22,8 @@ from tqdm import tqdm
 import json
 import math
 
-from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders, IMUPretrainingDataset
-from torch.utils.data import DataLoader
+from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders, IMUPretrainingDataset, worker_init_fn
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
 from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
 from imu_activity_recognition_encoder.token_text_encoder import (
@@ -34,6 +34,7 @@ from val_scripts.human_activity_recognition.plot_utils import TrainingPlotter, E
 from training_scripts.human_activity_recognition.memory_bank import MemoryBank
 from val_scripts.human_activity_recognition.evaluation_metrics import compute_group_accuracy
 import random
+from typing import Tuple, Optional, List
 
 # ======================== HYPERPARAMETERS ========================
 
@@ -92,7 +93,7 @@ SEED = 42
 MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
-EPOCHS = 100
+EPOCHS = 60
 BATCH_SIZE = 16  # Micro-batch size (reduced for 48-channel datasets like PAMAP2)
 ACCUMULATION_STEPS = 32  # Effective batch = 16 × 32 = 512
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
@@ -152,7 +153,38 @@ TOKEN_TEXT_NUM_QUERIES = 4   # Learnable query tokens for label pooling
 # Ablation: use mean pooling instead of learnable attention pooling
 # When True: uses SentenceBERT's default mean pooling (no learnable params)
 # When False: uses learnable attention pooling (LabelAttentionPooling)
-USE_MEAN_POOLING = False
+USE_MEAN_POOLING = False  # Default: learnable attention pooling (baseline)
+
+# Ablation: freeze label bank to test contribution of learnable text encoding
+# When True: LabelAttentionPooling weights are frozen (uses random init queries)
+# When False: LabelAttentionPooling is trainable (baseline)
+FREEZE_LABEL_BANK = False  # Default: trainable (baseline)
+
+# Class balancing configuration
+# Uses LABEL_GROUPS to balance sampling at the semantic group level
+# (e.g., "jogging" and "running" are same group, balanced together)
+USE_GROUP_BALANCED_SAMPLING = True  # Default: enable group-balanced sampling
+
+# Patch size augmentation configuration
+# During training, randomly sample patch sizes from valid ranges per dataset
+# Ranges are constrained by session duration (need ≥2 patches per session)
+USE_PATCH_SIZE_AUGMENTATION = True  # Default: enable patch size augmentation
+MIN_PATCHES_PER_SAMPLE = 2  # Minimum patches required per sample
+
+# Valid patch size ranges per dataset: (min_sec, max_sec, step_sec)
+# Ranges centered around original PATCH_SIZE_PER_DATASET values to avoid excessive slowdown
+# (smaller patches = more patches = O(n²) attention cost)
+PATCH_SIZE_RANGE_PER_DATASET = {
+    # Short fixed-length sessions - centered around 1.0s
+    'uci_har':      (0.75, 1.25, 0.25),  # 50 Hz, 2.5s sessions → [0.75, 1.0, 1.25]
+    'hhar':         (0.75, 1.25, 0.25),  # 50 Hz, 2.5s sessions → [0.75, 1.0, 1.25]
+    'unimib_shar':  (0.75, 1.25, 0.25),  # 50 Hz, 3.0s sessions → [0.75, 1.0, 1.25]
+
+    # Variable-length sessions - centered around 2.0s
+    'mhealth':      (1.5, 2.5, 0.5),     # 50 Hz, 2.6-13.7s → [1.5, 2.0, 2.5]
+    'pamap2':       (1.5, 2.5, 0.5),     # 100 Hz, 2.0-57s → [1.5, 2.0, 2.5]
+    'wisdm':        (1.5, 2.5, 0.5),     # 20 Hz, 1.0-24s → [1.5, 2.0, 2.5]
+}
 
 # =================================================================
 
@@ -164,6 +196,7 @@ class SemanticAlignmentModel(nn.Module):
     Features:
     - ChannelTextFusion: cross-attention between sensor tokens and channel description tokens
     - Works with LearnableLabelBank: learnable attention pooling for label refinement
+    - Patch size augmentation: randomly sample patch sizes during training
     """
 
     def __init__(
@@ -171,11 +204,15 @@ class SemanticAlignmentModel(nn.Module):
         encoder: IMUActivityRecognitionEncoder,
         semantic_head: SemanticAlignmentHead,
         num_heads: int = 4,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        use_patch_augmentation: bool = False,
+        min_patches_per_sample: int = 2
     ):
         super().__init__()
         self.encoder = encoder
         self.semantic_head = semantic_head
+        self.use_patch_augmentation = use_patch_augmentation
+        self.min_patches_per_sample = min_patches_per_sample
 
         # Token-level text encoder (frozen backbone)
         self.text_encoder = TokenTextEncoder()
@@ -187,7 +224,55 @@ class SemanticAlignmentModel(nn.Module):
             dropout=dropout
         )
 
-    def forward(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes):
+    def _get_valid_patch_size(
+        self,
+        session_duration: float,
+        patch_range: Tuple[float, float, float],
+        default_patch_size: float
+    ) -> float:
+        """
+        Sample a valid patch size from the range, respecting session duration constraint.
+
+        Args:
+            session_duration: Duration of the session in seconds
+            patch_range: (min_sec, max_sec, step_sec) tuple, or None for no augmentation
+            default_patch_size: Default patch size to use if range is None
+
+        Returns:
+            Sampled patch size in seconds
+        """
+        if patch_range is None:
+            return default_patch_size
+
+        min_sec, max_sec, step_sec = patch_range
+
+        # Cap max by session duration (need at least min_patches_per_sample patches)
+        max_feasible = session_duration / self.min_patches_per_sample
+        actual_max = min(max_sec, max_feasible)
+
+        # If even min is too large, use min anyway (will get fewer patches - acceptable edge case)
+        if actual_max < min_sec:
+            return min_sec
+
+        # Generate valid sizes within feasible range
+        num_steps = int((actual_max - min_sec) / step_sec) + 1
+        valid_sizes = [min_sec + i * step_sec for i in range(num_steps)]
+
+        return random.choice(valid_sizes)
+
+    def forward(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                patch_ranges: Optional[List] = None):
+        """
+        Forward pass with optional patch size augmentation.
+
+        Args:
+            data: (batch, timesteps, channels) padded IMU data
+            channel_descriptions: List of channel description lists
+            channel_mask: (batch, channels) boolean mask
+            sampling_rates: List of sampling rates per sample
+            patch_sizes: List of default patch sizes per sample
+            patch_ranges: Optional list of (min, max, step) tuples for patch augmentation
+        """
         batch_size = data.shape[0]
         device = data.device
 
@@ -198,8 +283,21 @@ class SemanticAlignmentModel(nn.Module):
 
         with torch.no_grad():
             for i in range(batch_size):
+                # Determine patch size (augmented during training, fixed during eval)
+                if self.training and self.use_patch_augmentation and patch_ranges is not None:
+                    # Compute session duration from data
+                    # attention_mask not passed here, so estimate from non-zero timesteps
+                    session_timesteps = data[i].shape[0]
+                    session_duration = session_timesteps / sampling_rates[i]
+                    patch_range = patch_ranges[i] if i < len(patch_ranges) else None
+                    actual_patch_size = self._get_valid_patch_size(
+                        session_duration, patch_range, patch_sizes[i]
+                    )
+                else:
+                    actual_patch_size = patch_sizes[i]
+
                 patches, _ = self.encoder.preprocess(
-                    data[i], sampling_rate_hz=sampling_rates[i], patch_size_sec=patch_sizes[i]
+                    data[i], sampling_rate_hz=sampling_rates[i], patch_size_sec=actual_patch_size
                 )
 
                 if patches is None or len(patches) == 0:
@@ -543,6 +641,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
 
         sampling_rates = [m['sampling_rate_hz'] for m in metadata]
         patch_sizes = [m['patch_size_sec'] for m in metadata]
+        patch_ranges = [m.get('patch_size_range', None) for m in metadata]
         channel_descriptions = [m['channel_descriptions'] for m in metadata]
 
         # NOTE: label_bank.encode() needs gradients for learnable pooling!
@@ -557,7 +656,8 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             imu_queue, text_queue = None, None
 
         with autocast('cuda', enabled=device.type == 'cuda'):
-            imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
+            imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                                   patch_ranges=patch_ranges)
             loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
                                      return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
 
@@ -753,7 +853,9 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
             text_embeddings = label_bank.encode(label_texts, normalize=True)
 
             with autocast('cuda', enabled=device.type == 'cuda'):
-                imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
+                # No patch augmentation during validation (patch_ranges=None)
+                imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                                       patch_ranges=None)
                 _, metrics = criterion(imu_embeddings, text_embeddings, label_texts, return_metrics=True)
 
             total_loss += metrics['loss']
@@ -904,7 +1006,8 @@ def main():
                      'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS, 'max_grad_norm': MAX_GRAD_NORM},
         'data': {'channel_augmentation': False, 'use_channel_encoding': False},  # ChannelTextFusion handles channel semantics
         'channel_projection': {'enabled': True, 'hidden_dim': None},  # Hardcoded: projection enabled
-        'token_level_text': {'num_heads': TOKEN_TEXT_NUM_HEADS, 'num_queries': TOKEN_TEXT_NUM_QUERIES, 'use_mean_pooling': USE_MEAN_POOLING},
+        'token_level_text': {'num_heads': TOKEN_TEXT_NUM_HEADS, 'num_queries': TOKEN_TEXT_NUM_QUERIES,
+                             'use_mean_pooling': USE_MEAN_POOLING, 'freeze_label_bank': FREEZE_LABEL_BANK},
         'semantic_head': {'num_temporal_layers': NUM_SEMANTIC_TEMPORAL_LAYERS,
                           'num_fusion_queries': NUM_FUSION_QUERIES, 'use_fusion_self_attention': USE_FUSION_SELF_ATTENTION,
                           'num_pool_queries': NUM_POOL_QUERIES, 'use_pool_self_attention': USE_POOL_SELF_ATTENTION}
@@ -958,8 +1061,17 @@ def main():
     model = SemanticAlignmentModel(
         encoder, semantic_head,
         num_heads=TOKEN_TEXT_NUM_HEADS,
-        dropout=DROPOUT
+        dropout=DROPOUT,
+        use_patch_augmentation=USE_PATCH_SIZE_AUGMENTATION,
+        min_patches_per_sample=MIN_PATCHES_PER_SAMPLE
     ).to(device)
+
+    if USE_PATCH_SIZE_AUGMENTATION:
+        print(f"\n=== Patch Size Augmentation Enabled ===")
+        print(f"Min patches per sample: {MIN_PATCHES_PER_SAMPLE}")
+        for ds, (min_s, max_s, step_s) in PATCH_SIZE_RANGE_PER_DATASET.items():
+            valid_sizes = [min_s + i * step_s for i in range(int((max_s - min_s) / step_s) + 1)]
+            print(f"  {ds}: {valid_sizes} sec")
 
     # Load model state if resuming
     if resume_checkpoint is not None:
@@ -1019,12 +1131,81 @@ def main():
         print(f"Using memory bank with {MEMORY_BANK_SIZE} queue size (negatives per step: {BATCH_SIZE + MEMORY_BANK_SIZE})")
     print("="*70)
 
-    # Create dataloaders (channel_augmentation=False - consistent channel order for better generalization)
-    train_loader, val_loader, _ = create_dataloaders(
-        data_root=DATA_ROOT, datasets=DATASETS, batch_size=BATCH_SIZE,
-        num_workers=NUM_WORKERS, prefetch_factor=PREFETCH_FACTOR,
-        persistent_workers=PERSISTENT_WORKERS, patch_size_per_dataset=PATCH_SIZE_PER_DATASET, seed=SEED,
-        max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET
+    # Create datasets
+    # Pass patch_size_range for training (augmentation), but not for validation (fixed sizes)
+    train_dataset = IMUPretrainingDataset(
+        data_root=DATA_ROOT,
+        datasets=DATASETS,
+        split='train',
+        patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
+        patch_size_range_per_dataset=PATCH_SIZE_RANGE_PER_DATASET if USE_PATCH_SIZE_AUGMENTATION else None,
+        max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
+        seed=SEED
+    )
+    val_dataset = IMUPretrainingDataset(
+        data_root=DATA_ROOT,
+        datasets=DATASETS,
+        split='val',
+        patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
+        patch_size_range_per_dataset=None,  # No augmentation for validation
+        max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
+        seed=SEED
+    )
+
+    # Create train dataloader with optional group-balanced sampling
+    if USE_GROUP_BALANCED_SAMPLING:
+        # Compute weights for group-balanced sampling
+        sample_weights = train_dataset.compute_group_weights()
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(train_dataset),
+            replacement=True  # Allow resampling rare groups
+        )
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=BATCH_SIZE,
+            sampler=sampler,  # Replaces shuffle=True
+            num_workers=NUM_WORKERS,
+            prefetch_factor=PREFETCH_FACTOR,
+            persistent_workers=PERSISTENT_WORKERS,
+            collate_fn=IMUPretrainingDataset.collate_fn,
+            pin_memory=True,
+            worker_init_fn=worker_init_fn
+        )
+
+        # Log group distribution
+        group_dist = train_dataset.get_group_distribution()
+        print(f"\n=== Group-Balanced Sampling Enabled ===")
+        print(f"Groups: {len(group_dist)}")
+        most_common = max(group_dist.items(), key=lambda x: x[1])
+        least_common = min(group_dist.items(), key=lambda x: x[1])
+        print(f"Most common: {most_common[0]} ({most_common[1]} samples)")
+        print(f"Least common: {least_common[0]} ({least_common[1]} samples)")
+        print(f"Imbalance ratio: {most_common[1] / least_common[1]:.1f}x → balanced to 1.0x")
+    else:
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=True,
+            num_workers=NUM_WORKERS,
+            prefetch_factor=PREFETCH_FACTOR,
+            persistent_workers=PERSISTENT_WORKERS,
+            collate_fn=IMUPretrainingDataset.collate_fn,
+            pin_memory=True,
+            worker_init_fn=worker_init_fn
+        )
+
+    # Create val dataloader (no balancing needed)
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=NUM_WORKERS,
+        prefetch_factor=PREFETCH_FACTOR,
+        persistent_workers=PERSISTENT_WORKERS,
+        collate_fn=IMUPretrainingDataset.collate_fn,
+        pin_memory=True,
+        worker_init_fn=worker_init_fn
     )
 
     # Create unseen dataset loader for zero-shot evaluation
@@ -1060,6 +1241,11 @@ def main():
     if USE_MEAN_POOLING:
         # Mean pooling has no learnable parameters
         print(f"✓ Using mean pooling - no label bank parameters to train")
+    elif FREEZE_LABEL_BANK:
+        # Freeze label bank for ablation (test contribution of learnable text encoding)
+        for p in label_bank.parameters():
+            p.requires_grad = False
+        print(f"✓ Label bank FROZEN for ablation ({sum(p.numel() for p in label_bank_params)} params frozen)")
     elif len(label_bank_params) > 0:
         all_params += label_bank_params
         print(f"✓ Label bank parameters added to optimizer ({sum(p.numel() for p in label_bank_params)} params)")
