@@ -6,17 +6,24 @@
 
 ## 🎯 What is This?
 
-This project implements a **pretrained encoder** for IMU (Inertial Measurement Unit) time series data that can be fine-tuned for various activity recognition tasks. The encoder learns robust representations through:
+This project implements a **pretrained encoder** for IMU (Inertial Measurement Unit) time series data that can be fine-tuned for various activity recognition tasks. The encoder uses a **two-stage training pipeline**:
 
+### Stage 1: Self-Supervised Pretraining
 1. **Masked Autoencoding (MAE)** - Reconstructs randomly masked sensor patches
 2. **Contrastive Learning** - Aligns augmented views of the same data
 3. **Dual-Branch Transformer** - Captures both temporal dynamics and cross-sensor relationships
+
+### Stage 2: Semantic Alignment
+4. **Text-IMU Alignment** - Aligns IMU embeddings with activity text descriptions
+5. **Prototype Learning** - Learns activity prototypes with memory bank
+6. **Zero-shot Classification** - Enables classification without fine-tuning
 
 ### Key Features
 
 - ✅ **Cross-channel attention**: Models relationships between different sensors (accelerometer ↔ gyroscope)
 - ✅ **Variable channel support**: Handles 6-40 channels with automatic padding/masking
-- ✅ **Multi-dataset pretraining**: Trains on UCI HAR, MHEALTH, PAMAP2, WISDM simultaneously
+- ✅ **Multi-dataset pretraining**: Trains on 7 datasets (UCI HAR, HHAR, MHEALTH, PAMAP2, WISDM, UniMiB, MotionSense)
+- ✅ **Semantic alignment**: Align IMU embeddings with natural language descriptions
 - ✅ **Physically-plausible augmentations**: Jitter, time warp, magnitude scaling, channel shuffling
 - ✅ **Mixed precision training**: FP16 for ~50% memory reduction
 - ✅ **Per-dataset tracking**: Monitor learning progress per dataset
@@ -53,8 +60,6 @@ Raw IMU Data (variable length, 6-40 channels)
         Combined Loss → Backprop
 ```
 
-**See [`PRETRAINING_FLOW.md`](PRETRAINING_FLOW.md) for detailed data flow diagrams.**
-
 ---
 
 ## 📂 Repository Structure
@@ -62,14 +67,17 @@ Raw IMU Data (variable length, 6-40 channels)
 ```
 tsfm/
 ├── README.md                              # This file
-├── PRETRAINING_FLOW.md                    # Complete architecture diagrams
-├── HARDCODED_CONFIG_SUMMARY.md            # Configuration documentation
+├── DATA_FORMAT.md                         # Data format specification
+├── requirements.txt                       # Python dependencies
 │
 ├── data/                                  # Datasets (after processing)
 │   ├── uci_har/                          # UCI HAR dataset
+│   ├── hhar/                             # HHAR dataset
 │   ├── mhealth/                          # MHEALTH dataset
 │   ├── pamap2/                           # PAMAP2 dataset
-│   └── wisdm/                            # WISDM dataset
+│   ├── wisdm/                            # WISDM dataset
+│   ├── unimib_shar/                      # UniMiB SHAR dataset
+│   └── motionsense/                      # MotionSense dataset
 │
 ├── datascripts/                          # Dataset download & conversion
 │   ├── README.md                         # Dataset documentation
@@ -90,15 +98,27 @@ tsfm/
 │           ├── README.md                 # Model documentation
 │           ├── encoder.py                # Main encoder
 │           ├── transformer.py            # Dual-branch transformer
-│           ├── config.py                 # Model configurations
-│           └── tests/                    # Unit tests
+│           ├── semantic_alignment.py     # Semantic alignment head
+│           ├── token_text_encoder.py     # Text encoding utilities
+│           ├── preprocessing.py          # Data preprocessing
+│           ├── positional_encoding.py    # Position embeddings
+│           └── config.py                 # Model configurations
 │
-└── training_scripts/                     # Training scripts
-    └── imu_tool_pretraining/
-        ├── README.md                     # Training documentation
-        ├── pretrain.py                   # Main training script (hard-coded config)
-        ├── losses.py                     # MAE + Contrastive losses
-        └── config.yaml                   # Reference config (not used)
+├── training_scripts/                     # Training scripts
+│   └── human_activity_recognition/
+│       ├── README.md                     # Training documentation
+│       ├── pretrain.py                   # Stage 1: MAE + Contrastive pretraining
+│       ├── semantic_alignment_train.py   # Stage 2: Text-IMU alignment
+│       ├── losses.py                     # MAE + Contrastive losses
+│       ├── semantic_loss.py              # Semantic alignment losses
+│       └── memory_bank.py                # Prototype memory bank
+│
+└── val_scripts/                          # Validation and evaluation
+    └── human_activity_recognition/
+        ├── compare_models.py             # Model comparison utilities
+        ├── evaluation_metrics.py         # Accuracy and metrics
+        ├── plot_utils.py                 # Training visualization
+        └── visualization_3d.py           # Embedding visualization
 ```
 
 ---
@@ -112,12 +132,18 @@ tsfm/
 python -m venv .venv
 source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 
-# Install dependencies
+# Install PyTorch (adjust for your CUDA version)
 pip install torch torchvision
-pip install numpy scipy pandas pyarrow
-pip install matplotlib  # For plotting
-pip install tqdm  # For progress bars
+
+# Install other dependencies
+pip install -r requirements.txt
 ```
+
+**Dependencies** (see `requirements.txt`):
+- numpy, pandas, matplotlib, pyarrow
+- scikit-learn, umap-learn (for evaluation/visualization)
+- pydantic (configuration validation)
+- google-genai (for text embeddings in Stage 2)
 
 ### 2. Download & Process Datasets
 
@@ -127,9 +153,12 @@ python datascripts/setup_all_datasets.py
 
 # Or process individually
 python datascripts/setup_all_datasets.py uci_har
+python datascripts/setup_all_datasets.py hhar
 python datascripts/setup_all_datasets.py mhealth
 python datascripts/setup_all_datasets.py pamap2
 python datascripts/setup_all_datasets.py wisdm
+python datascripts/setup_all_datasets.py unimib_shar
+python datascripts/setup_all_datasets.py motionsense
 ```
 
 This downloads raw data, converts to standardized format, and splits into train/val/test.
@@ -137,13 +166,16 @@ This downloads raw data, converts to standardized format, and splits into train/
 ### 3. Run Pretraining
 
 ```bash
-cd training_scripts/imu_tool_pretraining
+cd training_scripts/human_activity_recognition
 
-# Start pretraining (100 epochs, ~8-12 hours on GPU)
+# Stage 1: MAE + Contrastive pretraining
 python pretrain.py
 
 # Or resume from checkpoint
 python pretrain.py --resume path/to/checkpoint.pt
+
+# Stage 2: Semantic alignment (after Stage 1)
+python semantic_alignment_train.py
 ```
 
 Training outputs:
@@ -183,14 +215,15 @@ Generated plots:
 
 ## 📊 Datasets
 
-| Dataset | Train | Val | Test | Channels | Rate | Activities |
-|---------|-------|-----|------|----------|------|------------|
-| **UCI HAR** | 7,352 | 1,470 | 1,477 | 6 (acc+gyro) | 50 Hz | 6 activities |
-| **MHEALTH** | ~80 | ~20 | ~20 | 23 (3 IMUs+ECG) | 50 Hz | 12 activities |
-| **PAMAP2** | ~140 | ~35 | ~25 | 40 (3 IMUs+HR) | 100 Hz | 18 activities |
-| **WISDM** | ~630 | ~135 | ~135 | 6 (phone acc+gyro) | 20 Hz | 18 activities |
-
-**Total:** ~8,200 train samples, ~1,660 val samples, ~1,660 test samples
+| Dataset | Channels | Rate | Activities | Description |
+|---------|----------|------|------------|-------------|
+| **UCI HAR** | 6 (acc+gyro) | 50 Hz | 6 | Smartphone IMU activities |
+| **HHAR** | 6 (acc+gyro) | 50-200 Hz | 6 | Heterogeneous HAR (multiple devices) |
+| **MHEALTH** | 23 (3 IMUs+ECG) | 50 Hz | 12 | Multi-sensor body activities |
+| **PAMAP2** | 40 (3 IMUs+HR) | 100 Hz | 18 | Physical activity monitoring |
+| **WISDM** | 6 (phone acc+gyro) | 20 Hz | 18 | Smartphone activities |
+| **UniMiB SHAR** | 3 (acc) | 50 Hz | 17 | ADL and falls detection |
+| **MotionSense** | 12 (acc+gyro+attitude) | 50 Hz | 6 | iPhone motion data |
 
 All datasets are converted to a standardized format with:
 - Variable-length time series
@@ -206,8 +239,8 @@ All hyperparameters are **hard-coded** in `pretrain.py` for easy modification:
 
 ```python
 # Data
-DATASETS = ['uci_har', 'mhealth', 'pamap2', 'wisdm']
-PATCH_SIZE_SEC = 2.0  # 2-second patches
+DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
+PATCH_SIZE_SEC = 2.0  # 2-second patches (varies per dataset)
 
 # Model
 D_MODEL = 128
@@ -228,9 +261,7 @@ TEMPERATURE = 0.2
 MASK_RATIO = 0.5  # 50% masking
 ```
 
-**See [`HARDCODED_CONFIG_SUMMARY.md`](HARDCODED_CONFIG_SUMMARY.md) for details.**
-
-To change hyperparameters, edit the constants at the top of `main()` in `pretrain.py` (lines 481-520).
+To change hyperparameters, edit the constants at the top of `main()` in `pretrain.py`.
 
 ---
 
@@ -315,11 +346,10 @@ The pretrained weights are in `best.pt` under `model_state_dict['encoder']`.
 
 ## 🔗 Key Documents
 
-- **[PRETRAINING_FLOW.md](PRETRAINING_FLOW.md)** - Complete architecture & data flow diagrams
-- **[HARDCODED_CONFIG_SUMMARY.md](HARDCODED_CONFIG_SUMMARY.md)** - Configuration guide
 - **[tools/models/imu_activity_recognition_encoder/README.md](tools/models/imu_activity_recognition_encoder/README.md)** - Model API
 - **[datasets/imu_pretraining_dataset/README.md](datasets/imu_pretraining_dataset/README.md)** - Dataset details
-- **[training_scripts/imu_tool_pretraining/README.md](training_scripts/imu_tool_pretraining/README.md)** - Training details
+- **[training_scripts/human_activity_recognition/README.md](training_scripts/human_activity_recognition/README.md)** - Training details
+- **[DATA_FORMAT.md](DATA_FORMAT.md)** - Standardized data format specification
 
 ---
 
@@ -328,14 +358,14 @@ The pretrained weights are in `best.pt` under `model_state_dict['encoder']`.
 Run unit tests:
 
 ```bash
-# Test encoder
-python tools/models/imu_activity_recognition_encoder/tests/test_encoder.py
+# Test encoder integration
+python tools/models/imu_activity_recognition_encoder/test_integration.py
 
-# Test transformer (including cross-channel attention)
-python tools/models/imu_activity_recognition_encoder/tests/test_transformer.py
+# Test preprocessing
+python tools/models/imu_activity_recognition_encoder/test_preprocessing.py
 
 # Test losses
-python training_scripts/imu_tool_pretraining/losses.py
+python training_scripts/human_activity_recognition/losses.py
 
 # Test augmentations
 python datasets/imu_pretraining_dataset/augmentations.py
@@ -347,12 +377,13 @@ All tests should pass before training.
 
 ## 📝 Recent Changes
 
-- ✅ Implemented dual-branch transformer with cross-channel attention
-- ✅ Fixed critical bugs in per-dataset tracking and normalization
-- ✅ Added mixed precision training (AMP)
-- ✅ Hard-coded all hyperparameters in main() for easier modification
-- ✅ Added channel shuffling augmentation
-- ✅ Fixed learning rate scheduler (per-batch stepping)
+- ✅ Added Stage 2 semantic alignment training pipeline
+- ✅ Implemented text-IMU alignment with learnable label bank
+- ✅ Added memory bank for prototype learning
+- ✅ Added group-balanced sampling and patch size augmentation
+- ✅ Expanded to 7 datasets (added HHAR, UniMiB SHAR, MotionSense)
+- ✅ Added embedding visualization tools (3D, 4D video)
+- ✅ Implemented evaluation metrics and model comparison utilities
 
 ---
 
@@ -375,6 +406,6 @@ When working on this codebase:
 
 ## 🏷️ Branch Info
 
-**Branch:** `tool-use-om2` (renamed from tool-use-om)
-**Purpose:** IMU activity recognition encoder pretraining
-**Status:** Active development - pretraining infrastructure complete, ready for training
+**Branch:** `master`
+**Purpose:** IMU activity recognition encoder pretraining + semantic alignment
+**Status:** Active development - two-stage training pipeline complete
