@@ -432,15 +432,22 @@ class IMUPretrainingDataset(Dataset):
             'metadata': metadata_list
         }
 
-    def compute_group_weights(self) -> torch.Tensor:
+    def compute_group_weights(self, max_oversample_ratio: float = 20.0) -> torch.Tensor:
         """
-        Compute per-sample weights for group-balanced sampling.
+        Compute per-sample weights for group-balanced sampling with capped oversampling.
 
         Uses LABEL_GROUPS to map raw labels to semantic groups, then computes
         inverse frequency weights so rare groups get sampled more often.
+        Weights are capped to prevent extreme oversampling of genuinely rare activities.
+
+        Args:
+            max_oversample_ratio: Maximum ratio between highest and lowest weight.
+                                  Prevents rare labels from being oversampled more than
+                                  this factor relative to the most common label.
+                                  Default 20.0 means rare labels sampled at most 20x more.
 
         Returns:
-            weights: (num_samples,) tensor where weight[i] = 1 / count(group_of_sample_i)
+            weights: (num_samples,) tensor where weight[i] = capped(1 / count(group_of_sample_i))
                      Normalized so weights sum to num_samples.
         """
         from collections import defaultdict
@@ -467,6 +474,20 @@ class IMUPretrainingDataset(Dataset):
         weights = torch.zeros(len(self.sessions))
         for i, group in enumerate(sample_groups):
             weights[i] = 1.0 / group_counts[group]
+
+        # Cap weights to prevent extreme oversampling
+        # min_weight corresponds to most common group (lowest inverse freq)
+        min_weight = weights.min()
+        max_allowed_weight = min_weight * max_oversample_ratio
+        num_capped = (weights > max_allowed_weight).sum().item()
+        if num_capped > 0:
+            weights = torch.clamp(weights, max=max_allowed_weight)
+            # Log which groups were capped
+            capped_groups = set()
+            for i, group in enumerate(sample_groups):
+                if 1.0 / group_counts[group] > max_allowed_weight:
+                    capped_groups.add(f"{group} ({group_counts[group]} samples)")
+            print(f"  Capped oversampling for {len(capped_groups)} rare groups (max {max_oversample_ratio}x): {sorted(capped_groups)[:5]}{'...' if len(capped_groups) > 5 else ''}")
 
         # Normalize so weights sum to num_samples (expected by WeightedRandomSampler)
         weights = weights / weights.sum() * len(weights)

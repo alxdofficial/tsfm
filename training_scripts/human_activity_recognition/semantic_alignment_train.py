@@ -129,6 +129,13 @@ SOFT_TARGET_WEIGHT = 1.0  # Pure soft targets with adaptive recalibration
 USE_MEMORY_BANK = True
 MEMORY_BANK_SIZE = 256  # Provides 16 + 256 = 272 negatives per step
 
+# Class balancing configuration
+# Caps oversampling to prevent rare labels from dominating training
+# E.g., if walking has 50K samples and stand_to_sit has 200 samples,
+# without cap: stand_to_sit sampled 250x more often (overfitting risk)
+# with cap=20: stand_to_sit sampled only 20x more often
+MAX_OVERSAMPLE_RATIO = 20.0  # Max oversampling factor for rare groups
+
 # NOTE: Channel augmentation (random subsampling/shuffling) is DISABLED.
 # Experiments showed better zero-shot generalization with consistent channel order.
 
@@ -1165,8 +1172,8 @@ def main():
 
     # Create train dataloader with optional group-balanced sampling
     if USE_GROUP_BALANCED_SAMPLING:
-        # Compute weights for group-balanced sampling
-        sample_weights = train_dataset.compute_group_weights()
+        # Compute weights for group-balanced sampling (with capped oversampling)
+        sample_weights = train_dataset.compute_group_weights(max_oversample_ratio=MAX_OVERSAMPLE_RATIO)
         sampler = WeightedRandomSampler(
             weights=sample_weights,
             num_samples=len(train_dataset),
