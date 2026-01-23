@@ -20,6 +20,12 @@ Available datasets:
     - wisdm (18 activities, 6 channels, 20Hz)
     - unimib_shar (9 activities, 3 channels ACC ONLY, 50Hz) - uses Kaggle API
     - actionsense (requires manual download first)
+    - hhar (6 activities, 6 channels, variable Hz)
+    - mobiact (13 activities, 6 channels, 50Hz) - uses Kaggle API (MobiFall)
+    - realworld (8 activities, 9 channels, 50Hz) - waist position only
+    - dsads (19 activities, 9 channels, 25Hz) - torso position only
+    - recgym (11 gym exercises, 6 channels, 20Hz) - uses Kaggle API, wrist position
+    - vtt_coniot (16 construction activities, 9 channels, 50Hz) - hip position
 """
 
 import sys
@@ -70,6 +76,52 @@ DATASETS = {
         "download_script": "datascripts/shared/download_all_datasets.py",
         "convert_script": "datascripts/hhar/convert.py",
         "requires_manual": False
+    },
+    "mobiact": {
+        "name": "MobiFall",
+        "download_script": "datascripts/mobiact/download.py",
+        "convert_script": "datascripts/mobiact/convert.py",
+        "requires_manual": False,
+        "note": "Uses Kaggle API (MobiFall v2.0). Requires: pip install kaggle && kaggle API key"
+    },
+    "realworld": {
+        "name": "RealWorld HAR",
+        "download_script": "datascripts/realworld/download.py",
+        "convert_script": "datascripts/realworld/convert.py",
+        "requires_manual": False
+    },
+    "dsads": {
+        "name": "DSADS",
+        "download_script": "datascripts/dsads/download.py",
+        "convert_script": "datascripts/dsads/convert.py",
+        "requires_manual": False
+    },
+    "recgym": {
+        "name": "RecGym",
+        "download_script": "datascripts/recgym/download.py",
+        "convert_script": "datascripts/recgym/convert.py",
+        "requires_manual": False,
+        "note": "Uses Kaggle API. Requires: pip install kaggle && kaggle API key"
+    },
+    "vtt_coniot": {
+        "name": "VTT-ConIoT",
+        "download_script": "datascripts/vtt_coniot/download.py",
+        "convert_script": "datascripts/vtt_coniot/convert.py",
+        "requires_manual": False
+    },
+    "hapt": {
+        "name": "HAPT",
+        "download_script": "datascripts/hapt/download.py",
+        "convert_script": "datascripts/hapt/convert.py",
+        "requires_manual": False,
+        "note": "UCI HAR Postural Transitions - 30 subjects, 12 activities (6 basic + 6 transitions), 50Hz"
+    },
+    "kuhar": {
+        "name": "KU-HAR",
+        "download_script": "datascripts/kuhar/download.py",
+        "convert_script": "datascripts/kuhar/convert.py",
+        "requires_manual": False,
+        "note": "Uses Kaggle API. 90 subjects, 18 activities, 100Hz"
     }
 }
 
@@ -154,7 +206,7 @@ def main():
 
     # Determine which datasets to process
     if len(sys.argv) > 1:
-        datasets_to_process = [sys.argv[1]]
+        datasets_to_process = sys.argv[1:]  # All arguments after script name
     else:
         datasets_to_process = list(DATASETS.keys())
 

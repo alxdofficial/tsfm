@@ -36,6 +36,8 @@ from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloa
 from imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
 from val_scripts.human_activity_recognition.evaluation_metrics import get_label_to_group_mapping
 from datasets.imu_pretraining_dataset.label_augmentation import DATASET_CONFIGS
+from datasets.imu_pretraining_dataset.label_groups import LABEL_GROUPS, get_group_for_label
+from collections import Counter
 
 # =============================================================================
 # CONFIGURATION - Edit these values instead of using CLI args
@@ -44,16 +46,14 @@ from datasets.imu_pretraining_dataset.label_augmentation import DATASET_CONFIGS
 # Checkpoint paths to compare - add as many as you want
 # Format: {"display_name": "path/to/checkpoint.pt"}
 CHECKPOINT_PATHS = {
-    "current": "training_output/semantic_alignment/20260107_102025/epoch_60.pt",
-    # Add more checkpoints here:
-    # "previous": "training_output/semantic_alignment/20260105_123456/best.pt",
+    "class_imbalance_only": "training_output/semantic_alignment/20260119_081154/best.pt",
+    "class_imbalance+patch_aug": "training_output/semantic_alignment/added_class_imbalance_fix_and_patchsize_aug/best.pt",
 }
 
 # Datasets for evaluation (training datasets)
-EVAL_DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
+EVAL_DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'vtt_coniot', 'recgym']
 
 # Patch size per dataset - MUST match training config for accurate metrics
-# Different datasets have different sampling rates, so patch size in seconds varies
 PATCH_SIZE_PER_DATASET = {
     'uci_har': 1.0,
     'hhar': 1.0,
@@ -61,11 +61,25 @@ PATCH_SIZE_PER_DATASET = {
     'pamap2': 2.0,
     'wisdm': 2.0,
     'unimib_shar': 1.0,
-    'motionsense': 2.0,  # Unseen dataset
+    'motionsense': 2.0,
+    # New datasets
+    'dsads': 2.0,
+    'mobiact': 1.5,
+    'realworld': 2.0,
+    'vtt_coniot': 2.0,
+    'recgym': 2.5,
+    'hapt': 1.5,
+    'kuhar': 1.5,
 }
 
 # Unseen datasets for zero-shot evaluation (empty list to skip)
-UNSEEN_DATASETS = ['motionsense']
+# Note: UCI HAR and HAPT both in training (same sensor setup), so neither is zero-shot
+# Note: VTT-ConIoT and RecGym now in training for better activity coverage
+UNSEEN_DATASETS = ['motionsense', 'realworld', 'mobiact']
+
+# Multi-patch-size evaluation for unseen datasets
+# Try multiple patch sizes matching variable-length dataset range
+UNSEEN_PATCH_SIZES = [1.0, 1.5, 2.0, 2.5]  # Include 2.5 for recgym
 
 # Output directory
 OUTPUT_DIR = "test_output/model_comparison"
@@ -73,8 +87,220 @@ OUTPUT_DIR = "test_output/model_comparison"
 # Evaluation settings
 BATCH_SIZE = 32
 MAX_SESSIONS_PER_DATASET = 10000  # Set to None for all sessions
-EVAL_ON_TRAINING_DATASETS = True  # Set False to only do zero-shot eval
+EVAL_ON_TRAINING_DATASETS = False  # Set False to only do zero-shot eval
 USE_SIMPLE_GROUPS = False  # True = coarse grouping (~12 groups), False = fine-grained (~25 groups)
+
+# =============================================================================
+# Label Coverage Analysis
+# =============================================================================
+
+
+def get_covered_groups(training_labels: set) -> Tuple[set, set]:
+    """
+    Determine which label groups have at least one member in training.
+
+    Returns:
+        covered_groups: Set of group names that have training coverage
+        novel_groups: Set of group names with no training coverage
+    """
+    covered_groups = set()
+    all_groups = set(LABEL_GROUPS.keys())
+
+    for group_name, group_labels in LABEL_GROUPS.items():
+        # Check if any label in this group is in training
+        if any(label in training_labels for label in group_labels):
+            covered_groups.add(group_name)
+
+    novel_groups = all_groups - covered_groups
+    return covered_groups, novel_groups
+
+
+def categorize_label(label: str, training_labels: set, covered_groups: set) -> str:
+    """
+    Categorize a label as 'expected' or 'novel'.
+
+    Expected: The label's group has at least one member in training
+    Novel: The label's group has no members in training (completely new concept)
+
+    Returns:
+        'expected' or 'novel'
+    """
+    group = get_group_for_label(label)
+
+    # If the label itself is in training, it's expected
+    if label in training_labels:
+        return 'expected'
+
+    # If the label's group is covered by training, it's expected
+    if group in covered_groups:
+        return 'expected'
+
+    # Check if this is a singleton (not in any group) but exists in training
+    if group == label and label in training_labels:
+        return 'expected'
+
+    return 'novel'
+
+
+def analyze_label_coverage(
+    training_labels: set,
+    zeroshot_labels: set,
+    gt_labels: List[str],
+    pred_labels: List[str]
+) -> Dict:
+    """
+    Analyze label coverage and compute separate metrics for expected vs novel labels.
+
+    Args:
+        training_labels: Set of all labels seen during training
+        zeroshot_labels: Set of all labels in zero-shot datasets
+        gt_labels: List of ground truth labels (per sample)
+        pred_labels: List of predicted labels (per sample)
+
+    Returns:
+        Dict with coverage analysis and per-category metrics
+    """
+    covered_groups, novel_groups = get_covered_groups(training_labels)
+
+    # Categorize each zero-shot label
+    expected_labels = set()
+    novel_labels = set()
+
+    for label in zeroshot_labels:
+        category = categorize_label(label, training_labels, covered_groups)
+        if category == 'expected':
+            expected_labels.add(label)
+        else:
+            novel_labels.add(label)
+
+    # Build detailed coverage info
+    coverage_info = {
+        'expected_labels': {},  # group -> {training: [...], zeroshot: [...]}
+        'novel_labels': {},     # label -> dataset source (if known)
+    }
+
+    # Map expected labels to their groups
+    for label in expected_labels:
+        group = get_group_for_label(label)
+        if group not in coverage_info['expected_labels']:
+            # Find training labels in this group
+            training_in_group = [l for l in LABEL_GROUPS.get(group, [label]) if l in training_labels]
+            coverage_info['expected_labels'][group] = {
+                'training': training_in_group,
+                'zeroshot': []
+            }
+        if label not in training_labels:
+            coverage_info['expected_labels'][group]['zeroshot'].append(label)
+
+    # Track novel labels
+    for label in novel_labels:
+        coverage_info['novel_labels'][label] = get_group_for_label(label)
+
+    # Separate predictions by category
+    expected_indices = []
+    novel_indices = []
+
+    for i, gt in enumerate(gt_labels):
+        category = categorize_label(gt, training_labels, covered_groups)
+        if category == 'expected':
+            expected_indices.append(i)
+        else:
+            novel_indices.append(i)
+
+    # Compute metrics for each category
+    def compute_category_metrics(indices):
+        if not indices:
+            return {'accuracy': 0, 'count': 0, 'correct': 0}
+
+        correct = sum(1 for i in indices if get_group_for_label(gt_labels[i]) == get_group_for_label(pred_labels[i]))
+        return {
+            'accuracy': correct / len(indices),
+            'count': len(indices),
+            'correct': correct
+        }
+
+    expected_metrics = compute_category_metrics(expected_indices)
+    novel_metrics = compute_category_metrics(novel_indices)
+
+    # For novel labels, track what the model predicts most often
+    novel_predictions = defaultdict(list)
+    for i in novel_indices:
+        gt = gt_labels[i]
+        pred_group = get_group_for_label(pred_labels[i])
+        novel_predictions[gt].append(pred_group)
+
+    # Get most common prediction for each novel label
+    novel_prediction_summary = {}
+    for label, preds in novel_predictions.items():
+        counter = Counter(preds)
+        most_common = counter.most_common(3)  # Top 3 predictions
+        novel_prediction_summary[label] = {
+            'total_samples': len(preds),
+            'top_predictions': [(pred, count, count/len(preds)*100) for pred, count in most_common]
+        }
+
+    return {
+        'covered_groups': sorted(covered_groups),
+        'novel_groups': sorted(novel_groups),
+        'expected_labels': sorted(expected_labels),
+        'novel_labels': sorted(novel_labels),
+        'coverage_info': coverage_info,
+        'expected_metrics': expected_metrics,
+        'novel_metrics': novel_metrics,
+        'novel_prediction_summary': novel_prediction_summary,
+        'total_samples': len(gt_labels),
+        'expected_sample_count': len(expected_indices),
+        'novel_sample_count': len(novel_indices),
+    }
+
+
+def print_label_coverage_analysis(analysis: Dict, model_name: str):
+    """Print formatted label coverage analysis."""
+    print(f"\n{'='*70}")
+    print(f"LABEL COVERAGE ANALYSIS - {model_name}")
+    print(f"{'='*70}")
+
+    # Expected labels section
+    print(f"\nEXPECTED LABELS (have training equivalents):")
+    print("-" * 50)
+    for group, info in sorted(analysis['coverage_info']['expected_labels'].items()):
+        print(f"  Group: {group}")
+        print(f"    Training: {', '.join(info['training'][:5])}" +
+              (f" (+{len(info['training'])-5} more)" if len(info['training']) > 5 else ""))
+        if info['zeroshot']:
+            print(f"    Zero-shot: {', '.join(info['zeroshot'])}")
+
+    # Novel labels section
+    print(f"\nNOVEL LABELS (no training equivalent):")
+    print("-" * 50)
+    for label, group in sorted(analysis['coverage_info']['novel_labels'].items()):
+        print(f"  - {label}" + (f" (group: {group})" if group != label else ""))
+
+    # Metrics comparison
+    print(f"\n{'='*70}")
+    print(f"METRICS BY LABEL COVERAGE - {model_name}")
+    print(f"{'='*70}")
+    print(f"{'Category':<20} {'Samples':>12} {'Correct':>12} {'Accuracy':>12}")
+    print("-" * 56)
+
+    exp = analysis['expected_metrics']
+    nov = analysis['novel_metrics']
+    total = analysis['total_samples']
+
+    print(f"{'Expected':<20} {exp['count']:>12} ({exp['count']/total*100:>5.1f}%) {exp['correct']:>12} {exp['accuracy']*100:>11.2f}%")
+    print(f"{'Novel':<20} {nov['count']:>12} ({nov['count']/total*100:>5.1f}%) {nov['correct']:>12} {nov['accuracy']*100:>11.2f}%")
+    print(f"{'Overall':<20} {total:>12} {'':>8} {exp['correct']+nov['correct']:>12} {(exp['correct']+nov['correct'])/total*100:>11.2f}%")
+
+    # Novel label predictions
+    if analysis['novel_prediction_summary']:
+        print(f"\n{'='*70}")
+        print(f"NOVEL LABEL PREDICTIONS (what the model thinks they are)")
+        print(f"{'='*70}")
+        for label, info in sorted(analysis['novel_prediction_summary'].items()):
+            print(f"\n  {label} ({info['total_samples']} samples):")
+            for pred, count, pct in info['top_predictions']:
+                print(f"    → {pred}: {count} ({pct:.1f}%)")
+
 
 # =============================================================================
 # Model Loading
@@ -210,7 +436,7 @@ def compute_metrics(
     dataloader: DataLoader,
     device: torch.device,
     all_unique_labels: List[str]
-) -> Tuple[Dict[str, float], List[str], List[str]]:
+) -> Tuple[Dict[str, float], List[str], List[str], List[str], List[str]]:
     """
     Compute evaluation metrics matching training validation metrics.
 
@@ -228,6 +454,8 @@ def compute_metrics(
         metrics: Dict of metric values
         gt_groups: List of ground truth group names
         pred_groups: List of predicted group names
+        gt_labels: List of raw ground truth labels
+        pred_labels: List of raw predicted labels
     """
     label_to_group = get_label_to_group_mapping(use_simple=USE_SIMPLE_GROUPS)
 
@@ -285,12 +513,14 @@ def compute_metrics(
     correct_group = 0
     gt_groups = []
     pred_groups = []
+    pred_labels = []  # Raw predicted labels (before group mapping)
     for i, gt_label in enumerate(all_gt_labels):
         gt_group = label_to_group.get(gt_label, gt_label)
         pred_label = all_unique_labels[top1_indices[i]]
         pred_group = label_to_group.get(pred_label, pred_label)
         gt_groups.append(gt_group)
         pred_groups.append(pred_group)
+        pred_labels.append(pred_label)
         if gt_group == pred_group:
             correct_group += 1
     metrics['accuracy'] = correct_group / N
@@ -368,7 +598,7 @@ def compute_metrics(
         if counts['total'] > 0:
             metrics[f'{dataset}_accuracy'] = counts['correct'] / counts['total']
 
-    return metrics, gt_groups, pred_groups
+    return metrics, gt_groups, pred_groups, all_gt_labels, pred_labels
 
 
 def get_unique_labels_from_loader(dataloader: DataLoader) -> List[str]:
@@ -597,7 +827,7 @@ def run_comparison():
                 seed=42
             )
 
-            metrics, gt_groups, pred_groups = compute_metrics(
+            metrics, gt_groups, pred_groups, gt_labels, pred_labels = compute_metrics(
                 loaded_models[name]['model'],
                 loaded_models[name]['label_bank'],
                 val_loader,
@@ -605,7 +835,8 @@ def run_comparison():
                 all_labels
             )
             all_results['training_datasets'][name] = metrics
-            all_predictions[name] = {'gt_groups': gt_groups, 'pred_groups': pred_groups}
+            all_predictions[name] = {'gt_groups': gt_groups, 'pred_groups': pred_groups,
+                                     'gt_labels': gt_labels, 'pred_labels': pred_labels}
 
     # === Zero-shot evaluation on unseen datasets ===
     if UNSEEN_DATASETS:
@@ -613,6 +844,7 @@ def run_comparison():
         print("ZERO-SHOT EVALUATION ON UNSEEN DATASETS")
         print("=" * 70)
         print(f"Unseen datasets: {UNSEEN_DATASETS}")
+        print(f"Patch sizes to try: {UNSEEN_PATCH_SIZES}")
 
         # For zero-shot: use ALL training labels as retrieval set (more challenging & realistic)
         # This tests if the model can find the correct activity among ALL known activities
@@ -624,29 +856,93 @@ def run_comparison():
             all_training_labels.update(ds_labels)
             print(f"  {ds_name}: {len(ds_labels)} labels")
 
+        # Save a copy of training-only labels for coverage analysis
+        training_only_labels = all_training_labels.copy()
+
         # Also add unseen dataset labels (in case they have unique labels)
         print(f"Adding unseen dataset labels:")
+        all_retrieval_labels = all_training_labels.copy()  # Start with training labels
         for ds_name in UNSEEN_DATASETS:
             ds_labels = get_raw_labels_for_dataset(ds_name)
-            new_labels = set(ds_labels) - all_training_labels
+            new_labels = set(ds_labels) - training_only_labels
             if new_labels:
                 print(f"  {ds_name}: {len(new_labels)} NEW labels not in training: {sorted(new_labels)}")
-            all_training_labels.update(ds_labels)
+            all_retrieval_labels.update(ds_labels)
 
-        combined_labels = sorted(all_training_labels)
+        combined_labels = sorted(all_retrieval_labels)
         print(f"Total retrieval set: {len(combined_labels)} unique labels")
 
+        # Store results for each patch size
         all_results['unseen_datasets'] = {}
-        unseen_predictions = {}  # Store predictions for plotting
+        all_results['unseen_by_patch_size'] = {}  # Results broken down by patch size
+        all_results['unseen_per_dataset'] = {}  # Per-dataset results with optimal patch sizes
+        unseen_predictions = {}  # Store predictions for plotting (best patch size)
 
         for name in model_names:
-            print(f"\nEvaluating {name} (zero-shot)...")
+            print(f"\nEvaluating {name} (zero-shot) per dataset with multiple patch sizes...")
+
+            # Track per-dataset optimal results
+            per_dataset_best = {}
+
+            for ds_name in UNSEEN_DATASETS:
+                print(f"\n  Dataset: {ds_name}")
+                best_accuracy = -1
+                best_patch_size = None
+                best_metrics = None
+
+                for patch_size in UNSEEN_PATCH_SIZES:
+                    eval_patch_sizes = {ds_name: patch_size}
+
+                    unseen_dataset = IMUPretrainingDataset(
+                        data_root='data',
+                        datasets=[ds_name],
+                        split='val',
+                        patch_size_per_dataset=eval_patch_sizes,
+                        max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
+                        seed=42
+                    )
+                    unseen_loader = DataLoader(
+                        unseen_dataset,
+                        batch_size=BATCH_SIZE,
+                        shuffle=False,
+                        num_workers=0,
+                        collate_fn=IMUPretrainingDataset.collate_fn
+                    )
+
+                    metrics, _, _, _, _ = compute_metrics(
+                        loaded_models[name]['model'],
+                        loaded_models[name]['label_bank'],
+                        unseen_loader,
+                        device,
+                        combined_labels
+                    )
+
+                    print(f"    patch_size={patch_size}s: accuracy={metrics['accuracy']*100:.2f}%")
+
+                    if metrics['accuracy'] > best_accuracy:
+                        best_accuracy = metrics['accuracy']
+                        best_patch_size = patch_size
+                        best_metrics = metrics
+
+                per_dataset_best[ds_name] = {
+                    'best_patch_size': best_patch_size,
+                    'accuracy': best_accuracy,
+                    'metrics': best_metrics
+                }
+                print(f"    BEST: patch_size={best_patch_size}s with accuracy={best_accuracy*100:.2f}%")
+
+            all_results['unseen_per_dataset'][name] = per_dataset_best
+
+            # Also compute combined metrics using per-dataset optimal patch sizes
+            print(f"\n  Computing combined metrics using per-dataset optimal patch sizes...")
+            optimal_patch_sizes = {ds: per_dataset_best[ds]['best_patch_size'] for ds in UNSEEN_DATASETS}
+            print(f"    Optimal patch sizes: {optimal_patch_sizes}")
 
             unseen_dataset = IMUPretrainingDataset(
                 data_root='data',
                 datasets=UNSEEN_DATASETS,
                 split='val',
-                patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
+                patch_size_per_dataset=optimal_patch_sizes,
                 max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
                 seed=42
             )
@@ -658,15 +954,47 @@ def run_comparison():
                 collate_fn=IMUPretrainingDataset.collate_fn
             )
 
-            metrics, gt_groups, pred_groups = compute_metrics(
+            combined_metrics, gt_groups, pred_groups, gt_labels_raw, pred_labels_raw = compute_metrics(
                 loaded_models[name]['model'],
                 loaded_models[name]['label_bank'],
                 unseen_loader,
                 device,
                 combined_labels
             )
-            all_results['unseen_datasets'][name] = metrics
-            unseen_predictions[name] = {'gt_groups': gt_groups, 'pred_groups': pred_groups}
+
+            all_results['unseen_datasets'][name] = combined_metrics
+            all_results['unseen_datasets'][name]['optimal_patch_sizes'] = optimal_patch_sizes
+            unseen_predictions[name] = {
+                'gt_groups': gt_groups,
+                'pred_groups': pred_groups,
+                'gt_labels': gt_labels_raw,
+                'pred_labels': pred_labels_raw
+            }
+            print(f"  COMBINED (optimal patches): accuracy={combined_metrics['accuracy']*100:.2f}%")
+
+        # === Label Coverage Analysis ===
+        print("\n" + "=" * 70)
+        print("LABEL COVERAGE ANALYSIS")
+        print("=" * 70)
+
+        # Get zero-shot dataset labels
+        zeroshot_labels = set()
+        for ds_name in UNSEEN_DATASETS:
+            zeroshot_labels.update(get_raw_labels_for_dataset(ds_name))
+
+        # Perform coverage analysis for each model
+        all_results['coverage_analysis'] = {}
+        for name in model_names:
+            if name in unseen_predictions:
+                preds = unseen_predictions[name]
+                coverage_analysis = analyze_label_coverage(
+                    training_labels=training_only_labels,
+                    zeroshot_labels=zeroshot_labels,
+                    gt_labels=preds['gt_labels'],
+                    pred_labels=preds['pred_labels']
+                )
+                all_results['coverage_analysis'][name] = coverage_analysis
+                print_label_coverage_analysis(coverage_analysis, name)
 
     # === Print Results ===
     print("\n" + "=" * 70)
@@ -728,7 +1056,29 @@ def run_comparison():
         print_metrics_table(all_results['training_datasets'], "Training Datasets")
 
     if 'unseen_datasets' in all_results:
-        print_metrics_table(all_results['unseen_datasets'], "Zero-Shot (Unseen Datasets)")
+        print_metrics_table(all_results['unseen_datasets'], "Zero-Shot (Unseen Datasets) - Per-Dataset Optimal Patch Sizes")
+
+        # Print per-dataset breakdown with optimal patch sizes
+        if 'unseen_per_dataset' in all_results:
+            print(f"\n{'Per-Dataset Results with Optimal Patch Sizes:':<50}")
+            print("-" * 90)
+            print(f"{'Dataset':<20}", end="")
+            for name in model_names:
+                print(f"{'Acc':>12}{'Patch':>10}", end="")
+            print()
+            print("-" * 90)
+            for ds_name in UNSEEN_DATASETS:
+                print(f"{ds_name:<20}", end="")
+                for name in model_names:
+                    if name in all_results['unseen_per_dataset']:
+                        ds_results = all_results['unseen_per_dataset'][name].get(ds_name, {})
+                        acc = ds_results.get('accuracy', 0)
+                        patch = ds_results.get('best_patch_size', 'N/A')
+                        print(f"{acc*100:>11.2f}%{patch:>9}s", end="")
+                    else:
+                        print(f"{'N/A':>12}{'N/A':>10}", end="")
+                print()
+            print("-" * 90)
 
     # Save results
     results_path = output_dir / 'comparison_results.json'

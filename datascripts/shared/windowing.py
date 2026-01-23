@@ -78,6 +78,55 @@ ACTIVITY_WINDOW_RANGES = {
     "standing_up_from_laying": (2, 10),
     "sitting_down_from_standing": (2, 10),
     "lying_down_from_standing": (2, 10),
+    # HAPT postural transitions
+    "stand_to_sit": (2, 8),
+    "sit_to_stand": (2, 8),
+    "sit_to_lie": (2, 8),
+    "lie_to_sit": (2, 8),
+    "stand_to_lie": (2, 8),
+    "lie_to_stand": (2, 8),
+
+    # KU-HAR activities
+    "picking_up": (2, 10),
+    "push_up": (3, 20),
+    "sit_up": (3, 20),
+    "playing_sports": (5, 30),
+    "walking_backwards": (5, 30),
+    "talking_sitting": (10, 60),
+    "talking_standing": (10, 60),
+
+    # Gym exercises (RecGym) - medium duration
+    "squat": (5, 30),
+    "bench_press": (5, 30),
+    "leg_press": (5, 30),
+    "leg_curl": (5, 30),
+    "arm_curl": (5, 30),
+    "adductor_machine": (5, 30),
+    "stairclimber": (5, 45),
+    "rope_skipping": (5, 30),
+
+    # Falls (MobiAct) - very short
+    "fall_forward": (2, 8),
+    "fall_backward_knees": (2, 8),
+    "fall_backward_sitting": (2, 8),
+    "fall_sideways": (2, 8),
+
+    # Vehicle entry (MobiAct) - short
+    "car_step_in": (2, 10),
+    "car_step_out": (2, 10),
+    "sitting_chair": (2, 15),
+
+    # Construction work (VTT-ConIoT) - medium duration
+    "carrying": (5, 30),
+    "lifting": (3, 20),
+    "pushing_cart": (5, 30),
+    "climbing_ladder": (5, 30),
+    "kneeling_work": (5, 45),
+    "standing_work": (5, 45),
+    "roll_painting": (10, 60),
+    "spraying_paint": (10, 60),
+    "leveling_paint": (10, 60),
+    "raising_hands": (3, 20),
 }
 
 # Maximum session duration to fit in context window (45 patches × ~2s)

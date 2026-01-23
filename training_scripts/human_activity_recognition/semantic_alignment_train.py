@@ -40,15 +40,23 @@ from typing import Tuple, Optional, List
 
 # Data configuration
 DATA_ROOT = "/home/alex/code/tsfm/data"
-DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
+DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'vtt_coniot', 'recgym']
 random.seed(42)
 PATCH_SIZE_PER_DATASET = {
-    'uci_har': 1.0,       # 50 Hz, 2.56s windows → 50 samples/patch, ~2-3 patches/session
-    'hhar': 1.0,          # 50 Hz, 2.56s windows → 50 samples/patch, ~2-3 patches/session
-    'mhealth': 2.0,       # 50 Hz, health monitoring → 100 samples/patch
-    'pamap2': 2.0,        # 100 Hz, complex activities → 200 samples/patch
-    'wisdm': 2.0,         # 20 Hz, phone-based → 40 samples/patch
-    'unimib_shar': 1.0,   # 50 Hz, ~3s segments → 50 samples/patch, ~3 patches/session
+    'uci_har': 1.0,       # 50 Hz, 2.56s sessions → 50 samples/patch, 2 patches/session
+    'hhar': 1.0,          # 50 Hz, 2.56s sessions → 50 samples/patch, 2 patches/session
+    'mhealth': 2.0,       # 50 Hz, variable sessions (2-20s)
+    'pamap2': 2.0,        # 100 Hz, variable sessions (2-60s)
+    'wisdm': 2.0,         # 20 Hz, variable sessions (2-60s)
+    'unimib_shar': 1.0,   # 50 Hz, 3.02s sessions → 50 samples/patch, 3 patches/session
+    # New datasets
+    'dsads': 2.0,         # 25 Hz, variable sessions → 50 samples/patch
+    'mobiact': 1.5,       # 50 Hz, short fall events → 75 samples/patch
+    'realworld': 2.0,     # 50 Hz, variable sessions → 100 samples/patch
+    'vtt_coniot': 2.0,    # 50 Hz, variable sessions → 100 samples/patch
+    'recgym': 2.5,        # 20 Hz, gym exercises → 50 samples/patch
+    'hapt': 1.5,          # 50 Hz, transitions (2-8s) → 75 samples/patch
+    'kuhar': 1.5,         # 100 Hz, 18 activities → 150 samples/patch
 }
 
 MAX_PATCHES_PER_SAMPLE = 48
@@ -168,22 +176,25 @@ USE_GROUP_BALANCED_SAMPLING = True  # Default: enable group-balanced sampling
 # Patch size augmentation configuration
 # During training, randomly sample patch sizes from valid ranges per dataset
 # Ranges are constrained by session duration (need ≥2 patches per session)
-USE_PATCH_SIZE_AUGMENTATION = True  # Default: enable patch size augmentation
-MIN_PATCHES_PER_SAMPLE = 2  # Minimum patches required per sample
+USE_PATCH_SIZE_AUGMENTATION = True  # Enable patch size augmentation for better generalization
+MIN_PATCHES_PER_SAMPLE = 1  # Minimum patches required per sample
 
 # Valid patch size ranges per dataset: (min_sec, max_sec, step_sec)
-# Ranges centered around original PATCH_SIZE_PER_DATASET values to avoid excessive slowdown
-# (smaller patches = more patches = O(n²) attention cost)
 PATCH_SIZE_RANGE_PER_DATASET = {
-    # Short fixed-length sessions - centered around 1.0s
-    'uci_har':      (0.75, 1.25, 0.25),  # 50 Hz, 2.5s sessions → [0.75, 1.0, 1.25]
-    'hhar':         (0.75, 1.25, 0.25),  # 50 Hz, 2.5s sessions → [0.75, 1.0, 1.25]
-    'unimib_shar':  (0.75, 1.25, 0.25),  # 50 Hz, 3.0s sessions → [0.75, 1.0, 1.25]
-
-    # Variable-length sessions - centered around 2.0s
-    'mhealth':      (1.5, 2.5, 0.5),     # 50 Hz, 2.6-13.7s → [1.5, 2.0, 2.5]
-    'pamap2':       (1.5, 2.5, 0.5),     # 100 Hz, 2.0-57s → [1.5, 2.0, 2.5]
-    'wisdm':        (1.5, 2.5, 0.5),     # 20 Hz, 1.0-24s → [1.5, 2.0, 2.5]
+    # Fixed-length sessions (~2.5-3s) - tighter range around 1.0s
+    'uci_har':      (0.75, 1.25, 0.25),  # 50 Hz, 2.56s fixed → [0.75, 1.0, 1.25]
+    'hhar':         (0.75, 1.25, 0.25),  # 50 Hz, 2.56s fixed → [0.75, 1.0, 1.25]
+    'unimib_shar':  (0.75, 1.25, 0.25),  # 50 Hz, 3.02s fixed → [0.75, 1.0, 1.25]
+    # Variable-length sessions (2-60s, median ~10s) - wider range centered on 1.5s
+    'mhealth':      (1.0, 2.0, 0.5),     # 50 Hz, 2-20s → [1.0, 1.5, 2.0]
+    'pamap2':       (1.0, 2.0, 0.5),     # 100 Hz, 2-60s → [1.0, 1.5, 2.0]
+    'wisdm':        (1.0, 2.0, 0.5),     # 20 Hz, 2-60s → [1.0, 1.5, 2.0]
+    # New datasets
+    'dsads':        (1.5, 2.5, 0.5),     # 25 Hz, variable → [1.5, 2.0, 2.5]
+    'mobiact':      (1.0, 2.0, 0.5),     # 50 Hz, short falls → [1.0, 1.5, 2.0]
+    'realworld':    (1.5, 2.5, 0.5),     # 50 Hz, variable → [1.5, 2.0, 2.5]
+    'vtt_coniot':   (1.5, 2.5, 0.5),     # 50 Hz, variable → [1.5, 2.0, 2.5]
+    'recgym':       (2.0, 3.0, 0.5),     # 20 Hz, gym exercises → [2.0, 2.5, 3.0]
 }
 
 # =================================================================
@@ -250,9 +261,9 @@ class SemanticAlignmentModel(nn.Module):
         max_feasible = session_duration / self.min_patches_per_sample
         actual_max = min(max_sec, max_feasible)
 
-        # If even min is too large, use min anyway (will get fewer patches - acceptable edge case)
+        # If session too short for ≥2 patches with min patch size, use full session as one patch
         if actual_max < min_sec:
-            return min_sec
+            return session_duration  # One patch covering entire session
 
         # Generate valid sizes within feasible range
         num_steps = int((actual_max - min_sec) / step_sec) + 1
