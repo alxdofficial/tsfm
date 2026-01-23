@@ -291,6 +291,51 @@ DATASET_CONFIGS = {
         },
         "templates": ["{}"],
     },
+    "hapt": {
+        "synonyms": {
+            # Basic activities (same as UCI HAR)
+            "walking": ["walking"],
+            "walking_upstairs": ["walking_upstairs", "ascending stairs"],
+            "walking_downstairs": ["walking_downstairs", "descending stairs"],
+            "sitting": ["sitting"],
+            "standing": ["standing"],
+            "lying": ["lying"],
+            # Postural transitions
+            "stand_to_sit": ["stand_to_sit", "transitioning from standing to sitting"],
+            "sit_to_stand": ["sit_to_stand", "transitioning from sitting to standing"],
+            "sit_to_lie": ["sit_to_lie", "transitioning from sitting to lying"],
+            "lie_to_sit": ["lie_to_sit", "transitioning from lying to sitting"],
+            "stand_to_lie": ["stand_to_lie", "transitioning from standing to lying"],
+            "lie_to_stand": ["lie_to_stand", "transitioning from lying to standing"],
+        },
+        "templates": ["{}"],
+    },
+    "kuhar": {
+        "synonyms": {
+            # Basic postures
+            "standing": ["standing"],
+            "sitting": ["sitting"],
+            "lying": ["lying"],
+            # Locomotion
+            "walking": ["walking"],
+            "walking_backwards": ["walking_backwards", "walking backward"],
+            "walking_upstairs": ["walking_upstairs", "ascending stairs"],
+            "walking_downstairs": ["walking_downstairs", "descending stairs"],
+            "running": ["running"],
+            "jumping": ["jumping"],
+            # Transitions
+            "standing_up_from_sitting": ["standing_up_from_sitting", "standing up from chair"],
+            "standing_up_from_laying": ["standing_up_from_laying", "getting up from lying"],
+            # Activities
+            "picking_up": ["picking_up", "picking up object"],
+            "push_up": ["push_up", "doing push-ups"],
+            "sit_up": ["sit_up", "doing sit-ups"],
+            "talking_sitting": ["talking_sitting", "talking while sitting"],
+            "talking_standing": ["talking_standing", "talking while standing"],
+            "playing_sports": ["playing_sports", "playing table tennis"],
+        },
+        "templates": ["{}"],
+    },
     # Zero-shot datasets
     "realworld": {
         "synonyms": {
