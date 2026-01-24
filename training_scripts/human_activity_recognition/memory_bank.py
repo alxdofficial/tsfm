@@ -51,11 +51,30 @@ class MemoryBank:
             imu_emb: IMU embeddings to add (batch_size, embedding_dim)
             text_emb: Text embeddings to add (batch_size, embedding_dim)
         """
-        batch_size = imu_emb.shape[0]
-
         # Move embeddings to CPU to save GPU memory
         imu_emb_cpu = imu_emb.detach().cpu()
         text_emb_cpu = text_emb.detach().cpu()
+
+        # Validate embeddings - NaN or zero-norm indicate bugs that should be fixed
+        imu_nan_mask = torch.isnan(imu_emb_cpu).any(dim=1)
+        text_nan_mask = torch.isnan(text_emb_cpu).any(dim=1)
+        if imu_nan_mask.any() or text_nan_mask.any():
+            nan_indices = (imu_nan_mask | text_nan_mask).nonzero(as_tuple=True)[0].tolist()
+            raise ValueError(
+                f"NaN detected in embeddings at indices {nan_indices}. "
+                f"This indicates a numerical bug in the model forward pass."
+            )
+
+        imu_zero_mask = imu_emb_cpu.norm(dim=1) < 1e-6
+        text_zero_mask = text_emb_cpu.norm(dim=1) < 1e-6
+        if imu_zero_mask.any() or text_zero_mask.any():
+            zero_indices = (imu_zero_mask | text_zero_mask).nonzero(as_tuple=True)[0].tolist()
+            raise ValueError(
+                f"Zero-norm embeddings detected at indices {zero_indices}. "
+                f"This indicates invalid samples that should have been filtered during data loading."
+            )
+
+        batch_size = imu_emb_cpu.shape[0]
 
         # Calculate end pointer
         end_ptr = self.ptr + batch_size

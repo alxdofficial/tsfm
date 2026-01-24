@@ -308,6 +308,14 @@ class IMUPretrainingDataset(Dataset):
         # Extract data for selected channels
         data = df[selected_channels].values  # (timesteps, num_channels)
 
+        # Handle NaN values (missing sensor readings)
+        # Use forward-fill then backward-fill interpolation
+        if np.isnan(data).any():
+            data = pd.DataFrame(data).ffill().bfill().values
+            # If still NaN (entire column missing), fill with zeros
+            if np.isnan(data).any():
+                data = np.nan_to_num(data, nan=0.0)
+
         # Get sampling rate (assume same for all channels in a dataset)
         sampling_rate = dataset_info['sampling_rates'][selected_channels[0]]
 

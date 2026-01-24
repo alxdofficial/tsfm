@@ -335,7 +335,10 @@ class ProjectionHead(nn.Module):
         # This prevents magnitude explosion AND avoids gradient issues in the loss
         # By normalizing here instead of in the loss, gradients don't flow through normalization
         if normalize:
-            x = F.normalize(x, p=2, dim=-1)
+            # Safe normalization: clamp norm to avoid division by zero for zero-norm vectors
+            # Zero-norm vectors can arise from empty batches or all-masked attention outputs
+            norm = x.norm(dim=-1, keepdim=True).clamp(min=1e-8)
+            x = x / norm
 
         return x
 
@@ -429,6 +432,19 @@ class SemanticAlignmentHead(nn.Module):
         Returns:
             Semantic embedding (batch, output_dim)
         """
+        # Validate: all samples must have at least one valid patch
+        # If this fails, there's a bug in data loading or preprocessing
+        if patch_mask is not None:
+            invalid_samples = ~patch_mask.any(dim=1)
+            if invalid_samples.any():
+                invalid_indices = invalid_samples.nonzero(as_tuple=True)[0].tolist()
+                raise ValueError(
+                    f"Samples {invalid_indices} have no valid patches (all-False patch_mask). "
+                    f"This indicates a bug in data loading or preprocessing - sessions with "
+                    f"insufficient data for the patch size should be filtered out."
+                )
+
+        # All samples valid - standard path
         # Cross-channel fusion: (batch, patches, channels, d_model) -> (batch, patches, d_model_fused)
         fused = self.cross_channel_fusion(encoder_output, channel_mask)
 

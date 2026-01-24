@@ -43,20 +43,22 @@ DATA_ROOT = "/home/alex/code/tsfm/data"
 DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'vtt_coniot', 'recgym']
 random.seed(42)
 PATCH_SIZE_PER_DATASET = {
-    'uci_har': 1.0,       # 50 Hz, 2.56s sessions → 50 samples/patch, 2 patches/session
-    'hhar': 1.0,          # 50 Hz, 2.56s sessions → 50 samples/patch, 2 patches/session
-    'mhealth': 2.0,       # 50 Hz, variable sessions (2-20s)
-    'pamap2': 2.0,        # 100 Hz, variable sessions (2-60s)
-    'wisdm': 2.0,         # 20 Hz, variable sessions (2-60s)
-    'unimib_shar': 1.0,   # 50 Hz, 3.02s sessions → 50 samples/patch, 3 patches/session
+    # Fixed-length sessions (2.56s) - use 1.0s patches for 2 patches/session
+    'uci_har': 1.0,       # 50 Hz, 2.56s fixed sessions
+    'hhar': 1.0,          # 50 Hz, 2.56s fixed sessions
+    # Variable-length sessions - max patch < min session duration
+    'mhealth': 1.5,       # 50 Hz, min_session=2.0s → use 1.5s (was 2.0s)
+    'pamap2': 2.0,        # 9 Hz, min_session=22.2s → plenty of room
+    'wisdm': 1.5,         # 20 Hz, min_session=2.0s → use 1.5s (was 2.0s)
+    'unimib_shar': 1.0,   # 50 Hz, 3.02s fixed sessions
     # New datasets
-    'dsads': 2.0,         # 25 Hz, variable sessions → 50 samples/patch
-    'mobiact': 1.5,       # 50 Hz, short fall events → 75 samples/patch
-    'realworld': 2.0,     # 50 Hz, variable sessions → 100 samples/patch
-    'vtt_coniot': 2.0,    # 50 Hz, variable sessions → 100 samples/patch
-    'recgym': 2.5,        # 20 Hz, gym exercises → 50 samples/patch
-    'hapt': 1.5,          # 50 Hz, transitions (2-8s) → 75 samples/patch
-    'kuhar': 1.5,         # 100 Hz, 18 activities → 150 samples/patch
+    'dsads': 2.0,         # 25 Hz, min_session=5.0s → use 2.0s
+    'mobiact': 1.5,       # 50 Hz, min_session=2.0s → use 1.5s
+    'realworld': 1.5,     # 50 Hz, min_session=2.0s → use 1.5s (was 2.0s)
+    'vtt_coniot': 2.0,    # 50 Hz, min_session=60s → plenty of room
+    'recgym': 1.5,        # 20 Hz, min_session=2.0s → use 1.5s (was 2.5s)
+    'hapt': 1.25,         # 50 Hz, min_session=1.48s → use 1.25s (was 1.5s)
+    'kuhar': 1.5,         # 100 Hz, min_session=2.0s → use 1.5s
 }
 
 MAX_PATCHES_PER_SAMPLE = 48
@@ -187,21 +189,24 @@ USE_PATCH_SIZE_AUGMENTATION = True  # Enable patch size augmentation for better 
 MIN_PATCHES_PER_SAMPLE = 1  # Minimum patches required per sample
 
 # Valid patch size ranges per dataset: (min_sec, max_sec, step_sec)
+# IMPORTANT: max_sec must be < min_session_duration for each dataset to guarantee valid patches
 PATCH_SIZE_RANGE_PER_DATASET = {
     # Fixed-length sessions (~2.5-3s) - tighter range around 1.0s
-    'uci_har':      (0.75, 1.25, 0.25),  # 50 Hz, 2.56s fixed → [0.75, 1.0, 1.25]
-    'hhar':         (0.75, 1.25, 0.25),  # 50 Hz, 2.56s fixed → [0.75, 1.0, 1.25]
-    'unimib_shar':  (0.75, 1.25, 0.25),  # 50 Hz, 3.02s fixed → [0.75, 1.0, 1.25]
-    # Variable-length sessions (2-60s, median ~10s) - wider range centered on 1.5s
-    'mhealth':      (1.0, 2.0, 0.5),     # 50 Hz, 2-20s → [1.0, 1.5, 2.0]
-    'pamap2':       (1.0, 2.0, 0.5),     # 100 Hz, 2-60s → [1.0, 1.5, 2.0]
-    'wisdm':        (1.0, 2.0, 0.5),     # 20 Hz, 2-60s → [1.0, 1.5, 2.0]
+    'uci_har':      (0.75, 1.25, 0.25),  # min_session=2.56s → [0.75, 1.0, 1.25]
+    'hhar':         (0.75, 1.25, 0.25),  # min_session=2.56s → [0.75, 1.0, 1.25]
+    'unimib_shar':  (0.75, 1.25, 0.25),  # min_session=3.02s → [0.75, 1.0, 1.25]
+    # Variable-length sessions - max < min_session to avoid NaN
+    'mhealth':      (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
+    'pamap2':       (1.0, 2.0, 0.5),     # min_session=22.2s → [1.0, 1.5, 2.0]
+    'wisdm':        (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
     # New datasets
-    'dsads':        (1.5, 2.5, 0.5),     # 25 Hz, variable → [1.5, 2.0, 2.5]
-    'mobiact':      (1.0, 2.0, 0.5),     # 50 Hz, short falls → [1.0, 1.5, 2.0]
-    'realworld':    (1.5, 2.5, 0.5),     # 50 Hz, variable → [1.5, 2.0, 2.5]
-    'vtt_coniot':   (1.5, 2.5, 0.5),     # 50 Hz, variable → [1.5, 2.0, 2.5]
-    'recgym':       (2.0, 3.0, 0.5),     # 20 Hz, gym exercises → [2.0, 2.5, 3.0]
+    'dsads':        (1.5, 2.5, 0.5),     # min_session=5.0s → [1.5, 2.0, 2.5]
+    'mobiact':      (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
+    'realworld':    (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
+    'vtt_coniot':   (1.5, 2.5, 0.5),     # min_session=60s → [1.5, 2.0, 2.5]
+    'recgym':       (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
+    'hapt':         (0.75, 1.25, 0.25),  # min_session=1.48s → [0.75, 1.0, 1.25]
+    'kuhar':        (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
 }
 
 # =================================================================
@@ -756,8 +761,24 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             with torch.no_grad():
                 memory_bank.update(imu_embeddings.detach(), text_embeddings.detach())
 
-        # Accumulate metrics
-        total_loss += metrics['loss']
+        # Accumulate metrics (with NaN detection)
+        batch_loss = metrics['loss']
+        if math.isnan(batch_loss):
+            # Log which batch/dataset caused NaN
+            datasets_in_batch = [m.get('dataset', 'unknown') for m in metadata]
+            dataset_counts = {}
+            for ds in datasets_in_batch:
+                dataset_counts[ds] = dataset_counts.get(ds, 0) + 1
+            print(f"\n[NaN DETECTED] Batch {batch_idx}, Epoch {epoch}")
+            print(f"  Datasets in batch: {dataset_counts}")
+            print(f"  Labels: {label_texts[:5]}...")  # First 5 labels
+            print(f"  Patch sizes: {patch_sizes[:5]}...")
+            print(f"  Sampling rates: {sampling_rates[:5]}...")
+            # Skip this batch's contribution to avoid NaN propagation
+            # (the loss still backprops, but we don't let it corrupt epoch metrics)
+            batch_loss = 0.0  # Replace NaN with 0 for epoch averaging
+
+        total_loss += batch_loss
         total_pos_sim += metrics['positive_similarity']
         total_neg_sim += metrics['negative_similarity']
         total_sim_gap += metrics['similarity_gap']
@@ -876,7 +897,14 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
                                        patch_ranges=None)
                 _, metrics = criterion(imu_embeddings, text_embeddings, label_texts, return_metrics=True)
 
-            total_loss += metrics['loss']
+            # NaN detection for validation
+            batch_loss = metrics['loss']
+            if math.isnan(batch_loss):
+                datasets_in_batch = [m.get('dataset', 'unknown') for m in metadata]
+                print(f"\n[NaN DETECTED in VAL] Labels: {label_texts[:5]}..., Datasets: {set(datasets_in_batch)}")
+                batch_loss = 0.0
+
+            total_loss += batch_loss
             total_pos_sim += metrics['positive_similarity']
             total_neg_sim += metrics['negative_similarity']
             total_sim_gap += metrics['similarity_gap']
