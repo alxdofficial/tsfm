@@ -46,30 +46,33 @@ from collections import Counter
 # Checkpoint paths to compare - add as many as you want
 # Format: {"display_name": "path/to/checkpoint.pt"}
 CHECKPOINT_PATHS = {
-    "class_imbalance_only": "training_output/semantic_alignment/20260119_081154/best.pt",
-    "class_imbalance+patch_aug": "training_output/semantic_alignment/added_class_imbalance_fix_and_patchsize_aug/best.pt",
+    "6_datasets": "training_output/semantic_alignment/good1/best.pt",
+    "11_datasets": "training_output/semantic_alignment/20260124_033735/best.pt",
 }
 
 # Datasets for evaluation (training datasets)
 EVAL_DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'vtt_coniot', 'recgym']
 
 # Patch size per dataset - MUST match training config for accurate metrics
+# Updated to match semantic_alignment_train.py (2026-01-26)
 PATCH_SIZE_PER_DATASET = {
-    'uci_har': 1.0,
-    'hhar': 1.0,
-    'mhealth': 2.0,
-    'pamap2': 2.0,
-    'wisdm': 2.0,
-    'unimib_shar': 1.0,
-    'motionsense': 2.0,
-    # New datasets
-    'dsads': 2.0,
-    'mobiact': 1.5,
-    'realworld': 2.0,
-    'vtt_coniot': 2.0,
-    'recgym': 2.5,
-    'hapt': 1.5,
-    'kuhar': 1.5,
+    # Fixed-length sessions (2.56s) - use 1.0s patches for 2 patches/session
+    'uci_har': 1.0,       # 50 Hz, 2.56s fixed sessions
+    'hhar': 1.0,          # 50 Hz, 2.56s fixed sessions
+    'unimib_shar': 1.0,   # 50 Hz, 3.02s fixed sessions
+    # Variable-length sessions - max patch < min session duration
+    'mhealth': 1.5,       # 50 Hz, min_session=2.0s
+    'pamap2': 2.0,        # 9 Hz, min_session=22.2s
+    'wisdm': 1.5,         # 20 Hz, min_session=2.0s
+    'dsads': 2.0,         # 25 Hz, min_session=5.0s
+    'vtt_coniot': 2.0,    # 50 Hz, min_session=60s
+    'recgym': 1.5,        # 20 Hz, min_session=2.0s
+    'hapt': 1.25,         # 50 Hz, min_session=1.48s
+    'kuhar': 1.5,         # 100 Hz, min_session=2.0s
+    # Unseen datasets (zero-shot evaluation)
+    'motionsense': 1.5,   # 50 Hz, similar to mhealth
+    'mobiact': 1.5,       # 50 Hz, min_session=2.0s
+    'realworld': 1.5,     # 50 Hz, min_session=2.0s
 }
 
 # Unseen datasets for zero-shot evaluation (empty list to skip)
@@ -77,9 +80,18 @@ PATCH_SIZE_PER_DATASET = {
 # Note: VTT-ConIoT and RecGym now in training for better activity coverage
 UNSEEN_DATASETS = ['motionsense', 'realworld', 'mobiact']
 
-# Multi-patch-size evaluation for unseen datasets
-# Try multiple patch sizes matching variable-length dataset range
-UNSEEN_PATCH_SIZES = [1.0, 1.5, 2.0, 2.5]  # Include 2.5 for recgym
+# Patch sizes for unseen datasets
+# Test 4 values covering the training augmentation range
+UNSEEN_PATCH_SIZES = [1.0, 1.25, 1.5, 1.75]
+
+# Channel subsets for zero-shot evaluation
+# None = use all available IMU channels (no filtering needed)
+# Zero-shot datasets use same channel types as training (acc, gyro), so no ablation needed
+UNSEEN_CHANNEL_SUBSETS = {
+    'motionsense': [None],  # 6ch: acc + gyro (same as hhar, hapt, kuhar)
+    'realworld': [None],    # 3ch: acc only (same as wisdm, unimib_shar)
+    'mobiact': [None],      # 6ch: acc + gyro (same as hhar, hapt, kuhar)
+}
 
 # Output directory
 OUTPUT_DIR = "test_output/model_comparison"
@@ -872,105 +884,177 @@ def run_comparison():
         combined_labels = sorted(all_retrieval_labels)
         print(f"Total retrieval set: {len(combined_labels)} unique labels")
 
-        # Store results for each patch size
+        # Store results for each configuration
         all_results['unseen_datasets'] = {}
-        all_results['unseen_by_patch_size'] = {}  # Results broken down by patch size
-        all_results['unseen_per_dataset'] = {}  # Per-dataset results with optimal patch sizes
-        unseen_predictions = {}  # Store predictions for plotting (best patch size)
+        all_results['unseen_per_dataset'] = {}  # Per-dataset results with optimal settings
+        all_results['unseen_channel_ablation'] = {}  # Channel subset ablation results
+        unseen_predictions = {}  # Store predictions for plotting (best config)
 
         for name in model_names:
-            print(f"\nEvaluating {name} (zero-shot) per dataset with multiple patch sizes...")
+            print(f"\nEvaluating {name} (zero-shot) per dataset with multiple configurations...")
 
             # Track per-dataset optimal results
             per_dataset_best = {}
+            channel_ablation = {}  # Track results for each channel subset
 
             for ds_name in UNSEEN_DATASETS:
                 print(f"\n  Dataset: {ds_name}")
+
+                # Get channel subsets to try for this dataset
+                channel_subsets = UNSEEN_CHANNEL_SUBSETS.get(ds_name, [None])
+
                 best_accuracy = -1
                 best_patch_size = None
+                best_channel_filter = None
                 best_metrics = None
+                dataset_ablation = []
 
-                for patch_size in UNSEEN_PATCH_SIZES:
-                    eval_patch_sizes = {ds_name: patch_size}
+                for channel_filter in channel_subsets:
+                    filter_name = 'all_channels' if channel_filter is None else '+'.join(channel_filter)
+                    print(f"\n    Channel filter: {filter_name}")
 
-                    unseen_dataset = IMUPretrainingDataset(
-                        data_root='data',
-                        datasets=[ds_name],
-                        split='val',
-                        patch_size_per_dataset=eval_patch_sizes,
-                        max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
-                        seed=42
-                    )
-                    unseen_loader = DataLoader(
-                        unseen_dataset,
-                        batch_size=BATCH_SIZE,
-                        shuffle=False,
-                        num_workers=0,
-                        collate_fn=IMUPretrainingDataset.collate_fn
-                    )
+                    filter_best_acc = -1
+                    filter_best_patch = None
+                    filter_best_metrics = None
 
-                    metrics, _, _, _, _ = compute_metrics(
-                        loaded_models[name]['model'],
-                        loaded_models[name]['label_bank'],
-                        unseen_loader,
-                        device,
-                        combined_labels
-                    )
+                    for patch_size in UNSEEN_PATCH_SIZES:
+                        eval_patch_sizes = {ds_name: patch_size}
 
-                    print(f"    patch_size={patch_size}s: accuracy={metrics['accuracy']*100:.2f}%")
+                        try:
+                            unseen_dataset = IMUPretrainingDataset(
+                                data_root='data',
+                                datasets=[ds_name],
+                                split='val',
+                                patch_size_per_dataset=eval_patch_sizes,
+                                max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
+                                channel_filter=channel_filter,
+                                seed=42
+                            )
+                        except ValueError as e:
+                            print(f"      patch={patch_size}s: SKIPPED ({e})")
+                            continue
 
-                    if metrics['accuracy'] > best_accuracy:
-                        best_accuracy = metrics['accuracy']
-                        best_patch_size = patch_size
-                        best_metrics = metrics
+                        unseen_loader = DataLoader(
+                            unseen_dataset,
+                            batch_size=BATCH_SIZE,
+                            shuffle=False,
+                            num_workers=0,
+                            collate_fn=IMUPretrainingDataset.collate_fn
+                        )
 
+                        metrics, _, _, _, _ = compute_metrics(
+                            loaded_models[name]['model'],
+                            loaded_models[name]['label_bank'],
+                            unseen_loader,
+                            device,
+                            combined_labels
+                        )
+
+                        print(f"      patch={patch_size}s: accuracy={metrics['accuracy']*100:.2f}%")
+
+                        # Track best for this filter
+                        if metrics['accuracy'] > filter_best_acc:
+                            filter_best_acc = metrics['accuracy']
+                            filter_best_patch = patch_size
+                            filter_best_metrics = metrics
+
+                        # Track overall best
+                        if metrics['accuracy'] > best_accuracy:
+                            best_accuracy = metrics['accuracy']
+                            best_patch_size = patch_size
+                            best_channel_filter = channel_filter
+                            best_metrics = metrics
+
+                    # Record ablation result for this filter
+                    if filter_best_metrics is not None:
+                        dataset_ablation.append({
+                            'channel_filter': filter_name,
+                            'best_patch_size': filter_best_patch,
+                            'accuracy': filter_best_acc,
+                        })
+                        print(f"    → {filter_name} BEST: patch={filter_best_patch}s, acc={filter_best_acc*100:.2f}%")
+
+                channel_ablation[ds_name] = dataset_ablation
+
+                filter_name = 'all_channels' if best_channel_filter is None else '+'.join(best_channel_filter)
                 per_dataset_best[ds_name] = {
                     'best_patch_size': best_patch_size,
+                    'best_channel_filter': best_channel_filter,
+                    'channel_filter_name': filter_name,
                     'accuracy': best_accuracy,
                     'metrics': best_metrics
                 }
-                print(f"    BEST: patch_size={best_patch_size}s with accuracy={best_accuracy*100:.2f}%")
+                print(f"  ★ {ds_name} OVERALL BEST: {filter_name}, patch={best_patch_size}s, acc={best_accuracy*100:.2f}%")
 
             all_results['unseen_per_dataset'][name] = per_dataset_best
+            all_results['unseen_channel_ablation'][name] = channel_ablation
 
-            # Also compute combined metrics using per-dataset optimal patch sizes
-            print(f"\n  Computing combined metrics using per-dataset optimal patch sizes...")
-            optimal_patch_sizes = {ds: per_dataset_best[ds]['best_patch_size'] for ds in UNSEEN_DATASETS}
-            print(f"    Optimal patch sizes: {optimal_patch_sizes}")
+            # Compute combined metrics using per-dataset optimal settings
+            print(f"\n  Computing combined metrics with optimal settings per dataset...")
 
-            unseen_dataset = IMUPretrainingDataset(
-                data_root='data',
-                datasets=UNSEEN_DATASETS,
-                split='val',
-                patch_size_per_dataset=optimal_patch_sizes,
-                max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
-                seed=42
-            )
-            unseen_loader = DataLoader(
-                unseen_dataset,
-                batch_size=BATCH_SIZE,
-                shuffle=False,
-                num_workers=0,
-                collate_fn=IMUPretrainingDataset.collate_fn
-            )
+            # For combined evaluation, we need to evaluate each dataset separately with its optimal settings
+            # then aggregate the results (since channel_filter is per-dataset)
+            all_gt_groups = []
+            all_pred_groups = []
+            all_gt_labels = []
+            all_pred_labels = []
+            combined_correct = 0
+            combined_total = 0
 
-            combined_metrics, gt_groups, pred_groups, gt_labels_raw, pred_labels_raw = compute_metrics(
-                loaded_models[name]['model'],
-                loaded_models[name]['label_bank'],
-                unseen_loader,
-                device,
-                combined_labels
-            )
+            for ds_name in UNSEEN_DATASETS:
+                ds_config = per_dataset_best[ds_name]
+                optimal_patch = ds_config['best_patch_size']
+                optimal_filter = ds_config['best_channel_filter']
 
-            all_results['unseen_datasets'][name] = combined_metrics
-            all_results['unseen_datasets'][name]['optimal_patch_sizes'] = optimal_patch_sizes
-            unseen_predictions[name] = {
-                'gt_groups': gt_groups,
-                'pred_groups': pred_groups,
-                'gt_labels': gt_labels_raw,
-                'pred_labels': pred_labels_raw
+                unseen_dataset = IMUPretrainingDataset(
+                    data_root='data',
+                    datasets=[ds_name],
+                    split='val',
+                    patch_size_per_dataset={ds_name: optimal_patch},
+                    max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
+                    channel_filter=optimal_filter,
+                    seed=42
+                )
+                unseen_loader = DataLoader(
+                    unseen_dataset,
+                    batch_size=BATCH_SIZE,
+                    shuffle=False,
+                    num_workers=0,
+                    collate_fn=IMUPretrainingDataset.collate_fn
+                )
+
+                metrics, gt_groups, pred_groups, gt_labels, pred_labels = compute_metrics(
+                    loaded_models[name]['model'],
+                    loaded_models[name]['label_bank'],
+                    unseen_loader,
+                    device,
+                    combined_labels
+                )
+
+                all_gt_groups.extend(gt_groups)
+                all_pred_groups.extend(pred_groups)
+                all_gt_labels.extend(gt_labels)
+                all_pred_labels.extend(pred_labels)
+                combined_correct += int(metrics['accuracy'] * len(gt_labels))
+                combined_total += len(gt_labels)
+
+            combined_accuracy = combined_correct / combined_total if combined_total > 0 else 0
+
+            # Store combined results
+            optimal_configs = {ds: f"{per_dataset_best[ds]['channel_filter_name']}@{per_dataset_best[ds]['best_patch_size']}s"
+                              for ds in UNSEEN_DATASETS}
+            all_results['unseen_datasets'][name] = {
+                'accuracy': combined_accuracy,
+                'total_samples': combined_total,
+                'optimal_configs': optimal_configs,
             }
-            print(f"  COMBINED (optimal patches): accuracy={combined_metrics['accuracy']*100:.2f}%")
+            unseen_predictions[name] = {
+                'gt_groups': all_gt_groups,
+                'pred_groups': all_pred_groups,
+                'gt_labels': all_gt_labels,
+                'pred_labels': all_pred_labels
+            }
+            print(f"  COMBINED (optimal settings): accuracy={combined_accuracy*100:.2f}% ({combined_total} samples)")
 
         # === Label Coverage Analysis ===
         print("\n" + "=" * 70)
@@ -1056,29 +1140,55 @@ def run_comparison():
         print_metrics_table(all_results['training_datasets'], "Training Datasets")
 
     if 'unseen_datasets' in all_results:
-        print_metrics_table(all_results['unseen_datasets'], "Zero-Shot (Unseen Datasets) - Per-Dataset Optimal Patch Sizes")
+        print_metrics_table(all_results['unseen_datasets'], "Zero-Shot (Unseen Datasets) - Optimal Settings")
 
-        # Print per-dataset breakdown with optimal patch sizes
+        # Print per-dataset breakdown with optimal settings (channel filter + patch size)
         if 'unseen_per_dataset' in all_results:
-            print(f"\n{'Per-Dataset Results with Optimal Patch Sizes:':<50}")
-            print("-" * 90)
-            print(f"{'Dataset':<20}", end="")
+            print(f"\n{'Per-Dataset Results with Optimal Settings:':<60}")
+            print("-" * 100)
+            print(f"{'Dataset':<15}", end="")
             for name in model_names:
-                print(f"{'Acc':>12}{'Patch':>10}", end="")
+                print(f"{'Acc':>10}{'Channels':>18}{'Patch':>8}", end="")
             print()
-            print("-" * 90)
+            print("-" * 100)
             for ds_name in UNSEEN_DATASETS:
-                print(f"{ds_name:<20}", end="")
+                print(f"{ds_name:<15}", end="")
                 for name in model_names:
                     if name in all_results['unseen_per_dataset']:
                         ds_results = all_results['unseen_per_dataset'][name].get(ds_name, {})
                         acc = ds_results.get('accuracy', 0)
+                        ch_filter = ds_results.get('channel_filter_name', 'all')
                         patch = ds_results.get('best_patch_size', 'N/A')
-                        print(f"{acc*100:>11.2f}%{patch:>9}s", end="")
+                        print(f"{acc*100:>9.2f}%{ch_filter:>18}{patch:>7}s", end="")
                     else:
-                        print(f"{'N/A':>12}{'N/A':>10}", end="")
+                        print(f"{'N/A':>10}{'N/A':>18}{'N/A':>8}", end="")
                 print()
-            print("-" * 90)
+            print("-" * 100)
+
+        # Print channel ablation results if multiple subsets were tested
+        if 'unseen_channel_ablation' in all_results:
+            has_ablation = any(
+                len(ds_results) > 1
+                for model_results in all_results['unseen_channel_ablation'].values()
+                for ds_results in model_results.values()
+            )
+            if has_ablation:
+                print(f"\n{'Channel Ablation Results (datasets with multiple channel configs):':<60}")
+                print("-" * 80)
+                for name in model_names:
+                    if name not in all_results['unseen_channel_ablation']:
+                        continue
+                    print(f"\n  {name}:")
+                    for ds_name, ablation_results in all_results['unseen_channel_ablation'][name].items():
+                        if len(ablation_results) <= 1:
+                            continue
+                        print(f"    {ds_name}:")
+                        for result in ablation_results:
+                            ch = result['channel_filter']
+                            acc = result['accuracy']
+                            patch = result['best_patch_size']
+                            marker = '★' if result == max(ablation_results, key=lambda x: x['accuracy']) else ' '
+                            print(f"      {marker} {ch:<20} acc={acc*100:>6.2f}%  patch={patch}s")
 
     # Save results
     results_path = output_dir / 'comparison_results.json'

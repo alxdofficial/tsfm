@@ -135,6 +135,7 @@ class IMUPretrainingDataset(Dataset):
         min_channel_groups: int = 1,  # Minimum number of sensor groups to select
         max_channel_groups: int = None,  # Maximum groups (None = all available)
         max_sessions_per_dataset: Optional[int] = None,  # Limit sessions per dataset for faster experiments
+        channel_filter: Optional[List[str]] = None,  # Filter channels by prefix patterns (e.g., ['acc_', 'gyro_'])
         seed: int = 42
     ):
         """
@@ -151,6 +152,10 @@ class IMUPretrainingDataset(Dataset):
             max_channel_groups: Maximum number of sensor groups (None = all available)
             max_sessions_per_dataset: Maximum sessions to load per dataset (None = all).
                                       Useful for faster experimentation with large datasets.
+            channel_filter: Optional list of channel name prefixes to include.
+                           Only channels starting with one of these prefixes will be used.
+                           Example: ['acc_', 'gyro_'] keeps only accelerometer and gyroscope channels.
+                           Useful for zero-shot evaluation when some channels aren't in training.
             seed: Random seed for reproducibility
 
         Note on channel groups:
@@ -174,6 +179,7 @@ class IMUPretrainingDataset(Dataset):
         self.min_channel_groups = min_channel_groups
         self.max_channel_groups = max_channel_groups
         self.max_sessions_per_dataset = max_sessions_per_dataset
+        self.channel_filter = channel_filter
 
         # Set random seed
         random.seed(seed)
@@ -303,6 +309,20 @@ class IMUPretrainingDataset(Dataset):
             max_groups=len(channel_groups),  # All groups
             shuffle_channels=False  # Keep sorted order
         )
+
+        # Apply channel filter if specified (for zero-shot evaluation)
+        # Keeps only channels starting with one of the filter prefixes
+        if self.channel_filter is not None:
+            selected_channels = [
+                ch for ch in selected_channels
+                if any(ch.startswith(prefix) for prefix in self.channel_filter)
+            ]
+            if len(selected_channels) == 0:
+                raise ValueError(
+                    f"Channel filter {self.channel_filter} removed all channels from {dataset_name}. "
+                    f"Available channels: {list(channel_groups.keys())}"
+                )
+
         num_channels = len(selected_channels)
 
         # Extract data for selected channels
