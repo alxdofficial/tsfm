@@ -286,6 +286,17 @@ class ChannelTextFusion(nn.Module):
         """
         B, P, C, D = sensor_tokens.shape
 
+        # Validate: each channel must have at least one valid text token
+        # All-masked channels cause softmax over all -inf → NaN
+        text_mask_bool = text_mask.bool()
+        valid_tokens_per_channel = text_mask_bool.sum(dim=1)  # (C,)
+        if (valid_tokens_per_channel == 0).any():
+            invalid_channels = (valid_tokens_per_channel == 0).nonzero(as_tuple=True)[0].tolist()
+            raise ValueError(
+                f"Channels {invalid_channels} have no valid text tokens (all-masked). "
+                f"This indicates empty or invalid channel descriptions."
+            )
+
         # Step 1: Pool each channel's text tokens to single embedding
         # Only C attention operations (not B*P*C)!
         queries = self.queries.unsqueeze(0).expand(C, -1, -1)  # (C, num_queries, D)
@@ -294,7 +305,7 @@ class ChannelTextFusion(nn.Module):
             query=queries,
             key=text_tokens,
             value=text_tokens,
-            key_padding_mask=~text_mask.bool()
+            key_padding_mask=~text_mask_bool
         )
         attn_out = self.norm1(queries + attn_out)
 

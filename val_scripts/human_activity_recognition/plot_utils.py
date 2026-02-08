@@ -514,6 +514,23 @@ class EmbeddingVisualizer:
         if hasattr(text_embeddings, 'cpu'):
             text_embeddings = text_embeddings.cpu().numpy()
 
+        # Filter out invalid embeddings (NaN/Inf) - safety net for edge cases
+        # Zero-norm vectors can become NaN after normalization if they slip through
+        imu_valid = ~(np.isnan(imu_embeddings).any(axis=1) | np.isinf(imu_embeddings).any(axis=1))
+        text_valid = ~(np.isnan(text_embeddings).any(axis=1) | np.isinf(text_embeddings).any(axis=1))
+        valid_mask = imu_valid & text_valid
+
+        if not valid_mask.all():
+            n_invalid = (~valid_mask).sum()
+            print(f"  WARNING: Filtering {n_invalid} invalid embeddings (NaN/Inf)")
+            imu_embeddings = imu_embeddings[valid_mask]
+            text_embeddings = text_embeddings[valid_mask]
+            labels = [labels[i] for i in range(len(labels)) if valid_mask[i]]
+
+            if len(imu_embeddings) == 0:
+                print("  ERROR: All embeddings invalid! Skipping visualization.")
+                return
+
         # Create label mapping (text -> integer)
         unique_labels = sorted(set(labels))
         label_to_idx = {label: idx for idx, label in enumerate(unique_labels)}

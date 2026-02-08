@@ -175,6 +175,7 @@ def load_checkpoint_embeddings(
         for batch_idx, batch in enumerate(val_loader):
             data = batch['data'].to(device)
             channel_mask = batch['channel_mask'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
             label_texts = batch['label_texts']
             metadata = batch['metadata']
 
@@ -182,7 +183,8 @@ def load_checkpoint_embeddings(
             patch_sizes = [m['patch_size_sec'] for m in metadata]
             channel_descriptions = [m['channel_descriptions'] for m in metadata]
 
-            imu_emb = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
+            imu_emb = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                            attention_mask=attention_mask)
             text_emb = label_bank.encode(label_texts, normalize=True)
 
             all_imu_embeddings.append(imu_emb.cpu())

@@ -10,6 +10,57 @@ import torch.nn.functional as F
 import numpy as np
 from typing import Dict, Optional
 
+# Debug flag - set to True to enable NaN debugging
+DEBUG_NAN = False  # Set to True to enable verbose NaN debugging
+_nan_debug_count = 0  # Track how many times we've printed debug info
+
+
+def _check_tensor_health(tensor: torch.Tensor, name: str) -> dict:
+    """Check a tensor for NaN, Inf, and other issues."""
+    with torch.no_grad():
+        info = {
+            'name': name,
+            'shape': tuple(tensor.shape),
+            'dtype': str(tensor.dtype),
+            'has_nan': torch.isnan(tensor).any().item(),
+            'has_inf': torch.isinf(tensor).any().item(),
+            'min': tensor.min().item() if tensor.numel() > 0 else None,
+            'max': tensor.max().item() if tensor.numel() > 0 else None,
+            'mean': tensor.mean().item() if tensor.numel() > 0 else None,
+            'std': tensor.std().item() if tensor.numel() > 0 and tensor.numel() > 1 else None,
+        }
+        # Check for zeros (potential underflow)
+        if tensor.numel() > 0:
+            info['num_zeros'] = (tensor == 0).sum().item()
+            info['pct_zeros'] = info['num_zeros'] / tensor.numel() * 100
+        return info
+
+
+def _debug_nan_loss(context: dict):
+    """Print detailed debug info when NaN loss is detected."""
+    global _nan_debug_count
+    _nan_debug_count += 1
+
+    # Only print first 5 occurrences to avoid spam
+    if _nan_debug_count > 5:
+        if _nan_debug_count == 6:
+            print(f"\n[NaN DEBUG] Suppressing further NaN debug output (already printed 5 times)")
+        return
+
+    print(f"\n{'='*60}")
+    print(f"[NaN DEBUG] NaN detected in loss computation (occurrence #{_nan_debug_count})")
+    print(f"{'='*60}")
+
+    for key, value in context.items():
+        if isinstance(value, dict):
+            print(f"\n{key}:")
+            for k, v in value.items():
+                print(f"  {k}: {v}")
+        else:
+            print(f"{key}: {value}")
+
+    print(f"{'='*60}\n")
+
 
 class InfoNCELoss(nn.Module):
     """
@@ -146,6 +197,87 @@ class InfoNCELoss(nn.Module):
             loss_text_to_imu = F.cross_entropy(logits_t2i, labels)
 
         loss = (loss_imu_to_text + loss_text_to_imu) / 2.0
+
+        # === NaN DEBUGGING ===
+        if DEBUG_NAN and (torch.isnan(loss) or torch.isnan(loss_text_to_imu) or torch.isnan(loss_imu_to_text)):
+            with torch.no_grad():
+                # Compute per-sample losses to find which samples cause NaN
+                if self.use_soft_targets:
+                    per_sample_loss_i2t = -(targets * log_probs).sum(dim=1)  # (batch,)
+                    per_sample_loss_t2i = -(targets * log_probs_t2i).sum(dim=1)  # (batch,)
+                else:
+                    per_sample_loss_i2t = F.cross_entropy(logits, labels, reduction='none')
+                    per_sample_loss_t2i = F.cross_entropy(logits_t2i, labels, reduction='none')
+
+                nan_samples_i2t = torch.where(torch.isnan(per_sample_loss_i2t))[0].tolist()
+                nan_samples_t2i = torch.where(torch.isnan(per_sample_loss_t2i))[0].tolist()
+
+                # Check for -inf in log_probs (indicates softmax output was 0)
+                inf_in_log_probs = torch.isinf(log_probs).any().item()
+                inf_in_log_probs_t2i = torch.isinf(log_probs_t2i).any().item()
+
+                # Check for zeros in targets (would cause 0 * -inf = NaN)
+                zeros_in_targets = (targets == 0).sum().item()
+                min_target = targets.min().item()
+
+                # Check queue health
+                queue_size = all_imu.shape[0] - batch_size
+
+                context = {
+                    'loss_values': {
+                        'loss': loss.item(),
+                        'loss_imu_to_text': loss_imu_to_text.item(),
+                        'loss_text_to_imu': loss_text_to_imu.item(),
+                    },
+                    'nan_sample_indices': {
+                        'i2t': nan_samples_i2t,
+                        't2i': nan_samples_t2i,
+                    },
+                    'log_probs_health': {
+                        'has_inf_i2t': inf_in_log_probs,
+                        'has_inf_t2i': inf_in_log_probs_t2i,
+                        'log_probs_min': log_probs.min().item(),
+                        'log_probs_t2i_min': log_probs_t2i.min().item(),
+                    },
+                    'targets_health': {
+                        'zeros_count': zeros_in_targets,
+                        'min_value': min_target,
+                        'shape': tuple(targets.shape),
+                    },
+                    'imu_embeddings': _check_tensor_health(imu_embeddings, 'imu_embeddings'),
+                    'text_embeddings': _check_tensor_health(text_embeddings, 'text_embeddings'),
+                    'all_imu': _check_tensor_health(all_imu, 'all_imu'),
+                    'all_text': _check_tensor_health(all_text, 'all_text'),
+                    'logits': _check_tensor_health(logits, 'logits'),
+                    'logits_t2i': _check_tensor_health(logits_t2i, 'logits_t2i'),
+                    'queue_info': {
+                        'queue_size': queue_size,
+                        'imu_queue_provided': imu_queue is not None,
+                        'text_queue_provided': text_queue is not None,
+                    },
+                }
+
+                # If queue is provided, check its health
+                if imu_queue is not None and len(imu_queue) > 0:
+                    context['imu_queue'] = _check_tensor_health(imu_queue, 'imu_queue')
+                if text_queue is not None and len(text_queue) > 0:
+                    context['text_queue'] = _check_tensor_health(text_queue, 'text_queue')
+
+                # Check specific problematic samples
+                if nan_samples_t2i:
+                    sample_idx = nan_samples_t2i[0]
+                    context['problematic_sample'] = {
+                        'sample_idx': sample_idx,
+                        'label': label_texts[sample_idx] if label_texts else 'N/A',
+                        'imu_emb_norm': torch.norm(imu_embeddings[sample_idx]).item(),
+                        'text_emb_norm': torch.norm(text_embeddings[sample_idx]).item(),
+                        'logits_t2i_row': logits_t2i[sample_idx].tolist()[:10],  # First 10 values
+                        'log_probs_t2i_row_min': log_probs_t2i[sample_idx].min().item(),
+                        'targets_row_min': targets[sample_idx].min().item(),
+                        'targets_row_sum': targets[sample_idx].sum().item(),
+                    }
+
+                _debug_nan_loss(context)
 
         # Compute metrics
         metrics = None

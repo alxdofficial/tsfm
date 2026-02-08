@@ -37,4 +37,6 @@ training_output
 .serena
 .claude
 test_output/
-docs/
+docs/*
+!docs/baselines/
+TSFM__MINSys_ACMconference_template_ (3).pdf

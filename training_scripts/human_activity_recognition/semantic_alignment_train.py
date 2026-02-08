@@ -40,15 +40,33 @@ from typing import Tuple, Optional, List
 
 # Data configuration
 DATA_ROOT = "/home/alex/code/tsfm/data"
-DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
+# Training datasets (11 diverse HAR datasets)
+# Note: Opportunity, Realdisp, Daphnet FoG are held out for zero-shot testing
+# to enable fair comparison against GOAT (IMWUT 2024) which tests on those datasets
+DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'vtt_coniot', 'recgym']
 random.seed(42)
 PATCH_SIZE_PER_DATASET = {
-    'uci_har': 1.0,       # 50 Hz, 2.56s windows → 50 samples/patch, ~2-3 patches/session
-    'hhar': 1.0,          # 50 Hz, 2.56s windows → 50 samples/patch, ~2-3 patches/session
-    'mhealth': 2.0,       # 50 Hz, health monitoring → 100 samples/patch
-    'pamap2': 2.0,        # 100 Hz, complex activities → 200 samples/patch
-    'wisdm': 2.0,         # 20 Hz, phone-based → 40 samples/patch
-    'unimib_shar': 1.0,   # 50 Hz, ~3s segments → 50 samples/patch, ~3 patches/session
+    # Fixed-length sessions (2.56s) - use 1.0s patches for 2 patches/session
+    'uci_har': 1.0,       # 50 Hz, 2.56s fixed sessions
+    'hhar': 1.0,          # 50 Hz, 2.56s fixed sessions
+    # Variable-length sessions - max patch < min session duration
+    'mhealth': 1.5,       # 50 Hz, min_session=2.0s → use 1.5s (was 2.0s)
+    'pamap2': 2.0,        # 9 Hz, min_session=22.2s → plenty of room
+    'wisdm': 1.5,         # 20 Hz, min_session=2.0s → use 1.5s (was 2.0s)
+    'unimib_shar': 1.0,   # 50 Hz, 3.02s fixed sessions
+    # New datasets
+    'dsads': 2.0,         # 25 Hz, min_session=5.0s → use 2.0s
+    'mobiact': 1.5,       # 50 Hz, min_session=2.0s → use 1.5s
+    'realworld': 1.5,     # 50 Hz, min_session=2.0s → use 1.5s (was 2.0s)
+    'vtt_coniot': 2.0,    # 50 Hz, min_session=60s → plenty of room
+    'recgym': 1.5,        # 20 Hz, min_session=2.0s → use 1.5s (was 2.5s)
+    'hapt': 1.25,         # 50 Hz, min_session=1.48s → use 1.25s (was 1.5s)
+    'kuhar': 1.5,         # 100 Hz, min_session=2.0s → use 1.5s
+    # Zero-shot datasets (NOT trained on, only for evaluation)
+    'opportunity': 1.5,   # 30 Hz — zero-shot (GOAT baseline comparison)
+    'realdisp': 1.5,      # 50 Hz — zero-shot (GOAT baseline comparison)
+    'daphnet_fog': 1.5,   # 64 Hz — zero-shot (GOAT baseline comparison)
+    'shoaib': 1.5,        # 50 Hz — zero-shot (LanHAR/CrossHAR baseline comparison)
 }
 
 MAX_PATCHES_PER_SAMPLE = 48
@@ -93,7 +111,7 @@ SEED = 42
 MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
-EPOCHS = 60
+EPOCHS = 100
 BATCH_SIZE = 16  # Micro-batch size (reduced for 48-channel datasets like PAMAP2)
 ACCUMULATION_STEPS = 32  # Effective batch = 16 × 32 = 512
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
@@ -120,6 +138,13 @@ SOFT_TARGET_WEIGHT = 1.0  # Pure soft targets with adaptive recalibration
 # Gradient direction is preserved (0.99 cosine similarity), magnitude slightly diluted.
 USE_MEMORY_BANK = True
 MEMORY_BANK_SIZE = 256  # Provides 16 + 256 = 272 negatives per step
+
+# Class balancing configuration
+# Caps oversampling to prevent rare labels from dominating training
+# E.g., if walking has 50K samples and stand_to_sit has 200 samples,
+# without cap: stand_to_sit sampled 250x more often (overfitting risk)
+# with cap=20: stand_to_sit sampled only 20x more often
+MAX_OVERSAMPLE_RATIO = 20.0  # Max oversampling factor for rare groups
 
 # NOTE: Channel augmentation (random subsampling/shuffling) is DISABLED.
 # Experiments showed better zero-shot generalization with consistent channel order.
@@ -168,22 +193,28 @@ USE_GROUP_BALANCED_SAMPLING = True  # Default: enable group-balanced sampling
 # Patch size augmentation configuration
 # During training, randomly sample patch sizes from valid ranges per dataset
 # Ranges are constrained by session duration (need ≥2 patches per session)
-USE_PATCH_SIZE_AUGMENTATION = True  # Default: enable patch size augmentation
-MIN_PATCHES_PER_SAMPLE = 2  # Minimum patches required per sample
+USE_PATCH_SIZE_AUGMENTATION = True  # Enable patch size augmentation for better generalization
+MIN_PATCHES_PER_SAMPLE = 1  # Minimum patches required per sample
 
 # Valid patch size ranges per dataset: (min_sec, max_sec, step_sec)
-# Ranges centered around original PATCH_SIZE_PER_DATASET values to avoid excessive slowdown
-# (smaller patches = more patches = O(n²) attention cost)
+# IMPORTANT: max_sec must be < min_session_duration for each dataset to guarantee valid patches
 PATCH_SIZE_RANGE_PER_DATASET = {
-    # Short fixed-length sessions - centered around 1.0s
-    'uci_har':      (0.75, 1.25, 0.25),  # 50 Hz, 2.5s sessions → [0.75, 1.0, 1.25]
-    'hhar':         (0.75, 1.25, 0.25),  # 50 Hz, 2.5s sessions → [0.75, 1.0, 1.25]
-    'unimib_shar':  (0.75, 1.25, 0.25),  # 50 Hz, 3.0s sessions → [0.75, 1.0, 1.25]
-
-    # Variable-length sessions - centered around 2.0s
-    'mhealth':      (1.5, 2.5, 0.5),     # 50 Hz, 2.6-13.7s → [1.5, 2.0, 2.5]
-    'pamap2':       (1.5, 2.5, 0.5),     # 100 Hz, 2.0-57s → [1.5, 2.0, 2.5]
-    'wisdm':        (1.5, 2.5, 0.5),     # 20 Hz, 1.0-24s → [1.5, 2.0, 2.5]
+    # Fixed-length sessions (~2.5-3s) - tighter range around 1.0s
+    'uci_har':      (0.75, 1.25, 0.25),  # min_session=2.56s → [0.75, 1.0, 1.25]
+    'hhar':         (0.75, 1.25, 0.25),  # min_session=2.56s → [0.75, 1.0, 1.25]
+    'unimib_shar':  (0.75, 1.25, 0.25),  # min_session=3.02s → [0.75, 1.0, 1.25]
+    # Variable-length sessions - max < min_session to avoid NaN
+    'mhealth':      (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
+    'pamap2':       (1.0, 2.0, 0.5),     # min_session=22.2s → [1.0, 1.5, 2.0]
+    'wisdm':        (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
+    # New datasets
+    'dsads':        (1.5, 2.5, 0.5),     # min_session=5.0s → [1.5, 2.0, 2.5]
+    'mobiact':      (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
+    'realworld':    (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
+    'vtt_coniot':   (1.5, 2.5, 0.5),     # min_session=60s → [1.5, 2.0, 2.5]
+    'recgym':       (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
+    'hapt':         (0.75, 1.25, 0.25),  # min_session=1.48s → [0.75, 1.0, 1.25]
+    'kuhar':        (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
 }
 
 # =================================================================
@@ -250,9 +281,9 @@ class SemanticAlignmentModel(nn.Module):
         max_feasible = session_duration / self.min_patches_per_sample
         actual_max = min(max_sec, max_feasible)
 
-        # If even min is too large, use min anyway (will get fewer patches - acceptable edge case)
+        # If session too short for ≥2 patches with min patch size, use full session as one patch
         if actual_max < min_sec:
-            return min_sec
+            return session_duration  # One patch covering entire session
 
         # Generate valid sizes within feasible range
         num_steps = int((actual_max - min_sec) / step_sec) + 1
@@ -261,7 +292,7 @@ class SemanticAlignmentModel(nn.Module):
         return random.choice(valid_sizes)
 
     def forward(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                patch_ranges: Optional[List] = None):
+                patch_ranges: Optional[List] = None, attention_mask: Optional[torch.Tensor] = None):
         """
         Forward pass with optional patch size augmentation.
 
@@ -272,6 +303,7 @@ class SemanticAlignmentModel(nn.Module):
             sampling_rates: List of sampling rates per sample
             patch_sizes: List of default patch sizes per sample
             patch_ranges: Optional list of (min, max, step) tuples for patch augmentation
+            attention_mask: Optional (batch, timesteps) boolean mask for valid timesteps
         """
         batch_size = data.shape[0]
         device = data.device
@@ -283,11 +315,17 @@ class SemanticAlignmentModel(nn.Module):
 
         with torch.no_grad():
             for i in range(batch_size):
+                # Trim to valid timesteps (avoid preprocessing zero-padded regions)
+                if attention_mask is not None:
+                    valid_len = attention_mask[i].sum().item()
+                    sample_data = data[i, :valid_len]
+                else:
+                    sample_data = data[i]
+
+                session_timesteps = sample_data.shape[0]
+
                 # Determine patch size (augmented during training, fixed during eval)
                 if self.training and self.use_patch_augmentation and patch_ranges is not None:
-                    # Compute session duration from data
-                    # attention_mask not passed here, so estimate from non-zero timesteps
-                    session_timesteps = data[i].shape[0]
                     session_duration = session_timesteps / sampling_rates[i]
                     patch_range = patch_ranges[i] if i < len(patch_ranges) else None
                     actual_patch_size = self._get_valid_patch_size(
@@ -297,7 +335,7 @@ class SemanticAlignmentModel(nn.Module):
                     actual_patch_size = patch_sizes[i]
 
                 patches, _ = self.encoder.preprocess(
-                    data[i], sampling_rate_hz=sampling_rates[i], patch_size_sec=actual_patch_size
+                    sample_data, sampling_rate_hz=sampling_rates[i], patch_size_sec=actual_patch_size
                 )
 
                 if patches is None or len(patches) == 0:
@@ -340,12 +378,16 @@ class SemanticAlignmentModel(nn.Module):
             batched_patches[batch_idx, :num_patches] = patches
             batched_channel_descs.append(all_channel_descs[sample_idx])
 
+        # Subset channel_mask to valid samples only (encoder needs it for cross-channel attention)
+        valid_indices_t = torch.tensor(valid_indices, device=device)
+        batched_channel_mask = channel_mask[valid_indices_t]
+
         # Step 3: Encode with frozen/unfrozen encoder
         if FREEZE_ENCODER:
             with torch.no_grad():
-                encoded_batch = self.encoder(batched_patches, batched_channel_descs)
+                encoded_batch = self.encoder(batched_patches, batched_channel_descs, channel_mask=batched_channel_mask)
         else:
-            encoded_batch = self.encoder(batched_patches, batched_channel_descs)
+            encoded_batch = self.encoder(batched_patches, batched_channel_descs, channel_mask=batched_channel_mask)
 
         # Step 4: Apply channel text fusion per sample (each sample has different channel descriptions)
         # Text encoding is cached, so per-sample loop has minimal overhead
@@ -381,7 +423,8 @@ class SemanticAlignmentModel(nn.Module):
         return self.semantic_head(padded_encoder_output, channel_mask=channel_mask,
                                    patch_mask=padded_patch_mask, normalize=True)
 
-    def get_attention_stats(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes):
+    def get_attention_stats(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                            attention_mask: Optional[torch.Tensor] = None):
         """Get attention statistics from cross-channel fusion (for debugging)."""
         batch_size = data.shape[0]
         device = data.device
@@ -392,10 +435,19 @@ class SemanticAlignmentModel(nn.Module):
             valid_samples = []
 
             for i in range(batch_size):
+                # Trim to valid timesteps
+                if attention_mask is not None:
+                    valid_len = attention_mask[i].sum().item()
+                    sample_data = data[i, :valid_len]
+                else:
+                    sample_data = data[i]
+
                 patches, _ = self.encoder.preprocess(
-                    data[i], sampling_rate_hz=sampling_rates[i], patch_size_sec=patch_sizes[i]
+                    sample_data, sampling_rate_hz=sampling_rates[i], patch_size_sec=patch_sizes[i]
                 )
                 if patches is None or len(patches) == 0:
+                    all_patches.append(None)
+                    all_channel_descs.append(None)
                     valid_samples.append(False)
                     continue
                 if len(patches) > MAX_PATCHES_PER_SAMPLE:
@@ -424,10 +476,14 @@ class SemanticAlignmentModel(nn.Module):
                 batched_patches[batch_idx, :num_patches] = patches
                 batched_channel_descs.append(all_channel_descs[sample_idx])
 
-            encoded_batch = self.encoder(batched_patches, batched_channel_descs)
+            # Subset channel_mask to valid samples only
+            valid_indices_t = torch.tensor(valid_indices, device=device)
+            batched_channel_mask = channel_mask[valid_indices_t]
 
-            # Get attention stats from semantic head
-            return self.semantic_head.get_attention_stats(encoded_batch, channel_mask)
+            encoded_batch = self.encoder(batched_patches, batched_channel_descs, channel_mask=batched_channel_mask)
+
+            # Get attention stats from semantic head (use valid-only channel_mask)
+            return self.semantic_head.get_attention_stats(encoded_batch, batched_channel_mask)
 
 
 def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_queue=None):
@@ -509,9 +565,10 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
                 
             data = batch['data'].to(device)
             channel_mask = batch['channel_mask'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
             label_texts = batch['label_texts']
             metadata = batch['metadata']
-            
+
             sampling_rates = [m['sampling_rate_hz'] for m in metadata]
             patch_sizes = [m['patch_size_sec'] for m in metadata]
             channel_descriptions = [m['channel_descriptions'] for m in metadata]
@@ -520,7 +577,8 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
             text_embeddings = label_bank.encode(label_texts, normalize=True)
 
             # Forward pass (no gradients)
-            imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
+            imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                                   attention_mask=attention_mask)
 
             # Update memory bank with both embeddings
             memory_bank.update(imu_embeddings, text_embeddings)
@@ -608,6 +666,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
     total_neg_sim = 0.0
     total_sim_gap = 0.0
     total_grad_norm = 0.0
+    num_optimizer_steps = 0  # Count actual optimizer steps (not all batches)
 
     # Track debug metrics (collapse detection only - similarity is in loss metrics)
     total_imu_std = 0.0
@@ -624,6 +683,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
         'logit_scale': 0.0,  # Learnable temperature
         'label_pooling': 0.0,  # LearnableLabelBank attention pooling
     }
+    num_grad_computations = 0  # Count how many times per-layer grads were computed
 
     pbar = tqdm(dataloader, desc=f"[{stage}] Epoch {epoch} Training")
 
@@ -636,6 +696,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
     for batch_idx, batch in enumerate(pbar):
         data = batch['data'].to(device)
         channel_mask = batch['channel_mask'].to(device)
+        attention_mask = batch['attention_mask'].to(device)
         label_texts = batch['label_texts']
         metadata = batch['metadata']
 
@@ -657,7 +718,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
 
         with autocast('cuda', enabled=device.type == 'cuda'):
             imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                                   patch_ranges=patch_ranges)
+                                   patch_ranges=patch_ranges, attention_mask=attention_mask)
             loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
                                      return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
 
@@ -671,7 +732,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             with torch.no_grad():
                 debug_metrics = compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue, text_queue)
                 # Add attention stats from cross-channel fusion
-                attn_stats = model.get_attention_stats(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
+                attn_stats = model.get_attention_stats(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes, attention_mask=attention_mask)
                 debug_metrics.update(attn_stats)
 
         # Backward pass (accumulate gradients)
@@ -738,12 +799,32 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             with torch.no_grad():
                 memory_bank.update(imu_embeddings.detach(), text_embeddings.detach())
 
-        # Accumulate metrics
-        total_loss += metrics['loss']
+        # Accumulate metrics (with NaN detection)
+        batch_loss = metrics['loss']
+        if math.isnan(batch_loss):
+            # Log which batch/dataset caused NaN
+            datasets_in_batch = [m.get('dataset', 'unknown') for m in metadata]
+            dataset_counts = {}
+            for ds in datasets_in_batch:
+                dataset_counts[ds] = dataset_counts.get(ds, 0) + 1
+            print(f"\n[NaN DETECTED] Batch {batch_idx}, Epoch {epoch}")
+            print(f"  Datasets in batch: {dataset_counts}")
+            print(f"  Labels: {label_texts[:5]}...")  # First 5 labels
+            print(f"  Patch sizes: {patch_sizes[:5]}...")
+            print(f"  Sampling rates: {sampling_rates[:5]}...")
+            # Skip this batch's contribution to avoid NaN propagation
+            # (the loss still backprops, but we don't let it corrupt epoch metrics)
+            batch_loss = 0.0  # Replace NaN with 0 for epoch averaging
+
+        total_loss += batch_loss
         total_pos_sim += metrics['positive_similarity']
         total_neg_sim += metrics['negative_similarity']
         total_sim_gap += metrics['similarity_gap']
-        total_grad_norm += grad_norm.item()
+
+        # Only accumulate grad_norm on optimizer steps (non-step batches have grad_norm=0)
+        if is_accumulation_step or is_last_batch:
+            total_grad_norm += grad_norm.item()
+            num_optimizer_steps += 1
 
         # Accumulate debug metrics (only when computed)
         if debug_metrics:
@@ -753,9 +834,16 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             if 'queue_diversity' in debug_metrics:
                 total_queue_diversity += debug_metrics['queue_diversity']
 
-        # Accumulate per-layer gradient norms
-        for k in total_grad_norms:
-            total_grad_norms[k] += batch_grad_norms[k]
+        # Accumulate per-layer gradient norms (only when actually computed, not zeros)
+        if is_accumulation_step or is_last_batch:
+            should_log_grads_here = (accum_step_count - 1) % DEBUG_METRIC_FREQUENCY == 0
+            if should_log_grads_here:
+                for k in total_grad_norms:
+                    total_grad_norms[k] += batch_grad_norms[k]
+                num_grad_computations += 1
+            else:
+                pass  # batch_grad_norms is all zeros, skip
+        # (non-optimizer-step batches always have batch_grad_norms=0, skip)
 
         pbar.set_postfix({
             'loss': f"{metrics['loss']:.4f}",
@@ -806,7 +894,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             plotter.plot_all()
 
     num_batches = len(dataloader)
-    # Debug metrics are only computed every DEBUG_METRIC_FREQUENCY batches
+    # Debug metrics (imu_std etc.) are computed every DEBUG_METRIC_FREQUENCY batches
     debug_count = (num_batches + DEBUG_METRIC_FREQUENCY - 1) // DEBUG_METRIC_FREQUENCY  # Ceiling division
     debug_count = max(debug_count, 1)  # Avoid division by zero
 
@@ -815,14 +903,14 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
         'positive_similarity': total_pos_sim / num_batches,
         'negative_similarity': total_neg_sim / num_batches,
         'similarity_gap': total_sim_gap / num_batches,
-        'grad_norm': total_grad_norm / num_batches,
+        'grad_norm': total_grad_norm / max(num_optimizer_steps, 1),
         # Debug metrics (computed every DEBUG_METRIC_FREQUENCY batches)
         'imu_std': total_imu_std / debug_count,
         'text_std': total_text_std / debug_count,
         'imu_diversity': total_imu_diversity / debug_count,
         'queue_diversity': total_queue_diversity / debug_count if USE_MEMORY_BANK else 0.0,
-        # Per-component gradient norms
-        **{f'{k}_grad_norm': v / debug_count for k, v in total_grad_norms.items()}
+        # Per-component gradient norms (computed every DEBUG_METRIC_FREQUENCY optimizer steps)
+        **{f'{k}_grad_norm': v / max(num_grad_computations, 1) for k, v in total_grad_norms.items()}
     }
 
 
@@ -843,6 +931,7 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
         for batch in pbar:
             data = batch['data'].to(device)
             channel_mask = batch['channel_mask'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
             label_texts = batch['label_texts']
             metadata = batch['metadata']
 
@@ -855,10 +944,17 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
             with autocast('cuda', enabled=device.type == 'cuda'):
                 # No patch augmentation during validation (patch_ranges=None)
                 imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                                       patch_ranges=None)
+                                       patch_ranges=None, attention_mask=attention_mask)
                 _, metrics = criterion(imu_embeddings, text_embeddings, label_texts, return_metrics=True)
 
-            total_loss += metrics['loss']
+            # NaN detection for validation
+            batch_loss = metrics['loss']
+            if math.isnan(batch_loss):
+                datasets_in_batch = [m.get('dataset', 'unknown') for m in metadata]
+                print(f"\n[NaN DETECTED in VAL] Labels: {label_texts[:5]}..., Datasets: {set(datasets_in_batch)}")
+                batch_loss = 0.0
+
+            total_loss += batch_loss
             total_pos_sim += metrics['positive_similarity']
             total_neg_sim += metrics['negative_similarity']
             total_sim_gap += metrics['similarity_gap']
@@ -930,6 +1026,7 @@ def evaluate_unseen(model, label_bank, dataloader, device, epoch):
         for batch in tqdm(dataloader, desc=f"[Epoch {epoch}] Unseen eval", leave=False):
             data = batch['data'].to(device)
             channel_mask = batch['channel_mask'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
             label_texts = batch['label_texts']
             metadata = batch['metadata']
 
@@ -938,7 +1035,8 @@ def evaluate_unseen(model, label_bank, dataloader, device, epoch):
             channel_descriptions = [m['channel_descriptions'] for m in metadata]
 
             with autocast('cuda', enabled=device.type == 'cuda'):
-                imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
+                imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                                       attention_mask=attention_mask)
 
             all_imu_embeddings.append(imu_embeddings)
             all_labels.extend(label_texts)
@@ -1154,8 +1252,8 @@ def main():
 
     # Create train dataloader with optional group-balanced sampling
     if USE_GROUP_BALANCED_SAMPLING:
-        # Compute weights for group-balanced sampling
-        sample_weights = train_dataset.compute_group_weights()
+        # Compute weights for group-balanced sampling (with capped oversampling)
+        sample_weights = train_dataset.compute_group_weights(max_oversample_ratio=MAX_OVERSAMPLE_RATIO)
         sampler = WeightedRandomSampler(
             weights=sample_weights,
             num_samples=len(train_dataset),

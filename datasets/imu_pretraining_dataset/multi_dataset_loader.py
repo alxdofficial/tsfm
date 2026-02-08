@@ -135,6 +135,7 @@ class IMUPretrainingDataset(Dataset):
         min_channel_groups: int = 1,  # Minimum number of sensor groups to select
         max_channel_groups: int = None,  # Maximum groups (None = all available)
         max_sessions_per_dataset: Optional[int] = None,  # Limit sessions per dataset for faster experiments
+        channel_filter: Optional[List[str]] = None,  # Filter channels by prefix patterns (e.g., ['acc_', 'gyro_'])
         seed: int = 42
     ):
         """
@@ -151,6 +152,10 @@ class IMUPretrainingDataset(Dataset):
             max_channel_groups: Maximum number of sensor groups (None = all available)
             max_sessions_per_dataset: Maximum sessions to load per dataset (None = all).
                                       Useful for faster experimentation with large datasets.
+            channel_filter: Optional list of channel name prefixes to include.
+                           Only channels starting with one of these prefixes will be used.
+                           Example: ['acc_', 'gyro_'] keeps only accelerometer and gyroscope channels.
+                           Useful for zero-shot evaluation when some channels aren't in training.
             seed: Random seed for reproducibility
 
         Note on channel groups:
@@ -174,6 +179,7 @@ class IMUPretrainingDataset(Dataset):
         self.min_channel_groups = min_channel_groups
         self.max_channel_groups = max_channel_groups
         self.max_sessions_per_dataset = max_sessions_per_dataset
+        self.channel_filter = channel_filter
 
         # Set random seed
         random.seed(seed)
@@ -303,10 +309,32 @@ class IMUPretrainingDataset(Dataset):
             max_groups=len(channel_groups),  # All groups
             shuffle_channels=False  # Keep sorted order
         )
+
+        # Apply channel filter if specified (for zero-shot evaluation)
+        # Keeps only channels starting with one of the filter prefixes
+        if self.channel_filter is not None:
+            selected_channels = [
+                ch for ch in selected_channels
+                if any(ch.startswith(prefix) for prefix in self.channel_filter)
+            ]
+            if len(selected_channels) == 0:
+                raise ValueError(
+                    f"Channel filter {self.channel_filter} removed all channels from {dataset_name}. "
+                    f"Available channels: {list(channel_groups.keys())}"
+                )
+
         num_channels = len(selected_channels)
 
         # Extract data for selected channels
         data = df[selected_channels].values  # (timesteps, num_channels)
+
+        # Handle NaN values (missing sensor readings)
+        # Use forward-fill then backward-fill interpolation
+        if np.isnan(data).any():
+            data = pd.DataFrame(data).ffill().bfill().values
+            # If still NaN (entire column missing), fill with zeros
+            if np.isnan(data).any():
+                data = np.nan_to_num(data, nan=0.0)
 
         # Get sampling rate (assume same for all channels in a dataset)
         sampling_rate = dataset_info['sampling_rates'][selected_channels[0]]
@@ -432,15 +460,22 @@ class IMUPretrainingDataset(Dataset):
             'metadata': metadata_list
         }
 
-    def compute_group_weights(self) -> torch.Tensor:
+    def compute_group_weights(self, max_oversample_ratio: float = 20.0) -> torch.Tensor:
         """
-        Compute per-sample weights for group-balanced sampling.
+        Compute per-sample weights for group-balanced sampling with capped oversampling.
 
         Uses LABEL_GROUPS to map raw labels to semantic groups, then computes
         inverse frequency weights so rare groups get sampled more often.
+        Weights are capped to prevent extreme oversampling of genuinely rare activities.
+
+        Args:
+            max_oversample_ratio: Maximum ratio between highest and lowest weight.
+                                  Prevents rare labels from being oversampled more than
+                                  this factor relative to the most common label.
+                                  Default 20.0 means rare labels sampled at most 20x more.
 
         Returns:
-            weights: (num_samples,) tensor where weight[i] = 1 / count(group_of_sample_i)
+            weights: (num_samples,) tensor where weight[i] = capped(1 / count(group_of_sample_i))
                      Normalized so weights sum to num_samples.
         """
         from collections import defaultdict
@@ -467,6 +502,20 @@ class IMUPretrainingDataset(Dataset):
         weights = torch.zeros(len(self.sessions))
         for i, group in enumerate(sample_groups):
             weights[i] = 1.0 / group_counts[group]
+
+        # Cap weights to prevent extreme oversampling
+        # min_weight corresponds to most common group (lowest inverse freq)
+        min_weight = weights.min()
+        max_allowed_weight = min_weight * max_oversample_ratio
+        num_capped = (weights > max_allowed_weight).sum().item()
+        if num_capped > 0:
+            weights = torch.clamp(weights, max=max_allowed_weight)
+            # Log which groups were capped
+            capped_groups = set()
+            for i, group in enumerate(sample_groups):
+                if 1.0 / group_counts[group] > max_allowed_weight:
+                    capped_groups.add(f"{group} ({group_counts[group]} samples)")
+            print(f"  Capped oversampling for {len(capped_groups)} rare groups (max {max_oversample_ratio}x): {sorted(capped_groups)[:5]}{'...' if len(capped_groups) > 5 else ''}")
 
         # Normalize so weights sum to num_samples (expected by WeightedRandomSampler)
         weights = weights / weights.sum() * len(weights)
