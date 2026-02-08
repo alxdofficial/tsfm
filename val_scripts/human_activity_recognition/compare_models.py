@@ -21,6 +21,7 @@ from collections import defaultdict
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import sys
+from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 
 # Add project root to path (val_scripts -> tsfm)
 project_root = Path(__file__).parent.parent.parent
@@ -70,15 +71,24 @@ PATCH_SIZE_PER_DATASET = {
     'hapt': 1.25,         # 50 Hz, min_session=1.48s
     'kuhar': 1.5,         # 100 Hz, min_session=2.0s
     # Unseen datasets (zero-shot evaluation)
-    'motionsense': 1.5,   # 50 Hz, similar to mhealth
-    'mobiact': 1.5,       # 50 Hz, min_session=2.0s
-    'realworld': 1.5,     # 50 Hz, min_session=2.0s
+    'motionsense': 1.5,   # 50 Hz, acc+gyro — tested by NLS-HAR, LanHAR, CrossHAR
+    'mobiact': 1.5,       # 50 Hz, acc+gyro — tested by NLS-HAR
+    'realworld': 1.5,     # 50 Hz, acc only — tested by GOAT
+    'shoaib': 1.5,        # 50 Hz, 5 positions x acc+gyro+mag — tested by LanHAR, CrossHAR
+    'opportunity': 1.5,   # 30 Hz, 5 IMUs acc+gyro — tested by GOAT
+    'realdisp': 1.5,      # 50 Hz, 9 sensors x acc+gyro+mag — tested by GOAT
+    'daphnet_fog': 1.5,   # 64 Hz, 3 acc — tested by GOAT
 }
 
-# Unseen datasets for zero-shot evaluation (empty list to skip)
-# Note: UCI HAR and HAPT both in training (same sensor setup), so neither is zero-shot
-# Note: VTT-ConIoT and RecGym now in training for better activity coverage
-UNSEEN_DATASETS = ['motionsense', 'realworld', 'mobiact']
+# Unseen datasets for zero-shot evaluation
+# These are held out from training to enable fair baseline comparisons:
+#   - GOAT (IMWUT 2024): tests on RealWorld, Realdisp, Opportunity, PAMAP2, Daphnet FoG
+#   - NLS-HAR (AAAI 2025): tests on MotionSense, MobiAct
+#   - LanHAR/CrossHAR (IMWUT 2024-25): tests on Shoaib, MotionSense
+# Note: PAMAP2 is in both our training set and GOAT's pool — this is fair since
+# GOAT also trains on PAMAP2 in their non-PAMAP2 test folds.
+UNSEEN_DATASETS = ['motionsense', 'realworld', 'mobiact', 'shoaib',
+                   'opportunity', 'realdisp', 'daphnet_fog']
 
 # Patch sizes for unseen datasets
 # Test 4 values covering the training augmentation range
@@ -86,11 +96,14 @@ UNSEEN_PATCH_SIZES = [1.0, 1.25, 1.5, 1.75]
 
 # Channel subsets for zero-shot evaluation
 # None = use all available IMU channels (no filtering needed)
-# Zero-shot datasets use same channel types as training (acc, gyro), so no ablation needed
 UNSEEN_CHANNEL_SUBSETS = {
-    'motionsense': [None],  # 6ch: acc + gyro (same as hhar, hapt, kuhar)
-    'realworld': [None],    # 3ch: acc only (same as wisdm, unimib_shar)
-    'mobiact': [None],      # 6ch: acc + gyro (same as hhar, hapt, kuhar)
+    'motionsense': [None],   # 6ch: acc + gyro
+    'realworld': [None],     # 3ch: acc only
+    'mobiact': [None],       # 6ch: acc + gyro
+    'shoaib': [None],        # 45ch: 5 positions x acc + gyro + mag
+    'opportunity': [None],   # 30ch: 5 IMUs x acc + gyro
+    'realdisp': [None],      # 81ch: 9 sensors x acc + gyro + mag
+    'daphnet_fog': [None],   # 9ch: 3 accelerometers
 }
 
 # Output directory
@@ -483,6 +496,7 @@ def compute_metrics(
         for batch in tqdm(dataloader, desc="Computing embeddings", leave=False):
             data = batch['data'].to(device)
             channel_mask = batch['channel_mask'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
             label_texts = batch['label_texts']
             metadata = batch['metadata']
 
@@ -494,7 +508,8 @@ def compute_metrics(
             # Get IMU embeddings (model already normalizes)
             # Use autocast to match training precision (fp16 on CUDA)
             with autocast('cuda', enabled=device.type == 'cuda'):
-                imu_emb = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes)
+                imu_emb = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                                attention_mask=attention_mask)
 
             # Get text embeddings for this batch's labels
             text_emb = label_bank.encode(label_texts, normalize=True)
@@ -536,6 +551,12 @@ def compute_metrics(
         if gt_group == pred_group:
             correct_group += 1
     metrics['accuracy'] = correct_group / N
+
+    # F1 scores (for comparison with NLS-HAR which reports F1, not accuracy)
+    metrics['f1_macro'] = f1_score(gt_groups, pred_groups, average='macro', zero_division=0)
+    metrics['f1_weighted'] = f1_score(gt_groups, pred_groups, average='weighted', zero_division=0)
+    metrics['precision_macro'] = precision_score(gt_groups, pred_groups, average='macro', zero_division=0)
+    metrics['recall_macro'] = recall_score(gt_groups, pred_groups, average='macro', zero_division=0)
 
     # 2. Mean Reciprocal Rank (group-aware, matches training)
     mrr_group = 0
@@ -610,6 +631,18 @@ def compute_metrics(
         if counts['total'] > 0:
             metrics[f'{dataset}_accuracy'] = counts['correct'] / counts['total']
 
+    # Per-dataset F1 scores
+    dataset_predictions = defaultdict(lambda: {'gt': [], 'pred': []})
+    for i, (gt_label, dataset) in enumerate(zip(all_gt_labels, all_datasets)):
+        gt_group = label_to_group.get(gt_label, gt_label)
+        pred_group = pred_groups[i]
+        dataset_predictions[dataset]['gt'].append(gt_group)
+        dataset_predictions[dataset]['pred'].append(pred_group)
+
+    for dataset, preds in dataset_predictions.items():
+        if len(preds['gt']) > 0:
+            metrics[f'{dataset}_f1_macro'] = f1_score(preds['gt'], preds['pred'], average='macro', zero_division=0)
+
     return metrics, gt_groups, pred_groups, all_gt_labels, pred_labels
 
 
@@ -629,6 +662,80 @@ def get_raw_labels_for_dataset(dataset_name: str) -> List[str]:
     else:
         print(f"Warning: No config found for {dataset_name}")
         return ['unknown']
+
+
+def compute_closed_set_metrics(
+    model: SemanticAlignmentModel,
+    label_bank: LearnableLabelBank,
+    dataloader: DataLoader,
+    device: torch.device,
+    dataset_labels: List[str]
+) -> Dict[str, float]:
+    """
+    Compute closed-set metrics matching NLS-HAR protocol.
+
+    This restricts predictions to ONLY the target dataset's labels,
+    which is the protocol used by NLS-HAR (AAAI 2025).
+
+    Key differences from open-set:
+    - Open-set: Predicts from ALL training labels (~100), then maps to groups
+    - Closed-set: Predicts from only this dataset's C labels (no group mapping)
+
+    Args:
+        model: The trained SemanticAlignmentModel
+        label_bank: LearnableLabelBank for encoding labels
+        dataloader: DataLoader for the target dataset
+        device: torch device
+        dataset_labels: List of ONLY this dataset's labels (e.g., 6 labels for MotionSense)
+
+    Returns:
+        Dict with closed-set metrics:
+        - f1_closed_set: Macro F1 over dataset's C classes
+        - accuracy_closed_set: Accuracy over dataset's C classes
+    """
+    model.eval()
+    label_bank.eval()
+
+    # Encode ONLY the dataset's labels (closed-set)
+    with torch.no_grad():
+        label_embeddings = label_bank.encode(dataset_labels, normalize=True)  # (C, D)
+        label_embeddings = label_embeddings.to(device)
+
+    all_gt_labels = []
+    all_pred_labels = []
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Computing closed-set metrics", leave=False):
+            data = batch['data'].to(device)
+            channel_mask = batch['channel_mask'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            label_texts = batch['label_texts']
+            metadata = batch['metadata']
+
+            sampling_rates = [m['sampling_rate_hz'] for m in metadata]
+            patch_sizes = [m['patch_size_sec'] for m in metadata]
+            channel_descriptions = [m['channel_descriptions'] for m in metadata]
+
+            # Get IMU embeddings
+            with autocast('cuda', enabled=device.type == 'cuda'):
+                imu_emb = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                                attention_mask=attention_mask)
+
+            # Compute similarity only against dataset_labels (closed-set)
+            similarity = imu_emb @ label_embeddings.T  # (batch, C)
+
+            # Predict = argmax over C classes
+            pred_indices = similarity.argmax(dim=1).cpu().numpy()
+            pred_labels = [dataset_labels[i] for i in pred_indices]
+
+            all_gt_labels.extend(label_texts)
+            all_pred_labels.extend(pred_labels)
+
+    # Compute closed-set metrics (no group mapping - raw labels)
+    return {
+        'f1_closed_set': f1_score(all_gt_labels, all_pred_labels, average='macro', zero_division=0),
+        'accuracy_closed_set': accuracy_score(all_gt_labels, all_pred_labels),
+    }
 
 
 # =============================================================================
@@ -976,15 +1083,43 @@ def run_comparison():
 
                 channel_ablation[ds_name] = dataset_ablation
 
+                # Compute closed-set metrics (NLS-HAR style) using best config
+                # This uses ONLY the target dataset's labels for prediction
+                dataset_labels = get_raw_labels_for_dataset(ds_name)
+                closed_set_loader = DataLoader(
+                    IMUPretrainingDataset(
+                        data_root='data',
+                        datasets=[ds_name],
+                        split='val',
+                        patch_size_per_dataset={ds_name: best_patch_size},
+                        max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
+                        channel_filter=best_channel_filter,
+                        seed=42
+                    ),
+                    batch_size=BATCH_SIZE,
+                    shuffle=False,
+                    num_workers=0,
+                    collate_fn=IMUPretrainingDataset.collate_fn
+                )
+                closed_metrics = compute_closed_set_metrics(
+                    loaded_models[name]['model'],
+                    loaded_models[name]['label_bank'],
+                    closed_set_loader,
+                    device,
+                    dataset_labels
+                )
+
                 filter_name = 'all_channels' if best_channel_filter is None else '+'.join(best_channel_filter)
                 per_dataset_best[ds_name] = {
                     'best_patch_size': best_patch_size,
                     'best_channel_filter': best_channel_filter,
                     'channel_filter_name': filter_name,
                     'accuracy': best_accuracy,
+                    'f1_closed_set': closed_metrics['f1_closed_set'],
+                    'accuracy_closed_set': closed_metrics['accuracy_closed_set'],
                     'metrics': best_metrics
                 }
-                print(f"  ★ {ds_name} OVERALL BEST: {filter_name}, patch={best_patch_size}s, acc={best_accuracy*100:.2f}%")
+                print(f"  ★ {ds_name} OVERALL BEST: {filter_name}, patch={best_patch_size}s, acc={best_accuracy*100:.2f}%, F1_closed={closed_metrics['f1_closed_set']*100:.2f}%")
 
             all_results['unseen_per_dataset'][name] = per_dataset_best
             all_results['unseen_channel_ablation'][name] = channel_ablation
@@ -1100,9 +1235,10 @@ def run_comparison():
         print()
         print("-" * (25 + 15 * len([n for n in model_names if n in results])))
 
-        # Key metrics (same order as training)
+        # Key metrics (same order as training, plus F1 scores for baseline comparison)
         key_metrics = [
-            'accuracy', 'mrr', 'positive_similarity', 'negative_similarity',
+            'accuracy', 'f1_macro', 'f1_weighted', 'precision_macro', 'recall_macro',
+            'mrr', 'positive_similarity', 'negative_similarity',
             'similarity_gap', 'recall@1', 'recall@5', 'group_recall@1', 'group_recall@5'
         ]
 
@@ -1122,18 +1258,23 @@ def run_comparison():
                     print(f"{val*100:>14.2f}%", end="")
             print()
 
-        # Per-dataset accuracy
+        # Per-dataset accuracy and F1
         dataset_keys = [k for k in results[model_names[0]].keys() if k.endswith('_accuracy')]
         if dataset_keys:
-            print(f"\n{'Per-dataset accuracy:':<25}")
+            print(f"\n{'Per-dataset metrics:':<25}")
             for key in sorted(dataset_keys):
                 dataset_name = key.replace('_accuracy', '')
                 print(f"  {dataset_name:<23}", end="")
                 for name in model_names:
                     if name not in results:
                         continue
-                    val = results[name].get(key, 0)
-                    print(f"{val*100:>14.2f}%", end="")
+                    acc = results[name].get(key, 0)
+                    f1_key = f'{dataset_name}_f1_macro'
+                    f1 = results[name].get(f1_key, None)
+                    if f1 is not None:
+                        print(f"{acc*100:>9.2f}% (F1:{f1*100:>5.1f}%)", end="")
+                    else:
+                        print(f"{acc*100:>14.2f}%", end="")
                 print()
 
     if 'training_datasets' in all_results:
@@ -1143,27 +1284,32 @@ def run_comparison():
         print_metrics_table(all_results['unseen_datasets'], "Zero-Shot (Unseen Datasets) - Optimal Settings")
 
         # Print per-dataset breakdown with optimal settings (channel filter + patch size)
+        # Shows both open-set F1 (group-level) and closed-set F1 (NLS-HAR comparable)
         if 'unseen_per_dataset' in all_results:
             print(f"\n{'Per-Dataset Results with Optimal Settings:':<60}")
-            print("-" * 100)
+            print("-" * 140)
             print(f"{'Dataset':<15}", end="")
             for name in model_names:
-                print(f"{'Acc':>10}{'Channels':>18}{'Patch':>8}", end="")
+                print(f"{'Acc(open)':>12}{'F1(open)':>10}{'F1(closed)':>12}{'Channels':>15}{'Patch':>8}", end="")
             print()
-            print("-" * 100)
+            print("-" * 140)
             for ds_name in UNSEEN_DATASETS:
                 print(f"{ds_name:<15}", end="")
                 for name in model_names:
                     if name in all_results['unseen_per_dataset']:
                         ds_results = all_results['unseen_per_dataset'][name].get(ds_name, {})
                         acc = ds_results.get('accuracy', 0)
+                        ds_metrics = ds_results.get('metrics', {})
+                        f1_open = ds_metrics.get(f'{ds_name}_f1_macro', ds_metrics.get('f1_macro', 0))
+                        f1_closed = ds_results.get('f1_closed_set', 0)
                         ch_filter = ds_results.get('channel_filter_name', 'all')
                         patch = ds_results.get('best_patch_size', 'N/A')
-                        print(f"{acc*100:>9.2f}%{ch_filter:>18}{patch:>7}s", end="")
+                        print(f"{acc*100:>11.2f}%{f1_open*100:>9.2f}%{f1_closed*100:>11.2f}%{ch_filter:>15}{patch:>7}s", end="")
                     else:
-                        print(f"{'N/A':>10}{'N/A':>18}{'N/A':>8}", end="")
+                        print(f"{'N/A':>12}{'N/A':>10}{'N/A':>12}{'N/A':>15}{'N/A':>8}", end="")
                 print()
-            print("-" * 100)
+            print("-" * 140)
+            print("  Note: F1(open) = open-set group-level, F1(closed) = closed-set raw labels (NLS-HAR comparable)")
 
         # Print channel ablation results if multiple subsets were tested
         if 'unseen_channel_ablation' in all_results:
