@@ -111,6 +111,17 @@ ACTIVITY_WINDOW_RANGES = {
     "fall_backward_sitting": (2, 8),
     "fall_sideways": (2, 8),
 
+    # UniMiB SHAR falls (very short events)
+    "falling_forward": (2, 8),
+    "falling_backward": (2, 8),
+    "falling_left": (2, 8),
+    "falling_right": (2, 8),
+    "falling_hitting_obstacle": (2, 8),
+    "falling_with_protection": (2, 8),
+    "falling_backward_sitting": (2, 8),
+    "syncope": (2, 8),
+    "sitting_down": (2, 10),
+
     # Vehicle entry (MobiAct) - short
     "car_step_in": (2, 10),
     "car_step_out": (2, 10),
@@ -127,6 +138,60 @@ ACTIVITY_WINDOW_RANGES = {
     "spraying_paint": (10, 60),
     "leveling_paint": (10, 60),
     "raising_hands": (3, 20),
+    "walking_straight": (2, 20),
+    "walking_winding": (2, 20),
+    "laying_back": (2, 15),
+
+    # DSADS treadmill/gym activities
+    "lying_back": (2, 15),
+    "lying_side": (2, 15),
+    "stairs_up": (3, 20),
+    "stairs_down": (3, 20),
+    "walking_parking": (2, 20),
+    "walking_treadmill_flat": (2, 20),
+    "walking_treadmill_incline": (2, 20),
+    "running_treadmill": (2, 15),
+    "exercising_stepper": (5, 30),
+    "exercising_cross_trainer": (5, 30),
+    "cycling_horizontal": (3, 20),
+    "cycling_vertical": (3, 20),
+    "playing_basketball": (5, 30),
+    "moving_elevator": (5, 30),
+    "standing_elevator": (5, 30),
+
+    # REALDISP fitness exercises (A1-A33)
+    "jump_up": (2, 10),
+    "jump_front_back": (2, 10),
+    "jump_sideways": (2, 10),
+    "jump_legs_arms": (2, 10),
+    "jump_rope": (3, 20),
+    "trunk_twist_arms_out": (3, 15),
+    "trunk_twist_elbows_bent": (3, 15),
+    "waist_bends_forward": (3, 15),
+    "waist_rotation": (3, 15),
+    "waist_bend_cross": (3, 15),
+    "reach_heels_backwards": (3, 15),
+    "lateral_bend": (3, 15),
+    "lateral_bend_arm_up": (3, 15),
+    "forward_stretching": (3, 20),
+    "upper_lower_twist": (3, 15),
+    "lateral_arm_elevation": (3, 15),
+    "frontal_arm_elevation": (3, 15),
+    "frontal_hand_claps": (3, 15),
+    "frontal_crossing_arms": (3, 15),
+    "shoulders_high_rotation": (3, 15),
+    "shoulders_low_rotation": (3, 15),
+    "arms_inner_rotation": (3, 15),
+    "knees_to_breast": (3, 15),
+    "heels_to_backside": (3, 15),
+    "knees_bending_crouching": (3, 15),
+    "knees_alternating_forward": (3, 15),
+    "rotation_on_knees": (3, 15),
+    "rowing": (5, 30),
+    "elliptical_bike": (5, 30),
+
+    # Daphnet FoG - gait/freeze episodes
+    "freezing_gait": (2, 15),
 }
 
 # Maximum session duration to fit in context window (45 patches × ~2s)

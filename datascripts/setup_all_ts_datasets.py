@@ -26,6 +26,12 @@ Available datasets:
     - dsads (19 activities, 9 channels, 25Hz) - torso position only
     - recgym (11 gym exercises, 6 channels, 20Hz) - uses Kaggle API, wrist position
     - vtt_coniot (16 construction activities, 9 channels, 50Hz) - hip position
+    - hapt (12 activities incl. transitions, 6 channels, 50Hz)
+    - kuhar (18 activities, 6 channels, 100Hz) - uses Kaggle API
+    - shoaib (7 activities, 45 channels, 50Hz) - ZERO-SHOT TEST, manual download
+    - opportunity (4 locomotion, 30 channels, 30Hz) - manual download
+    - realdisp (33 fitness activities, 81 channels, 50Hz) - manual download
+    - daphnet_fog (2 activities, 9 channels, 64Hz) - manual download
 """
 
 import sys
@@ -122,6 +128,35 @@ DATASETS = {
         "convert_script": "datascripts/kuhar/convert.py",
         "requires_manual": False,
         "note": "Uses Kaggle API. 90 subjects, 18 activities, 100Hz"
+    },
+    # New datasets for baseline comparison
+    "shoaib": {
+        "name": "Shoaib",
+        "download_script": None,  # Manual download from UTwente
+        "convert_script": "datascripts/shoaib/convert.py",
+        "requires_manual": True,
+        "note": "ZERO-SHOT TEST SET. 10 subjects, 7 activities, 5 body positions, 50Hz. Download from UTwente."
+    },
+    "opportunity": {
+        "name": "OPPORTUNITY",
+        "download_script": None,  # Manual download from UCI
+        "convert_script": "datascripts/opportunity/convert.py",
+        "requires_manual": True,
+        "note": "4 subjects, 4 locomotion activities, 5 body IMUs, 30Hz. Download from UCI ML Repository."
+    },
+    "realdisp": {
+        "name": "REALDISP",
+        "download_script": None,  # Manual download from UCI
+        "convert_script": "datascripts/realdisp/convert.py",
+        "requires_manual": True,
+        "note": "17 subjects, 33 fitness activities, 9 body sensors, 50Hz. Download from UCI ML Repository."
+    },
+    "daphnet_fog": {
+        "name": "Daphnet FoG",
+        "download_script": None,  # Manual download from UCI
+        "convert_script": "datascripts/daphnet_fog/convert.py",
+        "requires_manual": True,
+        "note": "10 Parkinson's patients, 2 activities (walking, freezing), 3 accelerometers, 64Hz. Download from UCI."
     }
 }
 

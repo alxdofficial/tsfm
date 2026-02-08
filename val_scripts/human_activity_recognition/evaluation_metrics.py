@@ -10,6 +10,7 @@ Includes:
 import torch
 import numpy as np
 from typing import Dict, List
+from sklearn.metrics import f1_score
 
 # Import label groups from shared location (used by both training and evaluation)
 from datasets.imu_pretraining_dataset.label_groups import (
@@ -267,6 +268,17 @@ def compute_group_accuracy(
 
     accuracy = correct / len(query_labels)
     metrics = {'accuracy': accuracy}
+
+    # Compute F1 scores (for comparison with baselines that report F1)
+    pred_groups_list = []
+    gt_groups_list = []
+    for i, gt_label in enumerate(query_labels):
+        pred_idx = top1_indices[i]
+        pred_groups_list.append(unique_groups[pred_idx])
+        gt_groups_list.append(label_to_group.get(gt_label, gt_label))
+
+    metrics['f1_macro'] = f1_score(gt_groups_list, pred_groups_list, average='macro', zero_division=0)
+    metrics['f1_weighted'] = f1_score(gt_groups_list, pred_groups_list, average='weighted', zero_division=0)
 
     # Compute MRR if requested
     if return_mrr:

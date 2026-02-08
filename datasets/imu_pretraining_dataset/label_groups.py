@@ -37,23 +37,25 @@ LABEL_GROUPS = {
     # Running/jogging (fast locomotion)
     'running': ['running', 'jogging', 'running_treadmill'],
 
-    # Lying/laying (horizontal posture) - includes transitions TO lying
-    # HAPT: sit_to_lie, stand_to_lie
-    'lying': ['lying', 'laying', 'lying_down_from_standing', 'lying_back',
-              'lying_side', 'laying_back', 'sit_to_lie', 'stand_to_lie'],
+    # Lying/laying (horizontal posture)
+    'lying': ['lying', 'laying', 'lying_back', 'lying_side', 'laying_back'],
 
-    # Sitting (seated posture) - includes transitions TO sitting
-    # HAPT: stand_to_sit
-    # KU-HAR: talking_sitting (sitting while talking)
-    'sitting': ['sitting', 'sitting_down', 'sitting_down_from_standing', 'sitting_chair',
-                'stand_to_sit', 'talking_sitting'],
+    # Sitting (seated posture)
+    'sitting': ['sitting', 'sitting_down', 'sitting_chair'],
 
-    # Standing (upright posture) - includes transitions TO standing
-    # HAPT: sit_to_stand, lie_to_stand, lie_to_sit (getting up from lying is standing action)
-    # KU-HAR: talking_standing (standing while talking)
-    'standing': ['standing', 'standing_up_from_laying', 'standing_up_from_sitting',
-                 'standing_elevator', 'standing_work', 'sit_to_stand', 'lie_to_stand',
-                 'lie_to_sit', 'talking_standing'],
+    # Standing (upright posture)
+    'standing': ['standing', 'standing_elevator', 'standing_work'],
+
+    # Postural transitions - distinct motion patterns from static postures
+    # UniMiB SHAR transitions (whole-body repositioning)
+    'transition_to_standing': ['standing_up_from_laying', 'standing_up_from_sitting',
+                               'sit_to_stand', 'lie_to_stand', 'lie_to_sit'],
+    'transition_to_sitting': ['sitting_down_from_standing', 'stand_to_sit'],
+    'transition_to_lying': ['lying_down_from_standing', 'sit_to_lie', 'stand_to_lie'],
+
+    # Talking while stationary (KU-HAR) - distinct from pure posture
+    'talking_sitting': ['talking_sitting'],
+    'talking_standing': ['talking_standing'],
 
     # Falling variants (loss of balance - all share sudden acceleration patterns)
     # MobiFall (training) provides fall types
@@ -65,7 +67,9 @@ LABEL_GROUPS = {
 
     # Jumping variants (vertical explosive motion)
     # Note: rope_jumping/rope_skipping are RecGym (zero-shot) but jumping is in training
-    'jumping': ['jumping', 'jump_front_back', 'rope_jumping', 'rope_skipping', 'jumping_down'],
+    # REALDISP: jump_up, jump_front_back, jump_sideways, jump_legs_arms, jump_rope
+    'jumping': ['jumping', 'jump_front_back', 'rope_jumping', 'rope_skipping', 'jumping_down',
+                'jump_up', 'jump_sideways', 'jump_legs_arms', 'jump_rope'],
 
     # Eating/drinking (hand-to-mouth repetitive motion)
     'eating': ['eating_chips', 'eating_pasta', 'eating_sandwich', 'eating_soup', 'drinking'],
@@ -75,7 +79,8 @@ LABEL_GROUPS = {
     'cycling': ['cycling', 'cycling_horizontal', 'cycling_vertical'],
 
     # Cardio exercise machines (rhythmic full-body motion)
-    'cardio_machine': ['exercising_stepper', 'exercising_cross_trainer', 'rowing', 'stairclimber'],
+    'cardio_machine': ['exercising_stepper', 'exercising_cross_trainer', 'rowing', 'stairclimber',
+                       'elliptical_bike'],
 
     # Vehicle entry/exit (stepping motion with support)
     'vehicle_entry': ['car_step_in', 'car_step_out'],
@@ -117,6 +122,18 @@ LABEL_GROUPS = {
 
     # Gym weight exercises (RecGym activities)
     'gym_weights': ['squat', 'bench_press', 'leg_press', 'leg_curl', 'arm_curl', 'adductor_machine'],
+
+    # REALDISP fitness exercises (A1-A33)
+    'trunk_twist': ['trunk_twist_arms_out', 'trunk_twist_elbows_bent', 'upper_lower_twist'],
+    'waist_exercise': ['waist_bends_forward', 'waist_rotation', 'waist_bend_cross',
+                       'lateral_bend', 'lateral_bend_arm_up', 'forward_stretching'],
+    'arm_exercise_realdisp': ['lateral_arm_elevation', 'frontal_arm_elevation', 'frontal_hand_claps',
+                               'frontal_crossing_arms', 'shoulders_high_rotation', 'shoulders_low_rotation',
+                               'arms_inner_rotation'],
+    'leg_exercise_realdisp': ['knees_to_breast', 'heels_to_backside', 'knees_bending_crouching',
+                               'knees_alternating_forward', 'rotation_on_knees', 'reach_heels_backwards'],
+    # Daphnet FoG (Parkinson's gait disorder)
+    'freezing_gait': ['freezing_gait'],
 }
 
 # LABEL_GROUPS_SIMPLE: Simplified grouping (~10 effective groups)
@@ -131,8 +148,7 @@ LABEL_GROUPS_SIMPLE = {
     # Locomotion - running pace
     'running': ['running', 'jogging', 'running_treadmill'],
 
-    # Locomotion - stairs (any direction, model may not reliably distinguish)
-    # Note: climbing_ladder and stairclimber removed (zero-shot only)
+    # Locomotion - stairs (any direction)
     'stairs': ['stairs', 'ascending_stairs', 'climbing_stairs', 'going_up_stairs', 'walking_upstairs',
                'descending_stairs', 'going_down_stairs', 'walking_downstairs',
                'stairs_up', 'stairs_down'],
@@ -140,29 +156,40 @@ LABEL_GROUPS_SIMPLE = {
     # Locomotion - cycling
     'cycling': ['cycling', 'cycling_horizontal', 'cycling_vertical'],
 
-    # Stationary - sitting (any seated position or transition to it)
-    # HAPT: stand_to_sit; KU-HAR: talking_sitting
-    'sitting': ['sitting', 'sitting_down', 'sitting_down_from_standing', 'sitting_chair',
-                'stand_to_sit', 'talking_sitting'],
+    # Stationary - sitting (seated postures only, no transitions)
+    'sitting': ['sitting', 'sitting_down', 'sitting_chair'],
 
-    # Stationary - standing (any upright position or transition to it)
-    # HAPT: sit_to_stand, lie_to_stand, lie_to_sit; KU-HAR: talking_standing
-    'standing': ['standing', 'standing_up_from_laying', 'standing_up_from_sitting',
-                 'standing_elevator', 'moving_elevator', 'standing_work',
-                 'sit_to_stand', 'lie_to_stand', 'lie_to_sit', 'talking_standing'],
+    # Stationary - standing (upright postures only, no transitions)
+    'standing': ['standing', 'standing_elevator', 'moving_elevator', 'standing_work'],
 
-    # Stationary - lying (any horizontal position or transition to it)
-    # HAPT: sit_to_lie, stand_to_lie
-    'lying': ['lying', 'laying', 'lying_down_from_standing', 'lying_back', 'lying_side', 'laying_back',
-              'sit_to_lie', 'stand_to_lie'],
+    # Stationary - lying (horizontal postures only, no transitions)
+    'lying': ['lying', 'laying', 'lying_back', 'lying_side', 'laying_back'],
+
+    # Postural transitions (whole-body repositioning — distinct motion patterns)
+    'postural_transition': ['standing_up_from_laying', 'standing_up_from_sitting',
+                            'sitting_down_from_standing', 'lying_down_from_standing',
+                            'stand_to_sit', 'sit_to_stand', 'sit_to_lie',
+                            'lie_to_sit', 'stand_to_lie', 'lie_to_stand'],
+
+    # Talking while stationary (KU-HAR)
+    'talking': ['talking_sitting', 'talking_standing'],
 
     # Dynamic exercise (jumping, body-weight exercises, cardio machines)
-    # KU-HAR: push_up, sit_up, picking_up
     'exercise': ['jumping', 'jump_front_back', 'rope_jumping', 'rope_skipping', 'jumping_down',
                  'knees_bending', 'waist_bends_forward', 'frontal_elevation_arms', 'raising_hands',
                  'exercising_stepper', 'exercising_cross_trainer', 'rowing', 'stairclimber', 'climbing_ladder',
                  'squat', 'bench_press', 'leg_press', 'leg_curl', 'arm_curl', 'adductor_machine',
-                 'push_up', 'sit_up', 'picking_up'],
+                 'push_up', 'sit_up', 'picking_up',
+                 # REALDISP fitness exercises (A1-A33)
+                 'jump_up', 'jump_front_back', 'jump_sideways', 'jump_legs_arms', 'jump_rope',
+                 'trunk_twist_arms_out', 'trunk_twist_elbows_bent', 'upper_lower_twist',
+                 'waist_rotation', 'waist_bend_cross', 'lateral_bend', 'lateral_bend_arm_up',
+                 'forward_stretching', 'reach_heels_backwards',
+                 'lateral_arm_elevation', 'frontal_arm_elevation', 'frontal_hand_claps',
+                 'frontal_crossing_arms', 'shoulders_high_rotation', 'shoulders_low_rotation',
+                 'arms_inner_rotation', 'knees_to_breast', 'heels_to_backside',
+                 'knees_bending_crouching', 'knees_alternating_forward', 'rotation_on_knees',
+                 'elliptical_bike'],
 
     # Hand/arm activities (fine motor, repetitive arm movements)
     'hand_activity': ['eating_chips', 'eating_pasta', 'eating_sandwich', 'eating_soup',
@@ -179,7 +206,6 @@ LABEL_GROUPS_SIMPLE = {
     'household': ['ironing', 'vacuum_cleaning'],
 
     # Ball sports (throwing, catching, kicking patterns)
-    # KU-HAR: playing_sports (table tennis)
     'sports': ['playing_catch', 'dribbling', 'kicking', 'playing_basketball', 'playing_sports'],
 
     # Falling (loss of balance - grouped for safety applications)
@@ -187,6 +213,9 @@ LABEL_GROUPS_SIMPLE = {
                 'falling_hitting_obstacle', 'falling_left', 'falling_right',
                 'falling_with_protection', 'syncope',
                 'fall_forward', 'fall_backward_knees', 'fall_backward_sitting', 'fall_sideways'],
+
+    # Gait disorders (Daphnet FoG - Parkinson's patients)
+    'gait_disorder': ['freezing_gait'],
 }
 
 # Active label groups (change this to switch between groupings)
