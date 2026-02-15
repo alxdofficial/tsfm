@@ -6,9 +6,11 @@ This document provides the specific updates needed for Table 3 (Per-Dataset Vali
 
 ## UPDATE TABLE 3: Per-Dataset Validation Accuracy
 
-**Current Table 3 in paper shows only 6 datasets. Replace with all 11 training datasets.**
+**Current Table 3 in paper shows only 6 datasets. Replace with all 10 training datasets.**
 
-### New Table 3: Per-Dataset Validation Accuracy (11-Dataset Model)
+> **Note:** VTT-ConIoT was moved from training to zero-shot evaluation to prevent data leakage. The numbers below are from the 11-dataset checkpoint (2026-01-27) and will be updated after retraining with 10 datasets.
+
+### New Table 3: Per-Dataset Validation Accuracy (10-Dataset Model)
 
 | Dataset | Val Group-Acc (%) |
 |---------|-------------------|
@@ -21,11 +23,10 @@ This document provides the specific updates needed for Table 3 (Per-Dataset Vali
 | DSADS | 93.55 |
 | HAPT | 73.20 |
 | KU-HAR | 89.69 |
-| VTT-ConIoT | 51.35 |
 | RecGym | 98.31 |
-| **Overall** | **81.56** |
+| **Overall** | **TBD (retrain needed)** |
 
-**Caption:** "Per-dataset validation accuracy (group-level) for the 11-dataset model. Accuracy varies by dataset complexity, label vocabulary overlap with other datasets, and the number of unique activities per dataset."
+**Caption:** "Per-dataset validation accuracy (group-level) for the 10-dataset model. Accuracy varies by dataset complexity, label vocabulary overlap with other datasets, and the number of unique activities per dataset."
 
 ---
 
@@ -51,10 +52,13 @@ The paper should have these values for Table 4:
 
 | Dataset | Group-Acc (%) | MRR (%) | Patch (s) |
 |---------|---------------|---------|-----------|
-| MotionSense | 56.93 | 69.64 | 1.5 |
-| RealWorld | 45.73 | 63.03 | 1.5 |
-| MobiAct | 43.22 | 55.69 | 1.25 |
-| **Combined** | **49.41** | — | — |
+| MotionSense | TBD | TBD | 1.5 |
+| RealWorld | TBD | TBD | 1.5 |
+| MobiAct | TBD | TBD | 1.25 |
+| VTT-ConIoT | TBD | TBD | 2.0 |
+| **Combined** | **TBD** | — | — |
+
+> **Note:** VTT-ConIoT is now a zero-shot dataset (moved from training to prevent data leakage). Previous zero-shot numbers were from the 11-dataset model; retrain with 10 datasets needed.
 
 ---
 
@@ -65,16 +69,19 @@ The paper should have these values for Table 4:
 | Training Config | Training Val Acc (%) | Zero-Shot Acc (%) |
 |-----------------|---------------------|-------------------|
 | 6 datasets | 57.60 | 29.75 |
-| 11 datasets | 81.56 | 49.41 |
-| **Improvement** | **+23.96 pp** | **+19.66 pp** |
+| 10 datasets | TBD (retrain needed) | TBD |
+| **Improvement** | **TBD** | **TBD** |
 
-### Per-Dataset Zero-Shot Improvement:
+> **Note:** Previous 11-dataset results included VTT-ConIoT in training. With VTT-ConIoT moved to zero-shot (4 zero-shot datasets total), scaling ablation numbers need re-evaluation after retraining.
 
-| Dataset | 6 Datasets (%) | 11 Datasets (%) | Δ |
+### Per-Dataset Zero-Shot Improvement (from 6-dataset baseline):
+
+| Dataset | 6 Datasets (%) | 10 Datasets (%) | Δ |
 |---------|----------------|-----------------|-----|
-| MotionSense | 34.64 | 56.93 | +22.29 |
-| RealWorld | 27.40 | 45.73 | +18.33 |
-| MobiAct | 25.46 | 43.22 | +17.76 |
+| MotionSense | 34.64 | TBD | — |
+| RealWorld | 27.40 | TBD | — |
+| MobiAct | 25.46 | TBD | — |
+| VTT-ConIoT | — | TBD | — |
 
 ---
 
@@ -121,7 +128,8 @@ The per-dataset validation accuracy varies significantly:
 
 **Lower performers (<70%):**
 - WISDM: 60.69% - 18 activities with fine-grained distinctions
-- VTT-ConIoT: 51.35% - Industrial IoT context differs from other datasets
+
+> **Note:** VTT-ConIoT (previously 51.35% validation) has been moved to zero-shot evaluation.
 
 Consider adding a brief discussion of why some datasets are harder than others (label vocabulary overlap, activity granularity, sensor placement differences).
 
@@ -129,7 +137,7 @@ Consider adding a brief discussion of why some datasets are harder than others (
 
 ## CHECKLIST
 
-- [ ] Replace Table 3 with 11-dataset validation accuracy
+- [ ] Replace Table 3 with 10-dataset validation accuracy (after retraining)
 - [ ] Update Table 2 overall metrics
 - [ ] Verify Table 4 zero-shot numbers match
 - [ ] Add dataset scaling ablation table

@@ -146,11 +146,11 @@ Since their code is public, you could:
 | DSADS | Training | - | - |
 | HAPT | Training | - | - |
 | KU-HAR | Training | - | - |
-| VTT-ConIoT | Training | - | - |
 | RecGym | Training | - | - |
 | **MotionSense** | **Zero-shot** | **Zero-shot** | - |
 | **MobiAct** | **Zero-shot** | **Zero-shot** | - |
 | RealWorld | Zero-shot | - | - |
+| VTT-ConIoT | Zero-shot | - | - |
 | Capture-24 | - | **Training** | - |
 | Ego4D/Aria | - | - | **Training** |
 | Myogym | - | Zero-shot test | - |
@@ -225,7 +225,7 @@ Only MotionSense and MobiAct are tested by BOTH you and NLS-HAR:
 
 | Aspect | Your Model | NLS-HAR | HAR-DoReMi |
 |--------|------------|---------|------------|
-| Training Data | 11 HAR datasets | Single dataset (Capture-24) | Multiple datasets |
+| Training Data | 10 HAR datasets | Single dataset (Capture-24) | Multiple datasets |
 | Multi-Dataset | **Yes (joint)** | No | Yes |
 | Label Augmentation | **Curated synonyms** | ChatGPT generation | No |
 | Class Balancing | **Capped (20x)** | Not mentioned | Not mentioned |

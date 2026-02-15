@@ -6,33 +6,32 @@ This document consolidates all updates needed for the HAR semantic alignment pap
 
 # PART 1: DATASET AND TRAINING UPDATES
 
-## 1.1 Training Datasets (6 → 11)
+## 1.1 Training Datasets (6 → 10)
 
 **Paper says:** 6 datasets (UCI-HAR, HHAR, UniMiB-SHAR, MHEALTH, PAMAP2, WISDM)
 
-**Current code:** 11 datasets
+**Current code:** 10 datasets (VTT-ConIoT moved to zero-shot to prevent data leakage)
 ```python
 DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar',
-            'dsads', 'hapt', 'kuhar', 'vtt_coniot', 'recgym']
+            'dsads', 'hapt', 'kuhar', 'recgym']
 ```
 
 **New datasets to add to Table 1:**
 
 | Dataset | Hz | #Ch | Patch (s) | Description |
 |---------|-----|-----|-----------|-------------|
-| DSADS | 25 | 45 | 2.0 | Daily/sports activities, 5 body positions |
+| DSADS | 25 | 9 | 2.0 | Daily/sports activities, wrist placement |
 | HAPT | 50 | 6 | 1.25 | Smartphone IMU with postural transitions |
-| KU-HAR | 100 | 6 | 1.5 | Smartphone IMU, 18 activities, 90 subjects |
-| VTT-ConIoT | 52 | 6 | 2.0 | Industrial IoT manufacturing context |
+| KU-HAR | 100 | 6 | 1.5 | Smartphone IMU, 17 activities, 89 subjects |
 | RecGym | 20 | 6 | 1.5 | Smartwatch gym exercises |
 
-## 1.2 Zero-Shot Datasets (1 → 3)
+## 1.2 Zero-Shot Datasets (1 → 4)
 
 **Paper says:** MotionSense only
 
-**Current code:** 3 datasets
+**Current code:** 4 datasets
 ```python
-UNSEEN_DATASETS = ['motionsense', 'realworld', 'mobiact']
+zero_shot_datasets = ['motionsense', 'realworld', 'mobiact', 'vtt_coniot']
 ```
 
 **Add to Table 1:**
@@ -42,6 +41,7 @@ UNSEEN_DATASETS = ['motionsense', 'realworld', 'mobiact']
 | MotionSense | 50 | 6 | 1.5 | Smartphone IMU, basic activities |
 | RealWorld | 50 | 3 | 1.5 | Smartphone/smartwatch, acc-only |
 | MobiAct | 50 | 6 | 1.25 | Includes falls and ADLs (novel activities) |
+| VTT-ConIoT | 50 | 6 | 2.0 | Industrial IoT manufacturing context |
 
 ## 1.3 Updated Patch Sizes
 

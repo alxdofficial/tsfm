@@ -6,33 +6,32 @@ Technical content changes needed based on current codebase. Focused on implement
 
 ## 1. DATASET UPDATES
 
-### 1.1 Training Datasets (6 → 11)
+### 1.1 Training Datasets (6 → 10)
 
 **Paper says:** 6 datasets (UCI-HAR, HHAR, UniMiB-SHAR, MHEALTH, PAMAP2, WISDM)
 
-**Current code:** 11 datasets
+**Current code:** 10 datasets (VTT-ConIoT moved to zero-shot to prevent data leakage)
 ```python
 DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar',
-            'dsads', 'hapt', 'kuhar', 'vtt_coniot', 'recgym']
+            'dsads', 'hapt', 'kuhar', 'recgym']
 ```
 
 **New datasets to add to Table 1:**
 
 | Dataset | Hz | #Ch | Patch (s) | Description |
 |---------|-----|-----|-----------|-------------|
-| DSADS | 25 | 45 | 2.0 | Daily/sports activities, 5 body positions |
+| DSADS | 25 | 9 | 2.0 | Daily/sports activities, wrist placement |
 | HAPT | 50 | 6 | 1.25 | Smartphone IMU with postural transitions |
-| KU-HAR | 100 | 6 | 1.5 | Smartphone IMU, 18 activities, 90 subjects |
-| VTT-ConIoT | 52 | 6 | 2.0 | Industrial IoT manufacturing context |
+| KU-HAR | 100 | 6 | 1.5 | Smartphone IMU, 17 activities, 89 subjects |
 | RecGym | 20 | 6 | 1.5 | Smartwatch gym exercises |
 
-### 1.2 Zero-Shot Datasets (1 → 3)
+### 1.2 Zero-Shot Datasets (1 → 4)
 
 **Paper says:** MotionSense only
 
-**Current code:** 3 datasets
+**Current code:** 4 datasets
 ```python
-UNSEEN_DATASETS = ['motionsense', 'realworld', 'mobiact']
+zero_shot_datasets = ['motionsense', 'realworld', 'mobiact', 'vtt_coniot']
 ```
 
 **Add to Table 1:**
@@ -42,6 +41,7 @@ UNSEEN_DATASETS = ['motionsense', 'realworld', 'mobiact']
 | MotionSense | 50 | 6 | 1.5 | Smartphone IMU, basic activities |
 | RealWorld | 50 | 3 | 1.5 | Smartphone/smartwatch, acc-only |
 | MobiAct | 50 | 6 | 1.25 | Includes falls and ADLs (novel activities) |
+| VTT-ConIoT | 50 | 6 | 2.0 | Industrial IoT manufacturing context |
 
 ### 1.3 Updated Patch Sizes
 
@@ -96,7 +96,7 @@ targets = (1 - soft_target_weight) * hard_targets + soft_target_weight * soft_ta
 **Additional details from code (memory_bank.py):**
 
 1. **Stores both IMU and text embeddings** (not just one modality)
-2. **Queue size:** 512 embeddings (configurable)
+2. **Queue size:** 256 embeddings (configurable)
 3. **Memory bank warmup:** Queue is pre-filled before training starts to avoid volatility from empty/low-quality initial embeddings
 4. **Queue negatives are hard negatives:** Text labels are NOT stored with queue items. Re-encoding 512+ labels per batch would be expensive.
 
@@ -244,7 +244,7 @@ This demonstrates the model transfers well to new datasets with similar activiti
 | Temperature | 0.1 | 0.07 (CLIP default) |
 | Soft target temperature | τ_s | 0.5 |
 | Soft target weight | — | 1.0 (pure soft) |
-| Memory bank size | Q | 512 |
+| Memory bank size | Q | 256 |
 | Gradient accumulation | 32 | 32 (unchanged) |
 | Max oversample ratio | — | 20.0 |
 
