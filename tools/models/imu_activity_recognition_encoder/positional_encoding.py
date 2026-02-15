@@ -146,8 +146,11 @@ class ChannelSemanticEncoding(nn.Module):
         self.sentence_bert_model = sentence_bert_model
 
         # Initialize Sentence-BERT lazily (only when needed)
+        # _IMPORT_FAILED sentinel distinguishes "not tried" from "import failed"
         self._encoder = None
         self._sbert_dim = None
+        self._import_failed = False
+        self._fallback_cache: Dict[int, torch.Tensor] = {}  # num_channels -> stable fallback
 
         # Learnable scaling factor
         self.scale = nn.Parameter(torch.tensor(init_scale))
@@ -173,6 +176,8 @@ class ChannelSemanticEncoding(nn.Module):
 
     def _get_encoder(self):
         """Lazy initialization of Sentence-BERT encoder."""
+        if self._import_failed:
+            return None
         if self._encoder is None:
             try:
                 from sentence_transformers import SentenceTransformer
@@ -197,7 +202,7 @@ class ChannelSemanticEncoding(nn.Module):
                     "sentence-transformers not installed. Channel semantic encoding will be disabled. "
                     "Install with: pip install sentence-transformers"
                 )
-                self._encoder = None
+                self._import_failed = True
         return self._encoder
 
     def encode_channel_descriptions(
@@ -217,9 +222,14 @@ class ChannelSemanticEncoding(nn.Module):
         encoder = self._get_encoder()
 
         if encoder is None:
-            # Fallback: Use learnable embeddings
+            # Fallback: Use stable random embeddings (seeded, cached by num_channels)
             num_channels = len(channel_descriptions)
-            return torch.randn(num_channels, self.d_model) * 0.01
+            if num_channels not in self._fallback_cache:
+                gen = torch.Generator().manual_seed(42)
+                self._fallback_cache[num_channels] = torch.randn(
+                    num_channels, self.d_model, generator=gen
+                ) * 0.01
+            return self._fallback_cache[num_channels]
 
         # Separate padded channels from valid channels
         embeddings_list = []

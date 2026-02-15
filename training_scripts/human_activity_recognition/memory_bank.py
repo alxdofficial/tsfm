@@ -76,6 +76,16 @@ class MemoryBank:
 
         batch_size = imu_emb_cpu.shape[0]
 
+        # If batch is larger than queue, only keep the last queue_size embeddings
+        if batch_size >= self.queue_size:
+            imu_emb_cpu = imu_emb_cpu[-self.queue_size:]
+            text_emb_cpu = text_emb_cpu[-self.queue_size:]
+            self.imu_queue[:] = imu_emb_cpu
+            self.text_queue[:] = text_emb_cpu
+            self.ptr = 0
+            self.is_full = True
+            return
+
         # Calculate end pointer
         end_ptr = self.ptr + batch_size
 
@@ -83,6 +93,8 @@ class MemoryBank:
             # Simple case: no wraparound
             self.imu_queue[self.ptr:end_ptr] = imu_emb_cpu
             self.text_queue[self.ptr:end_ptr] = text_emb_cpu
+            if end_ptr == self.queue_size:
+                self.is_full = True
         else:
             # Wraparound case: split across boundary
             first_part_size = self.queue_size - self.ptr

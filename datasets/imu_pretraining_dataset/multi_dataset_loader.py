@@ -181,7 +181,8 @@ class IMUPretrainingDataset(Dataset):
         self.max_sessions_per_dataset = max_sessions_per_dataset
         self.channel_filter = channel_filter
 
-        # Set random seed
+        # Set and store random seed (used by worker_init_fn)
+        self.seed = seed
         random.seed(seed)
         np.random.seed(seed)
 

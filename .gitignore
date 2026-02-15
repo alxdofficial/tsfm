@@ -40,3 +40,5 @@ test_output/
 docs/*
 !docs/baselines/
 TSFM__MINSys_ACMconference_template_ (3).pdf
+auxiliary_repos/
+benchmark_data/

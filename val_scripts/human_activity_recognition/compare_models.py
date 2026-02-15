@@ -52,7 +52,7 @@ CHECKPOINT_PATHS = {
 }
 
 # Datasets for evaluation (training datasets)
-EVAL_DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'vtt_coniot', 'recgym']
+EVAL_DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'recgym']
 
 # Patch size per dataset - MUST match training config for accurate metrics
 # Updated to match semantic_alignment_train.py (2026-01-26)

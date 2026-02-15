@@ -144,7 +144,8 @@ class InfoNCELoss(nn.Module):
         sim_mean_for_metrics = None  # Track for monitoring
         if self.use_soft_targets:
             # Compute text similarity over full dimension (batch + queue)
-            # Key insight: Queue text embeddings don't go stale (from frozen SentenceBERT)
+            # Note: Queue text embeddings have minor staleness (pooling layer evolves),
+            # but with small queue (256) and gradual updates this is acceptable (standard MoCo practice)
             text_similarity_full = torch.matmul(text_embeddings, all_text.T)  # (batch, batch+queue)
 
             # Adaptive soft targets: normalize similarities to z-scores

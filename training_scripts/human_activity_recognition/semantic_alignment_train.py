@@ -40,10 +40,10 @@ from typing import Tuple, Optional, List
 
 # Data configuration
 DATA_ROOT = "/home/alex/code/tsfm/data"
-# Training datasets (11 diverse HAR datasets)
-# Note: Opportunity, Realdisp, Daphnet FoG are held out for zero-shot testing
-# to enable fair comparison against GOAT (IMWUT 2024) which tests on those datasets
-DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'vtt_coniot', 'recgym']
+# Training datasets (10 diverse HAR datasets)
+# Zero-shot test datasets are EXCLUDED: motionsense, realworld, mobiact, vtt_coniot
+# Also excluded for GOAT comparison: opportunity, realdisp, daphnet_fog
+DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'recgym']
 random.seed(42)
 PATCH_SIZE_PER_DATASET = {
     # Fixed-length sessions (2.56s) - use 1.0s patches for 2 patches/session

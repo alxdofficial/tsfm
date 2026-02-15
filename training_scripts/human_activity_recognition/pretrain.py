@@ -1003,6 +1003,8 @@ def main():
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         if scaler is not None and 'scaler_state_dict' in checkpoint:
             scaler.load_state_dict(checkpoint['scaler_state_dict'])
+        if 'scheduler_state_dict' in checkpoint:
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
         print(f"Resumed from epoch {start_epoch}")
 
@@ -1054,6 +1056,7 @@ def main():
         }
         if scaler is not None:
             checkpoint['scaler_state_dict'] = scaler.state_dict()
+        checkpoint['scheduler_state_dict'] = scheduler.state_dict()
 
         # Save latest
         torch.save(checkpoint, output_dir / 'latest.pt')

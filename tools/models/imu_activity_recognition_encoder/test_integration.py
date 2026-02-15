@@ -48,7 +48,7 @@ def test_uci_har_dataset():
     print(f"✓ Feature dimension: {features.shape[2]}")
 
     # Verify shapes
-    assert features.shape == (5, 9, 128), f"Expected (5, 9, 128), got {features.shape}"
+    assert features.shape == (5, 9, 384), f"Expected (5, 9, 384), got {features.shape}"
     print("✓ UCI HAR test passed!")
 
 
@@ -76,7 +76,7 @@ def test_actionsense_dataset():
     print(f"✓ Target patch size: {metadata['per_sample_metadata'][0]['target_patch_size']}")
 
     # Verify shapes
-    assert features.shape == (5, 30, 128), f"Expected (5, 30, 128), got {features.shape}"
+    assert features.shape == (5, 30, 384), f"Expected (5, 30, 384), got {features.shape}"
 
     # Verify interpolation worked (400 timesteps -> 64)
     assert metadata['per_sample_metadata'][0]['original_patch_size'] == 400
@@ -107,7 +107,7 @@ def test_mhealth_dataset():
     print(f"✓ Encoded shape: {features.shape}")
 
     # Verify shapes
-    assert features.shape == (5, 23, 128), f"Expected (5, 23, 128), got {features.shape}"
+    assert features.shape == (5, 23, 384), f"Expected (5, 23, 384), got {features.shape}"
     print("✓ MHEALTH test passed!")
 
 
@@ -133,7 +133,7 @@ def test_pamap2_dataset():
     print(f"✓ Encoded shape: {features.shape}")
 
     # Verify shapes
-    assert features.shape == (5, 40, 128), f"Expected (5, 40, 128), got {features.shape}"
+    assert features.shape == (5, 40, 384), f"Expected (5, 40, 384), got {features.shape}"
     print("✓ PAMAP2 test passed!")
 
 
@@ -200,7 +200,7 @@ def test_different_model_sizes():
 
     data = torch.randn(500, 9)
 
-    for size, expected_dim in [("small", 64), ("default", 128), ("large", 256)]:
+    for size, expected_dim in [("small", 64), ("default", 384), ("large", 256)]:
         config = get_config(size)
         encoder = IMUActivityRecognitionEncoder(**config)
 

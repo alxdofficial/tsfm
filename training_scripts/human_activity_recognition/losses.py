@@ -121,8 +121,9 @@ class MaskedReconstructionLoss(nn.Module):
         masked_patches = patches * mask
 
         # Compute masked mean and std over timesteps (dim=2)
-        # Only compute statistics where mask is True
-        count = mask.sum(dim=2, keepdim=True).clamp(min=1)  # Avoid division by zero
+        # mask is per-patch (B, P, 1, 1), so count = T for valid patches
+        T = patches.shape[2]
+        count = (mask * T).clamp(min=1)  # T for valid patches, 1 for padded (avoids div-by-zero)
         mean = masked_patches.sum(dim=2, keepdim=True) / count
 
         # Compute variance
