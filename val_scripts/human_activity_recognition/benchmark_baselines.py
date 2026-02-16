@@ -38,6 +38,7 @@ from datasets.imu_pretraining_dataset.multi_dataset_loader import IMUPretraining
 from imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
 from datasets.imu_pretraining_dataset.label_augmentation import DATASET_CONFIGS
 from datasets.imu_pretraining_dataset.label_groups import LABEL_GROUPS, get_group_for_label
+from val_scripts.human_activity_recognition.evaluation_metrics import compute_similarity
 
 # =============================================================================
 # CONFIGURATION
@@ -232,6 +233,7 @@ def load_label_bank(checkpoint: dict, device: torch.device, hyperparams_path: Pa
         device=device,
         num_heads=token_cfg.get('num_heads', 4),
         num_queries=token_cfg.get('num_queries', 4),
+        num_prototypes=token_cfg.get('num_prototypes', 1),
         dropout=0.1
     )
 
@@ -300,7 +302,7 @@ def compute_closed_set_metrics(
     label_bank.eval()
 
     with torch.no_grad():
-        label_embeddings = label_bank.encode(dataset_labels, normalize=True)
+        label_embeddings = label_bank.encode(dataset_labels, normalize=True)  # (C, D) or (C, K, D)
         label_embeddings = label_embeddings.to(device)
 
     all_gt_labels = []
@@ -322,7 +324,7 @@ def compute_closed_set_metrics(
                 imu_emb = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
                                 attention_mask=attention_mask)
 
-            similarity = imu_emb @ label_embeddings.T
+            similarity = compute_similarity(imu_emb, label_embeddings)  # (batch, C)
             pred_indices = similarity.argmax(dim=1).cpu().numpy()
             pred_labels = [dataset_labels[i] for i in pred_indices]
 
@@ -422,7 +424,7 @@ def compute_shared_activity_metrics(
                 imu_emb = model(data_filtered, cd_filtered, channel_mask_filtered, sr_filtered, ps_filtered,
                                 attention_mask=attention_mask_filtered)
 
-            similarity = imu_emb @ label_embeddings.T
+            similarity = compute_similarity(imu_emb, label_embeddings)  # (batch, C)
             pred_indices = similarity.argmax(dim=1).cpu().numpy()
             pred_labels = [shared_activities[i] for i in pred_indices]
 
@@ -536,7 +538,7 @@ def compute_crosshar_metrics(
                 imu_emb = model(data_filtered, cd_filtered, channel_mask_filtered, sr_filtered, ps_filtered,
                                 attention_mask=attention_mask_filtered)
 
-            similarity = imu_emb @ label_embeddings.T
+            similarity = compute_similarity(imu_emb, label_embeddings)  # (batch, C)
             pred_indices = similarity.argmax(dim=1).cpu().numpy()
 
             # Map predictions to CrossHAR classes

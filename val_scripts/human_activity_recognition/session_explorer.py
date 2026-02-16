@@ -166,6 +166,7 @@ def load_model_and_data(checkpoint_path: str, device: torch.device):
         device=device,
         num_heads=token_cfg.get('num_heads', 4),
         num_queries=token_cfg.get('num_queries', 4),
+        num_prototypes=token_cfg.get('num_prototypes', 1),
         dropout=0.1
     )
 
@@ -255,10 +256,13 @@ def explore_session(
 
     # Encode all labels
     all_labels = ALL_LABELS  # Already unique and sorted
-    all_text_embs = label_bank.encode(all_labels, normalize=True)
+    all_text_embs = label_bank.encode(all_labels, normalize=True)  # (L, D) or (L, K, D)
 
-    # Compute similarities
-    similarities = torch.matmul(imu_emb, all_text_embs.T).squeeze(0)
+    # Compute similarities (handles multi-prototype)
+    if all_text_embs.dim() == 3:
+        similarities = torch.einsum('nd,lkd->nlk', imu_emb, all_text_embs).max(dim=-1).values.squeeze(0)
+    else:
+        similarities = torch.matmul(imu_emb, all_text_embs.T).squeeze(0)
 
     # Get top predictions
     sorted_indices = torch.argsort(similarities, descending=True)

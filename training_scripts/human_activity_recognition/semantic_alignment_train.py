@@ -1082,7 +1082,8 @@ def main():
         'data': {'channel_augmentation': False, 'use_channel_encoding': False},  # ChannelTextFusion handles channel semantics
         'channel_projection': {'enabled': True, 'hidden_dim': None},  # Hardcoded: projection enabled
         'token_level_text': {'num_heads': TOKEN_TEXT_NUM_HEADS, 'num_queries': TOKEN_TEXT_NUM_QUERIES,
-                             'use_mean_pooling': USE_MEAN_POOLING, 'freeze_label_bank': FREEZE_LABEL_BANK},
+                             'use_mean_pooling': USE_MEAN_POOLING, 'freeze_label_bank': FREEZE_LABEL_BANK,
+                             'num_prototypes': NUM_PROTOTYPES},
         'semantic_head': {'num_temporal_layers': NUM_SEMANTIC_TEMPORAL_LAYERS,
                           'num_fusion_queries': NUM_FUSION_QUERIES, 'use_fusion_self_attention': USE_FUSION_SELF_ATTENTION,
                           'num_pool_queries': NUM_POOL_QUERIES, 'use_pool_self_attention': USE_POOL_SELF_ATTENTION}

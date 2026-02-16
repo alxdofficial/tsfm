@@ -186,6 +186,9 @@ def load_checkpoint_embeddings(
             imu_emb = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
                             attention_mask=attention_mask)
             text_emb = label_bank.encode(label_texts, normalize=True)
+            # Handle multi-prototype: mean across prototypes for visualization
+            if text_emb.dim() == 3:
+                text_emb = text_emb.mean(dim=1)  # (B, K, D) -> (B, D)
 
             all_imu_embeddings.append(imu_emb.cpu())
             all_text_embeddings.append(text_emb.cpu())
@@ -219,6 +222,7 @@ def load_label_bank(checkpoint: dict, device: torch.device, hyperparams_path: Pa
         device=device,
         num_heads=token_cfg.get('num_heads', 4),
         num_queries=token_cfg.get('num_queries', 4),
+        num_prototypes=token_cfg.get('num_prototypes', 1),
         dropout=0.1
     )
 

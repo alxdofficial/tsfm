@@ -201,6 +201,7 @@ def load_label_bank(checkpoint: dict, device: torch.device, hyperparams_path: Pa
         device=device,
         num_heads=token_cfg.get('num_heads', 4),
         num_queries=token_cfg.get('num_queries', 4),
+        num_prototypes=token_cfg.get('num_prototypes', 1),
         dropout=0.1
     )
 

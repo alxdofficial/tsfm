@@ -178,6 +178,7 @@ def load_label_bank(checkpoint: dict, device: torch.device, hyperparams_path: Pa
         device=device,
         num_heads=token_cfg.get('num_heads', 4),
         num_queries=token_cfg.get('num_queries', 4),
+        num_prototypes=token_cfg.get('num_prototypes', 1),
         dropout=0.1
     )
 
@@ -266,6 +267,9 @@ def collect_embeddings(
     text_embeddings_dict = {}
     for label in unique_labels:
         text_emb = label_bank.encode([label], normalize=True)
+        # Handle multi-prototype: mean across prototypes for visualization
+        if text_emb.dim() == 3:
+            text_emb = text_emb.mean(dim=1)  # (1, K, D) -> (1, D)
         text_embeddings_dict[label] = text_emb.detach().cpu().numpy().squeeze(0)
 
     # Create text embeddings array matching IMU order

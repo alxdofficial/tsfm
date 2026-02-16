@@ -24,6 +24,27 @@ from datasets.imu_pretraining_dataset.label_groups import (
 
 
 # =============================================================================
+# Multi-prototype similarity helper
+# =============================================================================
+
+def compute_similarity(imu_embeddings: torch.Tensor, label_embeddings: torch.Tensor) -> torch.Tensor:
+    """Compute cosine similarity, handling multi-prototype labels.
+
+    Args:
+        imu_embeddings: (N, D) L2-normalized
+        label_embeddings: (L, D) or (L, K, D) L2-normalized
+
+    Returns:
+        similarity: (N, L)
+    """
+    if label_embeddings.dim() == 3:
+        # Multi-prototype: max similarity over K prototypes
+        return torch.einsum('nd,lkd->nlk', imu_embeddings, label_embeddings).max(dim=-1).values
+    else:
+        return imu_embeddings @ label_embeddings.T
+
+
+# =============================================================================
 # Semantic Recall Metrics
 # =============================================================================
 
@@ -250,12 +271,7 @@ def compute_group_accuracy(
     unique_groups = [label_to_group.get(lbl, lbl) for lbl in unique_labels]
 
     # Compute similarity matrix: (N, L)
-    if label_embeddings.dim() == 3:
-        # Multi-prototype: (L, K, D) — take max over prototypes
-        # similarities = einsum('nd,lkd->nlk', imu, labels).max(dim=-1)
-        similarities = torch.einsum('nd,lkd->nlk', imu_embeddings, label_embeddings).max(dim=-1).values  # (N, L)
-    else:
-        similarities = torch.matmul(imu_embeddings, label_embeddings.T)
+    similarities = compute_similarity(imu_embeddings, label_embeddings)
 
     # Get predictions (top-1)
     _, top1_indices = similarities.max(dim=1)  # (N,)

@@ -35,7 +35,7 @@ from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmen
 from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
 from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders, IMUPretrainingDataset
 from imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
-from val_scripts.human_activity_recognition.evaluation_metrics import get_label_to_group_mapping
+from val_scripts.human_activity_recognition.evaluation_metrics import get_label_to_group_mapping, compute_similarity
 from datasets.imu_pretraining_dataset.label_augmentation import DATASET_CONFIGS
 from datasets.imu_pretraining_dataset.label_groups import LABEL_GROUPS, get_group_for_label
 from collections import Counter
@@ -436,6 +436,7 @@ def load_label_bank(checkpoint: dict, device: torch.device, hyperparams_path: Pa
         device=device,
         num_heads=token_cfg.get('num_heads', 4),
         num_queries=token_cfg.get('num_queries', 4),
+        num_prototypes=token_cfg.get('num_prototypes', 1),
         dropout=0.1
     )
 
@@ -521,13 +522,13 @@ def compute_metrics(
 
     # Concatenate all embeddings
     imu_embeddings = torch.cat(all_imu_embeddings, dim=0)  # (N, D)
-    text_embeddings = torch.cat(all_text_embeddings, dim=0)  # (N, D) - per-sample text
+    text_embeddings = torch.cat(all_text_embeddings, dim=0)  # (N, D) or (N, K, D) with multi-prototype
 
     # Encode all unique labels for retrieval
-    all_label_embeddings = label_bank.encode(all_unique_labels, normalize=True).cpu()  # (L, D)
+    all_label_embeddings = label_bank.encode(all_unique_labels, normalize=True).cpu()  # (L, D) or (L, K, D)
 
     # Compute similarity matrix for retrieval: (N, L)
-    similarity_matrix = imu_embeddings @ all_label_embeddings.T
+    similarity_matrix = compute_similarity(imu_embeddings, all_label_embeddings)
 
     metrics = {}
     N = len(all_gt_labels)
@@ -572,11 +573,18 @@ def compute_metrics(
 
     # 3. Positive/Negative similarity (matches training loss metrics)
     # Positive: diagonal of pairwise IMU-text similarity
-    positive_sims = (imu_embeddings * text_embeddings).sum(dim=1)
+    if text_embeddings.dim() == 3:
+        # Multi-prototype: best prototype per sample
+        positive_sims = torch.einsum('nd,nkd->nk', imu_embeddings, text_embeddings).max(dim=-1).values
+    else:
+        positive_sims = (imu_embeddings * text_embeddings).sum(dim=1)
     metrics['positive_similarity'] = positive_sims.mean().item()
 
     # Negative: off-diagonal, excluding same-group pairs
-    raw_sim = imu_embeddings @ text_embeddings.T  # (N, N)
+    if text_embeddings.dim() == 3:
+        raw_sim = torch.einsum('nd,mkd->nmk', imu_embeddings, text_embeddings).max(dim=-1).values  # (N, N)
+    else:
+        raw_sim = imu_embeddings @ text_embeddings.T  # (N, N)
     same_label_mask = torch.zeros(N, N, dtype=torch.bool)
     for i in range(N):
         for j in range(N):
@@ -698,7 +706,7 @@ def compute_closed_set_metrics(
 
     # Encode ONLY the dataset's labels (closed-set)
     with torch.no_grad():
-        label_embeddings = label_bank.encode(dataset_labels, normalize=True)  # (C, D)
+        label_embeddings = label_bank.encode(dataset_labels, normalize=True)  # (C, D) or (C, K, D)
         label_embeddings = label_embeddings.to(device)
 
     all_gt_labels = []
@@ -722,7 +730,7 @@ def compute_closed_set_metrics(
                                 attention_mask=attention_mask)
 
             # Compute similarity only against dataset_labels (closed-set)
-            similarity = imu_emb @ label_embeddings.T  # (batch, C)
+            similarity = compute_similarity(imu_emb, label_embeddings)  # (batch, C)
 
             # Predict = argmax over C classes
             pred_indices = similarity.argmax(dim=1).cpu().numpy()
