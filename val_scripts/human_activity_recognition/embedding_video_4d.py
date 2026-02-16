@@ -110,7 +110,7 @@ def collect_embeddings(
         # Run inference with autocast (matching training)
         with torch.no_grad():
             with autocast('cuda', enabled=device.type == 'cuda'):
-                imu_emb = model(
+                imu_emb = model.forward_from_raw(
                     data,
                     channel_descriptions_list,
                     channel_mask,

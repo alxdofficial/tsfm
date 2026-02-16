@@ -115,8 +115,8 @@ def load_checkpoint_embeddings(
             patch_sizes = [m['patch_size_sec'] for m in metadata]
             channel_descriptions = [m['channel_descriptions'] for m in metadata]
 
-            imu_emb = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                            attention_mask=attention_mask)
+            imu_emb = model.forward_from_raw(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                                            attention_mask=attention_mask)
             text_emb = label_bank.encode(label_texts, normalize=True)
             # Handle multi-prototype: mean across prototypes for visualization
             if text_emb.dim() == 3:

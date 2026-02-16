@@ -405,62 +405,119 @@ class SemanticAlignmentModel(nn.Module):
         return self.semantic_head(encoded_batch, channel_mask=channel_mask,
                                    patch_mask=patch_mask, normalize=True)
 
-    def get_attention_stats(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                            attention_mask: Optional[torch.Tensor] = None):
-        """Get attention statistics from cross-channel fusion (for debugging)."""
+    def _preprocess_raw_batch(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                              attention_mask=None):
+        """
+        Preprocess a batch of raw sensor data into padded patches for forward().
+
+        Args:
+            data: (batch, max_timesteps, max_channels) raw sensor data
+            channel_descriptions: List of channel description lists per sample
+            channel_mask: (batch, max_channels) boolean mask for valid channels
+            sampling_rates: List of sampling rates per sample (Hz)
+            patch_sizes: List of patch sizes per sample (seconds)
+            attention_mask: Optional (batch, max_timesteps) boolean mask for valid timesteps
+
+        Returns:
+            Tuple of (batched_patches, patch_mask, batched_channel_mask, batched_channel_descs, valid_indices)
+            or None if no valid samples.
+        """
         batch_size = data.shape[0]
         device = data.device
 
+        all_patches = []
+        all_channel_descs = []
+        valid_samples = []
+
+        for i in range(batch_size):
+            # Trim to valid timesteps
+            if attention_mask is not None:
+                valid_len = int(attention_mask[i].sum().item())
+                sample_data = data[i, :valid_len]
+            else:
+                sample_data = data[i]
+
+            patches, _ = self.encoder.preprocess(
+                sample_data, sampling_rate_hz=sampling_rates[i], patch_size_sec=patch_sizes[i]
+            )
+            if patches is None or len(patches) == 0:
+                all_patches.append(None)
+                all_channel_descs.append(None)
+                valid_samples.append(False)
+                continue
+            if len(patches) > MAX_PATCHES_PER_SAMPLE:
+                patches = patches[:MAX_PATCHES_PER_SAMPLE]
+            channel_descs = channel_descriptions[i]
+            all_patches.append(patches)
+            all_channel_descs.append(channel_descs)
+            valid_samples.append(True)
+
+        valid_indices = [i for i, v in enumerate(valid_samples) if v]
+        if len(valid_indices) == 0:
+            return None
+
+        max_patches_valid = max(len(all_patches[i]) for i in valid_indices)
+        max_channels = data.shape[2]
+        num_valid = len(valid_indices)
+
+        batched_patches = torch.zeros(num_valid, max_patches_valid, TARGET_PATCH_SIZE, max_channels, device=device)
+        patch_mask = torch.zeros(num_valid, max_patches_valid, dtype=torch.bool, device=device)
+        batched_channel_descs = []
+
+        for batch_idx, sample_idx in enumerate(valid_indices):
+            patches = all_patches[sample_idx]
+            num_patches = len(patches)
+            batched_patches[batch_idx, :num_patches] = patches
+            patch_mask[batch_idx, :num_patches] = True
+            batched_channel_descs.append(all_channel_descs[sample_idx])
+
+        # Subset channel_mask to valid samples only
+        valid_indices_t = torch.tensor(valid_indices, device=device)
+        batched_channel_mask = channel_mask[valid_indices_t]
+
+        return batched_patches, patch_mask, batched_channel_mask, batched_channel_descs, valid_indices
+
+    def forward_from_raw(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                         attention_mask=None):
+        """
+        Forward pass from raw sensor data (for inference/evaluation).
+
+        Preprocesses raw data per-sample (trim, patch, interpolate to TARGET_PATCH_SIZE),
+        pads to uniform batch, then calls the efficient batched forward().
+
+        Args:
+            data: (batch, max_timesteps, max_channels) raw sensor data
+            channel_descriptions: List of channel description lists per sample
+            channel_mask: (batch, max_channels) boolean mask for valid channels
+            sampling_rates: List of sampling rates per sample (Hz)
+            patch_sizes: List of patch sizes per sample (seconds)
+            attention_mask: Optional (batch, max_timesteps) boolean mask for valid timesteps
+
+        Returns:
+            (num_valid, semantic_dim) L2-normalized embeddings for valid samples.
+            Samples that produce no valid patches are silently dropped.
+        """
+        result = self._preprocess_raw_batch(
+            data, channel_descriptions, channel_mask, sampling_rates, patch_sizes, attention_mask
+        )
+        if result is None:
+            # No valid samples — return empty embeddings
+            return torch.zeros(0, SEMANTIC_DIM, device=data.device)
+
+        batched_patches, patch_mask, batched_channel_mask, batched_channel_descs, valid_indices = result
+        return self.forward(batched_patches, batched_channel_descs, batched_channel_mask, patch_mask)
+
+    def get_attention_stats(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                            attention_mask=None):
+        """Get attention statistics from cross-channel fusion (for debugging)."""
         with torch.no_grad():
-            all_patches = []
-            all_channel_descs = []
-            valid_samples = []
-
-            for i in range(batch_size):
-                # Trim to valid timesteps
-                if attention_mask is not None:
-                    valid_len = attention_mask[i].sum().item()
-                    sample_data = data[i, :valid_len]
-                else:
-                    sample_data = data[i]
-
-                patches, _ = self.encoder.preprocess(
-                    sample_data, sampling_rate_hz=sampling_rates[i], patch_size_sec=patch_sizes[i]
-                )
-                if patches is None or len(patches) == 0:
-                    all_patches.append(None)
-                    all_channel_descs.append(None)
-                    valid_samples.append(False)
-                    continue
-                if len(patches) > MAX_PATCHES_PER_SAMPLE:
-                    patches = patches[:MAX_PATCHES_PER_SAMPLE]
-                num_channels = data[i].shape[1]
-                channel_descs = channel_descriptions[i]
-                padded_descs = channel_descs + ["[PAD]"] * (num_channels - len(channel_descs))
-                all_patches.append(patches)
-                all_channel_descs.append(padded_descs)
-                valid_samples.append(True)
-
-            valid_indices = [i for i, v in enumerate(valid_samples) if v]
-            if len(valid_indices) == 0:
+            result = self._preprocess_raw_batch(
+                data, channel_descriptions, channel_mask, sampling_rates, patch_sizes, attention_mask
+            )
+            if result is None:
                 return {}
 
-            max_patches_valid = max(len(all_patches[i]) for i in valid_indices)
-            max_channels = data.shape[2]
-            num_valid = len(valid_indices)
-
-            batched_patches = torch.zeros(num_valid, max_patches_valid, TARGET_PATCH_SIZE, max_channels, device=device)
-            batched_channel_descs = []
-
-            for batch_idx, sample_idx in enumerate(valid_indices):
-                patches = all_patches[sample_idx]
-                num_patches = len(patches)
-                batched_patches[batch_idx, :num_patches] = patches
-                batched_channel_descs.append(all_channel_descs[sample_idx])
-
-            # Subset channel_mask to valid samples only
-            valid_indices_t = torch.tensor(valid_indices, device=device)
-            batched_channel_mask = channel_mask[valid_indices_t]
+            batched_patches, patch_mask, batched_channel_mask, batched_channel_descs, valid_indices = result
 
             encoded_batch = self.encoder(batched_patches, batched_channel_descs, channel_mask=batched_channel_mask)
 

@@ -212,8 +212,8 @@ def compute_closed_set_metrics(
             channel_descriptions = [m['channel_descriptions'] for m in metadata]
 
             with autocast('cuda', enabled=device.type == 'cuda'):
-                imu_emb = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                                attention_mask=attention_mask)
+                imu_emb = model.forward_from_raw(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                                                attention_mask=attention_mask)
 
             similarity = compute_similarity(imu_emb, label_embeddings)  # (batch, C)
             pred_indices = similarity.argmax(dim=1).cpu().numpy()
@@ -312,8 +312,8 @@ def compute_shared_activity_metrics(
             cd_filtered = [channel_descriptions[i] for i in keep_indices]
 
             with autocast('cuda', enabled=device.type == 'cuda'):
-                imu_emb = model(data_filtered, cd_filtered, channel_mask_filtered, sr_filtered, ps_filtered,
-                                attention_mask=attention_mask_filtered)
+                imu_emb = model.forward_from_raw(data_filtered, cd_filtered, channel_mask_filtered, sr_filtered, ps_filtered,
+                                                attention_mask=attention_mask_filtered)
 
             similarity = compute_similarity(imu_emb, label_embeddings)  # (batch, C)
             pred_indices = similarity.argmax(dim=1).cpu().numpy()
@@ -426,8 +426,8 @@ def compute_crosshar_metrics(
             cd_filtered = [channel_descriptions[i] for i in keep_indices]
 
             with autocast('cuda', enabled=device.type == 'cuda'):
-                imu_emb = model(data_filtered, cd_filtered, channel_mask_filtered, sr_filtered, ps_filtered,
-                                attention_mask=attention_mask_filtered)
+                imu_emb = model.forward_from_raw(data_filtered, cd_filtered, channel_mask_filtered, sr_filtered, ps_filtered,
+                                                attention_mask=attention_mask_filtered)
 
             similarity = compute_similarity(imu_emb, label_embeddings)  # (batch, C)
             pred_indices = similarity.argmax(dim=1).cpu().numpy()

@@ -359,8 +359,8 @@ def compute_metrics(
             # Get IMU embeddings (model already normalizes)
             # Use autocast to match training precision (fp16 on CUDA)
             with autocast('cuda', enabled=device.type == 'cuda'):
-                imu_emb = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                                attention_mask=attention_mask)
+                imu_emb = model.forward_from_raw(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                                                attention_mask=attention_mask)
 
             # Get text embeddings for this batch's labels
             text_emb = label_bank.encode(label_texts, normalize=True)
@@ -576,8 +576,8 @@ def compute_closed_set_metrics(
 
             # Get IMU embeddings
             with autocast('cuda', enabled=device.type == 'cuda'):
-                imu_emb = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                                attention_mask=attention_mask)
+                imu_emb = model.forward_from_raw(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
+                                                attention_mask=attention_mask)
 
             # Compute similarity only against dataset_labels (closed-set)
             similarity = compute_similarity(imu_emb, label_embeddings)  # (batch, C)

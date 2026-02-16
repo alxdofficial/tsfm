@@ -151,7 +151,7 @@ def explore_session(
     # Run inference (use autocast to match training precision)
     with torch.no_grad():
         with autocast('cuda', enabled=device.type == 'cuda'):
-            imu_emb = model(
+            imu_emb = model.forward_from_raw(
                 data,
                 [channel_descriptions],
                 channel_mask,

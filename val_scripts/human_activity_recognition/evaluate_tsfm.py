@@ -158,7 +158,7 @@ def extract_tsfm_embeddings(
 
         with torch.no_grad():
             with autocast('cuda', enabled=device.type == 'cuda'):
-                emb = model(
+                emb = model.forward_from_raw(
                     batch_data, channel_descs, channel_mask,
                     sampling_rates, patch_sizes,
                     attention_mask=attention_mask
