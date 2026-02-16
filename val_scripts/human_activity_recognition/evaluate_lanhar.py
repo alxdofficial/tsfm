@@ -15,7 +15,8 @@ LanHAR uses a CLIP-style approach:
 After training, 768-dim sensor embeddings are extracted for scoring.
 
 Two training stages:
-  Stage 1: Fine-tune SciBERT with supervised contrastive learning on text prototypes
+  Stage 1: Fine-tune SciBERT with CLIP + CE + triplet loss on text prototypes
+           (matching original LanHAR: CLIP_multipos + 0.3*CE + 0.5*triplet1 + 0.5*triplet2)
   Stage 2: Train sensor encoder with CLIP loss on sensor-text pairs
 
 Usage:
@@ -689,11 +690,14 @@ def clip_loss_multipos(z_a, z_b, labels, temperature=0.1, eps=1e-12):
 
 def train_stage1(model, tokenizer, text_protos, labels, device,
                  epochs=STAGE1_EPOCHS, lr=STAGE1_LR, batch_size=STAGE1_BATCH_SIZE):
-    """Fine-tune SciBERT with supervised contrastive + cross-entropy on text prototypes.
+    """Fine-tune SciBERT with supervised contrastive + cross-entropy + triplet on text prototypes.
 
     Matches original LanHAR Stage 1 losses:
       - Multi-positive CLIP loss on text embeddings
       - Cross-entropy with label prototypes (cls_scale=30.0, lam=0.3)
+      - Two triplet losses (margin=1.0, weight=0.5 each) on:
+        1. Wrapped description texts (anchor/positive-same-class/negative-diff-class)
+        2. Label-only texts (pushes different-class labels apart in embedding space)
     Label prototypes are recomputed each epoch using margin-based top-k selection.
     """
     print(f"\n  Stage 1: Fine-tuning SciBERT ({epochs} epochs, lr={lr})...")
@@ -710,11 +714,21 @@ def train_stage1(model, tokenizer, text_protos, labels, device,
     all_label_indices = torch.tensor(all_label_indices, dtype=torch.long)
     print(f"    Text entries: {len(all_texts)} across {len(labels)} classes")
 
+    # Build class-to-text-index mapping for triplet mining
+    class_to_text_indices = {}
+    for idx, label_idx in enumerate(all_label_indices.tolist()):
+        class_to_text_indices.setdefault(label_idx, []).append(idx)
+    all_classes = list(class_to_text_indices.keys())
+
+    # Label-only texts for triplet set 2 (matching original's s2/s4/s6 = label names)
+    label_texts = [label.replace("_", " ") for label in labels]
+
     optimizer = torch.optim.AdamW(model.bert.parameters(), lr=lr)
     model.train()
 
     cls_scale = 30.0
     lam = 0.3
+    triplet_loss_fn = nn.TripletMarginLoss(margin=1.0, p=2)
 
     for epoch in range(epochs):
         # Rebuild label prototypes each epoch (detached, no_grad)
@@ -748,14 +762,58 @@ def train_stage1(model, tokenizer, text_protos, labels, device,
             # Get prototypes for batch labels
             batch_protos = F.normalize(label_protos[batch_labels], dim=-1)
 
-            # Loss 1: Multi-positive CLIP loss
+            # Loss 1: Multi-positive CLIP loss + CE (same as before)
             loss_clip = clip_loss_multipos(text_emb, batch_protos, batch_labels, temperature=0.1)
-
-            # Loss 2: Cross-entropy with label prototypes (matching original LanHAR)
             logits_cls = (text_emb @ label_protos.T) * cls_scale
             loss_ce = F.cross_entropy(logits_cls, batch_labels)
+            loss1 = loss_clip + lam * loss_ce
 
-            loss = loss_clip + lam * loss_ce
+            # Triplet mining: for each sample, get positive (same class) and negative (diff class)
+            pos_wrapped_texts = []
+            neg_wrapped_texts = []
+            anchor_label_list = []
+            neg_label_list = []
+            for j in batch_idx:
+                j_int = j.item()
+                label_idx = all_label_indices[j_int].item()
+                # Positive: random wrapped text from same class
+                pos_j = random.choice(class_to_text_indices[label_idx])
+                pos_wrapped_texts.append(all_texts[pos_j])
+                # Negative: random wrapped text from different class
+                neg_label_idx = random.choice([c for c in all_classes if c != label_idx])
+                neg_j = random.choice(class_to_text_indices[neg_label_idx])
+                neg_wrapped_texts.append(all_texts[neg_j])
+                # Label-only texts for triplet set 2
+                anchor_label_list.append(label_texts[label_idx])
+                neg_label_list.append(label_texts[neg_label_idx])
+
+            # Triplet set 1: on wrapped description texts (matches original s1/s3/s5)
+            pos_enc = tokenizer(pos_wrapped_texts, padding=True, truncation=True,
+                                max_length=model.max_len, return_tensors="pt")
+            pos_emb = F.normalize(model.encode_text(
+                pos_enc["input_ids"].to(device), pos_enc["attention_mask"].to(device)), dim=-1)
+            neg_enc = tokenizer(neg_wrapped_texts, padding=True, truncation=True,
+                                max_length=model.max_len, return_tensors="pt")
+            neg_emb = F.normalize(model.encode_text(
+                neg_enc["input_ids"].to(device), neg_enc["attention_mask"].to(device)), dim=-1)
+            loss2 = 0.5 * triplet_loss_fn(text_emb, pos_emb, neg_emb)
+
+            # Triplet set 2: on label-only texts (matches original s2/s4/s6)
+            # Positive labels = same class label = identical to anchor label
+            anchor_label_enc = tokenizer(anchor_label_list, padding=True, truncation=True,
+                                         max_length=model.max_len, return_tensors="pt")
+            anchor_label_emb = F.normalize(model.encode_text(
+                anchor_label_enc["input_ids"].to(device),
+                anchor_label_enc["attention_mask"].to(device)), dim=-1)
+            neg_label_enc = tokenizer(neg_label_list, padding=True, truncation=True,
+                                      max_length=model.max_len, return_tensors="pt")
+            neg_label_emb = F.normalize(model.encode_text(
+                neg_label_enc["input_ids"].to(device),
+                neg_label_enc["attention_mask"].to(device)), dim=-1)
+            # positive = anchor (same class label), matching original behavior
+            loss3 = 0.5 * triplet_loss_fn(anchor_label_emb, anchor_label_emb.detach(), neg_label_emb)
+
+            loss = loss1 + loss2 + loss3
 
             optimizer.zero_grad()
             loss.backward()
@@ -861,6 +919,9 @@ def train_stage2(model, tokenizer, train_data, train_labels, text_protos, label_
         collate_fn=collate_fn, num_workers=0, drop_last=False,
     )
 
+    # Note: Original LanHAR selects best model by retrieval accuracy (sensor_vec @
+    # label_emb_norm.T → argmax). We use val loss as a proxy — both are monotonically
+    # related in contrastive learning, and this avoids rebuilding the label bank each epoch.
     best_val_loss = float('inf')
     best_state = None
 

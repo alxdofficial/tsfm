@@ -8,7 +8,9 @@ and evaluates with the same 3-metric framework as LiMU-BERT:
   3. 1% supervised (train on 1% of test data)
 
 MOMENT processes each channel independently and outputs a fixed-size
-embedding vector per window. We use a linear classifier on these embeddings.
+embedding vector per window. Following the MOMENT paper (Goswami et al.,
+ICML 2024), we use an SVM classifier with RBF kernel and GridSearchCV
+over C values for downstream evaluation.
 
 Usage:
     python val_scripts/human_activity_recognition/evaluate_moment.py
@@ -18,14 +20,11 @@ import json
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
-import copy
-
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import f1_score, accuracy_score
+from sklearn.svm import SVC
+from sklearn.model_selection import GridSearchCV, train_test_split
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -54,10 +53,9 @@ DATA_SEQ_LEN = 120         # Our data window length
 DATA_CHANNELS = 6          # 6-channel IMU
 MOMENT_BATCH_SIZE = 64     # Batch size for embedding extraction
 
-# Classifier hyperparameters
-CLASSIFIER_EPOCHS = 100
-CLASSIFIER_BATCH_SIZE = 128
-CLASSIFIER_LR = 1e-3
+# SVM hyperparameters (matching MOMENT paper's fit_svm protocol)
+SVM_C_VALUES = [0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000]
+SVM_MAX_SAMPLES = 10000  # Subsample if training set exceeds this
 CLASSIFIER_SEED = 3431
 
 # Data split parameters
@@ -77,19 +75,8 @@ TEST_DATASETS = DATASET_CONFIG["zero_shot_datasets"]
 
 
 # =============================================================================
-# Linear Classifier
+# SVM Classifier (matching MOMENT paper's evaluation protocol)
 # =============================================================================
-
-class LinearClassifier(nn.Module):
-    """Simple linear classifier for fixed-size embeddings."""
-    def __init__(self, input_dim: int, num_classes: int):
-        super().__init__()
-        self.linear = nn.Linear(input_dim, num_classes)
-
-    def forward(self, x, training=False):
-        if training:
-            x = F.dropout(x, p=0.3, training=True)
-        return self.linear(x)
 
 
 # =============================================================================
@@ -249,92 +236,57 @@ def prepare_train_test_split(data, labels, training_rate=0.8, vali_rate=0.1,
 
 
 # =============================================================================
-# Classifier Training
+# SVM Classifier Training (matching MOMENT paper: fit_svm with RBF kernel)
 # =============================================================================
 
-def train_linear_classifier(
-    train_data, train_labels, val_data, val_labels,
-    num_classes, input_dim=MOMENT_EMB_DIM,
-    epochs=CLASSIFIER_EPOCHS, batch_size=CLASSIFIER_BATCH_SIZE,
-    lr=CLASSIFIER_LR, device=None, verbose=False,
-):
-    """Train a linear classifier on embeddings."""
-    if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def train_svm_classifier(train_data, train_labels, verbose=False):
+    """Train SVM-RBF classifier matching MOMENT paper's evaluation protocol.
 
-    model = LinearClassifier(input_dim=input_dim, num_classes=num_classes).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
+    Uses GridSearchCV with 5-fold CV over C values, matching
+    momentfm.models.statistical_classifiers.fit_svm().
+    """
+    nb_classes = len(np.unique(train_labels))
+    train_size = len(train_data)
 
-    train_ds = TensorDataset(
-        torch.from_numpy(train_data).float(),
-        torch.from_numpy(train_labels).long()
+    svm = SVC(C=100000, gamma="scale")
+
+    # Small dataset fallback (matches MOMENT paper)
+    if train_size // max(nb_classes, 1) < 5 or train_size < 50:
+        if verbose:
+            print(f"    Training SVM-RBF (small dataset, n={train_size}, no CV)...")
+        return svm.fit(train_data, train_labels)
+
+    if verbose:
+        print(f"    Training SVM-RBF with GridSearchCV (n={train_size}, "
+              f"{nb_classes} classes, 5-fold CV)...")
+
+    grid_search = GridSearchCV(
+        svm,
+        {"C": SVM_C_VALUES, "kernel": ["rbf"], "gamma": ["scale"]},
+        cv=5, n_jobs=-1,
     )
-    val_ds = TensorDataset(
-        torch.from_numpy(val_data).float(),
-        torch.from_numpy(val_labels).long()
-    )
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
-    best_val_acc = 0.0
-    best_state = None
+    # Subsample if too large (matches MOMENT paper)
+    if train_size > SVM_MAX_SAMPLES:
+        if verbose:
+            print(f"    Subsampling {SVM_MAX_SAMPLES}/{train_size} for GridSearchCV...")
+        # Use stratify if possible; fall back to non-stratified if any class has < 2 samples
+        _, class_counts = np.unique(train_labels, return_counts=True)
+        stratify = train_labels if class_counts.min() >= 2 else None
+        train_data, _, train_labels, _ = train_test_split(
+            train_data, train_labels, train_size=SVM_MAX_SAMPLES,
+            random_state=0, stratify=stratify
+        )
 
-    for epoch in range(epochs):
-        model.train()
-        for batch_data, batch_labels in train_loader:
-            batch_data = batch_data.to(device)
-            batch_labels = batch_labels.to(device)
-            optimizer.zero_grad()
-            logits = model(batch_data, training=True)
-            loss = criterion(logits, batch_labels)
-            loss.backward()
-            optimizer.step()
-
-        model.eval()
-        val_preds = []
-        val_gt = []
-        with torch.no_grad():
-            for batch_data, batch_labels in val_loader:
-                batch_data = batch_data.to(device)
-                logits = model(batch_data, training=False)
-                preds = logits.argmax(dim=1).cpu().numpy()
-                val_preds.extend(preds)
-                val_gt.extend(batch_labels.numpy())
-
-        val_acc = accuracy_score(val_gt, val_preds)
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            best_state = copy.deepcopy(model.state_dict())
-
-        if verbose and (epoch + 1) % 20 == 0:
-            val_f1 = f1_score(val_gt, val_preds, average='macro', zero_division=0)
-            print(f"    Epoch {epoch+1}/{epochs}: val_acc={val_acc:.3f}, val_f1={val_f1:.3f}")
-
-    if best_state is not None:
-        model.load_state_dict(best_state)
-    model.eval()
-    return model
+    grid_search.fit(train_data, train_labels)
+    if verbose:
+        print(f"    Best C={grid_search.best_params_['C']}")
+    return grid_search.best_estimator_
 
 
-def predict_classifier(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=None):
-    """Get predictions from a trained classifier."""
-    if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    model.eval()
-    ds = TensorDataset(torch.from_numpy(data).float())
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
-
-    all_preds = []
-    with torch.no_grad():
-        for (batch_data,) in loader:
-            batch_data = batch_data.to(device)
-            logits = model(batch_data, training=False)
-            preds = logits.argmax(dim=1).cpu().numpy()
-            all_preds.extend(preds)
-
-    return np.array(all_preds)
+def predict_svm(model, data):
+    """Get predictions from a fitted SVM."""
+    return model.predict(data)
 
 
 # =============================================================================
@@ -385,19 +337,9 @@ def evaluate_open_set(
     all_train_data = all_train_data[idx]
     all_train_labels = all_train_labels[idx]
 
-    val_n = int(len(all_train_data) * 0.1)
-    train_data = all_train_data[val_n:]
-    train_labels_arr = all_train_labels[val_n:]
-    val_data = all_train_data[:val_n]
-    val_labels_arr = all_train_labels[:val_n]
-
-    print(f"  [Open-set] Training linear classifier ({num_global_classes} classes)...")
-    model = train_linear_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_global_classes, device=device, verbose=True
-    )
-
-    pred_global_indices = predict_classifier(model, test_embeddings, device=device)
+    print(f"  [Open-set] Training SVM-RBF classifier ({num_global_classes} classes)...")
+    model = train_svm_classifier(all_train_data, all_train_labels, verbose=True)
+    pred_global_indices = predict_svm(model, test_embeddings)
 
     # Map through synonym groups
     pred_groups = []
@@ -424,7 +366,7 @@ def evaluate_open_set(
     f1 = f1_score(gt_groups, pred_groups, average='macro', zero_division=0) * 100
 
     return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_groups),
-            'n_train_samples': len(train_data), 'n_classes_train': num_global_classes}
+            'n_train_samples': len(all_train_data), 'n_classes_train': num_global_classes}
 
 
 def evaluate_closed_set(
@@ -486,19 +428,9 @@ def evaluate_closed_set(
     all_train_data = all_train_data[idx]
     all_train_labels = all_train_labels[idx]
 
-    val_n = int(len(all_train_data) * 0.1)
-    train_data = all_train_data[val_n:]
-    train_labels_arr = all_train_labels[val_n:]
-    val_data = all_train_data[:val_n]
-    val_labels_arr = all_train_labels[:val_n]
-
-    print(f"  [Closed-set] Training linear classifier ({num_test_classes} classes)...")
-    model = train_linear_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_test_classes, device=device, verbose=True
-    )
-
-    pred_indices = predict_classifier(model, test_embeddings, device=device)
+    print(f"  [Closed-set] Training SVM-RBF classifier ({num_test_classes} classes)...")
+    model = train_svm_classifier(all_train_data, all_train_labels, verbose=True)
+    pred_indices = predict_svm(model, test_embeddings)
 
     gt_names = []
     pred_names = []
@@ -518,7 +450,7 @@ def evaluate_closed_set(
     f1 = f1_score(gt_names, pred_names, average='macro', zero_division=0) * 100
 
     return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_names),
-            'n_train_samples': len(train_data), 'n_classes': num_test_classes,
+            'n_train_samples': len(all_train_data), 'n_classes': num_test_classes,
             'covered_classes': covered_classes}
 
 
@@ -549,13 +481,12 @@ def evaluate_1pct_supervised(
     if len(train_data) == 0:
         return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0, 'n_classes': num_test_classes}
 
-    print(f"  [1% supervised] Training linear classifier ({num_test_classes} classes)...")
-    model = train_linear_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_test_classes, device=device, verbose=True
-    )
-
-    pred_indices = predict_classifier(model, eval_data, device=device)
+    # Combine train+val for SVM (GridSearchCV does internal CV)
+    svm_train = np.concatenate([train_data, val_data], axis=0)
+    svm_labels = np.concatenate([train_labels_arr, val_labels_arr], axis=0)
+    print(f"  [1% supervised] Training SVM-RBF classifier ({num_test_classes} classes)...")
+    model = train_svm_classifier(svm_train, svm_labels, verbose=True)
+    pred_indices = predict_svm(model, eval_data)
 
     gt_names = []
     pred_names = []
@@ -615,10 +546,10 @@ def print_results_table(all_results):
     print()
     print("Details:")
     print(f"  Model: {MOMENT_MODEL_NAME}")
-    print(f"  Open-set: Linear classifier on ALL {len(GLOBAL_LABELS)} training labels. Group-based matching.")
-    print(f"  Closed-set: Linear classifier on training data matching test labels. Exact match.")
-    print(f"  1% supervised: Linear classifier on 1% of test data. Exact match.")
-    print(f"  Classifier: Linear, {CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
+    print(f"  Open-set: SVM-RBF on ALL {len(GLOBAL_LABELS)} training labels. Group-based matching.")
+    print(f"  Closed-set: SVM-RBF on training data matching test labels. Exact match.")
+    print(f"  1% supervised: SVM-RBF on 1% of test data. Exact match.")
+    print(f"  Classifier: SVM-RBF with GridSearchCV (C={SVM_C_VALUES})")
 
 
 def main():

@@ -1,9 +1,9 @@
 """
 CrossHAR baseline scoring.
 
-Loads the pretrained CrossHAR masked model, extracts embeddings via
-mean-pooling over the sequence dimension, then runs the 3-metric
-framework:
+Loads the pretrained CrossHAR masked model, extracts sequence embeddings,
+then trains a Transformer_ft classifier (matching the original CrossHAR
+evaluation protocol) for the 3-metric framework:
   1. Zero-shot open-set (all 87 training labels, group-based matching)
   2. Closed-set (test dataset labels only, exact match)
   3. 1% supervised (train on 1% of test data)
@@ -55,7 +55,7 @@ HIDDEN_FF = 144
 N_LAYERS = 1
 N_HEADS = 4
 SEQ_LEN = 120
-EMB_DIM = 72  # output embedding dimension after mean-pool
+EMB_DIM = 72  # CrossHAR hidden dimension (input to Transformer_ft classifier)
 
 # Scoring hyperparameters
 CLASSIFIER_EPOCHS = 100
@@ -228,18 +228,62 @@ class MaskedModel4Pretrain(nn.Module):
 
 
 # =============================================================================
-# Linear Classifier
+# Transformer Classifier (matching original CrossHAR's Transformer_ft)
+# Config: input_size=72, hidden_size=100, num_layers=1, num_heads=4,
+#         dim_feedforward=2048, dropout=0.1
 # =============================================================================
 
-class LinearClassifier(nn.Module):
+class ClassifierPositionalEncoding(nn.Module):
+    """Sinusoidal positional encoding matching CrossHAR's PositionalEncoding."""
+    def __init__(self, hidden_size, max_seq_len=120):
+        super().__init__()
+        position = torch.arange(0, max_seq_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, hidden_size, 2).float() * (-math.log(10000.0) / hidden_size)
+        )
+        pos_enc = torch.zeros(1, max_seq_len, hidden_size)
+        pos_enc[0, :, 0::2] = torch.sin(position * div_term)
+        pos_enc[0, :, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pos_enc', pos_enc)
+
+    def forward(self, x):
+        return x + self.pos_enc[:, :x.size(1)]
+
+
+FT_HIDDEN_SIZE = 100
+FT_NUM_HEADS = 4
+FT_DIM_FEEDFORWARD = 2048
+FT_NUM_LAYERS = 1
+FT_DROPOUT = 0.1
+
+
+class TransformerClassifier(nn.Module):
+    """Matching CrossHAR's Transformer_ft classifier.
+
+    Architecture: Linear(72→100) → PosEnc → TransformerEncoder(1 layer, 4 heads,
+    ff=2048) → MeanPool → Linear(100→num_classes)
+
+    Note: Original Transformer_ft defines nn.Dropout but never applies it in
+    forward(). We match this exactly — dropout only applies inside the
+    TransformerEncoderLayer (PyTorch default 0.1).
+    """
     def __init__(self, input_dim: int, num_classes: int):
         super().__init__()
-        self.linear = nn.Linear(input_dim, num_classes)
+        self.embedding = nn.Linear(input_dim, FT_HIDDEN_SIZE)
+        self.positional_encoding = ClassifierPositionalEncoding(FT_HIDDEN_SIZE)
+        encoder_layer = nn.TransformerEncoderLayer(
+            FT_HIDDEN_SIZE, FT_NUM_HEADS,
+            dim_feedforward=FT_DIM_FEEDFORWARD, batch_first=True,
+        )
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, FT_NUM_LAYERS)
+        self.fc = nn.Linear(FT_HIDDEN_SIZE, num_classes)
 
-    def forward(self, x, training=False):
-        if training:
-            x = F.dropout(x, p=0.3, training=True)
-        return self.linear(x)
+    def forward(self, x):
+        x = self.embedding(x)
+        x = self.positional_encoding(x)
+        x = self.transformer_encoder(x)
+        x = torch.mean(x, dim=1)
+        return self.fc(x)
 
 
 # =============================================================================
@@ -282,7 +326,10 @@ def extract_crosshar_embeddings(
     model, raw_data: np.ndarray, device: torch.device,
     batch_size: int = EMBED_BATCH_SIZE,
 ) -> np.ndarray:
-    """Extract CrossHAR embeddings with mean pooling.
+    """Extract CrossHAR sequence embeddings (no pooling).
+
+    Returns full sequence embeddings for downstream Transformer_ft classifier,
+    matching the original CrossHAR evaluation protocol.
 
     Args:
         model: Loaded CrossHAR model (output_embed=True)
@@ -291,7 +338,7 @@ def extract_crosshar_embeddings(
         batch_size: batch size for inference
 
     Returns:
-        embeddings: (N, 72) mean-pooled embeddings
+        embeddings: (N, 120, 72) full sequence embeddings
     """
     # Apply InstanceNorm (same as CrossHAR's IMUDataset)
     normed_data = apply_instance_norm(raw_data)
@@ -306,9 +353,7 @@ def extract_crosshar_embeddings(
         with torch.no_grad():
             # output shape: (batch, 120, 72)
             h = model(batch)
-            # Mean pool over sequence dim -> (batch, 72)
-            emb = h.mean(dim=1)
-            all_embeddings.append(emb.cpu().numpy())
+            all_embeddings.append(h.cpu().numpy())
 
     return np.concatenate(all_embeddings, axis=0)
 
@@ -390,16 +435,24 @@ def prepare_train_test_split(data, labels, training_rate=0.8, vali_rate=0.1,
 # Classifier Training
 # =============================================================================
 
-def train_linear_classifier(
+def train_transformer_classifier(
     train_data, train_labels, val_data, val_labels,
     num_classes, input_dim=EMB_DIM,
     epochs=CLASSIFIER_EPOCHS, batch_size=CLASSIFIER_BATCH_SIZE,
     lr=CLASSIFIER_LR, device=None, verbose=False,
 ):
+    """Train Transformer_ft classifier matching original CrossHAR protocol.
+
+    Args:
+        train_data: (N, 120, 72) sequence embeddings
+        train_labels: (N,) integer labels
+        val_data: (M, 120, 72) validation sequence embeddings
+        val_labels: (M,) validation labels
+    """
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = LinearClassifier(input_dim=input_dim, num_classes=num_classes).to(device)
+    model = TransformerClassifier(input_dim=input_dim, num_classes=num_classes).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
 
@@ -414,7 +467,7 @@ def train_linear_classifier(
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
-    best_val_acc = 0.0
+    best_val_loss = float('inf')
     best_state = None
 
     for epoch in range(epochs):
@@ -423,30 +476,36 @@ def train_linear_classifier(
             batch_data = batch_data.to(device)
             batch_labels = batch_labels.to(device)
             optimizer.zero_grad()
-            logits = model(batch_data, training=True)
+            logits = model(batch_data)
             loss = criterion(logits, batch_labels)
             loss.backward()
             optimizer.step()
 
+        # Validation by loss (matching original CrossHAR's FinetuneTrainer)
         model.train(False)
+        val_loss = 0.0
         val_preds = []
         val_gt = []
         with torch.no_grad():
             for batch_data, batch_labels in val_loader:
                 batch_data = batch_data.to(device)
-                logits = model(batch_data, training=False)
+                batch_labels = batch_labels.to(device)
+                logits = model(batch_data)
+                val_loss += criterion(logits, batch_labels).item()
                 preds = logits.argmax(dim=1).cpu().numpy()
                 val_preds.extend(preds)
-                val_gt.extend(batch_labels.numpy())
+                val_gt.extend(batch_labels.cpu().numpy())
 
-        val_acc = accuracy_score(val_gt, val_preds)
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
+        val_loss /= max(len(val_loader), 1)
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
             best_state = copy.deepcopy(model.state_dict())
 
         if verbose and (epoch + 1) % 20 == 0:
+            val_acc = accuracy_score(val_gt, val_preds)
             val_f1 = f1_score(val_gt, val_preds, average='macro', zero_division=0)
-            print(f"    Epoch {epoch+1}/{epochs}: val_acc={val_acc:.3f}, val_f1={val_f1:.3f}")
+            print(f"    Epoch {epoch+1}/{epochs}: val_loss={val_loss:.4f}, "
+                  f"val_acc={val_acc:.3f}, val_f1={val_f1:.3f}")
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -454,7 +513,12 @@ def train_linear_classifier(
     return model
 
 
-def predict_classifier(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=None):
+def predict_transformer_classifier(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=None):
+    """Get predictions from a trained TransformerClassifier.
+
+    Args:
+        data: (N, 120, 72) sequence embeddings
+    """
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -466,7 +530,7 @@ def predict_classifier(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=Non
     with torch.no_grad():
         for (batch_data,) in loader:
             batch_data = batch_data.to(device)
-            logits = model(batch_data, training=False)
+            logits = model(batch_data)
             preds = logits.argmax(dim=1).cpu().numpy()
             all_preds.extend(preds)
 
@@ -526,13 +590,13 @@ def score_open_set(
     val_data = all_train_data[:val_n]
     val_labels_arr = all_train_labels[:val_n]
 
-    print(f"  [Open-set] Training linear classifier ({num_global_classes} classes)...")
-    model = train_linear_classifier(
+    print(f"  [Open-set] Training Transformer_ft classifier ({num_global_classes} classes)...")
+    model = train_transformer_classifier(
         train_data, train_labels_arr, val_data, val_labels_arr,
         num_classes=num_global_classes, device=device, verbose=True
     )
 
-    pred_global_indices = predict_classifier(model, test_embeddings, device=device)
+    pred_global_indices = predict_transformer_classifier(model, test_embeddings, device=device)
 
     pred_groups = []
     gt_groups = []
@@ -626,13 +690,13 @@ def score_closed_set(
     val_data = all_train_data[:val_n]
     val_labels_arr = all_train_labels[:val_n]
 
-    print(f"  [Closed-set] Training linear classifier ({num_test_classes} classes)...")
-    model = train_linear_classifier(
+    print(f"  [Closed-set] Training Transformer_ft classifier ({num_test_classes} classes)...")
+    model = train_transformer_classifier(
         train_data, train_labels_arr, val_data, val_labels_arr,
         num_classes=num_test_classes, device=device, verbose=True
     )
 
-    pred_indices = predict_classifier(model, test_embeddings, device=device)
+    pred_indices = predict_transformer_classifier(model, test_embeddings, device=device)
 
     gt_names = []
     pred_names = []
@@ -683,13 +747,13 @@ def score_1pct_supervised(
     if len(train_data) == 0:
         return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0, 'n_classes': num_test_classes}
 
-    print(f"  [1% supervised] Training linear classifier ({num_test_classes} classes)...")
-    model = train_linear_classifier(
+    print(f"  [1% supervised] Training Transformer_ft classifier ({num_test_classes} classes)...")
+    model = train_transformer_classifier(
         train_data, train_labels_arr, val_data, val_labels_arr,
         num_classes=num_test_classes, device=device, verbose=True
     )
 
-    pred_indices = predict_classifier(model, test_data, device=device)
+    pred_indices = predict_transformer_classifier(model, test_data, device=device)
 
     gt_names = []
     pred_names = []
@@ -749,9 +813,10 @@ def print_results_table(all_results):
     print("Details:")
     print(f"  Model: CrossHAR (Masked Transformer + Contrastive)")
     print(f"  Hidden dim: {HIDDEN}, Layers: {N_LAYERS}, Heads: {N_HEADS}")
-    print(f"  Embedding dim: {EMB_DIM} (mean-pooled)")
+    print(f"  Embedding dim: {EMB_DIM} (full sequence, 120 timesteps)")
     print(f"  Checkpoint: {CROSSHAR_CHECKPOINT.relative_to(PROJECT_ROOT)}")
-    print(f"  Classifier: Linear, {CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
+    print(f"  Classifier: Transformer_ft (hidden={FT_HIDDEN_SIZE}, heads={FT_NUM_HEADS}, "
+          f"ff={FT_DIM_FEEDFORWARD}), {CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
 
 
 def main():

@@ -19,7 +19,7 @@ Usage:
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 import copy
 
 import numpy as np
@@ -34,9 +34,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from datasets.imu_pretraining_dataset.label_groups import (
-    LABEL_GROUPS,
     get_label_to_group_mapping,
-    get_group_for_label,
 )
 
 # =============================================================================
@@ -55,8 +53,8 @@ LIMUBERT_DATASET_DIR = LIMUBERT_DIR / "dataset"
 LIMUBERT_PRETRAIN_NAME = "pretrained_combined"
 LIMUBERT_VERSION = "20_120"
 
-# Training hyperparameters (match LiMU-BERT)
-CLASSIFIER_EPOCHS = 100
+# Training hyperparameters (match LiMU-BERT config/train.json)
+CLASSIFIER_EPOCHS = 700  # Original: 700 (train.json), also has 100 (train_100ep.json)
 CLASSIFIER_BATCH_SIZE = 128
 CLASSIFIER_LR = 1e-3
 CLASSIFIER_SEED = 3431
