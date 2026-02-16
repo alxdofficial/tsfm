@@ -67,7 +67,7 @@ SEQ_LEN = 120      # Full window length
 # Data split parameters
 TRAINING_RATE = 0.8   # For open-set/closed-set: fraction used as training pool
 VALI_RATE = 0.1       # Validation fraction
-SUPERVISED_LABEL_RATE = 0.01  # 1% supervised
+SUPERVISED_LABEL_RATE = 0.01  # 1% of training portion (=0.8% of total data after 80/10/10 split)
 
 # Load configs
 with open(DATASET_CONFIG_PATH) as f:
@@ -612,13 +612,11 @@ def evaluate_closed_set(
     """
     label_to_group = get_label_to_group_mapping()
     test_activities = get_dataset_labels(test_dataset)
-    test_label_groups = {label_to_group.get(a, a) for a in test_activities}
-
-    # Map test activities to their group, and build group-to-test-label mapping
-    group_to_test_label = {}
+    # Build group -> target labels map (some groups may have multiple target labels).
+    group_to_test_labels = {}
     for act in test_activities:
         group = label_to_group.get(act, act)
-        group_to_test_label[group] = act
+        group_to_test_labels.setdefault(group, []).append(act)
 
     test_label_to_idx = {a: i for i, a in enumerate(test_activities)}
     num_test_classes = len(test_activities)
@@ -642,14 +640,20 @@ def evaluate_closed_set(
             if local_idx < len(ds_activities):
                 activity_name = ds_activities[local_idx]
                 group = label_to_group.get(activity_name, activity_name)
+                mapped_test_label = None
+                # Prefer exact label match to avoid collapsing distinct target labels.
+                if activity_name in test_label_to_idx:
+                    mapped_test_label = activity_name
+                else:
+                    # Fall back to group match only when unambiguous.
+                    candidates = group_to_test_labels.get(group, [])
+                    if len(candidates) == 1:
+                        mapped_test_label = candidates[0]
 
-                if group in test_label_groups:
-                    # Map to the test dataset's label for this group
-                    test_label = group_to_test_label.get(group)
-                    if test_label is not None:
-                        test_idx = test_label_to_idx[test_label]
-                        all_train_data.append(data[i])
-                        all_train_labels.append(test_idx)
+                if mapped_test_label is not None:
+                    test_idx = test_label_to_idx[mapped_test_label]
+                    all_train_data.append(data[i])
+                    all_train_labels.append(test_idx)
 
     all_train_data = np.array(all_train_data)
     all_train_labels = np.array(all_train_labels, dtype=np.int64)
@@ -705,7 +709,13 @@ def evaluate_closed_set(
             pred_names.append("unknown")
 
     acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(gt_names, pred_names, average='macro', zero_division=0) * 100
+    f1 = f1_score(
+        gt_names,
+        pred_names,
+        labels=test_activities,
+        average='macro',
+        zero_division=0,
+    ) * 100
 
     return {
         'accuracy': acc,
@@ -779,7 +789,13 @@ def evaluate_1pct_supervised(
             pred_names.append("unknown")
 
     acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(gt_names, pred_names, average='macro', zero_division=0) * 100
+    f1 = f1_score(
+        gt_names,
+        pred_names,
+        labels=test_activities,
+        average='macro',
+        zero_division=0,
+    ) * 100
 
     return {
         'accuracy': acc,
@@ -903,12 +919,10 @@ def evaluate_closed_set_linear(
     """Metric 2: Closed-set with linear probe on mean-pooled embeddings."""
     label_to_group = get_label_to_group_mapping()
     test_activities = get_dataset_labels(test_dataset)
-    test_label_groups = {label_to_group.get(a, a) for a in test_activities}
-
-    group_to_test_label = {}
+    group_to_test_labels = {}
     for act in test_activities:
         group = label_to_group.get(act, act)
-        group_to_test_label[group] = act
+        group_to_test_labels.setdefault(group, []).append(act)
 
     test_label_to_idx = {a: i for i, a in enumerate(test_activities)}
     num_test_classes = len(test_activities)
@@ -932,13 +946,18 @@ def evaluate_closed_set_linear(
             if local_idx < len(ds_activities):
                 activity_name = ds_activities[local_idx]
                 group = label_to_group.get(activity_name, activity_name)
+                mapped_test_label = None
+                if activity_name in test_label_to_idx:
+                    mapped_test_label = activity_name
+                else:
+                    candidates = group_to_test_labels.get(group, [])
+                    if len(candidates) == 1:
+                        mapped_test_label = candidates[0]
 
-                if group in test_label_groups:
-                    test_label = group_to_test_label.get(group)
-                    if test_label is not None:
-                        test_idx = test_label_to_idx[test_label]
-                        all_train_data.append(pooled[i])
-                        all_train_labels.append(test_idx)
+                if mapped_test_label is not None:
+                    test_idx = test_label_to_idx[mapped_test_label]
+                    all_train_data.append(pooled[i])
+                    all_train_labels.append(test_idx)
 
     all_train_data = np.array(all_train_data)
     all_train_labels = np.array(all_train_labels, dtype=np.int64)
@@ -990,7 +1009,13 @@ def evaluate_closed_set_linear(
             pred_names.append("unknown")
 
     acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(gt_names, pred_names, average='macro', zero_division=0) * 100
+    f1 = f1_score(
+        gt_names,
+        pred_names,
+        labels=test_activities,
+        average='macro',
+        zero_division=0,
+    ) * 100
 
     return {
         'accuracy': acc,
@@ -1058,7 +1083,13 @@ def evaluate_1pct_supervised_linear(
             pred_names.append("unknown")
 
     acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(gt_names, pred_names, average='macro', zero_division=0) * 100
+    f1 = f1_score(
+        gt_names,
+        pred_names,
+        labels=test_activities,
+        average='macro',
+        zero_division=0,
+    ) * 100
 
     return {
         'accuracy': acc,

@@ -299,6 +299,30 @@ Zero-shot evaluation uses `max_retrieval_pool=100` labels for the combined inven
 
 ---
 
+## 13. METRIC PROTOCOL HARDENING (2026-02-16)
+
+The baseline evaluation code was updated to make comparisons more meaningful and reproducible:
+
+1. **Strict 1% supervision budget (MOMENT path):**
+   - `evaluate_moment.py` now trains the downstream SVM on the 1% labeled train subset only.
+   - Validation data is no longer concatenated into the supervised training pool.
+
+2. **Ambiguity-safe closed-set label mapping:**
+   - Closed-set training label transfer now prioritizes exact label matches.
+   - Group-based mapping is only applied when a source group maps to exactly one target label.
+   - This avoids collapsing distinct target labels into one class (e.g., multiple fall types).
+
+3. **Stable macro-F1 computation:**
+   - Closed-set and 1% supervised macro-F1 now use explicit class lists (`labels=[...]` in sklearn).
+   - Absent classes are handled consistently with `zero_division=0`.
+
+4. **Benchmark loader protocol tightened:**
+   - `benchmark_baselines.py` now evaluates on full dataset scope in benchmark mode
+     (`split_ratios=(0,0,1)`), without default session truncation.
+   - This removes random 70/15/15 slicing effects from benchmark comparisons.
+
+---
+
 ## SUMMARY CHECKLIST
 
 - [ ] Update Table 1: Add 5 new training datasets + 2 new zero-shot datasets

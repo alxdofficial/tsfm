@@ -83,7 +83,7 @@ CLASSIFIER_SEED = 3431
 # Data split parameters
 TRAINING_RATE = 0.8
 VALI_RATE = 0.1
-SUPERVISED_LABEL_RATE = 0.01
+SUPERVISED_LABEL_RATE = 0.01  # 1% of training portion (=0.8% of total data after 80/10/10 split)
 
 # Load configs
 with open(DATASET_CONFIG_PATH) as f:
@@ -440,12 +440,10 @@ def evaluate_closed_set(
     """Metric 2: Closed-set evaluation."""
     label_to_group = get_label_to_group_mapping()
     test_activities = get_dataset_labels(test_dataset)
-    test_label_groups = {label_to_group.get(a, a) for a in test_activities}
-
-    group_to_test_label = {}
+    group_to_test_labels = {}
     for act in test_activities:
         group = label_to_group.get(act, act)
-        group_to_test_label[group] = act
+        group_to_test_labels.setdefault(group, []).append(act)
 
     test_label_to_idx = {a: i for i, a in enumerate(test_activities)}
     num_test_classes = len(test_activities)
@@ -466,12 +464,18 @@ def evaluate_closed_set(
             if local_idx < len(ds_activities):
                 activity_name = ds_activities[local_idx]
                 group = label_to_group.get(activity_name, activity_name)
-                if group in test_label_groups:
-                    test_label = group_to_test_label.get(group)
-                    if test_label is not None:
-                        test_idx = test_label_to_idx[test_label]
-                        all_train_data.append(emb[i])
-                        all_train_labels.append(test_idx)
+                mapped_test_label = None
+                if activity_name in test_label_to_idx:
+                    mapped_test_label = activity_name
+                else:
+                    candidates = group_to_test_labels.get(group, [])
+                    if len(candidates) == 1:
+                        mapped_test_label = candidates[0]
+
+                if mapped_test_label is not None:
+                    test_idx = test_label_to_idx[mapped_test_label]
+                    all_train_data.append(emb[i])
+                    all_train_labels.append(test_idx)
 
     all_train_data = np.array(all_train_data)
     all_train_labels = np.array(all_train_labels, dtype=np.int64)
@@ -518,7 +522,13 @@ def evaluate_closed_set(
             pred_names.append("unknown")
 
     acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(gt_names, pred_names, average='macro', zero_division=0) * 100
+    f1 = f1_score(
+        gt_names,
+        pred_names,
+        labels=test_activities,
+        average='macro',
+        zero_division=0,
+    ) * 100
 
     return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_names),
             'n_train_samples': len(train_data), 'n_classes': num_test_classes,
@@ -575,7 +585,13 @@ def evaluate_1pct_supervised(
             pred_names.append("unknown")
 
     acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(gt_names, pred_names, average='macro', zero_division=0) * 100
+    f1 = f1_score(
+        gt_names,
+        pred_names,
+        labels=test_activities,
+        average='macro',
+        zero_division=0,
+    ) * 100
 
     return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_names),
             'n_train_samples': len(train_data), 'n_classes': num_test_classes}

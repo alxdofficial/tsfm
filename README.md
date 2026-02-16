@@ -139,6 +139,15 @@ tsfm/
     └── test_data_loading.py              # Dataset & collation
 ```
 
+### Baseline Metric Protocol (Updated 2026-02-16)
+
+The baseline evaluation scripts under `val_scripts/human_activity_recognition/` now use:
+
+- Fixed-class macro F1 for closed-set metrics (class list is explicit, even when some classes are absent in a split).
+- Ambiguity-safe closed-set label mapping: exact label matches are preferred; group-based mapping is only used when it maps to a single target label.
+- Strict 1% supervision for MOMENT-style evaluation (no train+val label-budget inflation).
+- Full-dataset benchmark loading in `benchmark_baselines.py` (no default session truncation, no random 70/15/15 slicing in benchmark mode).
+
 ---
 
 ## 🚀 Quick Start

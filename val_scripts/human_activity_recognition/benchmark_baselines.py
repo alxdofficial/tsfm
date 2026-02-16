@@ -4,6 +4,11 @@ Benchmark a trained model against published baselines.
 Evaluates a single model against NLS-HAR, GOAT, LanHAR, and CrossHAR
 baselines with matching evaluation protocols per paper.
 
+Important protocol details:
+- Uses the full available dataset in benchmark mode (no random 70/15/15 slicing).
+- Does not truncate sessions by default.
+- Macro-F1 is computed with a fixed class list for stable cross-run comparison.
+
 Modes:
   1. NLS-HAR: Closed-set macro F1 on MotionSense, MobiAct
   2. GOAT: Closed-set macro F1 on RealWorld, Realdisp, Opportunity, Daphnet FoG
@@ -50,7 +55,8 @@ from val_scripts.human_activity_recognition.eval_config import PATCH_SIZE_PER_DA
 
 # Evaluation settings
 BATCH_SIZE = 32
-MAX_SESSIONS_PER_DATASET = 10000
+# Use all sessions for benchmark comparisons (no silent truncation).
+MAX_SESSIONS_PER_DATASET = None
 
 # Output directory
 OUTPUT_DIR = "test_output/benchmark_baselines"
@@ -120,14 +126,15 @@ BASELINES = {
     },
 }
 
-# LanHAR 4-activity protocol: walking, upstairs, downstairs, sitting
-# (sitting and standing are SEPARATE — standing is excluded)
-LANHAR_4_ACTIVITIES = ["walking", "walking_upstairs", "walking_downstairs", "sitting"]
+# LanHAR 4-activity protocol: walking, upstairs, downstairs, still (sit+stand merged)
+# LanHAR paper merges sitting+standing into "still"
+LANHAR_4_ACTIVITIES = ["walking", "walking_upstairs", "walking_downstairs", "still"]
+LANHAR_STILL_GROUPS = {"sitting", "standing"}  # Merged to "still"
 
 # CrossHAR 4-activity protocol: still (sit+stand merged), walking, upstairs, downstairs
-# CrossHAR merges sitting+standing into "still", making classification easier
-CROSSHAR_4_ACTIVITIES = ["walking", "walking_upstairs", "walking_downstairs", "sitting"]
-CROSSHAR_STILL_GROUPS = {"sitting", "standing"}  # These get merged to "still"
+# CrossHAR also merges sitting+standing into "still"
+CROSSHAR_4_ACTIVITIES = ["walking", "walking_upstairs", "walking_downstairs", "still"]
+CROSSHAR_STILL_GROUPS = {"sitting", "standing"}  # Merged to "still"
 
 
 # =============================================================================
@@ -158,7 +165,9 @@ def create_dataset_loader(dataset_name: str, patch_size: Optional[float] = None)
     dataset = IMUPretrainingDataset(
         data_root='data',
         datasets=[dataset_name],
-        split='val',
+        split='test',
+        # Use the full dataset to avoid random 70/15/15 split effects in benchmark mode.
+        split_ratios=(0.0, 0.0, 1.0),
         patch_size_per_dataset={dataset_name: ps},
         max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
         seed=42
@@ -222,8 +231,22 @@ def compute_closed_set_metrics(
             all_gt_labels.extend(label_texts)
             all_pred_labels.extend(pred_labels)
 
+    if not all_gt_labels:
+        return {
+            'f1_macro': 0.0,
+            'accuracy': 0.0,
+            'n_samples': 0,
+            'n_classes': len(dataset_labels),
+        }
+
     return {
-        'f1_macro': f1_score(all_gt_labels, all_pred_labels, average='macro', zero_division=0) * 100,
+        'f1_macro': f1_score(
+            all_gt_labels,
+            all_pred_labels,
+            labels=dataset_labels,
+            average='macro',
+            zero_division=0,
+        ) * 100,
         'accuracy': accuracy_score(all_gt_labels, all_pred_labels) * 100,
         'n_samples': len(all_gt_labels),
         'n_classes': len(dataset_labels),
@@ -240,6 +263,7 @@ def compute_shared_activity_metrics(
     dataloader: DataLoader,
     device: torch.device,
     shared_activities: List[str] = None,
+    still_groups: set = None,
 ) -> Dict[str, float]:
     """
     Compute metrics on only the shared activity subset.
@@ -249,20 +273,33 @@ def compute_shared_activity_metrics(
 
     Used for LanHAR / CrossHAR comparison (4-activity protocol).
 
+    Args:
+        still_groups: If provided, labels in these groups (e.g. {"sitting", "standing"})
+            are merged into "still" for both GT mapping and prediction.
+
     Returns:
         Dict with f1_macro, accuracy, per_class metrics, n_samples, n_classes
     """
     if shared_activities is None:
         shared_activities = LANHAR_4_ACTIVITIES
 
-    model.eval()
-    label_bank.eval()
+    model.train(False)
+    label_bank.train(False)
 
     # Build group mapping for filtering
+    # For "still", we need to match both sitting and standing groups
     shared_groups = set()
+    group_to_activity = {}  # maps label group -> shared activity name
     for activity in shared_activities:
-        group = get_group_for_label(activity)
-        shared_groups.add(group)
+        if activity == "still" and still_groups:
+            for sg in still_groups:
+                group = get_group_for_label(sg)
+                shared_groups.add(group)
+                group_to_activity[group] = "still"
+        else:
+            group = get_group_for_label(activity)
+            shared_groups.add(group)
+            group_to_activity[group] = activity
 
     # Encode only the shared activity labels
     with torch.no_grad():
@@ -291,11 +328,7 @@ def compute_shared_activity_metrics(
                 group = get_group_for_label(label)
                 if group in shared_groups:
                     keep_indices.append(i)
-                    # Map to the canonical shared activity name
-                    for sa in shared_activities:
-                        if get_group_for_label(sa) == group:
-                            mapped_gt.append(sa)
-                            break
+                    mapped_gt.append(group_to_activity[group])
 
             if not keep_indices:
                 continue
@@ -342,7 +375,13 @@ def compute_shared_activity_metrics(
             }
 
     return {
-        'f1_macro': f1_score(all_gt_labels, all_pred_labels, average='macro', zero_division=0) * 100,
+        'f1_macro': f1_score(
+            all_gt_labels,
+            all_pred_labels,
+            labels=shared_activities,
+            average='macro',
+            zero_division=0,
+        ) * 100,
         'accuracy': accuracy_score(all_gt_labels, all_pred_labels) * 100,
         'n_samples': len(all_gt_labels),
         'n_classes': len(shared_activities),
@@ -459,7 +498,13 @@ def compute_crosshar_metrics(
 
     return {
         'accuracy': accuracy_score(all_gt, all_pred) * 100,
-        'f1_macro': f1_score(all_gt, all_pred, average='macro', zero_division=0) * 100,
+        'f1_macro': f1_score(
+            all_gt,
+            all_pred,
+            labels=crosshar_classes,
+            average='macro',
+            zero_division=0,
+        ) * 100,
         'n_samples': len(all_gt),
         'n_classes': 4,
         'per_class': per_class,
@@ -612,11 +657,11 @@ def run_benchmark():
         print(f"    F1 (macro): {metrics['f1_macro']:.2f}%, Accuracy: {metrics['accuracy']:.2f}% ({metrics['n_samples']} samples)")
 
     # =========================================================================
-    # Mode 3: LanHAR Comparison (4-Activity F1, no sit+stand merge)
+    # Mode 3: LanHAR Comparison (4-Activity F1, sit+stand merged to "still")
     # =========================================================================
     print()
     print("=" * 60)
-    print("MODE 3: LanHAR Comparison (4-Activity Subset)")
+    print("MODE 3: LanHAR Comparison (4-Activity Subset, sit+stand='still')")
     print(f"  Activities: {LANHAR_4_ACTIVITIES}")
     print("=" * 60)
 
@@ -624,7 +669,7 @@ def run_benchmark():
         print(f"\n  Evaluating {ds_name} (LanHAR protocol)...")
 
         loader = create_dataset_loader(ds_name)
-        metrics = compute_shared_activity_metrics(model, label_bank, loader, device, LANHAR_4_ACTIVITIES)
+        metrics = compute_shared_activity_metrics(model, label_bank, loader, device, LANHAR_4_ACTIVITIES, still_groups=LANHAR_STILL_GROUPS)
 
         results[f'lanhar_{ds_name}_f1'] = metrics['f1_macro']
         detailed_results[f'lanhar_{ds_name}'] = metrics

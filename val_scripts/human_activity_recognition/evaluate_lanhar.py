@@ -85,7 +85,7 @@ CLASSIFIER_SEED = 3431
 # Data split parameters
 TRAINING_RATE = 0.8
 VALI_RATE = 0.1
-SUPERVISED_LABEL_RATE = 0.01
+SUPERVISED_LABEL_RATE = 0.01  # 1% of training portion (=0.8% of total data after 80/10/10 split)
 
 SEED = 3431
 
@@ -871,11 +871,14 @@ def train_stage2(model, tokenizer, train_data, train_labels, text_protos, label_
                  device, epochs=STAGE2_EPOCHS, lr=STAGE2_LR, batch_size=STAGE2_BATCH_SIZE):
     """Train sensor encoder with CLIP loss on sensor-text pairs.
 
-    Uses validation-based model selection (saves best model by val loss).
+    Uses validation-based model selection by retrieval accuracy, matching
+    the original LanHAR (auxiliary_repos/LanHAR/models/training_stage2.py:168-170).
     """
     print(f"\n  Stage 2: Training sensor encoder ({epochs} epochs, lr={lr}, "
           f"batch_size={batch_size})...")
     print(f"    Training samples: {len(train_data)}")
+
+    device_type = "cuda" if device.type == "cuda" else "cpu"
 
     # Freeze BERT
     for p in model.bert.parameters():
@@ -919,10 +922,30 @@ def train_stage2(model, tokenizer, train_data, train_labels, text_protos, label_
         collate_fn=collate_fn, num_workers=0, drop_last=False,
     )
 
-    # Note: Original LanHAR selects best model by retrieval accuracy (sensor_vec @
-    # label_emb_norm.T → argmax). We use val loss as a proxy — both are monotonically
-    # related in contrastive learning, and this avoids rebuilding the label bank each epoch.
-    best_val_loss = float('inf')
+    # Compute label embeddings once (BERT is frozen, so these don't change)
+    # Used for retrieval accuracy: sensor_vec @ label_embs.T → argmax → compare to GT
+    num_classes = len(label_list)
+    model.train(False)
+    label_embs_list = []
+    with torch.no_grad():
+        for i in range(0, num_classes, 32):
+            batch_labels = label_list[i:i + 32]
+            batch_texts = [
+                wrap_template(lbl, text_protos[lbl][0])
+                for lbl in batch_labels
+            ]
+            enc = tokenizer(
+                batch_texts, padding=True, truncation=True,
+                max_length=model.max_len, return_tensors="pt",
+            )
+            emb = model.get_text_embedding(
+                enc["input_ids"].to(device),
+                enc["attention_mask"].to(device),
+            )
+            label_embs_list.append(emb)
+    label_embs = torch.cat(label_embs_list, dim=0)  # (num_classes, H), already normalized
+
+    best_val_accuracy = -1.0
     best_state = None
 
     model.train()
@@ -939,7 +962,7 @@ def train_stage2(model, tokenizer, train_data, train_labels, text_protos, label_
 
             optimizer.zero_grad(set_to_none=True)
 
-            with amp.autocast("cuda"):
+            with amp.autocast(device_type):
                 text_vec = model.get_text_embedding(input_ids, attention_mask)
                 sensor_vec = model.get_sensor_embedding(ts)
                 loss = clip_loss(sensor_vec, text_vec, model.logit_scale)
@@ -953,38 +976,40 @@ def train_stage2(model, tokenizer, train_data, train_labels, text_protos, label_
 
         avg_train_loss = total_loss / max(1, n_batches)
 
-        # Validation
+        # Validation: compute retrieval accuracy (matching original LanHAR)
         model.train(False)
-        val_loss = 0.0
-        val_batches = 0
+        val_sensor_embs = []
+        val_true_labels = []
         with torch.no_grad():
             for ts, input_ids, attention_mask, labels_batch in val_loader:
                 ts = ts.to(device)
-                input_ids = input_ids.to(device)
-                attention_mask = attention_mask.to(device)
 
-                with amp.autocast("cuda"):
-                    text_vec = model.get_text_embedding(input_ids, attention_mask)
+                with amp.autocast(device_type):
                     sensor_vec = model.get_sensor_embedding(ts)
-                    loss = clip_loss(sensor_vec, text_vec, model.logit_scale)
 
-                val_loss += loss.item()
-                val_batches += 1
+                val_sensor_embs.append(sensor_vec)
+                val_true_labels.append(labels_batch)
 
-        avg_val_loss = val_loss / max(1, val_batches)
+        val_sensor_embs = torch.cat(val_sensor_embs, dim=0)  # (N_val, H)
+        val_true_labels = torch.cat(val_true_labels, dim=0)  # (N_val,)
 
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
+        # Retrieval: sensor_vec @ label_embs.T → argmax
+        similarity = val_sensor_embs @ label_embs.T  # (N_val, num_classes)
+        predictions = similarity.argmax(dim=1)  # (N_val,)
+        val_accuracy = (predictions == val_true_labels.to(device)).float().mean().item()
+
+        if val_accuracy > best_val_accuracy:
+            best_val_accuracy = val_accuracy
             best_state = copy.deepcopy(model.state_dict())
 
         if (epoch + 1) % 5 == 0 or epoch == 0:
             print(f"    Epoch {epoch+1}/{epochs}: train_loss={avg_train_loss:.4f}, "
-                  f"val_loss={avg_val_loss:.4f}")
+                  f"val_acc={val_accuracy:.4f}")
 
     # Restore best model
     if best_state is not None:
         model.load_state_dict(best_state)
-        print(f"    Restored best model (val_loss={best_val_loss:.4f})")
+        print(f"    Restored best model (val_acc={best_val_accuracy:.4f})")
 
     # Unfreeze BERT for potential further use
     for p in model.bert.parameters():
@@ -1292,12 +1317,10 @@ def score_closed_set(
     """Metric 2: Closed-set scoring."""
     label_to_group = get_label_to_group_mapping()
     test_activities = get_dataset_labels(test_dataset)
-    test_label_groups = {label_to_group.get(a, a) for a in test_activities}
-
-    group_to_test_label = {}
+    group_to_test_labels = {}
     for act in test_activities:
         group = label_to_group.get(act, act)
-        group_to_test_label[group] = act
+        group_to_test_labels.setdefault(group, []).append(act)
 
     test_label_to_idx = {a: i for i, a in enumerate(test_activities)}
     num_test_classes = len(test_activities)
@@ -1318,12 +1341,18 @@ def score_closed_set(
             if local_idx < len(ds_activities):
                 activity_name = ds_activities[local_idx]
                 group = label_to_group.get(activity_name, activity_name)
-                if group in test_label_groups:
-                    test_label = group_to_test_label.get(group)
-                    if test_label is not None:
-                        test_idx = test_label_to_idx[test_label]
-                        all_train_data.append(emb[i])
-                        all_train_labels.append(test_idx)
+                mapped_test_label = None
+                if activity_name in test_label_to_idx:
+                    mapped_test_label = activity_name
+                else:
+                    candidates = group_to_test_labels.get(group, [])
+                    if len(candidates) == 1:
+                        mapped_test_label = candidates[0]
+
+                if mapped_test_label is not None:
+                    test_idx = test_label_to_idx[mapped_test_label]
+                    all_train_data.append(emb[i])
+                    all_train_labels.append(test_idx)
 
     all_train_data = np.array(all_train_data)
     all_train_labels = np.array(all_train_labels, dtype=np.int64)
@@ -1370,7 +1399,13 @@ def score_closed_set(
         )
 
     acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(gt_names, pred_names, average="macro", zero_division=0) * 100
+    f1 = f1_score(
+        gt_names,
+        pred_names,
+        labels=test_activities,
+        average="macro",
+        zero_division=0,
+    ) * 100
 
     return {"accuracy": acc, "f1_macro": f1, "n_samples": len(gt_names),
             "n_train_samples": len(train_data), "n_classes": num_test_classes,
@@ -1426,7 +1461,13 @@ def score_1pct_supervised(
         )
 
     acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(gt_names, pred_names, average="macro", zero_division=0) * 100
+    f1 = f1_score(
+        gt_names,
+        pred_names,
+        labels=test_activities,
+        average="macro",
+        zero_division=0,
+    ) * 100
 
     return {"accuracy": acc, "f1_macro": f1, "n_samples": len(gt_names),
             "n_train_samples": len(train_data), "n_classes": num_test_classes}
@@ -1474,7 +1515,7 @@ def print_results_table(all_results):
     print(f"  Stage 1: {STAGE1_EPOCHS} epochs text contrastive+CE, lr={STAGE1_LR}, "
           f"batch_size={STAGE1_BATCH_SIZE}")
     print(f"  Stage 2: {STAGE2_EPOCHS} epochs sensor-text CLIP, lr={STAGE2_LR}, "
-          f"batch_size={STAGE2_BATCH_SIZE}, val-based selection")
+          f"batch_size={STAGE2_BATCH_SIZE}, accuracy-based selection")
     print(f"  Sensor embedding dim: {EMB_DIM}")
     print(f"  Classifier: Linear, {CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
 
