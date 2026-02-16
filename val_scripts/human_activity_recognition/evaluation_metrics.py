@@ -240,7 +240,7 @@ def compute_group_accuracy(
     unique_labels = sorted(set(query_labels))
 
     # Encode unique labels
-    label_embeddings = label_bank.encode(unique_labels, normalize=True)  # (L, D)
+    label_embeddings = label_bank.encode(unique_labels, normalize=True)  # (L, D) or (L, K, D)
     label_embeddings = label_embeddings.to(device)
 
     # Build label-to-group mapping
@@ -250,7 +250,12 @@ def compute_group_accuracy(
     unique_groups = [label_to_group.get(lbl, lbl) for lbl in unique_labels]
 
     # Compute similarity matrix: (N, L)
-    similarities = torch.matmul(imu_embeddings, label_embeddings.T)
+    if label_embeddings.dim() == 3:
+        # Multi-prototype: (L, K, D) — take max over prototypes
+        # similarities = einsum('nd,lkd->nlk', imu, labels).max(dim=-1)
+        similarities = torch.einsum('nd,lkd->nlk', imu_embeddings, label_embeddings).max(dim=-1).values  # (N, L)
+    else:
+        similarities = torch.matmul(imu_embeddings, label_embeddings.T)
 
     # Get predictions (top-1)
     _, top1_indices = similarities.max(dim=1)  # (N,)

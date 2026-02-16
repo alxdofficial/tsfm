@@ -22,10 +22,14 @@ This project implements a **pretrained encoder** for IMU (Inertial Measurement U
 
 - ✅ **Cross-channel attention**: Models relationships between different sensors (accelerometer ↔ gyroscope)
 - ✅ **Variable channel support**: Handles 6-40 channels with automatic padding/masking
-- ✅ **Multi-dataset pretraining**: Trains on 7 datasets (UCI HAR, HHAR, MHEALTH, PAMAP2, WISDM, UniMiB, MotionSense)
+- ✅ **Multi-dataset pretraining**: Trains on 10 datasets (UCI HAR, HHAR, MHEALTH, PAMAP2, WISDM, UniMiB, DSADS, HAPT, KU-HAR, RecGym)
 - ✅ **Semantic alignment**: Align IMU embeddings with natural language descriptions
-- ✅ **Physically-plausible augmentations**: Jitter, time warp, magnitude scaling, channel shuffling
-- ✅ **Mixed precision training**: FP16 for ~50% memory reduction
+- ✅ **Multi-prototype learning**: K=3 prototypes per activity class capture intra-class variation
+- ✅ **SO(3) rotation augmentation**: Random 3D rotations for sensor orientation invariance
+- ✅ **Structured masking**: Span masking + channel dropout for robust Stage 1 pretraining
+- ✅ **Temperature-based sampling**: `p_i ~ n_i^0.5` balancing across datasets
+- ✅ **Physically-plausible augmentations**: Jitter, time warp, magnitude scaling, channel shuffling, rotation
+- ✅ **Mixed precision training**: FP16 with torch.compile for ~4x speedup
 - ✅ **Per-dataset tracking**: Monitor learning progress per dataset
 
 ---
@@ -295,6 +299,7 @@ To change hyperparameters, edit the constants at the top of `main()` in `pretrai
 - **Weak:** jitter, scale, time_shift (preserve semantics)
 - **Strong:** time_warp, magnitude_warp, resample (more aggressive)
 - **Novel:** channel_shuffle (robustness to channel ordering)
+- **SO(3) rotation:** Random 3D rotation applied to sensor triads (acc_x/y/z, gyro_x/y/z). Same rotation matrix for all triads at the same body location. Handles sensor orientation variance across placements.
 
 **See [`datasets/imu_pretraining_dataset/README.md`](datasets/imu_pretraining_dataset/README.md) for augmentation details.**
 
@@ -377,11 +382,15 @@ All tests should pass before training.
 
 ## 📝 Recent Changes
 
+- ✅ **4 accuracy improvements**: SO(3) rotation augmentation, multi-prototype learning (K=3), structured masking (span + channel dropout), temperature-based sampling (alpha=0.5)
+- ✅ **4x training speedup**: Batch fusion, channel bucketing, caching, torch.compile + 6 bug fixes
+- ✅ **8 bug fixes**: MAE normalization, memory bank boundary, scheduler resume, channel encoding fallback, and more
 - ✅ Added Stage 2 semantic alignment training pipeline
 - ✅ Implemented text-IMU alignment with learnable label bank
 - ✅ Added memory bank for prototype learning
 - ✅ Added group-balanced sampling and patch size augmentation
-- ✅ Expanded to 7 datasets (added HHAR, UniMiB SHAR, MotionSense)
+- ✅ Expanded to 10 training datasets (UCI HAR, HHAR, MHEALTH, PAMAP2, WISDM, UniMiB, DSADS, HAPT, KU-HAR, RecGym)
+- ✅ 4 zero-shot test datasets excluded from training (MotionSense, RealWorld, MobiAct, VTT-ConIoT)
 - ✅ Added embedding visualization tools (3D, 4D video)
 - ✅ Implemented evaluation metrics and model comparison utilities
 

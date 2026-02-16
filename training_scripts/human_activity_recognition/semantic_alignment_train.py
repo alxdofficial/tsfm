@@ -67,9 +67,9 @@ class ChannelBucketBatchSampler:
             idx_tensor = torch.tensor(indices, dtype=torch.long)
             self.bucket_weights[ch_count] = sample_weights[idx_tensor]
 
-        # Total batches per epoch (at least 1 to avoid division-by-zero)
+        # Total batches per epoch
         total_samples = num_samples if num_samples is not None else len(channel_counts)
-        self.num_batches = max(1, total_samples // batch_size)
+        self.num_batches = total_samples // batch_size if total_samples >= batch_size else 0
 
         # Bucket selection probabilities (proportional to sum of sample weights,
         # not bucket size, to preserve global group-balanced weighting intent)
@@ -85,6 +85,8 @@ class ChannelBucketBatchSampler:
             print(f"  Channel bucket {k:2d}ch: {len(self.buckets[k]):5d} samples")
 
     def __iter__(self):
+        if self.num_batches == 0 or len(self.bucket_keys) == 0:
+            return
         for _ in range(self.num_batches):
             # Select bucket proportional to size
             bucket_idx = torch.multinomial(self.bucket_probs, 1).item()
@@ -209,6 +211,7 @@ MEMORY_BANK_SIZE = 256  # Provides batch + 256 negatives per step
 # without cap: stand_to_sit sampled 250x more often (overfitting risk)
 # with cap=20: stand_to_sit sampled only 20x more often
 MAX_OVERSAMPLE_RATIO = 20.0  # Max oversampling factor for rare groups
+SAMPLING_TEMPERATURE = 0.5  # Temperature for sampling: 0.0=balanced, 0.5=sqrt, 1.0=uniform
 
 # NOTE: Channel augmentation (random subsampling/shuffling) is DISABLED.
 # Experiments showed better zero-shot generalization with consistent channel order.
@@ -238,6 +241,7 @@ DEBUG_METRIC_FREQUENCY = 50  # Compute expensive debug metrics every N batches (
 # plus learnable attention pooling for label refinement.
 TOKEN_TEXT_NUM_HEADS = 4     # Attention heads for text fusion/pooling
 TOKEN_TEXT_NUM_QUERIES = 4   # Learnable query tokens for label pooling
+NUM_PROTOTYPES = 3           # Number of prototype embeddings per label (K=1 for single, K=3 for multi)
 
 # Ablation: use mean pooling instead of learnable attention pooling
 # When True: uses SentenceBERT's default mean pooling (no learnable params)
@@ -258,6 +262,7 @@ USE_GROUP_BALANCED_SAMPLING = True  # Default: enable group-balanced sampling
 # During training, randomly sample patch sizes from valid ranges per dataset
 # Ranges are constrained by session duration (need ≥2 patches per session)
 USE_PATCH_SIZE_AUGMENTATION = True  # Enable patch size augmentation for better generalization
+USE_ROTATION_AUGMENTATION = True  # Apply SO(3) rotation to sensor triads for orientation invariance
 MIN_PATCHES_PER_SAMPLE = 1  # Minimum patches required per sample
 
 # Valid patch size ranges per dataset: (min_sec, max_sec, step_sec)
@@ -554,8 +559,15 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
             # Forward pass (no gradients)
             imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
 
+            # For multi-prototype: store the winning prototype (nearest to IMU)
+            text_for_queue = text_embeddings
+            if text_for_queue.dim() == 3:
+                sims = torch.einsum('bd,bkd->bk', imu_embeddings, text_for_queue)
+                best_idx = sims.argmax(dim=1)
+                text_for_queue = text_for_queue[torch.arange(text_for_queue.shape[0]), best_idx]
+
             # Update memory bank with both embeddings
-            memory_bank.update(imu_embeddings, text_embeddings)
+            memory_bank.update(imu_embeddings, text_for_queue)
             
             # Print progress
             filled = min((batch_idx + 1) * len(label_texts), memory_bank.queue_size)
@@ -764,7 +776,14 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
         # Update memory bank with current batch embeddings (no gradients needed)
         if memory_bank is not None and USE_MEMORY_BANK:
             with torch.no_grad():
-                memory_bank.update(imu_embeddings.detach(), text_embeddings.detach())
+                # For multi-prototype: store the winning prototype (nearest to IMU)
+                text_for_queue = text_embeddings.detach()
+                if text_for_queue.dim() == 3:
+                    # (B, K, D) -> pick best prototype per sample
+                    sims = torch.einsum('bd,bkd->bk', imu_embeddings.detach(), text_for_queue)
+                    best_idx = sims.argmax(dim=1)
+                    text_for_queue = text_for_queue[torch.arange(text_for_queue.shape[0]), best_idx]
+                memory_bank.update(imu_embeddings.detach(), text_for_queue)
 
         # Accumulate metrics (with NaN detection)
         batch_loss = metrics['loss']
@@ -1165,6 +1184,7 @@ def main():
         device=device,
         num_heads=TOKEN_TEXT_NUM_HEADS,
         num_queries=TOKEN_TEXT_NUM_QUERIES,
+        num_prototypes=NUM_PROTOTYPES,
         dropout=DROPOUT,
         use_mean_pooling=USE_MEAN_POOLING,
         text_encoder=shared_text_encoder  # Share MiniLM with model
@@ -1211,6 +1231,7 @@ def main():
         seed=SEED,
         target_patch_size=TARGET_PATCH_SIZE,
         max_patches_per_sample=MAX_PATCHES_PER_SAMPLE,
+        use_rotation_augmentation=USE_ROTATION_AUGMENTATION,
     )
     val_dataset = IMUPretrainingDataset(
         data_root=DATA_ROOT,
@@ -1227,7 +1248,7 @@ def main():
     # Create train dataloader with channel-bucketed + group-balanced sampling
     if USE_GROUP_BALANCED_SAMPLING:
         # Compute weights for group-balanced sampling (with capped oversampling)
-        sample_weights = train_dataset.compute_group_weights(max_oversample_ratio=MAX_OVERSAMPLE_RATIO)
+        sample_weights = train_dataset.compute_group_weights(max_oversample_ratio=MAX_OVERSAMPLE_RATIO, sampling_temperature=SAMPLING_TEMPERATURE)
 
         # Channel-bucketed batch sampler: groups same-channel-count samples
         # to minimize padding waste (joint util ~11% → ~80-100%)

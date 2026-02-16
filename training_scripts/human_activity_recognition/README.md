@@ -91,6 +91,9 @@ Pretraining Heads:
    - MSE between predicted and target patches
    - Only on masked, valid positions
    - Per-patch normalization of targets
+   - **Structured masking**: Random (40%), span masking (40%), channel dropout (20%)
+     - Span masking: contiguous spans of length 2-4 until ~30% ratio
+     - Channel dropout: drops 30% of channels, keeps minimum 1
 
 2. **Patch Contrastive Loss**
    - InfoNCE / NT-Xent loss
@@ -119,6 +122,7 @@ Pretraining Heads:
 ### 3. Augmentation
 - Weak: jitter, scale, time_shift
 - Strong: time_warp, magnitude_warp
+- SO(3) rotation: random 3D rotation of sensor triads (orientation invariance)
 - Create positive pairs for contrastive learning
 
 ### 4. Forward Pass

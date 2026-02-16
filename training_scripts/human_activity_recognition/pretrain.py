@@ -37,7 +37,8 @@ from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloa
 from datasets.imu_pretraining_dataset.augmentations import get_weak_augmentation
 from training_scripts.human_activity_recognition.losses import (
     CombinedPretrainingLoss,
-    create_random_mask
+    create_random_mask,
+    create_structured_mask
 )
 from val_scripts.human_activity_recognition.plot_utils import TrainingPlotter
 
@@ -149,7 +150,8 @@ class PretrainingModel(nn.Module):
         channel_mask: Optional[torch.Tensor] = None,
         channel_descriptions: Optional[List[List[str]]] = None,
         return_reconstruction: bool = True,
-        mae_mask: Optional[torch.Tensor] = None
+        mae_mask: Optional[torch.Tensor] = None,
+        channel_dropout_mask: Optional[torch.Tensor] = None
     ) -> tuple:
         """
         Forward pass.
@@ -161,6 +163,7 @@ class PretrainingModel(nn.Module):
             channel_descriptions: List of channel description lists per sample in batch
             return_reconstruction: Whether to compute reconstruction
             mae_mask: (batch, patches) MAE mask - True=masked position, apply mask_token
+            channel_dropout_mask: (batch, channels) channel dropout mask - True=dropped, apply mask_token
 
         Returns:
             (features, projected_features, reconstructed_patches)
@@ -172,7 +175,8 @@ class PretrainingModel(nn.Module):
             temporal_mask=None,
             channel_mask=channel_mask,
             mae_mask=mae_mask,
-            patch_attention_mask=attention_mask
+            patch_attention_mask=attention_mask,
+            channel_dropout_mask=channel_dropout_mask
         )  # (batch, patches, channels, d_model)
 
         # Project for contrastive learning
@@ -443,7 +447,9 @@ def train_epoch(
                 flat_data = valid_patches.reshape(flat_shape)
 
                 # Apply augmentation ONCE with same parameters for entire sample
-                augmented = augmentation.apply(flat_data.unsqueeze(0), None)
+                # Pass channel_names for rotation_3d augmentation
+                sample_channel_names = metadata_list[i].get('channels', None)
+                augmented = augmentation.apply(flat_data.unsqueeze(0), None, channel_names=sample_channel_names)
                 augmented = augmented.squeeze(0)
 
                 # Reshape back to patches: (num_valid, TARGET_PATCH_SIZE, channels)
@@ -453,12 +459,14 @@ def train_epoch(
                 # Copy over padded patches (no augmentation needed)
                 aug_patches[i] = padded_patches[i]
 
-        # Create random mask for MAE (50%)
-        mae_mask = create_random_mask(
+        # Create structured mask for MAE (random/span/channel dropout)
+        mae_mask, channel_dropout_mask = create_structured_mask(
             batch_size=padded_patches.shape[0],
             num_patches=max_patches,
+            num_channels=max_channels,
             mask_ratio=mask_ratio,
             attention_mask=patch_attention_mask,
+            channel_mask=channel_mask_for_model,
             device=device
         )
 
@@ -472,7 +480,8 @@ def train_epoch(
                 channel_mask=channel_mask_for_model,
                 channel_descriptions=padded_channel_descriptions,
                 return_reconstruction=True,
-                mae_mask=mae_mask  # Encoder will apply mask_token at feature level
+                mae_mask=mae_mask,  # Encoder will apply mask_token at feature level
+                channel_dropout_mask=channel_dropout_mask
             )
             # Clear cache after first forward pass (3-5% memory savings)
             if torch.cuda.is_available():
@@ -499,7 +508,8 @@ def train_epoch(
                 features_2=projected_2,
                 attention_mask=patch_attention_mask,
                 mae_mask=mae_mask,
-                channel_mask=channel_mask_for_model
+                channel_mask=channel_mask_for_model,
+                channel_dropout_mask=channel_dropout_mask
             )
 
         # Compute debug metrics periodically (every 10 batches to save memory)

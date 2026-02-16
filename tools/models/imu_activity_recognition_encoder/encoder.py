@@ -186,7 +186,8 @@ class IMUActivityRecognitionEncoder(nn.Module):
         temporal_mask: Optional[torch.Tensor] = None,
         channel_mask: Optional[torch.Tensor] = None,
         mae_mask: Optional[torch.Tensor] = None,
-        patch_attention_mask: Optional[torch.Tensor] = None
+        patch_attention_mask: Optional[torch.Tensor] = None,
+        channel_dropout_mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
         Encode preprocessed IMU patches.
@@ -200,6 +201,7 @@ class IMUActivityRecognitionEncoder(nn.Module):
                          True = valid channel, False = padded. Only used if use_cross_channel=True
             mae_mask: Optional MAE mask (batch_size, num_patches) - True=masked, apply mask_token
             patch_attention_mask: Optional patch validity mask (batch_size, num_patches) - True=valid, False=padding
+            channel_dropout_mask: Optional channel dropout mask (batch_size, num_channels) - True=dropped, apply mask_token
 
         Returns:
             Encoded features of shape (batch_size, num_patches, num_channels, d_model)
@@ -220,7 +222,7 @@ class IMUActivityRecognitionEncoder(nn.Module):
         features = self.feature_extractor(patches)
 
         # Apply mask_token and pad_token at feature level (AFTER CNN, BEFORE positional encoding)
-        if mae_mask is not None or patch_attention_mask is not None:
+        if mae_mask is not None or patch_attention_mask is not None or channel_dropout_mask is not None:
             features = features.clone()  # Don't modify in-place
 
             # Replace MAE-masked patches with mask_token
@@ -244,6 +246,15 @@ class IMUActivityRecognitionEncoder(nn.Module):
                         if not patch_attention_mask[i, p]:
                             # Replace all channels at this patch position with pad_token
                             features[i, p] = pad_token_expanded[0, 0]  # (channels, d_model)
+
+            # Replace dropped channels with mask_token (channel dropout)
+            if channel_dropout_mask is not None:
+                # channel_dropout_mask: (batch, channels) - True = dropped
+                for i in range(batch_size):
+                    for c in range(num_channels):
+                        if channel_dropout_mask[i, c]:
+                            # Replace this channel across all patches with mask_token
+                            features[i, :, c] = self.mask_token[0, 0, 0]  # (d_model,)
 
         # Add positional encodings
         # Handle both List[str] and List[List[str]] for channel_descriptions

@@ -139,6 +139,7 @@ class IMUPretrainingDataset(Dataset):
         seed: int = 42,
         target_patch_size: Optional[int] = None,  # If set, preprocess patches in DataLoader (faster training)
         max_patches_per_sample: int = 48,  # Max patches per sample (only used when target_patch_size is set)
+        use_rotation_augmentation: bool = False,  # Apply SO(3) rotation to sensor triads (Stage 2)
     ):
         """
         Args:
@@ -184,6 +185,7 @@ class IMUPretrainingDataset(Dataset):
         self.channel_filter = channel_filter
         self.target_patch_size = target_patch_size
         self.max_patches_per_sample = max_patches_per_sample
+        self.use_rotation_augmentation = use_rotation_augmentation
 
         # Set and store random seed (used by worker_init_fn)
         self.seed = seed
@@ -395,6 +397,16 @@ class IMUPretrainingDataset(Dataset):
             use_templates=True
         )
 
+        # Apply SO(3) rotation augmentation before patching (operates on raw timestep data)
+        # This runs in DataLoader workers for free parallelism
+        if self.use_rotation_augmentation and self.split == 'train':
+            from datasets.imu_pretraining_dataset.augmentations import IMUAugmentation
+            rot_aug = IMUAugmentation(aug_types=['rotation_3d'], aug_prob=0.8)
+            # Go through apply() so the aug_prob gate is respected
+            data = rot_aug.apply(
+                data.unsqueeze(0), None, channel_names=selected_channels
+            ).squeeze(0)
+
         # If target_patch_size is set, preprocess patches here (parallelized across workers)
         if self.target_patch_size is not None:
             from tools.models.imu_activity_recognition_encoder.preprocessing import preprocess_imu_data
@@ -582,22 +594,30 @@ class IMUPretrainingDataset(Dataset):
             channel_counts.append(len(imu_channels))
         return channel_counts
 
-    def compute_group_weights(self, max_oversample_ratio: float = 20.0) -> torch.Tensor:
+    def compute_group_weights(self, max_oversample_ratio: float = 20.0, sampling_temperature: float = 0.0) -> torch.Tensor:
         """
         Compute per-sample weights for group-balanced sampling with capped oversampling.
 
         Uses LABEL_GROUPS to map raw labels to semantic groups, then computes
-        inverse frequency weights so rare groups get sampled more often.
-        Weights are capped to prevent extreme oversampling of genuinely rare activities.
+        weights based on group frequency with temperature-controlled balancing.
+
+        Temperature controls the degree of rebalancing:
+        - temperature=0.0: pure balanced (uniform over groups, current default behavior)
+        - temperature=0.5: square-root balancing (recommended compromise)
+        - temperature=1.0: no rebalancing (uniform over samples)
+
+        Math: To get group probability p_g ∝ n_g^α, each sample in group g needs
+        weight w = n_g^(α-1), so group rate = n_g × n_g^(α-1) = n_g^α.
 
         Args:
             max_oversample_ratio: Maximum ratio between highest and lowest weight.
                                   Prevents rare labels from being oversampled more than
                                   this factor relative to the most common label.
                                   Default 20.0 means rare labels sampled at most 20x more.
+            sampling_temperature: Controls rebalancing strength (0.0=balanced, 0.5=sqrt, 1.0=uniform).
 
         Returns:
-            weights: (num_samples,) tensor where weight[i] = capped(1 / count(group_of_sample_i))
+            weights: (num_samples,) tensor where weight[i] = capped(count(group_i)^(temperature-1))
                      Normalized so weights sum to num_samples.
         """
         from collections import defaultdict
@@ -620,13 +640,17 @@ class IMUPretrainingDataset(Dataset):
             group_counts[group] += 1
             sample_groups.append(group)
 
-        # Compute inverse frequency weights
+        # Compute temperature-based weights: w_i = count(group_i) ^ (temperature - 1)
+        # temperature=0.0 → w = 1/count (pure balanced, original behavior)
+        # temperature=0.5 → w = 1/sqrt(count) (square-root balancing)
+        # temperature=1.0 → w = 1 (uniform, no rebalancing)
+        exponent = sampling_temperature - 1.0
         weights = torch.zeros(len(self.sessions))
         for i, group in enumerate(sample_groups):
-            weights[i] = 1.0 / group_counts[group]
+            weights[i] = float(group_counts[group]) ** exponent
 
         # Cap weights to prevent extreme oversampling
-        # min_weight corresponds to most common group (lowest inverse freq)
+        # min_weight corresponds to most common group (lowest weight)
         min_weight = weights.min()
         max_allowed_weight = min_weight * max_oversample_ratio
         num_capped = (weights > max_allowed_weight).sum().item()
@@ -635,7 +659,7 @@ class IMUPretrainingDataset(Dataset):
             # Log which groups were capped
             capped_groups = set()
             for i, group in enumerate(sample_groups):
-                if 1.0 / group_counts[group] > max_allowed_weight:
+                if float(group_counts[group]) ** exponent > max_allowed_weight:
                     capped_groups.add(f"{group} ({group_counts[group]} samples)")
             print(f"  Capped oversampling for {len(capped_groups)} rare groups (max {max_oversample_ratio}x): {sorted(capped_groups)[:5]}{'...' if len(capped_groups) > 5 else ''}")
 

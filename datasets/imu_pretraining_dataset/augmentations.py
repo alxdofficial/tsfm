@@ -27,16 +27,19 @@ class IMUAugmentation:
         self,
         aug_types: List[str] = ['jitter', 'scale', 'time_warp'],
         aug_prob: float = 0.8,
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        channel_names: Optional[List[str]] = None
     ):
         """
         Args:
             aug_types: List of augmentation types to apply
             aug_prob: Probability of applying each augmentation
             seed: Random seed for reproducibility
+            channel_names: Optional channel names (needed for rotation_3d to identify triads)
         """
         self.aug_types = aug_types
         self.aug_prob = aug_prob
+        self.channel_names = channel_names
 
         if seed is not None:
             np.random.seed(seed)
@@ -45,7 +48,8 @@ class IMUAugmentation:
     def apply(
         self,
         data: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None
+        attention_mask: Optional[torch.Tensor] = None,
+        channel_names: Optional[List[str]] = None
     ) -> torch.Tensor:
         """
         Apply augmentations to data.
@@ -53,11 +57,13 @@ class IMUAugmentation:
         Args:
             data: Input tensor of shape (batch, timesteps, channels)
             attention_mask: Boolean mask where True = valid, False = padding
+            channel_names: Optional channel names (overrides self.channel_names for this call)
 
         Returns:
             Augmented data of same shape
         """
         augmented = data.clone()
+        ch_names = channel_names if channel_names is not None else self.channel_names
 
         for aug_type in self.aug_types:
             if np.random.rand() < self.aug_prob:
@@ -75,6 +81,8 @@ class IMUAugmentation:
                     augmented = self.resample(augmented, attention_mask)
                 elif aug_type == 'channel_shuffle':
                     augmented = self.channel_shuffle(augmented, attention_mask)
+                elif aug_type == 'rotation_3d':
+                    augmented = self.rotation_3d(augmented, attention_mask, ch_names)
 
         return augmented
 
@@ -238,6 +246,92 @@ class IMUAugmentation:
             shuffled.append(shuffled_sample)
 
         return torch.stack(shuffled, dim=0)
+
+    # ========== SO(3) Rotation Augmentation ==========
+
+    def rotation_3d(
+        self,
+        data: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        channel_names: Optional[List[str]] = None
+    ) -> torch.Tensor:
+        """
+        Apply random SO(3) rotation to 3-axis sensor triads.
+
+        Simulates different sensor orientations (phone/watch placement variance).
+        All triads at the same body location share the same rotation matrix
+        (they're on the same physical sensor).
+
+        Only applies to groups with exactly 3 channels (x/y/z triads).
+        Groups with other sizes (e.g., quaternion _1/_2/_3/_4, single-axis) are skipped.
+
+        Args:
+            data: Shape (batch, timesteps, channels)
+            attention_mask: Valid position mask (unused, rotation preserves padding)
+            channel_names: List of channel names to identify triads
+
+        Returns:
+            Rotated data of same shape
+        """
+        if channel_names is None:
+            return data
+
+        from datasets.imu_pretraining_dataset.multi_dataset_loader import group_channels_by_sensor
+
+        # Group channels into sensor triads
+        groups = group_channels_by_sensor(channel_names)
+
+        # Build channel name to index mapping
+        ch_to_idx = {name: i for i, name in enumerate(channel_names)}
+
+        # Extract body location from group name (e.g., "chest_acc" → "chest", "acc" → "")
+        def get_location(group_name: str) -> str:
+            # If group name contains a sensor type suffix, the location is the prefix
+            sensor_types = ['acc', 'gyro', 'mag', 'ori']
+            for st in sensor_types:
+                if group_name.endswith(st):
+                    prefix = group_name[:-len(st)].rstrip('_')
+                    return prefix
+                if group_name.startswith(st):
+                    return ''
+            return group_name
+
+        # Group triads by location — same location shares same rotation
+        location_triads = {}  # location -> list of (group_name, [channel_indices])
+        for group_name, channels in groups.items():
+            if len(channels) != 3:
+                continue  # Skip non-triad groups
+            indices = [ch_to_idx[ch] for ch in channels]
+            location = get_location(group_name)
+            if location not in location_triads:
+                location_triads[location] = []
+            location_triads[location].append(indices)
+
+        if not location_triads:
+            return data
+
+        rotated = data.clone()
+
+        # Generate one random SO(3) matrix per location (shared across batch for consistency)
+        for location, triad_list in location_triads.items():
+            # Generate random SO(3) via QR decomposition of random Gaussian matrix
+            random_matrix = torch.randn(3, 3, device=data.device, dtype=data.dtype)
+            Q, R = torch.linalg.qr(random_matrix)
+            # Ensure proper rotation (det=+1, not reflection)
+            Q = Q * torch.sign(torch.diagonal(R)).unsqueeze(0)
+            if torch.det(Q) < 0:
+                Q[:, 0] = -Q[:, 0]
+
+            # Apply same R to all triads at this location
+            for indices in triad_list:
+                # Extract triad: (batch, timesteps, 3)
+                triad_data = data[:, :, indices]
+                # Rotate: R @ [x,y,z]^T for each timestep
+                # einsum 'ij,btj->bti': R is (3,3), triad is (batch, timesteps, 3)
+                rotated_triad = torch.einsum('ij,btj->bti', Q, triad_data)
+                rotated[:, :, indices] = rotated_triad
+
+        return rotated
 
     # ========== Strong Augmentations ==========
 
@@ -481,6 +575,6 @@ def get_strong_augmentation():
 def get_mixed_augmentation():
     """Get mixed weak+strong augmentation pipeline."""
     return IMUAugmentation(
-        aug_types=['jitter', 'scale', 'time_warp', 'magnitude_warp'],
+        aug_types=['jitter', 'scale', 'time_warp', 'magnitude_warp', 'rotation_3d'],
         aug_prob=0.7
     )

@@ -38,7 +38,8 @@ class MaskedReconstructionLoss(nn.Module):
         targets: torch.Tensor,
         attention_mask: torch.Tensor,
         mae_mask: torch.Tensor,
-        channel_mask: Optional[torch.Tensor] = None
+        channel_mask: Optional[torch.Tensor] = None,
+        channel_dropout_mask: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, dict]:
         """
         Compute masked reconstruction loss.
@@ -49,6 +50,8 @@ class MaskedReconstructionLoss(nn.Module):
             attention_mask: Valid patch mask (batch, num_patches) - True=valid
             mae_mask: MAE mask (batch, num_patches) - True=masked (should reconstruct)
             channel_mask: Optional channel validity mask (batch, num_channels) - True=valid, False=padded
+            channel_dropout_mask: Optional channel dropout mask (batch, num_channels) - True=dropped.
+                                  Dropped channels are excluded from reconstruction loss.
 
         Returns:
             Tuple of (loss, metrics_dict)
@@ -68,10 +71,19 @@ class MaskedReconstructionLoss(nn.Module):
         # Average over timesteps: (batch, num_patches, 96, num_channels) -> (batch, num_patches, num_channels)
         mse_per_channel = mse.mean(dim=2)
 
-        # Average over channels with masking to exclude padding
-        if channel_mask is not None:
+        # Combine channel_mask with channel_dropout_mask to exclude both padded and dropped channels
+        effective_channel_mask = channel_mask
+        if channel_dropout_mask is not None:
+            if effective_channel_mask is not None:
+                # Exclude both padded channels (False in channel_mask) and dropped channels (True in dropout)
+                effective_channel_mask = effective_channel_mask & (~channel_dropout_mask)
+            else:
+                effective_channel_mask = ~channel_dropout_mask
+
+        # Average over channels with masking to exclude padding and dropped channels
+        if effective_channel_mask is not None:
             # Expand channel mask: (batch, num_channels) -> (batch, 1, num_channels)
-            mask_expanded = channel_mask.unsqueeze(1).float()
+            mask_expanded = effective_channel_mask.unsqueeze(1).float()
 
             # Masked average: sum valid channels / count valid channels
             mse_per_patch = (mse_per_channel * mask_expanded).sum(dim=2) / mask_expanded.sum(dim=2).clamp(min=1)
@@ -324,7 +336,8 @@ class CombinedPretrainingLoss(nn.Module):
         features_2: torch.Tensor,
         attention_mask: torch.Tensor,
         mae_mask: torch.Tensor,
-        channel_mask: Optional[torch.Tensor] = None
+        channel_mask: Optional[torch.Tensor] = None,
+        channel_dropout_mask: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, dict]:
         """
         Compute combined loss.
@@ -337,14 +350,16 @@ class CombinedPretrainingLoss(nn.Module):
             attention_mask: Valid patch mask (batch, patches)
             mae_mask: MAE mask (batch, patches)
             channel_mask: Optional channel validity mask (batch, channels)
+            channel_dropout_mask: Optional channel dropout mask (batch, channels) - True=dropped
 
         Returns:
             Tuple of (total_loss, metrics_dict)
         """
-        # Compute MAE loss (with channel masking to exclude padding)
+        # Compute MAE loss (with channel masking to exclude padding and dropped channels)
         mae_loss, mae_metrics = self.mae_loss_fn(
             predictions, targets, attention_mask, mae_mask,
-            channel_mask=channel_mask
+            channel_mask=channel_mask,
+            channel_dropout_mask=channel_dropout_mask
         )
 
         # Compute contrastive loss (patch-level, excluding masked and padded patches)
@@ -439,6 +454,192 @@ def create_random_mask(
         mae_mask = mae_mask & attention_mask
 
     return mae_mask
+
+
+def create_span_mask(
+    batch_size: int,
+    num_patches: int,
+    mask_ratio: float = 0.3,
+    span_length_range: Tuple[int, int] = (2, 4),
+    attention_mask: Optional[torch.Tensor] = None,
+    device: torch.device = torch.device('cpu')
+) -> torch.Tensor:
+    """
+    Create span (contiguous) mask for masked autoencoding.
+
+    Places contiguous spans of masked patches until the target ratio is reached.
+    Forces temporal extrapolation — the model must predict entire contiguous blocks.
+
+    Args:
+        batch_size: Batch size
+        num_patches: Number of patches per sample
+        mask_ratio: Target ratio of patches to mask (~30%)
+        span_length_range: (min_length, max_length) for each span
+        attention_mask: Valid patch mask (batch, patches) - don't mask invalid patches
+        device: Device to create mask on
+
+    Returns:
+        Boolean mask (batch, patches) where True = should be masked/reconstructed
+    """
+    mae_mask = torch.zeros(batch_size, num_patches, dtype=torch.bool, device=device)
+    min_span, max_span = span_length_range
+
+    for i in range(batch_size):
+        # Determine valid range
+        if attention_mask is not None:
+            valid_len = attention_mask[i].sum().item()
+        else:
+            valid_len = num_patches
+
+        if valid_len == 0:
+            continue
+
+        target_masked = int(valid_len * mask_ratio)
+        masked_count = 0
+
+        # Place spans until we reach the target ratio
+        attempts = 0
+        while masked_count < target_masked and attempts < 100:
+            span_len = torch.randint(min_span, max_span + 1, (1,)).item()
+            start = torch.randint(0, max(1, int(valid_len) - span_len + 1), (1,)).item()
+            end = min(start + span_len, int(valid_len))
+
+            # Mark span as masked
+            mae_mask[i, start:end] = True
+            masked_count = mae_mask[i, :int(valid_len)].sum().item()
+            attempts += 1
+
+    # Don't mask invalid (padded) patches
+    if attention_mask is not None:
+        mae_mask = mae_mask & attention_mask
+
+    return mae_mask
+
+
+def create_channel_dropout_mask(
+    batch_size: int,
+    num_channels: int,
+    dropout_ratio: float = 0.3,
+    channel_mask: Optional[torch.Tensor] = None,
+    device: torch.device = torch.device('cpu')
+) -> torch.Tensor:
+    """
+    Create channel dropout mask for structured masking.
+
+    Drops a fraction of channels entirely, simulating sensor failure.
+    Ensures at least 1 channel is kept per sample.
+
+    Args:
+        batch_size: Batch size
+        num_channels: Number of channels
+        dropout_ratio: Fraction of valid channels to drop (~30%)
+        channel_mask: Optional channel validity mask (batch, channels) - True=valid
+        device: Device to create mask on
+
+    Returns:
+        Boolean mask (batch, channels) where True = dropped channel
+    """
+    dropout_mask = torch.zeros(batch_size, num_channels, dtype=torch.bool, device=device)
+
+    for i in range(batch_size):
+        if channel_mask is not None:
+            valid_channels = channel_mask[i].sum().item()
+        else:
+            valid_channels = num_channels
+
+        if valid_channels <= 1:
+            continue  # Can't drop any channels
+
+        # Number to drop (at least keep 1)
+        num_to_drop = max(1, int(valid_channels * dropout_ratio))
+        num_to_drop = min(num_to_drop, int(valid_channels) - 1)  # Keep at least 1
+
+        # Randomly select channels to drop (only from valid ones)
+        if channel_mask is not None:
+            valid_indices = torch.where(channel_mask[i])[0]
+        else:
+            valid_indices = torch.arange(num_channels, device=device)
+
+        perm = torch.randperm(len(valid_indices), device=device)[:num_to_drop]
+        drop_indices = valid_indices[perm]
+        dropout_mask[i, drop_indices] = True
+
+    return dropout_mask
+
+
+def create_structured_mask(
+    batch_size: int,
+    num_patches: int,
+    num_channels: int,
+    mask_ratio: float = 0.3,
+    attention_mask: Optional[torch.Tensor] = None,
+    channel_mask: Optional[torch.Tensor] = None,
+    device: torch.device = torch.device('cpu')
+) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    """
+    Create structured mask with random strategy selection per batch.
+
+    Strategies:
+    - Random (40%): Standard random patch masking (existing behavior)
+    - Span (40%): Contiguous span masking (forces temporal extrapolation)
+    - Channel dropout (20%): Drop channels + light patch masking (forces cross-sensor prediction)
+
+    Args:
+        batch_size: Batch size
+        num_patches: Number of patches
+        num_channels: Number of channels
+        mask_ratio: Target mask ratio for patch masking
+        attention_mask: Valid patch mask (batch, patches)
+        channel_mask: Channel validity mask (batch, channels)
+        device: Device
+
+    Returns:
+        Tuple of (mae_mask, channel_dropout_mask):
+        - mae_mask: (batch, patches) bool where True = masked patch
+        - channel_dropout_mask: (batch, channels) bool where True = dropped channel, or None
+    """
+    import random as _random
+    strategy = _random.random()
+
+    if strategy < 0.4:
+        # Random masking (existing behavior)
+        mae_mask = create_random_mask(
+            batch_size=batch_size,
+            num_patches=num_patches,
+            mask_ratio=mask_ratio,
+            attention_mask=attention_mask,
+            device=device
+        )
+        return mae_mask, None
+
+    elif strategy < 0.8:
+        # Span masking
+        mae_mask = create_span_mask(
+            batch_size=batch_size,
+            num_patches=num_patches,
+            mask_ratio=mask_ratio,
+            attention_mask=attention_mask,
+            device=device
+        )
+        return mae_mask, None
+
+    else:
+        # Channel dropout + light patch masking
+        mae_mask = create_random_mask(
+            batch_size=batch_size,
+            num_patches=num_patches,
+            mask_ratio=0.15,  # Light patch masking
+            attention_mask=attention_mask,
+            device=device
+        )
+        ch_dropout = create_channel_dropout_mask(
+            batch_size=batch_size,
+            num_channels=num_channels,
+            dropout_ratio=0.3,
+            channel_mask=channel_mask,
+            device=device
+        )
+        return mae_mask, ch_dropout
 
 
 if __name__ == "__main__":

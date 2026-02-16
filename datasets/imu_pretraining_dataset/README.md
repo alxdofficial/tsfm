@@ -135,6 +135,15 @@ The package includes physically plausible augmentations for IMU data:
 - **Magnitude Warp**: Variable scaling via spline
 - **Resample**: Slight resampling (95%-105%)
 
+### SO(3) Rotation Augmentation
+- **Rotation 3D**: Random proper rotation (det=+1) applied to sensor triads
+  - Groups channels into triads via `group_channels_by_sensor()` (e.g., acc_x/y/z → "acc")
+  - Same rotation matrix for all triads at the same body location
+  - Skips non-triad groups (quaternion channels, single-axis channels)
+  - Generated via QR decomposition of random Gaussian matrix
+  - Applied with probability 0.8 (controlled by `aug_prob`)
+  - Handles sensor orientation variance across device placements
+
 ### Usage
 
 ```python
