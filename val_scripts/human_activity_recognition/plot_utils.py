@@ -553,6 +553,10 @@ class EmbeddingVisualizer:
         if hasattr(text_embeddings, 'cpu'):
             text_embeddings = text_embeddings.cpu().numpy()
 
+        # Handle multi-prototype text embeddings: (N, K, D) → (N, D) via mean
+        if text_embeddings.ndim == 3:
+            text_embeddings = text_embeddings.mean(axis=1)
+
         # Filter out invalid embeddings (NaN/Inf) - safety net for edge cases
         # Zero-norm vectors can become NaN after normalization if they slip through
         imu_valid = ~(np.isnan(imu_embeddings).any(axis=1) | np.isinf(imu_embeddings).any(axis=1))

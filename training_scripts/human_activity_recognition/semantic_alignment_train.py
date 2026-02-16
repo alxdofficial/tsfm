@@ -178,8 +178,8 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
 EPOCHS = 100
-BATCH_SIZE = 8  # Micro-batch size (encoder forward path is now vectorized — larger BS may be faster)
-ACCUMULATION_STEPS = 64  # Effective batch = 8 × 64 = 512
+BATCH_SIZE = 32  # Micro-batch size (BS=64 OOMs on 24GB RTX 4090, BS=32 fits)
+ACCUMULATION_STEPS = 16  # Effective batch = 32 × 16 = 512
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
 WARMUP_EPOCHS = 3
 
@@ -799,12 +799,14 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             # This ensures we actually capture gradients when they exist (after accumulation)
             should_log_grads = accum_step_count % DEBUG_METRIC_FREQUENCY == 0
 
-            # Collect all trainable parameters for gradient clipping
-            all_trainable_params = (
+            # Collect trainable parameters for gradient clipping
+            # Clip model/label_bank params separately from logit_scale to prevent
+            # temperature gradient from dominating and starving model updates
+            model_and_bank_params = (
                 list(filter(lambda p: p.requires_grad, model.parameters())) +
-                list(criterion.parameters()) +
                 list(label_bank.parameters())
             )
+            logit_scale_params = list(criterion.parameters())
 
             if scaler is not None:
                 scaler.unscale_(optimizer)
@@ -813,7 +815,10 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
                 if should_log_grads:
                     batch_grad_norms = _compute_per_layer_grad_norms(model, criterion, label_bank)
 
-                grad_norm = torch.nn.utils.clip_grad_norm_(all_trainable_params, max_norm=MAX_GRAD_NORM)
+                # Separate clipping: model/label_bank get their own budget,
+                # logit_scale can't steal it even if its gradient spikes
+                grad_norm = torch.nn.utils.clip_grad_norm_(model_and_bank_params, max_norm=MAX_GRAD_NORM)
+                torch.nn.utils.clip_grad_norm_(logit_scale_params, max_norm=MAX_GRAD_NORM)
                 scaler.step(optimizer)
                 scaler.update()
             else:
@@ -821,7 +826,8 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
                 if should_log_grads:
                     batch_grad_norms = _compute_per_layer_grad_norms(model, criterion, label_bank)
 
-                grad_norm = torch.nn.utils.clip_grad_norm_(all_trainable_params, max_norm=MAX_GRAD_NORM)
+                grad_norm = torch.nn.utils.clip_grad_norm_(model_and_bank_params, max_norm=MAX_GRAD_NORM)
+                torch.nn.utils.clip_grad_norm_(logit_scale_params, max_norm=MAX_GRAD_NORM)
                 optimizer.step()
 
             # Reset gradients for next accumulation window
@@ -1261,7 +1267,7 @@ def main():
     criterion = SemanticAlignmentLoss(
         temperature=TEMPERATURE, use_soft_targets=USE_SOFT_TARGETS,
         soft_target_temperature=SOFT_TARGET_TEMPERATURE, soft_target_weight=SOFT_TARGET_WEIGHT
-    )
+    ).to(device)
 
     # Initialize memory bank if enabled
     memory_bank = None
@@ -1459,11 +1465,17 @@ def main():
             label_bank.load_state_dict(resume_checkpoint['label_bank_state_dict'])
             print("✓ Loaded label_bank state (learnable attention pooling)")
 
+        # Load GradScaler state if available (prevents FP16 overflow on resume)
+        if scaler is not None and 'scaler_state_dict' in resume_checkpoint:
+            if resume_checkpoint['scaler_state_dict'] is not None:
+                scaler.load_state_dict(resume_checkpoint['scaler_state_dict'])
+                print(f"✓ Loaded GradScaler state (scale={scaler.get_scale():.1f})")
+
     # Apply torch.compile for JIT optimization (after all state loading)
     # NOTE: Cannot compile the full encoder because its positional_encoding path uses
     # SentenceTransformer which is incompatible with torch.dynamo tracing.
     # Instead, compile the heavy sub-modules: encoder's transformer, channel_fusion, semantic_head.
-    if device.type == 'cuda' and hasattr(torch, 'compile'):
+    if False and device.type == 'cuda' and hasattr(torch, 'compile'):  # Disabled: dynamic shape assertions fail with BS=64
         compile_backend = None
         _test_model = None
         try:
@@ -1570,6 +1582,7 @@ def main():
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'memory_bank_state_dict': memory_bank.state_dict() if memory_bank else None,
+                'scaler_state_dict': scaler.state_dict() if scaler is not None else None,
                 'train_metrics': train_metrics,
                 'val_metrics': val_metrics,
                 'hyperparameters': hyperparams
