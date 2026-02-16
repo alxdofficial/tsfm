@@ -14,12 +14,11 @@ Usage:
     python val_scripts/human_activity_recognition/evaluate_tsfm.py
 """
 
+import copy
 import json
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
-import copy
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -37,8 +36,7 @@ from datasets.imu_pretraining_dataset.label_groups import (
     LABEL_GROUPS,
     get_label_to_group_mapping,
 )
-from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
-from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
+from val_scripts.human_activity_recognition.model_loading import load_model, load_label_bank
 from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
 from imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
 
@@ -118,101 +116,7 @@ class LinearClassifier(nn.Module):
 # TSFM Model Loading & Embedding Extraction
 # =============================================================================
 
-def load_tsfm_model(checkpoint_path: str, device: torch.device):
-    """Load the trained TSFM semantic alignment model."""
-    checkpoint_path = Path(checkpoint_path)
-    if not checkpoint_path.is_absolute():
-        checkpoint_path = PROJECT_ROOT / checkpoint_path
-
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-
-    checkpoint = torch.load(checkpoint_path, map_location='cpu')
-    epoch = checkpoint.get('epoch', 'unknown')
-
-    # Load hyperparameters
-    hyperparams_path = checkpoint_path.parent / 'hyperparameters.json'
-    if not hyperparams_path.exists():
-        raise FileNotFoundError(f"hyperparameters.json not found at {hyperparams_path}")
-
-    with open(hyperparams_path) as f:
-        hyperparams = json.load(f)
-    enc_cfg = hyperparams.get('encoder', {})
-    head_cfg = hyperparams.get('semantic_head', {})
-    token_cfg = hyperparams.get('token_level_text', {})
-
-    # Create encoder
-    encoder = IMUActivityRecognitionEncoder(
-        d_model=enc_cfg.get('d_model', 384),
-        num_heads=enc_cfg.get('num_heads', 8),
-        num_temporal_layers=enc_cfg.get('num_temporal_layers', 4),
-        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
-        dropout=enc_cfg.get('dropout', 0.1),
-        use_cross_channel=enc_cfg.get('use_cross_channel', True),
-        cnn_channels=enc_cfg.get('cnn_channels', [32, 64]),
-        cnn_kernel_sizes=enc_cfg.get('cnn_kernel_sizes', [5]),
-        target_patch_size=enc_cfg.get('target_patch_size', 64),
-        use_channel_encoding=enc_cfg.get('use_channel_encoding', False)
-    )
-
-    # Create semantic head
-    semantic_head = SemanticAlignmentHead(
-        d_model=enc_cfg.get('d_model', 384),
-        d_model_fused=384,
-        output_dim=384,
-        num_temporal_layers=head_cfg.get('num_temporal_layers', 2),
-        num_heads=enc_cfg.get('num_heads', 8),
-        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
-        dropout=enc_cfg.get('dropout', 0.1),
-        num_fusion_queries=head_cfg.get('num_fusion_queries', 4),
-        use_fusion_self_attention=head_cfg.get('use_fusion_self_attention', True),
-        num_pool_queries=head_cfg.get('num_pool_queries', 4),
-        use_pool_self_attention=head_cfg.get('use_pool_self_attention', True)
-    )
-
-    # Create full model
-    model = SemanticAlignmentModel(
-        encoder,
-        semantic_head,
-        num_heads=token_cfg.get('num_heads', 4),
-        dropout=enc_cfg.get('dropout', 0.1)
-    )
-
-    # Load state dict
-    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-    model.eval()
-    model = model.to(device)
-
-    print(f"  Loaded checkpoint from epoch {epoch}")
-    print(f"  Encoder: d_model={enc_cfg.get('d_model', 384)}, "
-          f"layers={enc_cfg.get('num_temporal_layers', 4)}, "
-          f"heads={enc_cfg.get('num_heads', 8)}")
-
-    return model, checkpoint, hyperparams_path
-
-
-def load_label_bank(checkpoint: dict, device: torch.device, hyperparams_path: Path):
-    """Load LearnableLabelBank with trained state."""
-    with open(hyperparams_path) as f:
-        hyperparams = json.load(f)
-    token_cfg = hyperparams.get('token_level_text', {})
-
-    label_bank = LearnableLabelBank(
-        device=device,
-        num_heads=token_cfg.get('num_heads', 4),
-        num_queries=token_cfg.get('num_queries', 4),
-        num_prototypes=token_cfg.get('num_prototypes', 1),
-        dropout=0.1
-    )
-
-    if 'label_bank_state_dict' in checkpoint:
-        label_bank.load_state_dict(checkpoint['label_bank_state_dict'])
-        print("  Loaded trained label bank")
-    else:
-        print("  Warning: No label_bank_state_dict, using untrained weights")
-
-    label_bank.eval()
-    return label_bank
+load_tsfm_model = load_model  # backwards-compatible alias
 
 
 def extract_tsfm_embeddings(

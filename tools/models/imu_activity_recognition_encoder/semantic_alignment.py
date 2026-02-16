@@ -335,10 +335,7 @@ class ProjectionHead(nn.Module):
         # This prevents magnitude explosion AND avoids gradient issues in the loss
         # By normalizing here instead of in the loss, gradients don't flow through normalization
         if normalize:
-            # Safe normalization: clamp norm to avoid division by zero for zero-norm vectors
-            # Zero-norm vectors can arise from empty batches or all-masked attention outputs
-            norm = x.norm(dim=-1, keepdim=True).clamp(min=1e-8)
-            x = x / norm
+            x = F.normalize(x, p=2, dim=-1)
 
         return x
 

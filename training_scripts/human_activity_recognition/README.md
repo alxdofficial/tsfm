@@ -1,323 +1,150 @@
-# IMU Tool Pretraining
+# Human Activity Recognition - Training Pipeline
 
-Pretraining scripts for the IMU Activity Recognition Encoder using dual objectives:
-1. **Masked Autoencoding (MAE)** - 50% random masking
-2. **Contrastive Learning** - Patch-level contrastive with augmentations
-
-## Overview
-
-This pretraining approach combines:
-- **Self-supervised learning** through masked patch reconstruction
-- **Contrastive learning** using augmented positive pairs
-- **Multi-dataset training** from UCI HAR, MHEALTH, PAMAP2, and WISDM
-- **Variable channel support** (6-40 channels)
+Two-stage training pipeline for the IMU Activity Recognition Encoder:
+1. **Stage 1: Self-Supervised Pretraining** (MAE + Contrastive)
+2. **Stage 2: Semantic Alignment** (Text-IMU alignment with prototype learning)
 
 ## Quick Start
 
-### 1. Install Dependencies
-
 ```bash
-pip install torch torchvision tensorboard pyyaml tqdm pandas numpy scipy
+cd training_scripts/human_activity_recognition
+
+# Stage 1: MAE + Contrastive pretraining
+python pretrain.py
+
+# Resume from checkpoint
+python pretrain.py --resume path/to/checkpoint.pt
+
+# Stage 2: Semantic alignment (after Stage 1)
+python semantic_alignment_train.py
 ```
 
-### 2. Prepare Data
-
-Ensure datasets are in the standard format under `data/`:
-```
-data/
-├── uci_har/
-├── mhealth/
-├── pamap2/
-└── wisdm/
-```
-
-### 3. Run Pretraining
-
-```bash
-cd training_scripts/imu_tool_pretraining
-python pretrain.py --config config.yaml
-```
-
-### 4. Resume from Checkpoint
-
-```bash
-python pretrain.py --config config.yaml --resume training_output/imu_pretraining/20250110_123456/best.pt
-```
-
-## Configuration
-
-Edit `config.yaml` to customize training:
-
-```yaml
-# Key parameters
-training:
-  epochs: 100
-  batch_size: 32
-  lr: 1.0e-4
-
-  # Loss weights
-  mae_weight: 1.0
-  contrastive_weight: 0.5
-  temperature: 0.2
-
-  # Masking
-  mask_ratio: 0.5  # 50% masking
-
-encoder:
-  d_model: 128
-  num_temporal_layers: 4
-  num_heads: 8
-```
-
-## Architecture
-
-### Pretraining Model
+## File Structure
 
 ```
-IMU Encoder (1.2M params)
-├── Preprocessing (patching, interpolation, normalization)
-├── Feature Extraction (multi-scale CNN)
-├── Positional Encoding (temporal + channel semantic)
-└── Transformer (temporal attention)
-
-Pretraining Heads:
-├── Projection Head (512 → 256) for contrastive
-└── Reconstruction Head (d_model → 96) for MAE
+training_scripts/human_activity_recognition/
+├── pretrain.py                  # Stage 1: MAE + Contrastive pretraining
+├── semantic_alignment_train.py  # Stage 2: Text-IMU semantic alignment
+├── losses.py                    # Stage 1 losses (MAE + contrastive)
+├── semantic_loss.py             # Stage 2 losses (InfoNCE, single/multi-prototype)
+├── memory_bank.py               # MoCo-style momentum memory bank
+├── PROTOTYPES_README.md         # Prototype soft targets documentation
+└── README.md                    # This file
 ```
 
-### Loss Functions
+## Stage 1: Self-Supervised Pretraining (`pretrain.py`)
 
-1. **Masked Reconstruction Loss**
-   - MSE between predicted and target patches
-   - Only on masked, valid positions
-   - Per-patch normalization of targets
-   - **Structured masking**: Random (40%), span masking (40%), channel dropout (20%)
-     - Span masking: contiguous spans of length 2-4 until ~30% ratio
-     - Channel dropout: drops 30% of channels, keeps minimum 1
+### Objectives
 
-2. **Patch Contrastive Loss**
-   - InfoNCE / NT-Xent loss
+1. **Masked Autoencoding (MAE)**
+   - Structured masking: random (40%), span masking (40%), channel dropout (20%)
+   - Span masking: contiguous spans of length 2-4 until ~30% ratio
+   - Channel dropout: drops 30% of channels, keeps minimum 1
+   - Normalized MSE loss on masked patches
+
+2. **Contrastive Learning (Patch-level InfoNCE)**
    - Positive pairs: same patch from augmented views
    - Negative pairs: same patch position, different samples
    - Temperature: 0.2
 
 3. **Combined Loss**
    ```
-   total_loss = λ_mae * mae_loss + λ_contrast * contrastive_loss
-   λ_mae = 1.0, λ_contrast = 0.5
+   total_loss = mae_weight * mae_loss + contrastive_weight * contrastive_loss
    ```
 
-## Training Pipeline
+### Augmentations
 
-### 1. Data Loading
-- Random dataset selection per batch
-- Random channel sampling (6-40 channels)
-- Variable length handling with padding
-
-### 2. Preprocessing
-- Patch creation (2-second windows)
-- Interpolation to 96 timesteps
-- Per-patch normalization
-
-### 3. Augmentation
 - Weak: jitter, scale, time_shift
 - Strong: time_warp, magnitude_warp
 - SO(3) rotation: random 3D rotation of sensor triads (orientation invariance)
-- Create positive pairs for contrastive learning
+- Channel shuffle: robustness to channel ordering
 
-### 4. Forward Pass
-- Encode original patches
-- Encode augmented patches
-- Generate reconstructions
-- Project features for contrastive
+### Configuration
 
-### 5. Loss Computation
-- MAE loss on masked patches
-- Contrastive loss on patch features
-- Combined weighted loss
-
-### 6. Optimization
-- AdamW optimizer
-- Learning rate warmup (10 epochs)
-- Cosine annealing schedule
-
-## Monitoring
-
-### TensorBoard
-
-```bash
-tensorboard --logdir training_output/imu_pretraining
-```
-
-**Metrics logged:**
-- Train/val loss (total, MAE, contrastive)
-- Learning rate
-- Masking ratio
-- Number of patches per batch
-
-### Checkpoints
-
-Saved to `training_output/imu_pretraining/{timestamp}/`:
-- `latest.pt` - Latest checkpoint
-- `best.pt` - Best validation loss
-- `checkpoint_epoch_N.pt` - Periodic checkpoints
-
-### Checkpoint Contents
+All hyperparameters are hard-coded constants in `pretrain.py` (top of `main()`):
 
 ```python
-{
-    'epoch': int,
-    'model_state_dict': dict,
-    'optimizer_state_dict': dict,
-    'train_metrics': dict,
-    'val_metrics': dict,
-    'config': dict
-}
+DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar',
+            'dsads', 'hapt', 'ku_har', 'recgym']
+D_MODEL = 128
+BATCH_SIZE = 32
+LEARNING_RATE = 1e-4
+EPOCHS = 100
+MASK_RATIO = 0.5
+```
+
+## Stage 2: Semantic Alignment (`semantic_alignment_train.py`)
+
+### Objectives
+
+- **Text-IMU Alignment**: Aligns IMU embeddings with activity text descriptions using InfoNCE loss
+- **Prototype Learning**: K=3 learnable prototypes per activity class (LearnableLabelBank)
+- **Memory Bank**: MoCo-style FIFO queue for additional negatives
+- **Channel Text Fusion**: Cross-attention between sensor tokens and channel description tokens
+
+### Key Components
+
+- **SemanticAlignmentModel**: Wraps encoder + SemanticAlignmentHead + ChannelTextFusion
+- **LearnableLabelBank**: Learnable attention pooling for multi-prototype label encoding
+- **InfoNCELoss**: Contrastive loss with single/multi-prototype support, soft targets
+- **MomentumMemoryBank**: FIFO queue storing recent embeddings as additional negatives
+
+### Configuration
+
+Hard-coded constants in `semantic_alignment_train.py`:
+
+```python
+D_MODEL = 128
+NUM_PROTOTYPES = 3
+QUEUE_SIZE = 4096
+LEARNING_RATE = 5e-5
+FREEZE_ENCODER = True  # Freeze Stage 1 encoder weights
+```
+
+## Training Outputs
+
+```
+training_output/imu_pretraining/{timestamp}/
+├── config.yaml                 # Saved configuration
+├── plots/                      # PNG loss curves
+│   ├── overall_loss.png
+│   ├── loss_components.png
+│   ├── per_dataset_losses.png
+│   └── metrics.json
+├── latest.pt                   # Latest checkpoint
+├── best.pt                     # Best validation loss
+└── checkpoint_epoch_*.pt       # Periodic checkpoints
+```
+
+## Loading Pretrained Models
+
+```python
+from val_scripts.human_activity_recognition.model_loading import load_model, load_label_bank
+
+model, checkpoint, hyperparams_path = load_model('path/to/best.pt', device)
+label_bank = load_label_bank(checkpoint, device, hyperparams_path)
+```
+
+## Testing
+
+```bash
+# Run regression test suite (111 tests)
+pytest tests/ -v
+
+# Run specific test files
+pytest tests/test_losses.py -v
+pytest tests/test_memory_bank.py -v
 ```
 
 ## Expected Performance
 
-### Training Time
-- **GPU (RTX 3090)**: ~1-2 hours per epoch
-- **Batch size 32**: ~310 batches per epoch
-- **Total training (100 epochs)**: ~100-200 hours
-
-### Memory Usage
-- **GPU**: ~8-10 GB for batch_size=32
-- **CPU RAM**: ~4-6 GB
-
-### Loss Values (Typical)
-- **Initial loss**: ~3.0-4.0
-- **Converged MAE loss**: ~0.5-1.0
-- **Converged contrastive loss**: ~0.3-0.7
-- **Total loss after 100 epochs**: ~1.0-1.5
-
-## Usage After Pretraining
-
-### Load Pretrained Encoder
-
-```python
-import torch
-from tools.models.imu_activity_recognition_encoder import IMUActivityRecognitionEncoder
-
-# Load checkpoint
-checkpoint = torch.load('best.pt')
-
-# Create encoder
-encoder = IMUActivityRecognitionEncoder(d_model=128)
-
-# Load weights (encoder only, not projection/reconstruction heads)
-encoder_state = {
-    k.replace('encoder.', ''): v
-    for k, v in checkpoint['model_state_dict'].items()
-    if k.startswith('encoder.')
-}
-encoder.load_state_dict(encoder_state)
-
-# Use for downstream tasks
-encoder.to(device)
-encoder.train(False)  # Set to evaluation mode
-```
-
-### Fine-tuning
-
-Add a task-specific head and fine-tune on labeled data:
-
-```python
-class ActivityClassifier(nn.Module):
-    def __init__(self, encoder, num_classes=6):
-        super().__init__()
-        self.encoder = encoder
-        self.classifier = nn.Linear(encoder.d_model, num_classes)
-
-    def forward(self, data):
-        # Encode
-        features = self.encoder.encode_from_raw(data, ...)
-
-        # Pool over patches and channels
-        pooled = features.mean(dim=(0, 1))  # Global average pooling
-
-        # Classify
-        logits = self.classifier(pooled)
-        return logits
-```
-
-## File Structure
-
-```
-training_scripts/imu_tool_pretraining/
-├── __init__.py
-├── pretrain.py        # Main training script
-├── losses.py          # MAE + contrastive losses
-├── config.yaml        # Training configuration
-└── README.md          # This file
-```
-
-## Key Features
-
-✅ **Dual-objective pretraining** (MAE + contrastive)
-✅ **Multi-dataset training** (4 datasets, 14K+ sessions)
-✅ **Variable channel support** (6-40 channels)
-✅ **Physically plausible augmentations**
-✅ **Automatic padding and masking**
-✅ **TensorBoard logging**
-✅ **Checkpoint management**
-✅ **Learning rate warmup**
-✅ **Gradient clipping** (optional)
-✅ **Mixed precision training** (optional)
-
-## Hyperparameter Recommendations
-
-Based on research (TS-TCC, PRIMUS, Ti-MAE):
-
-| Parameter | Recommended | Range |
-|-----------|-------------|-------|
-| Mask ratio | 0.5 (50%) | 0.4-0.6 |
-| Temperature | 0.2 | 0.1-0.5 |
-| MAE weight | 1.0 | 0.5-2.0 |
-| Contrastive weight | 0.5 | 0.3-1.0 |
-| Learning rate | 1e-4 | 1e-5 to 1e-3 |
-| Batch size | 32 | 16-64 |
-| Warmup epochs | 10 | 5-20 |
-
-## Troubleshooting
-
-### Out of Memory
-- Reduce `batch_size` to 16 or 8
-- Reduce `num_workers` to 2
-- Use gradient accumulation
-
-### Slow Training
-- Increase `num_workers` to 8
-- Use GPU if available
-- Reduce `d_model` to 64 (small config)
-
-### Loss Not Decreasing
-- Check data loading (verify shapes)
-- Reduce learning rate
-- Increase warmup epochs
-- Check for NaN values
-
-### Contrastive Loss High
-- Adjust temperature (try 0.3-0.5)
-- Check augmentation strength
-- Ensure positive pairs are created correctly
-
-## Citation
-
-If you use this pretraining approach, please cite:
-
-```
-@software{imu_pretraining,
-  title = {IMU Activity Recognition Encoder Pretraining},
-  year = {2025},
-  description = {Dual-objective pretraining with MAE and contrastive learning}
-}
-```
+- **Stage 1**: Initial loss ~3-4, converged ~0.5-1.0. Training: ~8-12 hours on single GPU.
+- **Stage 2**: Converges in ~50-100 epochs. Zero-shot accuracy on unseen datasets: 40-60%.
+- **GPU memory**: ~8-12 GB with mixed precision (FP16) at batch size 32.
 
 ## References
 
 - **TS-TCC**: Time-Series Temporal and Contextual Contrasting
 - **PRIMUS**: Pretraining IMU Encoders (NeurIPS 2024)
 - **Ti-MAE**: Time Series Masked Autoencoders (2023)
-- **TFMAE**: Temporal-Frequency MAE (2024)
+- **MoCo**: Momentum Contrast for Unsupervised Visual Representation Learning

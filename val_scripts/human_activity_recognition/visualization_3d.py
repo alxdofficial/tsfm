@@ -45,7 +45,8 @@ OUTPUT_DIR = "test_output/visualization_3d"
 SAMPLE_SIZE = 1000
 
 # Datasets to use for evaluation
-EVAL_DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
+from val_scripts.human_activity_recognition.eval_config import TRAINING_DATASETS
+EVAL_DATASETS = TRAINING_DATASETS[:6]  # uci_har, hhar, mhealth, pamap2, wisdm, unimib_shar
 
 # Label grouping: True = simplified (~12 groups), False = fine-grained (~25 groups)
 USE_SIMPLE_GROUPS = False
@@ -89,80 +90,11 @@ def load_checkpoint_embeddings(
         text_embeddings: (N, D) tensor
         labels: List of label strings
     """
-    from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
-    from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
-    from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
+    from val_scripts.human_activity_recognition.model_loading import load_model
 
-    # Load checkpoint
-    checkpoint_path = Path(checkpoint_path)
-    checkpoint = torch.load(checkpoint_path, map_location='cpu')
+    model, checkpoint, _ = load_model(checkpoint_path, device)
     epoch = checkpoint.get('epoch', 'unknown')
     print(f"Loading epoch {epoch} from {checkpoint_path}")
-
-    # Load hyperparameters from checkpoint directory
-    hyperparams_path = checkpoint_path.parent / 'hyperparameters.json'
-    if hyperparams_path.exists():
-        with open(hyperparams_path) as f:
-            hyperparams = json.load(f)
-        enc_cfg = hyperparams.get('encoder', {})
-        head_cfg = hyperparams.get('semantic_head', {})
-        token_cfg = hyperparams.get('token_level_text', {})
-    else:
-        raise FileNotFoundError(
-            f"hyperparameters.json not found at {hyperparams_path}. "
-            "This checkpoint may be from an older incompatible version."
-        )
-
-    # Create encoder
-    encoder = IMUActivityRecognitionEncoder(
-        d_model=enc_cfg.get('d_model', 384),
-        num_heads=enc_cfg.get('num_heads', 8),
-        num_temporal_layers=enc_cfg.get('num_temporal_layers', 4),
-        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
-        dropout=enc_cfg.get('dropout', 0.1),
-        use_cross_channel=enc_cfg.get('use_cross_channel', True),
-        cnn_channels=enc_cfg.get('cnn_channels', [32, 64]),
-        cnn_kernel_sizes=enc_cfg.get('cnn_kernel_sizes', [5]),
-        target_patch_size=enc_cfg.get('target_patch_size', 64),
-        use_channel_encoding=enc_cfg.get('use_channel_encoding', False)
-    )
-
-    # Create semantic head
-    semantic_head = SemanticAlignmentHead(
-        d_model=enc_cfg.get('d_model', 384),
-        d_model_fused=384,
-        output_dim=384,
-        num_temporal_layers=head_cfg.get('num_temporal_layers', 2),
-        num_heads=enc_cfg.get('num_heads', 8),
-        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
-        dropout=enc_cfg.get('dropout', 0.1),
-        num_fusion_queries=head_cfg.get('num_fusion_queries', 4),
-        use_fusion_self_attention=head_cfg.get('use_fusion_self_attention', True),
-        num_pool_queries=head_cfg.get('num_pool_queries', 4),
-        use_pool_self_attention=head_cfg.get('use_pool_self_attention', True)
-    )
-
-    # Create full model with token-level text encoding
-    model = SemanticAlignmentModel(
-        encoder,
-        semantic_head,
-        num_heads=token_cfg.get('num_heads', 4),
-        dropout=enc_cfg.get('dropout', 0.1)
-    )
-
-    # Load state dict
-    missing_keys, unexpected_keys = model.load_state_dict(
-        checkpoint['model_state_dict'], strict=False
-    )
-    if unexpected_keys:
-        other_unexpected = [k for k in unexpected_keys if 'channel_encoding' not in k]
-        if other_unexpected:
-            print(f"  Warning: Unexpected keys: {other_unexpected[:5]}...")
-    if missing_keys:
-        print(f"  Warning: Missing keys: {missing_keys[:5]}...")
-
-    model.eval()
-    model = model.to(device)
 
     # Collect embeddings
     all_imu_embeddings = []
@@ -206,35 +138,7 @@ def load_checkpoint_embeddings(
     return all_imu_embeddings, all_text_embeddings, all_labels
 
 
-def load_label_bank(checkpoint: dict, device: torch.device, hyperparams_path: Path):
-    """Load LearnableLabelBank with trained state from checkpoint."""
-    from imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
-
-    # Get config from hyperparameters
-    if hyperparams_path.exists():
-        with open(hyperparams_path) as f:
-            hyperparams = json.load(f)
-        token_cfg = hyperparams.get('token_level_text', {})
-    else:
-        token_cfg = {}
-
-    label_bank = LearnableLabelBank(
-        device=device,
-        num_heads=token_cfg.get('num_heads', 4),
-        num_queries=token_cfg.get('num_queries', 4),
-        num_prototypes=token_cfg.get('num_prototypes', 1),
-        dropout=0.1
-    )
-
-    # Load trained weights if available
-    if 'label_bank_state_dict' in checkpoint:
-        label_bank.load_state_dict(checkpoint['label_bank_state_dict'])
-        print("Loaded trained LearnableLabelBank from checkpoint")
-    else:
-        print("Warning: No label_bank_state_dict in checkpoint, using untrained LearnableLabelBank")
-
-    label_bank.eval()
-    return label_bank
+from val_scripts.human_activity_recognition.model_loading import load_label_bank  # noqa: E302
 
 
 # =============================================================================

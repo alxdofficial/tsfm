@@ -117,12 +117,26 @@ tsfm/
 │       ├── semantic_loss.py              # Semantic alignment losses
 │       └── memory_bank.py                # Prototype memory bank
 │
-└── val_scripts/                          # Validation and evaluation
-    └── human_activity_recognition/
-        ├── compare_models.py             # Model comparison utilities
-        ├── evaluation_metrics.py         # Accuracy and metrics
-        ├── plot_utils.py                 # Training visualization
-        └── visualization_3d.py           # Embedding visualization
+├── val_scripts/                          # Validation and evaluation
+│   └── human_activity_recognition/
+│       ├── model_loading.py              # Shared model/label bank loading
+│       ├── eval_config.py                # Shared eval config (patch sizes, datasets)
+│       ├── evaluate_tsfm.py              # TSFM model evaluation
+│       ├── compare_models.py             # Model comparison utilities
+│       ├── benchmark_baselines.py        # Baseline model benchmarks
+│       ├── evaluation_metrics.py         # Accuracy and metrics
+│       ├── plot_utils.py                 # Training visualization
+│       └── visualization_3d.py           # Embedding visualization
+│
+└── tests/                                # Regression test suite (pytest)
+    ├── test_model_loading.py             # Model construction & loading
+    ├── test_encoder_forward.py           # Encoder forward pass & masks
+    ├── test_similarity_computation.py    # Similarity & metrics
+    ├── test_losses.py                    # MAE, contrastive, InfoNCE losses
+    ├── test_augmentations.py             # SO(3) rotation & augmentations
+    ├── test_memory_bank.py               # Memory bank operations
+    ├── test_label_groups.py              # Label group mapping
+    └── test_data_loading.py              # Dataset & collation
 ```
 
 ---
@@ -360,23 +374,18 @@ The pretrained weights are in `best.pt` under `model_state_dict['encoder']`.
 
 ## 🐛 Testing
 
-Run unit tests:
+Run the regression test suite (111 tests):
 
 ```bash
-# Test encoder integration
-python tools/models/imu_activity_recognition_encoder/test_integration.py
+# Run all tests
+pytest tests/ -v
 
-# Test preprocessing
-python tools/models/imu_activity_recognition_encoder/test_preprocessing.py
-
-# Test losses
-python training_scripts/human_activity_recognition/losses.py
-
-# Test augmentations
-python datasets/imu_pretraining_dataset/augmentations.py
+# Run specific test files
+pytest tests/test_losses.py -v
+pytest tests/test_encoder_forward.py -v
 ```
 
-All tests should pass before training.
+All tests should pass before training or after any refactoring.
 
 ---
 

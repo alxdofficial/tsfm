@@ -126,10 +126,10 @@ PROTOTYPE_WEIGHT = 0.5  # 50% pairwise, 50% prototype
 ## Files Created
 
 ```
-training_scripts/imu_tool_pretraining/
-├── prototype_manager.py         # Prototype accumulation and clustering
-├── semantic_loss.py              # Updated to support prototypes
+training_scripts/human_activity_recognition/
+├── semantic_loss.py              # InfoNCE loss with prototype support
 ├── semantic_alignment_train.py   # Integrated prototype manager
+├── memory_bank.py                # Momentum memory bank
 └── PROTOTYPES_README.md          # This file
 ```
 

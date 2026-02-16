@@ -17,7 +17,7 @@ import numpy as np
 import json
 from pathlib import Path
 from typing import Dict, List, Tuple
-from collections import defaultdict
+from collections import Counter, defaultdict
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import sys
@@ -30,15 +30,13 @@ sys.path.insert(0, str(project_root / 'tools' / 'models'))
 
 from torch.utils.data import DataLoader
 
-from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
-from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
-from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
 from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders, IMUPretrainingDataset
 from imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
+from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
+from val_scripts.human_activity_recognition.model_loading import load_model, load_label_bank
 from val_scripts.human_activity_recognition.evaluation_metrics import get_label_to_group_mapping, compute_similarity
 from datasets.imu_pretraining_dataset.label_augmentation import DATASET_CONFIGS
 from datasets.imu_pretraining_dataset.label_groups import LABEL_GROUPS, get_group_for_label
-from collections import Counter
 
 # =============================================================================
 # CONFIGURATION - Edit these values instead of using CLI args
@@ -52,43 +50,10 @@ CHECKPOINT_PATHS = {
 }
 
 # Datasets for evaluation (training datasets)
-EVAL_DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'recgym']
-
-# Patch size per dataset - MUST match training config for accurate metrics
-# Updated to match semantic_alignment_train.py (2026-01-26)
-PATCH_SIZE_PER_DATASET = {
-    # Fixed-length sessions (2.56s) - use 1.0s patches for 2 patches/session
-    'uci_har': 1.0,       # 50 Hz, 2.56s fixed sessions
-    'hhar': 1.0,          # 50 Hz, 2.56s fixed sessions
-    'unimib_shar': 1.0,   # 50 Hz, 3.02s fixed sessions
-    # Variable-length sessions - max patch < min session duration
-    'mhealth': 1.5,       # 50 Hz, min_session=2.0s
-    'pamap2': 2.0,        # 9 Hz, min_session=22.2s
-    'wisdm': 1.5,         # 20 Hz, min_session=2.0s
-    'dsads': 2.0,         # 25 Hz, min_session=5.0s
-    'vtt_coniot': 2.0,    # 50 Hz, min_session=60s
-    'recgym': 1.5,        # 20 Hz, min_session=2.0s
-    'hapt': 1.25,         # 50 Hz, min_session=1.48s
-    'kuhar': 1.5,         # 100 Hz, min_session=2.0s
-    # Unseen datasets (zero-shot evaluation)
-    'motionsense': 1.5,   # 50 Hz, acc+gyro — tested by NLS-HAR, LanHAR, CrossHAR
-    'mobiact': 1.5,       # 50 Hz, acc+gyro — tested by NLS-HAR
-    'realworld': 1.5,     # 50 Hz, acc only — tested by GOAT
-    'shoaib': 1.5,        # 50 Hz, 5 positions x acc+gyro+mag — tested by LanHAR, CrossHAR
-    'opportunity': 1.5,   # 30 Hz, 5 IMUs acc+gyro — tested by GOAT
-    'realdisp': 1.5,      # 50 Hz, 9 sensors x acc+gyro+mag — tested by GOAT
-    'daphnet_fog': 1.5,   # 64 Hz, 3 acc — tested by GOAT
-}
-
-# Unseen datasets for zero-shot evaluation
-# These are held out from training to enable fair baseline comparisons:
-#   - GOAT (IMWUT 2024): tests on RealWorld, Realdisp, Opportunity, PAMAP2, Daphnet FoG
-#   - NLS-HAR (AAAI 2025): tests on MotionSense, MobiAct
-#   - LanHAR/CrossHAR (IMWUT 2024-25): tests on Shoaib, MotionSense
-# Note: PAMAP2 is in both our training set and GOAT's pool — this is fair since
-# GOAT also trains on PAMAP2 in their non-PAMAP2 test folds.
-UNSEEN_DATASETS = ['motionsense', 'realworld', 'mobiact', 'shoaib',
-                   'opportunity', 'realdisp', 'daphnet_fog']
+from val_scripts.human_activity_recognition.eval_config import (
+    PATCH_SIZE_PER_DATASET, TRAINING_DATASETS, UNSEEN_DATASETS,
+)
+EVAL_DATASETS = TRAINING_DATASETS
 
 # Patch sizes for unseen datasets
 # Test 4 values covering the training augmentation range
@@ -332,123 +297,8 @@ def print_label_coverage_analysis(analysis: Dict, model_name: str):
 # =============================================================================
 
 
-def load_model(checkpoint_path: str, device: torch.device) -> Tuple[SemanticAlignmentModel, dict, dict]:
-    """
-    Load model from checkpoint with architecture from hyperparameters.json.
-
-    Returns:
-        model: The loaded SemanticAlignmentModel
-        model_info: Dict with epoch and checkpoint_path
-        checkpoint: The full checkpoint dict (for loading label_bank state)
-    """
-    checkpoint_path = Path(checkpoint_path)
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-
-    checkpoint = torch.load(checkpoint_path, map_location='cpu')
-    epoch = checkpoint.get('epoch', 'unknown')
-
-    # Load hyperparameters from checkpoint directory
-    hyperparams_path = checkpoint_path.parent / 'hyperparameters.json'
-    if hyperparams_path.exists():
-        with open(hyperparams_path) as f:
-            hyperparams = json.load(f)
-        enc_cfg = hyperparams.get('encoder', {})
-        head_cfg = hyperparams.get('semantic_head', {})
-        token_cfg = hyperparams.get('token_level_text', {})
-    else:
-        raise FileNotFoundError(
-            f"hyperparameters.json not found at {hyperparams_path}. "
-            "This checkpoint may be from an older incompatible version."
-        )
-
-    # Create encoder
-    encoder = IMUActivityRecognitionEncoder(
-        d_model=enc_cfg.get('d_model', 384),
-        num_heads=enc_cfg.get('num_heads', 8),
-        num_temporal_layers=enc_cfg.get('num_temporal_layers', 4),
-        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
-        dropout=enc_cfg.get('dropout', 0.1),
-        use_cross_channel=enc_cfg.get('use_cross_channel', True),
-        cnn_channels=enc_cfg.get('cnn_channels', [32, 64]),
-        cnn_kernel_sizes=enc_cfg.get('cnn_kernel_sizes', [5]),
-        target_patch_size=enc_cfg.get('target_patch_size', 64),
-        use_channel_encoding=enc_cfg.get('use_channel_encoding', False)
-    )
-
-    # Create semantic head
-    semantic_head = SemanticAlignmentHead(
-        d_model=enc_cfg.get('d_model', 384),
-        d_model_fused=384,
-        output_dim=384,
-        num_temporal_layers=head_cfg.get('num_temporal_layers', 2),
-        num_heads=enc_cfg.get('num_heads', 8),
-        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
-        dropout=enc_cfg.get('dropout', 0.1),
-        num_fusion_queries=head_cfg.get('num_fusion_queries', 4),
-        use_fusion_self_attention=head_cfg.get('use_fusion_self_attention', True),
-        num_pool_queries=head_cfg.get('num_pool_queries', 4),
-        use_pool_self_attention=head_cfg.get('use_pool_self_attention', True)
-    )
-
-    # Create full model with token-level text encoding
-    model = SemanticAlignmentModel(
-        encoder,
-        semantic_head,
-        num_heads=token_cfg.get('num_heads', 4),
-        dropout=enc_cfg.get('dropout', 0.1)
-    )
-
-    # Load state dict
-    missing_keys, unexpected_keys = model.load_state_dict(
-        checkpoint['model_state_dict'], strict=False
-    )
-    if unexpected_keys:
-        # Filter out expected channel encoding keys
-        other_unexpected = [k for k in unexpected_keys if 'channel_encoding' not in k]
-        if other_unexpected:
-            print(f"  Warning: Unexpected keys: {other_unexpected[:5]}...")
-    if missing_keys:
-        print(f"  Warning: Missing keys: {missing_keys[:5]}...")
-
-    model.eval()
-    model = model.to(device)
-
-    model_info = {
-        'epoch': epoch,
-        'checkpoint_path': str(checkpoint_path)
-    }
-
-    return model, model_info, checkpoint
 
 
-def load_label_bank(checkpoint: dict, device: torch.device, hyperparams_path: Path) -> LearnableLabelBank:
-    """Load LearnableLabelBank with trained state from checkpoint."""
-    # Get config from hyperparameters
-    if hyperparams_path.exists():
-        with open(hyperparams_path) as f:
-            hyperparams = json.load(f)
-        token_cfg = hyperparams.get('token_level_text', {})
-    else:
-        token_cfg = {}
-
-    label_bank = LearnableLabelBank(
-        device=device,
-        num_heads=token_cfg.get('num_heads', 4),
-        num_queries=token_cfg.get('num_queries', 4),
-        num_prototypes=token_cfg.get('num_prototypes', 1),
-        dropout=0.1
-    )
-
-    # Load trained weights if available
-    if 'label_bank_state_dict' in checkpoint:
-        label_bank.load_state_dict(checkpoint['label_bank_state_dict'])
-        print("  ✓ Loaded trained LearnableLabelBank state")
-    else:
-        print("  ⚠ No label_bank_state_dict in checkpoint, using untrained weights")
-
-    label_bank.eval()
-    return label_bank
 
 
 # =============================================================================
@@ -892,15 +742,15 @@ def run_comparison():
         print(f"\n{name}:")
         print(f"  Path: {path}")
         try:
-            model, info, checkpoint = load_model(path, device)
-            hyperparams_path = Path(path).parent / 'hyperparameters.json'
+            model, checkpoint, hyperparams_path = load_model(path, device)
             label_bank = load_label_bank(checkpoint, device, hyperparams_path)
+            info = {'epoch': checkpoint.get('epoch', 'unknown'), 'checkpoint_path': str(path)}
             loaded_models[name] = {
                 'model': model,
                 'label_bank': label_bank,
                 'info': info
             }
-            print(f"  ✓ Loaded (epoch {info['epoch']})")
+            print(f"  Loaded (epoch {info['epoch']})")
         except Exception as e:
             print(f"  ✗ Failed to load: {e}")
             continue

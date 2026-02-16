@@ -41,17 +41,10 @@ OUTPUT_DIR = "test_output/session_explorer"
 NUM_SESSIONS = 5
 
 # Datasets to sample from
-EVAL_DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
-
-# Patch size per dataset - MUST match training config
-PATCH_SIZE_PER_DATASET = {
-    'uci_har': 1.0,
-    'hhar': 1.0,
-    'mhealth': 2.0,
-    'pamap2': 2.0,
-    'wisdm': 2.0,
-    'unimib_shar': 1.0,
-}
+from val_scripts.human_activity_recognition.eval_config import (
+    PATCH_SIZE_PER_DATASET, TRAINING_DATASETS,
+)
+EVAL_DATASETS = TRAINING_DATASETS[:6]  # uci_har, hhar, mhealth, pamap2, wisdm, unimib_shar
 
 # Whether to pause between sessions (False for batch mode)
 INTERACTIVE = False
@@ -70,86 +63,13 @@ ALL_LABELS = None
 
 def load_model_and_data(checkpoint_path: str, device: torch.device):
     """Load model and validation data."""
-    from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
-    from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
-    from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
     from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders
-    from imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
+    from val_scripts.human_activity_recognition.model_loading import (
+        load_model as _load_model, load_label_bank,
+    )
 
-    # Load checkpoint
-    checkpoint_path = Path(checkpoint_path)
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-
-    checkpoint = torch.load(checkpoint_path, map_location='cpu')
+    model, checkpoint, hyperparams_path = _load_model(checkpoint_path, device)
     epoch = checkpoint.get('epoch', 'unknown')
-    print(f"Loaded checkpoint from epoch {epoch}")
-
-    # Load hyperparameters from checkpoint directory
-    hyperparams_path = checkpoint_path.parent / 'hyperparameters.json'
-    if hyperparams_path.exists():
-        with open(hyperparams_path) as f:
-            hyperparams = json.load(f)
-        enc_cfg = hyperparams.get('encoder', {})
-        head_cfg = hyperparams.get('semantic_head', {})
-        token_cfg = hyperparams.get('token_level_text', {})
-        print(f"Loaded architecture from {hyperparams_path}")
-    else:
-        raise FileNotFoundError(
-            f"hyperparameters.json not found at {hyperparams_path}. "
-            "This checkpoint may be from an older incompatible version."
-        )
-
-    # Create encoder
-    encoder = IMUActivityRecognitionEncoder(
-        d_model=enc_cfg.get('d_model', 384),
-        num_heads=enc_cfg.get('num_heads', 8),
-        num_temporal_layers=enc_cfg.get('num_temporal_layers', 4),
-        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
-        dropout=enc_cfg.get('dropout', 0.1),
-        use_cross_channel=enc_cfg.get('use_cross_channel', True),
-        cnn_channels=enc_cfg.get('cnn_channels', [32, 64]),
-        cnn_kernel_sizes=enc_cfg.get('cnn_kernel_sizes', [5]),
-        target_patch_size=enc_cfg.get('target_patch_size', 64),
-        use_channel_encoding=enc_cfg.get('use_channel_encoding', False)
-    )
-
-    # Create semantic head
-    semantic_head = SemanticAlignmentHead(
-        d_model=enc_cfg.get('d_model', 384),
-        d_model_fused=384,
-        output_dim=384,
-        num_temporal_layers=head_cfg.get('num_temporal_layers', 2),
-        num_heads=enc_cfg.get('num_heads', 8),
-        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
-        dropout=enc_cfg.get('dropout', 0.1),
-        num_fusion_queries=head_cfg.get('num_fusion_queries', 4),
-        use_fusion_self_attention=head_cfg.get('use_fusion_self_attention', True),
-        num_pool_queries=head_cfg.get('num_pool_queries', 4),
-        use_pool_self_attention=head_cfg.get('use_pool_self_attention', True)
-    )
-
-    # Create full model with token-level text encoding
-    model = SemanticAlignmentModel(
-        encoder,
-        semantic_head,
-        num_heads=token_cfg.get('num_heads', 4),
-        dropout=enc_cfg.get('dropout', 0.1)
-    )
-
-    # Load state dict
-    missing_keys, unexpected_keys = model.load_state_dict(
-        checkpoint['model_state_dict'], strict=False
-    )
-    if unexpected_keys:
-        other_unexpected = [k for k in unexpected_keys if 'channel_encoding' not in k]
-        if other_unexpected:
-            print(f"  Warning: Unexpected keys: {other_unexpected[:5]}...")
-    if missing_keys:
-        print(f"  Warning: Missing keys: {missing_keys[:5]}...")
-
-    model.eval()
-    model = model.to(device)
 
     # Load validation data
     _, val_loader, _ = create_dataloaders(
@@ -161,22 +81,7 @@ def load_model_and_data(checkpoint_path: str, device: torch.device):
         num_workers=0,
     )
 
-    # Create label bank and load trained weights
-    label_bank = LearnableLabelBank(
-        device=device,
-        num_heads=token_cfg.get('num_heads', 4),
-        num_queries=token_cfg.get('num_queries', 4),
-        num_prototypes=token_cfg.get('num_prototypes', 1),
-        dropout=0.1
-    )
-
-    if 'label_bank_state_dict' in checkpoint:
-        label_bank.load_state_dict(checkpoint['label_bank_state_dict'])
-        print("Loaded trained LearnableLabelBank from checkpoint")
-    else:
-        print("Warning: No label_bank_state_dict in checkpoint, using untrained LearnableLabelBank")
-
-    label_bank.eval()
+    label_bank = load_label_bank(checkpoint, device, hyperparams_path)
 
     # Collect all unique labels from the dataset
     global ALL_LABELS

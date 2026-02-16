@@ -194,15 +194,18 @@ The encoder has been tested on the following datasets:
 ```
 imu_activity_recognition_encoder/
 ├── __init__.py                 # Package initialization
-├── preprocessing.py            # Patching, interpolation, normalization
-├── feature_extractor.py        # Fixed 1D CNN for 64 timesteps
-├── positional_encoding.py      # Temporal + channel semantic encoding
-├── transformer.py              # Temporal attention transformer
 ├── encoder.py                  # Main encoder class
+├── transformer.py              # Dual-branch transformer (temporal + cross-channel)
+├── feature_extractor.py        # Multi-scale 1D CNN
+├── positional_encoding.py      # Temporal + channel semantic encoding
+├── preprocessing.py            # Patching, interpolation, normalization
+├── semantic_alignment.py       # Semantic alignment head + projection + label bank
+├── token_text_encoder.py       # Token-level text encoding (SentenceTransformer)
 ├── config.py                   # Default configurations
-├── README.md                   # This file
+├── example_usage.py            # Usage examples
+├── test_integration.py         # Integration tests
 ├── test_preprocessing.py       # Preprocessing tests
-└── requirements.txt            # Dependencies
+└── README.md                   # This file
 ```
 
 ## Configuration Parameters
@@ -231,39 +234,25 @@ imu_activity_recognition_encoder/
 
 ## Testing
 
-Run tests for individual modules:
-
 ```bash
-# Test preprocessing
-python test_preprocessing.py
+# Run the project regression test suite (111 tests)
+pytest tests/ -v
 
-# Test feature extractor
-python feature_extractor.py
-
-# Test positional encoding
-python positional_encoding.py
-
-# Test transformer
-python transformer.py
-
-# Test complete encoder
-python encoder.py
+# Run encoder-specific tests
+pytest tests/test_encoder_forward.py -v
+pytest tests/test_model_loading.py -v
 ```
 
-## Future Extensions (Phase 2)
+## Implemented Extensions
 
-### Planned Features
-1. **Cross-channel attention**: Learn dependencies between different sensor channels
-2. **Masking for pretraining**: Masked autoencoding (MAE) for self-supervised learning
-3. **Task heads**: Classification, regression, and retrieval heads
-4. **Advanced channel encoding**: Graph-based sensor relationships
+The following features are fully implemented:
 
-### Pretraining
-The encoder is designed for masked autoencoding pretraining:
-1. Mask random patches (75% ratio)
-2. Encode visible patches
-3. Predict masked patch features
-4. Fine-tune on downstream tasks
+1. **Cross-channel attention**: Dual-branch transformer with temporal + cross-channel attention
+2. **Masked autoencoding (MAE)**: Structured masking (random + span + channel dropout) for self-supervised pretraining
+3. **Semantic alignment**: Text-IMU alignment with learnable multi-prototype label bank
+4. **Channel text fusion**: Cross-attention between sensor tokens and channel description tokens
+
+See [`training_scripts/human_activity_recognition/README.md`](../../../training_scripts/human_activity_recognition/README.md) for training details.
 
 ## Citation
 

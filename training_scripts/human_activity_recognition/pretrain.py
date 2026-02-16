@@ -327,6 +327,50 @@ def compute_reconstruction_quality(reconstructed, targets, mae_mask, attention_m
         }
 
 
+def _prepare_padded_batch(
+    batch_patches: List[torch.Tensor],
+    batch_attention_masks: List[torch.Tensor],
+    batch_channel_descriptions: List[List[str]],
+    target_patch_size: int,
+    device: torch.device,
+):
+    """Pad a batch of variable-size patches to uniform shape.
+
+    Returns:
+        padded_patches: (B, max_patches, target_patch_size, max_channels)
+        patch_attention_mask: (B, max_patches) bool
+        channel_mask_for_model: (B, max_channels) bool
+        padded_channel_descriptions: List of List[str], each padded to max_channels
+    """
+    max_patches = max(p.shape[0] for p in batch_patches)
+    max_channels = max(p.shape[2] for p in batch_patches)
+
+    padded_patches = torch.zeros(
+        len(batch_patches), max_patches, target_patch_size, max_channels
+    ).to(device)
+
+    patch_attention_mask = torch.zeros(
+        len(batch_patches), max_patches, dtype=torch.bool
+    ).to(device)
+
+    channel_mask_for_model = torch.zeros(
+        len(batch_patches), max_channels, dtype=torch.bool
+    ).to(device)
+
+    padded_channel_descriptions = []
+    for i, (patches, mask) in enumerate(zip(batch_patches, batch_attention_masks)):
+        num_patches, _, num_channels = patches.shape
+        padded_patches[i, :num_patches, :, :num_channels] = patches
+        patch_attention_mask[i, :num_patches] = mask
+        channel_mask_for_model[i, :num_channels] = True
+
+        channel_descs = batch_channel_descriptions[i]
+        padded_descs = channel_descs + ["[PAD]"] * (max_channels - len(channel_descs))
+        padded_channel_descriptions.append(padded_descs)
+
+    return padded_patches, patch_attention_mask, channel_mask_for_model, padded_channel_descriptions
+
+
 def train_epoch(
     model: PretrainingModel,
     dataloader: DataLoader,
@@ -401,34 +445,10 @@ def train_epoch(
             batch_attention_masks.append(patch_attention_mask)
 
         # Stack and pad patches
-        max_patches = max(p.shape[0] for p in batch_patches)
-        max_channels = max(p.shape[2] for p in batch_patches)           
-
-        padded_patches = torch.zeros(
-            len(batch_patches), max_patches, TARGET_PATCH_SIZE, max_channels
-        ).to(device)
-
-        patch_attention_mask = torch.zeros(
-            len(batch_patches), max_patches, dtype=torch.bool
-        ).to(device)
-
-        # Create channel mask for the encoder
-        channel_mask_for_model = torch.zeros(
-            len(batch_patches), max_channels, dtype=torch.bool
-        ).to(device)
-
-        # Pad channel descriptions to match max_channels
-        padded_channel_descriptions = []
-        for i, (patches, mask) in enumerate(zip(batch_patches, batch_attention_masks)):
-            num_patches, _, num_channels = patches.shape
-            padded_patches[i, :num_patches, :, :num_channels] = patches
-            patch_attention_mask[i, :num_patches] = mask
-            channel_mask_for_model[i, :num_channels] = True  # Mark valid channels
-
-            # Pad channel descriptions
-            channel_descs = batch_channel_descriptions[i]
-            padded_descs = channel_descs + ["[PAD]"] * (max_channels - len(channel_descs))
-            padded_channel_descriptions.append(padded_descs)
+        padded_patches, patch_attention_mask, channel_mask_for_model, padded_channel_descriptions = \
+            _prepare_padded_batch(batch_patches, batch_attention_masks, batch_channel_descriptions, TARGET_PATCH_SIZE, device)
+        max_patches = padded_patches.shape[1]
+        max_channels = padded_patches.shape[3]
 
         # Create augmented view with sample-level augmentation
         # IMPORTANT: Apply same augmentation parameters to all patches within a sample
@@ -722,27 +742,9 @@ def validate(
                 batch_attention_masks.append(torch.ones(patches.shape[0], dtype=torch.bool).to(device))
 
             # Pad patches
-            max_patches = max(p.shape[0] for p in batch_patches)
-            max_channels = max(p.shape[2] for p in batch_patches)
-
-            padded_patches = torch.zeros(len(batch_patches), max_patches, TARGET_PATCH_SIZE, max_channels).to(device)
-            patch_attention_mask = torch.zeros(len(batch_patches), max_patches, dtype=torch.bool).to(device)
-
-            # Create channel mask for the encoder
-            channel_mask_for_model = torch.zeros(len(batch_patches), max_channels, dtype=torch.bool).to(device)
-
-            # Pad channel descriptions
-            padded_channel_descriptions = []
-            for i, (patches, mask) in enumerate(zip(batch_patches, batch_attention_masks)):
-                num_patches, _, num_channels = patches.shape
-                padded_patches[i, :num_patches, :, :num_channels] = patches
-                patch_attention_mask[i, :num_patches] = mask
-                channel_mask_for_model[i, :num_channels] = True
-
-                # Pad channel descriptions
-                channel_descs = batch_channel_descriptions[i]
-                padded_descs = channel_descs + ["[PAD]"] * (max_channels - len(channel_descs))
-                padded_channel_descriptions.append(padded_descs)
+            padded_patches, patch_attention_mask, channel_mask_for_model, padded_channel_descriptions = \
+                _prepare_padded_batch(batch_patches, batch_attention_masks, batch_channel_descriptions, TARGET_PATCH_SIZE, device)
+            max_patches = padded_patches.shape[1]
 
             # No augmentation in validation for consistency
             # Memory optimization: Use same tensor for both views (no clone needed)

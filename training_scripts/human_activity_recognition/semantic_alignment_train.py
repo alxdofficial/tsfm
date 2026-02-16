@@ -23,7 +23,7 @@ import json
 import math
 
 from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders, IMUPretrainingDataset, worker_init_fn
-from torch.utils.data import DataLoader, WeightedRandomSampler, Sampler
+from torch.utils.data import DataLoader
 from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
 from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
 from imu_activity_recognition_encoder.token_text_encoder import (
