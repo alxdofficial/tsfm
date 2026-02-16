@@ -54,13 +54,13 @@ def create_patches(data, sampling_rate_hz, patch_size_sec, stride_sec):
 
 ### 1.3 Interpolation to Fixed Size
 
-**Design Decision #2: All patches interpolated to 96 timesteps**
+**Design Decision #2: All patches interpolated to 64 timesteps**
 
-**Why 96?**
+**Why 64?**
 - **Dataset-agnostic:** Decouples from sampling rate
 - **Sufficient resolution:** Captures temporal dynamics for 1-5 second windows
 - **Computational efficiency:** Not too large (avoids memory issues)
-- **Divisible:** 96 = 2^5 × 3, works well with multi-scale convolutions
+- **Divisible:** 64 = 2^6, works well with multi-scale convolutions and power-of-2 GPU alignment
 
 **Method:** Linear interpolation (default)
 ```python
@@ -73,7 +73,7 @@ interpolation_method = 'linear'  # Options: 'linear', 'cubic', 'nearest'
 - Smooth transitions
 - No overfitting to noise (unlike cubic)
 
-**Result:** `(num_patches, 96, num_channels)`
+**Result:** `(num_patches, 64, num_channels)`
 
 ---
 
@@ -94,9 +94,9 @@ normalization_method = 'zscore'  # Options: 'zscore', 'minmax', 'none'
 ```
 normalized = (patch - mean) / std
 ```
-where `mean` and `std` computed over the 96 timesteps for each channel independently.
+where `mean` and `std` computed over the 64 timesteps for each channel independently.
 
-**Result:** `(num_patches, 96, num_channels)` with zero mean, unit variance
+**Result:** `(num_patches, 64, num_channels)` with zero mean, unit variance
 
 ---
 
@@ -111,10 +111,10 @@ CNN_CHANNELS = [64, 128]       # Progressive feature hierarchy
 ```
 
 **Design:**
-1. **Input:** `(batch, patches, 96, channels)`
-2. **Reshape:** Process each patch independently: `(batch × patches, 96, channels)`
+1. **Input:** `(batch, patches, 64, channels)`
+2. **Reshape:** Process each patch independently: `(batch × patches, 64, channels)`
 3. **Multi-scale conv1d:**
-   - Branch 1: kernel=3 → captures fine-grained motion (0.125s at 96 samples)
+   - Branch 1: kernel=3 → captures fine-grained motion (0.094s at 64 samples)
    - Branch 2: kernel=5 → captures medium-scale patterns (0.208s)
    - Branch 3: kernel=7 → captures coarse patterns (0.292s)
 4. **Concatenate:** Merge multi-scale features → `64 + 64 + 64 = 192` channels
@@ -269,15 +269,15 @@ where λ_MAE = 1.0, λ_contrast = 1.0
 
 3. **Reconstruction head:**
    ```python
-   reconstruction_head = nn.Linear(d_model, 96)
-   # (batch, patches, channels, d_model) → (batch, patches, channels, 96)
-   # Transpose → (batch, patches, 96, channels)
+   reconstruction_head = nn.Linear(d_model, 64)
+   # (batch, patches, channels, d_model) → (batch, patches, channels, 64)
+   # Transpose → (batch, patches, 64, channels)
    ```
 
 4. **Loss (only on masked patches):**
    ```python
    # Per-patch normalization of targets
-   targets_normalized = (targets - mean) / std  # Over 96 timesteps
+   targets_normalized = (targets - mean) / std  # Over 64 timesteps
 
    # MSE on masked positions only
    loss = MSE(predictions[mae_mask], targets_normalized[mae_mask])
@@ -295,11 +295,11 @@ where λ_MAE = 1.0, λ_contrast = 1.0
 
 **Shape flow:**
 ```
-Patches: (32, 64, 96, 40)
+Patches: (32, 64, 64, 40)
   ↓ Encoder
 Features: (32, 64, 40, 384)
   ↓ Reconstruction head
-Reconstructed: (32, 64, 96, 40)
+Reconstructed: (32, 64, 64, 40)
   ↓ Loss computation
 MAE Loss: scalar
 ```
@@ -371,8 +371,8 @@ MAE Loss: scalar
 
 **Shape flow:**
 ```
-Original: (32, 64, 96, 40)
-Augmented: (32, 64, 96, 40)
+Original: (32, 64, 64, 40)
+Augmented: (32, 64, 64, 40)
   ↓ Encoder (both)
 Features: 2 × (32, 64, 40, 384)
   ↓ Projection head
@@ -438,7 +438,7 @@ for batch in dataloader:
     # 3. Pad to max_patches
     max_patches = max(p.shape[0] for p in patches_list)
     padded_patches = pad_patches(patches_list, max_patches)
-    # → (batch, max_patches, 96, max_channels)
+    # → (batch, max_patches, 64, max_channels)
 
     # 4. Create masks
     mae_mask = create_random_mask(batch, max_patches, mask_ratio=0.5)
@@ -497,14 +497,14 @@ INPUT: Raw IMU data
 ↓ create_patches(patch_size_sec=2.0)
 (5, 200, 9)  # 5 patches, 200 timesteps each
 
-↓ interpolate_patches(target_size=96)
-(5, 96, 9)  # Fixed 96 timesteps
+↓ interpolate_patches(target_size=64)
+(5, 64, 9)  # Fixed 64 timesteps
 
 ↓ normalize_patches()
-(5, 96, 9)  # Zero mean, unit variance
+(5, 64, 9)  # Zero mean, unit variance
 
 ↓ Batching & padding (batch of 32 samples)
-(32, 64, 96, 40)  # Max 64 patches, max 40 channels across batch
+(32, 64, 64, 40)  # Max 64 patches, max 40 channels across batch
 # With masks:
 # - attention_mask: (32, 64) - True = valid patch
 # - mae_mask: (32, 64) - True = masked for MAE
@@ -543,10 +543,10 @@ A) PROJECTION HEAD (for contrastive):
    scalar
 
 B) RECONSTRUCTION HEAD (for MAE):
-   ↓ Linear(384 → 96)
-   (32, 64, 40, 96)
+   ↓ Linear(384 → 64)
+   (32, 64, 40, 64)
    ↓ Transpose
-   (32, 64, 96, 40)
+   (32, 64, 64, 40)
    ↓ MSE loss (only on MAE masked patches)
    scalar
 
@@ -586,9 +586,9 @@ total_loss = mae_loss + contrastive_loss
 ### 🟠 **Stage 2: Batch Padding** (~20% of memory)
 
 **What's stored:**
-- Padded patches: `(32, 64, 96, 40)` = 78M elements × 2 bytes = **156 MB**
-- Augmented patches: Another **156 MB**
-- **Total:** ~**300 MB**
+- Padded patches: `(32, 64, 64, 40)` = 5.2M elements × 2 bytes (FP16) = **10 MB**
+- Augmented patches: Another **10 MB**
+- **Total:** ~**20 MB**
 
 **Why expensive?**
 - **Padding overhead:** Most samples have 20-30 patches, but padded to 64
@@ -694,7 +694,7 @@ TOTAL:                     ~8.3 GB
 
 ### Key Design Decisions:
 1. ✅ **Real-world time** (seconds, not timesteps)
-2. ✅ **Fixed patch size** (96 timesteps after interpolation)
+2. ✅ **Fixed patch size** (64 timesteps after interpolation)
 3. ✅ **Multi-scale CNN** (kernels 3/5/7 for different frequencies)
 4. ✅ **Dual-branch transformer** (temporal + cross-channel attention)
 5. ✅ **Dual objectives** (MAE + contrastive for complementary learning)
@@ -709,7 +709,7 @@ TOTAL:                     ~8.3 GB
 
 ### Shape Flow Example:
 ```
-(1000, 9) → (5, 200, 9) → (5, 96, 9) → (32, 64, 96, 40)
+(1000, 9) → (5, 200, 9) → (5, 64, 9) → (32, 64, 64, 40)
 → (32, 64, 40, 384) → dual heads → scalar losses
 ```
 
