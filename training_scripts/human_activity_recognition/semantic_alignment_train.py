@@ -211,7 +211,7 @@ MEMORY_BANK_SIZE = 256  # Provides batch + 256 negatives per step
 # without cap: stand_to_sit sampled 250x more often (overfitting risk)
 # with cap=20: stand_to_sit sampled only 20x more often
 MAX_OVERSAMPLE_RATIO = 20.0  # Max oversampling factor for rare groups
-SAMPLING_TEMPERATURE = 0.5  # Temperature for sampling: 0.0=balanced, 0.5=sqrt, 1.0=uniform
+SAMPLING_TEMPERATURE = 0.0  # Temperature for sampling: 0.0=balanced, 0.5=sqrt, 1.0=uniform
 
 # NOTE: Channel augmentation (random subsampling/shuffling) is DISABLED.
 # Experiments showed better zero-shot generalization with consistent channel order.
@@ -241,7 +241,7 @@ DEBUG_METRIC_FREQUENCY = 50  # Compute expensive debug metrics every N batches (
 # plus learnable attention pooling for label refinement.
 TOKEN_TEXT_NUM_HEADS = 4     # Attention heads for text fusion/pooling
 TOKEN_TEXT_NUM_QUERIES = 4   # Learnable query tokens for label pooling
-NUM_PROTOTYPES = 3           # Number of prototype embeddings per label (K=1 for single, K=3 for multi)
+NUM_PROTOTYPES = 1           # Number of prototype embeddings per label (K=1 for single, K=3 for multi)
 
 # Ablation: use mean pooling instead of learnable attention pooling
 # When True: uses SentenceBERT's default mean pooling (no learnable params)
@@ -262,7 +262,7 @@ USE_GROUP_BALANCED_SAMPLING = True  # Default: enable group-balanced sampling
 # During training, randomly sample patch sizes from valid ranges per dataset
 # Ranges are constrained by session duration (need ≥2 patches per session)
 USE_PATCH_SIZE_AUGMENTATION = True  # Enable patch size augmentation for better generalization
-USE_ROTATION_AUGMENTATION = True  # Apply SO(3) rotation to sensor triads for orientation invariance
+USE_ROTATION_AUGMENTATION = False  # Apply SO(3) rotation to sensor triads for orientation invariance
 MIN_PATCHES_PER_SAMPLE = 1  # Minimum patches required per sample
 
 # Valid patch size ranges per dataset: (min_sec, max_sec, step_sec)
