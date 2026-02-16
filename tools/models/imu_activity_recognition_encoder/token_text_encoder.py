@@ -107,25 +107,14 @@ class TokenTextEncoder(nn.Module):
             for i, text in enumerate(unique_uncached):
                 self._cache[text] = (token_embeddings[i].cpu(), attention_mask[i].cpu())
 
-        # Assemble full batch from cache
+        # Assemble full batch from cache using pad_sequence (vectorized padding)
+        from torch.nn.utils.rnn import pad_sequence
         cached_embs = [self._cache[t][0] for t in texts]
         cached_masks = [self._cache[t][1] for t in texts]
 
-        # Pad to max length in this batch
-        max_len = max(e.shape[0] for e in cached_embs)
-        padded_embs = []
-        padded_masks = []
-        for emb, mask in zip(cached_embs, cached_masks):
-            pad_len = max_len - emb.shape[0]
-            if pad_len > 0:
-                emb = torch.cat([emb, torch.zeros(pad_len, emb.shape[1])], dim=0)
-                mask = torch.cat([mask, torch.zeros(pad_len, dtype=mask.dtype)], dim=0)
-            padded_embs.append(emb)
-            padded_masks.append(mask)
-
-        embs = torch.stack(padded_embs).to(device)
-        masks = torch.stack(padded_masks).to(device)
-        return embs, masks.bool()
+        embs = pad_sequence(cached_embs, batch_first=True, padding_value=0.0).to(device)
+        masks = pad_sequence(cached_masks, batch_first=True, padding_value=0).to(device).bool()
+        return embs, masks
 
     def clear_cache(self):
         self._cache.clear()

@@ -8,10 +8,10 @@ This encoder processes raw IMU sensor data through multiple stages to produce ri
 
 ### Key Features
 
-- **Variable input support**: Works with 6-40 channels and any sampling rate (50-200 Hz)
+- **Variable input support**: Works with 6-52 channels and any sampling rate (20-200 Hz)
 - **Fixed patch size**: All patches interpolated to 64 timesteps for consistent architecture
 - **Channel-independent processing**: Scales efficiently to many channels
-- **Multi-scale feature extraction**: Uses parallel CNN branches with different kernel sizes
+- **1D CNN feature extraction**: Channel-independent Conv1d (kernel=5) for temporal features
 - **Temporal attention**: Models dependencies across time patches
 - **Channel semantic encoding**: Optional encoding of channel meanings using Sentence-BERT
 
@@ -26,7 +26,7 @@ Raw IMU Data (timesteps × channels)
    - Normalization: Z-score per patch, per channel
     ↓
 2. Feature Extraction
-   - Multi-scale 1D CNN (kernels: 3, 5, 7)
+   - Channel-independent 1D CNN (kernel: 5)
    - Channel-independent processing
    - Output: (patches × channels × d_model)
     ↓
@@ -65,7 +65,7 @@ import torch
 from encoder import IMUActivityRecognitionEncoder
 
 # Create encoder with default configuration
-encoder = IMUActivityRecognitionEncoder(d_model=128)
+encoder = IMUActivityRecognitionEncoder(d_model=384)
 
 # Encode raw sensor data
 data = torch.randn(1000, 9)  # 10 seconds at 100 Hz, 9 channels
@@ -75,8 +75,8 @@ features, metadata = encoder.encode_from_raw(
     patch_size_sec=2.0
 )
 
-print(f"Encoded shape: {features.shape}")  # (5, 9, 128)
-# 5 patches, 9 channels, 128 features per patch-channel
+print(f"Encoded shape: {features.shape}")  # (5, 9, 384)
+# 5 patches, 9 channels, 384 features per patch-channel
 ```
 
 ### Using Different Model Sizes
@@ -134,7 +134,7 @@ features, metadata = encoder.encode_from_raw(
     patch_size_sec=2.0
 )
 
-print(f"Encoded shape: {features.shape}")  # (32, 5, 9, 128)
+print(f"Encoded shape: {features.shape}")  # (32, 5, 9, 384)
 ```
 
 ### Overlapping Patches
@@ -156,15 +156,15 @@ print(f"Number of patches: {features.shape[0]}")  # More patches due to overlap
 ```python
 encoder = IMUActivityRecognitionEncoder(
     # Model architecture
-    d_model=128,
+    d_model=384,
     num_heads=8,
     num_temporal_layers=4,
-    dim_feedforward=512,
+    dim_feedforward=1536,
     dropout=0.1,
 
     # CNN parameters
-    cnn_channels=[64, 128],
-    cnn_kernel_sizes=[3, 5, 7],
+    cnn_channels=[32, 64],
+    cnn_kernel_sizes=[5],
 
     # Preprocessing
     target_patch_size=64,
@@ -211,15 +211,15 @@ imu_activity_recognition_encoder/
 ## Configuration Parameters
 
 ### Model Architecture
-- `d_model` (int): Feature dimension throughout model (default: 128)
+- `d_model` (int): Feature dimension throughout model (default: 384)
 - `num_heads` (int): Number of attention heads (default: 8)
 - `num_temporal_layers` (int): Number of transformer layers (default: 4)
-- `dim_feedforward` (int): Hidden dimension in FFN (default: 512)
+- `dim_feedforward` (int): Hidden dimension in FFN (default: 1536)
 - `dropout` (float): Dropout probability (default: 0.1)
 
 ### CNN Parameters
-- `cnn_channels` (List[int]): Channel progression (default: [64, 128])
-- `cnn_kernel_sizes` (List[int]): Multi-scale kernels (default: [3, 5, 7])
+- `cnn_channels` (List[int]): Channel progression (default: [32, 64])
+- `cnn_kernel_sizes` (List[int]): Convolution kernel sizes (default: [5])
 
 ### Preprocessing
 - `target_patch_size` (int): Fixed size after interpolation (default: 64)

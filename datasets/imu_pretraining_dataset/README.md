@@ -6,7 +6,7 @@ Multi-dataset loader for pretraining the IMU Activity Recognition Encoder.
 
 This dataset loader combines multiple IMU activity recognition datasets with:
 - **Random dataset selection** per batch
-- **Random channel subset selection** (6-40 channels)
+- **Random channel subset selection** (6-52 channels)
 - **Automatic train/val/test splitting** (70/15/15)
 - **Padding and masking** for variable-length sequences
 - **Compatible with all sampling rates** (20-200 Hz)
@@ -178,7 +178,7 @@ Total: **14,168 sessions** across all datasets
 
 - UCI HAR: 6-9 channels
 - MHEALTH: 6-23 channels
-- PAMAP2: 6-40 channels
+- PAMAP2: 6-52 channels
 - WISDM: 3-6 channels
 
 Channels are randomly sampled from available channels each time.

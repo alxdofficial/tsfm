@@ -16,11 +16,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "num_temporal_layers": 4,
     "dim_feedforward": 1536,  # 4x d_model
     "dropout": 0.1,
-    "use_cross_channel": False,  # Enable cross-channel attention (default: False for backward compatibility)
+    "use_cross_channel": True,  # Cross-channel attention enabled (used in training)
 
     # CNN parameters
-    "cnn_channels": [64, 128],
-    "cnn_kernel_sizes": [3, 5, 7],
+    "cnn_channels": [32, 64],
+    "cnn_kernel_sizes": [5],
 
     # Preprocessing parameters
     "target_patch_size": 64,
@@ -47,7 +47,7 @@ SMALL_CONFIG: Dict[str, Any] = {
     "dropout": 0.1,
     "use_cross_channel": False,  # Enable cross-channel attention
     "cnn_channels": [32, 64],
-    "cnn_kernel_sizes": [3, 5, 7],
+    "cnn_kernel_sizes": [5],
     "target_patch_size": 64,
     "normalization_method": "zscore",
     "interpolation_method": "linear",
@@ -65,9 +65,9 @@ LARGE_CONFIG: Dict[str, Any] = {
     "num_temporal_layers": 6,
     "dim_feedforward": 1024,
     "dropout": 0.1,
-    "use_cross_channel": False,  # Enable cross-channel attention
+    "use_cross_channel": True,
     "cnn_channels": [64, 128, 256],
-    "cnn_kernel_sizes": [3, 5, 7],
+    "cnn_kernel_sizes": [5],
     "target_patch_size": 64,
     "normalization_method": "zscore",
     "interpolation_method": "linear",

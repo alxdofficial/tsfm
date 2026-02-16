@@ -21,7 +21,7 @@ This project implements a **pretrained encoder** for IMU (Inertial Measurement U
 ### Key Features
 
 - ✅ **Cross-channel attention**: Models relationships between different sensors (accelerometer ↔ gyroscope)
-- ✅ **Variable channel support**: Handles 6-40 channels with automatic padding/masking
+- ✅ **Variable channel support**: Handles 6-52 channels with automatic padding/masking
 - ✅ **Multi-dataset pretraining**: Trains on 10 datasets (UCI HAR, HHAR, MHEALTH, PAMAP2, WISDM, UniMiB, DSADS, HAPT, KU-HAR, RecGym)
 - ✅ **Semantic alignment**: Align IMU embeddings with natural language descriptions
 - ✅ **Multi-prototype learning**: K=3 prototypes per activity class capture intra-class variation
@@ -37,9 +37,9 @@ This project implements a **pretrained encoder** for IMU (Inertial Measurement U
 ## 🏗️ Architecture Overview
 
 ```
-Raw IMU Data (variable length, 6-40 channels)
+Raw IMU Data (variable length, 6-52 channels)
          ↓
-    Preprocessing (interpolate to 96-sample patches)
+    Preprocessing (interpolate to 64-sample patches)
          ↓
     Patch Tokenization (2-second windows → patches)
          ↓
@@ -261,14 +261,14 @@ DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
 PATCH_SIZE_SEC = 2.0  # 2-second patches (varies per dataset)
 
 # Model
-D_MODEL = 128
+D_MODEL = 384
 NUM_HEADS = 8
 NUM_TEMPORAL_LAYERS = 4
 USE_CROSS_CHANNEL = True  # Enable cross-channel attention
 
 # Training
 EPOCHS = 100
-BATCH_SIZE = 32
+BATCH_SIZE = 20
 LEARNING_RATE = 1e-4
 WARMUP_EPOCHS = 10
 
@@ -287,13 +287,13 @@ To change hyperparameters, edit the constants at the top of `main()` in `pretrai
 
 ### Encoder Architecture
 
-- **Input:** Patches of shape (batch, num_patches, 96, num_channels)
-- **CNN Feature Extraction:** Multi-scale convolutions [3,5,7] kernels → d_model=128
-- **Positional Embeddings:** Patch position + channel position
+- **Input:** Patches of shape (batch, num_patches, 64, num_channels)
+- **CNN Feature Extraction:** 1D convolution [kernel=5] → d_model=384
+- **Positional Embeddings:** Sinusoidal temporal + SentenceBERT channel semantic
 - **Transformer Blocks (×4):**
   - Temporal self-attention (across patches)
   - Cross-channel self-attention (across sensors)
-  - Feed-forward network (128 → 512 → 128)
+  - Feed-forward network (384 → 1536 → 384)
 - **Output:** (batch, num_patches, num_channels, d_model)
 
 ### Pretraining Objectives

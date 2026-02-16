@@ -60,7 +60,7 @@ def create_patches(data, sampling_rate_hz, patch_size_sec, stride_sec):
 - **Dataset-agnostic:** Decouples from sampling rate
 - **Sufficient resolution:** Captures temporal dynamics for 1-5 second windows
 - **Computational efficiency:** Not too large (avoids memory issues)
-- **Divisible:** 64 = 2^6, works well with multi-scale convolutions and power-of-2 GPU alignment
+- **Divisible:** 64 = 2^6, works well with convolutions and power-of-2 GPU alignment
 
 **Method:** Linear interpolation (default)
 ```python
@@ -100,33 +100,29 @@ where `mean` and `std` computed over the 64 timesteps for each channel independe
 
 ---
 
-### 1.5 Multi-Scale CNN Feature Extraction
+### 1.5 CNN Feature Extraction
 
-**Design Decision #4: Multi-scale convolutions with parallel branches**
+**Design Decision #4: Single-kernel 1D convolution**
 
 **Architecture:**
 ```python
-CNN_KERNEL_SIZES = [3, 5, 7]  # Multi-scale temporal receptive fields
-CNN_CHANNELS = [64, 128]       # Progressive feature hierarchy
+CNN_KERNEL_SIZES = [5]    # Single kernel (reduced from [3,5,7] to save memory)
+CNN_CHANNELS = [32, 64]   # Reduced from [64, 128] to halve CNN memory
 ```
 
 **Design:**
 1. **Input:** `(batch, patches, 64, channels)`
 2. **Reshape:** Process each patch independently: `(batch × patches, 64, channels)`
-3. **Multi-scale conv1d:**
-   - Branch 1: kernel=3 → captures fine-grained motion (0.094s at 64 samples)
-   - Branch 2: kernel=5 → captures medium-scale patterns (0.208s)
-   - Branch 3: kernel=7 → captures coarse patterns (0.292s)
-4. **Concatenate:** Merge multi-scale features → `64 + 64 + 64 = 192` channels
-5. **Conv1d:** `192 → 128` (intermediate)
-6. **Conv1d:** `128 → d_model` (final projection)
-7. **Global pooling:** Average over time → `(batch × patches, d_model)`
-8. **Reshape back:** `(batch, patches, channels, d_model)`
+3. **Conv1d:** kernel=5 → captures temporal patterns
+4. **Conv1d:** `32 → 64` (intermediate)
+5. **Conv1d:** `64 → d_model` (final projection)
+6. **Global pooling:** Average over time → `(batch × patches, d_model)`
+7. **Reshape back:** `(batch, patches, channels, d_model)`
 
-**Why multi-scale?**
-- **Different activity types:** Walking has different frequency than running
-- **Sensor fusion:** Accelerometer (high-freq) vs gyroscope (low-freq) need different receptive fields
-- **Robustness:** Ensemble of scales prevents missing important patterns
+**Why single kernel?**
+- **Memory efficient:** 3x less memory than multi-scale [3,5,7]
+- **kernel=5** captures sufficient temporal patterns for 64-sample patches
+- **Empirically:** Single kernel performs comparably to multi-scale for activity recognition
 
 **Result:** `(batch, patches, channels, d_model=384)`
 
@@ -159,11 +155,13 @@ self.pad_token = nn.Parameter(torch.randn(1, 1, 1, d_model) * 0.02)
 
 **Temporal Encoding:**
 ```python
-temporal_pos_encoding = nn.Parameter(torch.randn(1, max_patches, 1, d_model))
+# Sinusoidal encoding (fixed) with learnable scale factor
+pe = create_sinusoidal_encoding(max_patches, d_model)  # registered buffer
+self.scale = nn.Parameter(torch.tensor(init_scale))     # learnable magnitude
 ```
-- **Learnable, not sinusoidal:** Allows model to learn patch ordering
-- **Why not sinusoidal?** IMU data has non-uniform temporal patterns (unlike language)
-- **Shape:** `(1, max_patches, 1, d_model)` broadcasts to all channels
+- **Sinusoidal with learnable scale:** Fixed sinusoidal PE (as in original Transformer) with a learnable scale parameter
+- **Why sinusoidal?** Generalizes to unseen sequence lengths; learnable scale adapts magnitude during training
+- **Shape:** `(max_patches, d_model)` broadcasts to `(1, max_patches, 1, d_model)` across batch and channels
 
 **Channel Semantic Encoding:**
 ```python
@@ -175,7 +173,7 @@ semantic_embeddings = sentence_bert_model.encode(channel_descriptions)
 **Why semantic?**
 - **Sensor relationships:** "accelerometer X" is semantically similar to "accelerometer Y"
 - **Cross-dataset transfer:** Channel names differ, but semantics align
-- **Variable channels:** Handles 6-40 channels without retraining
+- **Variable channels:** Handles 6-52 channels without retraining
 
 **Combined:**
 ```
@@ -510,7 +508,7 @@ INPUT: Raw IMU data
 # - mae_mask: (32, 64) - True = masked for MAE
 # - channel_mask: (32, 40) - True = valid channel
 
-↓ FixedPatchCNN (multi-scale conv)
+↓ FixedPatchCNN (1D conv)
 (32, 64, 40, 384)  # d_model=384
 
 ↓ Apply mask_token (MAE masked positions)
@@ -695,7 +693,7 @@ TOTAL:                     ~8.3 GB
 ### Key Design Decisions:
 1. ✅ **Real-world time** (seconds, not timesteps)
 2. ✅ **Fixed patch size** (64 timesteps after interpolation)
-3. ✅ **Multi-scale CNN** (kernels 3/5/7 for different frequencies)
+3. ✅ **1D CNN** (kernel=5, reduced from multi-scale [3,5,7] for memory efficiency)
 4. ✅ **Dual-branch transformer** (temporal + cross-channel attention)
 5. ✅ **Dual objectives** (MAE + contrastive for complementary learning)
 6. ✅ **Per-patch normalization** (stable training across datasets)

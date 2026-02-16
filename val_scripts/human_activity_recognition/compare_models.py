@@ -45,7 +45,6 @@ from datasets.imu_pretraining_dataset.label_groups import LABEL_GROUPS, get_grou
 # Checkpoint paths to compare - add as many as you want
 # Format: {"display_name": "path/to/checkpoint.pt"}
 CHECKPOINT_PATHS = {
-    "6_datasets": "training_output/semantic_alignment/good1/best.pt",
     "11_datasets": "training_output/semantic_alignment/20260124_033735/best.pt",
 }
 

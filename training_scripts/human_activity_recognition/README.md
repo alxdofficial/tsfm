@@ -66,8 +66,8 @@ All hyperparameters are hard-coded constants in `pretrain.py` (top of `main()`):
 ```python
 DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar',
             'dsads', 'hapt', 'ku_har', 'recgym']
-D_MODEL = 128
-BATCH_SIZE = 32
+D_MODEL = 384
+BATCH_SIZE = 20
 LEARNING_RATE = 1e-4
 EPOCHS = 100
 MASK_RATIO = 0.5
@@ -94,11 +94,11 @@ MASK_RATIO = 0.5
 Hard-coded constants in `semantic_alignment_train.py`:
 
 ```python
-D_MODEL = 128
+D_MODEL = 384
 NUM_PROTOTYPES = 3
-QUEUE_SIZE = 4096
-LEARNING_RATE = 5e-5
-FREEZE_ENCODER = True  # Freeze Stage 1 encoder weights
+MEMORY_BANK_SIZE = 256
+LEARNING_RATE = 1e-4
+FREEZE_ENCODER = False  # Encoder unfrozen for discriminative learning
 ```
 
 ## Training Outputs

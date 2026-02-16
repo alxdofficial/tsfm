@@ -22,7 +22,7 @@ from tqdm import tqdm
 import json
 import math
 
-from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders, IMUPretrainingDataset, worker_init_fn
+from datasets.imu_pretraining_dataset.multi_dataset_loader import IMUPretrainingDataset, worker_init_fn
 from torch.utils.data import DataLoader
 from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
 from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
@@ -178,8 +178,8 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
 EPOCHS = 100
-BATCH_SIZE = 16  # Micro-batch size (per-sample loop limits GPU parallelism — 16 is optimal throughput)
-ACCUMULATION_STEPS = 32  # Effective batch = 16 × 32 = 512
+BATCH_SIZE = 8  # Micro-batch size (encoder forward path is now vectorized — larger BS may be faster)
+ACCUMULATION_STEPS = 64  # Effective batch = 8 × 64 = 512
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
 WARMUP_EPOCHS = 3
 
@@ -375,12 +375,21 @@ class SemanticAlignmentModel(nn.Module):
         max_channels = patches.shape[3]
         device = patches.device
 
+        if len(channel_descriptions) != batch_size:
+            raise ValueError(
+                f"Expected {batch_size} channel description lists, got {len(channel_descriptions)}"
+            )
+        for i, descs in enumerate(channel_descriptions):
+            if len(descs) > max_channels:
+                raise ValueError(
+                    f"Sample {i} has {len(descs)} channel descriptions, exceeds max_channels={max_channels}"
+                )
+
         # Pad channel descriptions to max_channels
-        batched_channel_descs = []
-        for i in range(batch_size):
-            descs = channel_descriptions[i]
-            padded_descs = descs + ["[PAD]"] * (max_channels - len(descs))
-            batched_channel_descs.append(padded_descs)
+        batched_channel_descs = [
+            descs + ["[PAD]"] * (max_channels - len(descs))
+            for descs in channel_descriptions
+        ]
 
         # Encode with frozen/unfrozen encoder (already batched — patches from DataLoader)
         if FREEZE_ENCODER:
@@ -1451,10 +1460,10 @@ def main():
             print("✓ Loaded label_bank state (learnable attention pooling)")
 
     # Apply torch.compile for JIT optimization (after all state loading)
-    # Compiles sub-modules individually since forward() has Python logic (cache, list ops)
-    # that would cause graph breaks. dynamic=True handles variable batch/patch/channel shapes.
+    # NOTE: Cannot compile the full encoder because its positional_encoding path uses
+    # SentenceTransformer which is incompatible with torch.dynamo tracing.
+    # Instead, compile the heavy sub-modules: encoder's transformer, channel_fusion, semantic_head.
     if device.type == 'cuda' and hasattr(torch, 'compile'):
-        # Detect best available backend: inductor (Triton) > aot_eager > skip
         compile_backend = None
         _test_model = None
         try:
@@ -1475,12 +1484,14 @@ def main():
             if compile_backend != 'inductor':
                 compile_kwargs['backend'] = compile_backend
             print(f"\nApplying torch.compile (backend={compile_backend}, dynamic=True)...")
-            model.encoder = torch.compile(model.encoder, **compile_kwargs)
+            # Compile encoder's transformer (the heavy part) — skip positional_encoding (SentenceTransformer)
+            model.encoder.transformer = torch.compile(model.encoder.transformer, **compile_kwargs)
+            model.encoder.feature_extractor = torch.compile(model.encoder.feature_extractor, **compile_kwargs)
             model.channel_fusion = torch.compile(model.channel_fusion, **compile_kwargs)
             model.semantic_head = torch.compile(model.semantic_head, **compile_kwargs)
-            print("✓ torch.compile applied (first batch will be slower due to compilation)")
+            print("✓ torch.compile applied to transformer, feature_extractor, channel_fusion, semantic_head")
         else:
-            print("\nWarning: torch.compile not available (missing python-dev headers), using eager mode")
+            print("\nWarning: torch.compile not available, using eager mode")
 
     # Warmup memory bank if enabled (reduces early training volatility)
     # Skip if resuming since memory bank is restored from checkpoint

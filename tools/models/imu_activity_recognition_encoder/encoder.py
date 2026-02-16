@@ -41,7 +41,7 @@ class IMUActivityRecognitionEncoder(nn.Module):
     - Transfer learning to new activities
 
     Key features:
-    - Variable channel support (6-40 channels)
+    - Variable channel support (6-52 channels)
     - Variable sampling rates (automatically handled)
     - Channel-independent processing (scales to many channels)
     - Fixed 64-timestep patches (consistent architecture)
@@ -222,53 +222,59 @@ class IMUActivityRecognitionEncoder(nn.Module):
         features = self.feature_extractor(patches)
 
         # Apply mask_token and pad_token at feature level (AFTER CNN, BEFORE positional encoding)
+        # All masking uses torch.where for vectorized operation (no per-sample loops)
         if mae_mask is not None or patch_attention_mask is not None or channel_dropout_mask is not None:
-            features = features.clone()  # Don't modify in-place
-
             # Replace MAE-masked patches with mask_token
             if mae_mask is not None:
-                # Expand mask_token: (1, 1, 1, d_model) -> (batch, 1, channels, d_model)
-                mask_token_expanded = self.mask_token.expand(-1, -1, num_channels, -1)
-
-                for i in range(batch_size):
-                    for p in range(num_patches):
-                        if mae_mask[i, p]:
-                            # Replace all channels at this patch position with mask_token
-                            features[i, p] = mask_token_expanded[0, 0]  # (channels, d_model)
+                # mae_mask: (B, P) bool -> expand to (B, P, C, D) for torch.where
+                token = self.mask_token.expand(batch_size, num_patches, num_channels, -1)
+                features = torch.where(mae_mask.unsqueeze(-1).unsqueeze(-1), token, features)
 
             # Replace padded patches with pad_token
             if patch_attention_mask is not None:
-                # Expand pad_token: (1, 1, 1, d_model) -> (batch, 1, channels, d_model)
-                pad_token_expanded = self.pad_token.expand(-1, -1, num_channels, -1)
-
-                for i in range(batch_size):
-                    for p in range(num_patches):
-                        if not patch_attention_mask[i, p]:
-                            # Replace all channels at this patch position with pad_token
-                            features[i, p] = pad_token_expanded[0, 0]  # (channels, d_model)
+                # pad where patch_attention_mask is False (inverted)
+                pad_positions = ~patch_attention_mask  # (B, P) — True where padded
+                token = self.pad_token.expand(batch_size, num_patches, num_channels, -1)
+                features = torch.where(pad_positions.unsqueeze(-1).unsqueeze(-1), token, features)
 
             # Replace dropped channels with mask_token (channel dropout)
             if channel_dropout_mask is not None:
-                # channel_dropout_mask: (batch, channels) - True = dropped
-                for i in range(batch_size):
-                    for c in range(num_channels):
-                        if channel_dropout_mask[i, c]:
-                            # Replace this channel across all patches with mask_token
-                            features[i, :, c] = self.mask_token[0, 0, 0]  # (d_model,)
+                # channel_dropout_mask: (B, C) bool -> expand to (B, P, C, D)
+                token = self.mask_token.expand(batch_size, num_patches, num_channels, -1)
+                features = torch.where(channel_dropout_mask.unsqueeze(1).unsqueeze(-1), token, features)
 
-        # Add positional encodings
-        # Handle both List[str] and List[List[str]] for channel_descriptions
+        # Add positional encodings — batched to avoid per-sample loops
         if channel_descriptions is not None and isinstance(channel_descriptions[0], list):
-            # Per-sample channel descriptions: process each sample separately
-            features_list = []
-            for i in range(batch_size):
-                sample_features = features[i:i+1]  # (1, patches, channels, d_model)
-                sample_descs = channel_descriptions[i]
-                encoded = self.positional_encoding(sample_features, sample_descs)
-                features_list.append(encoded)
-            features = torch.cat(features_list, dim=0)  # (batch, patches, channels, d_model)
+            if len(channel_descriptions) != batch_size:
+                raise ValueError(
+                    f"Expected {batch_size} channel description lists, got {len(channel_descriptions)}"
+                )
+            for i, descs in enumerate(channel_descriptions):
+                if len(descs) != num_channels:
+                    raise ValueError(
+                        f"Sample {i} has {len(descs)} channel descriptions, expected {num_channels}"
+                    )
+
+            # Step 1: Temporal PE — same for all samples, apply to full batch at once
+            features = self.positional_encoding.temporal_encoding(features)
+
+            # Step 2: Channel PE — deduplicate description sets, encode each unique set once
+            if self.positional_encoding.use_channel_encoding and self.positional_encoding.channel_encoding is not None:
+                ch_enc = self.positional_encoding.channel_encoding
+                # Map each sample to its unique description tuple
+                desc_tuples = [tuple(d) for d in channel_descriptions]
+                unique_tuples = list(dict.fromkeys(desc_tuples))  # preserve order, dedup
+                # Encode each unique description set once
+                unique_encs = {}
+                for dt in unique_tuples:
+                    unique_encs[dt] = ch_enc.encode_channel_descriptions(list(dt))
+                # Build batched channel encoding: (B, C, D)
+                channel_enc_batch = torch.stack([unique_encs[dt] for dt in desc_tuples])
+                channel_enc_batch = channel_enc_batch.to(features.device)
+                # Broadcast: (B, 1, C, D) added to (B, P, C, D)
+                features = features + ch_enc.scale * channel_enc_batch.unsqueeze(1)
         else:
-            # Single list for all samples
+            # Single list for all samples (or no descriptions)
             features = self.positional_encoding(features, channel_descriptions)
 
         # Process through transformer
