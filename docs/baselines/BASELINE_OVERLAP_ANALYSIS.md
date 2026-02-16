@@ -202,7 +202,7 @@ Only MotionSense and MobiAct are tested by BOTH you and NLS-HAR:
 |--------|------------|---------|----------|
 | IMU Encoder | CNN + Dual-Branch Transformer | 1D CNN | Stacked 1D-CNN + GRU |
 | Text Encoder | SentenceBERT (frozen) | DistilBERT/CLIP (frozen) | CLIP (frozen) |
-| Trainable Params | ~23M | Not specified | ~1.4M |
+| Trainable Params | ~20M | Not specified | ~1.4M |
 | Input Channels | 6 (acc + gyro) | 3 (acc only) | 6 (acc + gyro) |
 | Window Size | Variable (resampled) | 2s fixed | 5s (Ego4D), 1s (Aria) |
 
