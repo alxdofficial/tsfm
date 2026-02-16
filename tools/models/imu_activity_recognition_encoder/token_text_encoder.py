@@ -63,7 +63,11 @@ class TokenTextEncoder(nn.Module):
         device: Optional[torch.device] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Get token-level embeddings.
+        Get token-level embeddings with per-label caching.
+
+        Only runs the model forward pass for texts not already in cache,
+        then assembles the full batch from cache. This means after warmup,
+        repeated labels (which are common across batches) are free.
 
         Args:
             texts: List of strings
@@ -78,51 +82,50 @@ class TokenTextEncoder(nn.Module):
         if device is None:
             device = next(self._model.parameters()).device
 
-        # Check cache
-        all_cached = all(t in self._cache for t in texts)
-        if all_cached:
-            cached_embs = [self._cache[t][0] for t in texts]
-            cached_masks = [self._cache[t][1] for t in texts]
+        # Find uncached texts and encode only those
+        uncached_texts = [t for t in texts if t not in self._cache]
+        if uncached_texts:
+            # Deduplicate (same text may appear multiple times in batch)
+            unique_uncached = list(dict.fromkeys(uncached_texts))
 
-            # Pad to max length in this batch
-            max_len = max(e.shape[0] for e in cached_embs)
-            padded_embs = []
-            padded_masks = []
-            for emb, mask in zip(cached_embs, cached_masks):
-                pad_len = max_len - emb.shape[0]
-                if pad_len > 0:
-                    emb = torch.cat([emb, torch.zeros(pad_len, emb.shape[1])], dim=0)
-                    mask = torch.cat([mask, torch.zeros(pad_len, dtype=mask.dtype)], dim=0)
-                padded_embs.append(emb)
-                padded_masks.append(mask)
+            encoded = self._tokenizer(
+                unique_uncached,
+                padding=True,
+                truncation=True,
+                max_length=self.max_length,
+                return_tensors='pt'
+            )
 
-            embs = torch.stack(padded_embs).to(device)
-            masks = torch.stack(padded_masks).to(device)
-            return embs, masks.bool()
+            input_ids = encoded['input_ids'].to(device)
+            attention_mask = encoded['attention_mask'].to(device)
 
-        # Tokenize
-        encoded = self._tokenizer(
-            texts,
-            padding=True,
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors='pt'
-        )
+            with torch.no_grad():
+                outputs = self._model(input_ids=input_ids, attention_mask=attention_mask)
+                token_embeddings = outputs.last_hidden_state
 
-        input_ids = encoded['input_ids'].to(device)
-        attention_mask = encoded['attention_mask'].to(device)
-
-        # Get token embeddings (frozen)
-        with torch.no_grad():
-            outputs = self._model(input_ids=input_ids, attention_mask=attention_mask)
-            token_embeddings = outputs.last_hidden_state
-
-        # Cache
-        for i, text in enumerate(texts):
-            if text not in self._cache:
+            # Cache newly encoded texts
+            for i, text in enumerate(unique_uncached):
                 self._cache[text] = (token_embeddings[i].cpu(), attention_mask[i].cpu())
 
-        return token_embeddings, attention_mask.bool()
+        # Assemble full batch from cache
+        cached_embs = [self._cache[t][0] for t in texts]
+        cached_masks = [self._cache[t][1] for t in texts]
+
+        # Pad to max length in this batch
+        max_len = max(e.shape[0] for e in cached_embs)
+        padded_embs = []
+        padded_masks = []
+        for emb, mask in zip(cached_embs, cached_masks):
+            pad_len = max_len - emb.shape[0]
+            if pad_len > 0:
+                emb = torch.cat([emb, torch.zeros(pad_len, emb.shape[1])], dim=0)
+                mask = torch.cat([mask, torch.zeros(pad_len, dtype=mask.dtype)], dim=0)
+            padded_embs.append(emb)
+            padded_masks.append(mask)
+
+        embs = torch.stack(padded_embs).to(device)
+        masks = torch.stack(padded_masks).to(device)
+        return embs, masks.bool()
 
     def clear_cache(self):
         self._cache.clear()
@@ -274,47 +277,54 @@ class ChannelTextFusion(nn.Module):
         text_mask: torch.Tensor
     ) -> torch.Tensor:
         """
-        Fuse sensor tokens with channel text descriptions (efficient).
+        Fuse sensor tokens with channel text descriptions (batched).
+
+        Processes all samples in the batch in a single attention call by
+        reshaping (B, C) into the batch dimension. Mathematically identical
+        to the per-sample version since cross-attention is independent per channel.
 
         Args:
             sensor_tokens: (batch, patches, channels, d_model)
-            text_tokens: (channels, seq_len, d_model)
-            text_mask: (channels, seq_len) bool
+            text_tokens: (batch, channels, seq_len, d_model)
+            text_mask: (batch, channels, seq_len) bool
 
         Returns:
             fused: (batch, patches, channels, d_model)
         """
         B, P, C, D = sensor_tokens.shape
+        S = text_tokens.shape[2]  # seq_len
 
-        # Validate: each channel must have at least one valid text token
-        # All-masked channels cause softmax over all -inf → NaN
-        text_mask_bool = text_mask.bool()
-        valid_tokens_per_channel = text_mask_bool.sum(dim=1)  # (C,)
-        if (valid_tokens_per_channel == 0).any():
-            invalid_channels = (valid_tokens_per_channel == 0).nonzero(as_tuple=True)[0].tolist()
-            raise ValueError(
-                f"Channels {invalid_channels} have no valid text tokens (all-masked). "
-                f"This indicates empty or invalid channel descriptions."
-            )
+        # Flatten batch and channel dims for batched cross-attention: (B*C, ...)
+        text_tokens_flat = text_tokens.reshape(B * C, S, D)
+        text_mask_flat = text_mask.reshape(B * C, S)
+        text_mask_bool = text_mask_flat.bool()
+
+        # Guard against all-masked channels (e.g. padding channels) which would
+        # cause NaN in softmax (all -inf inputs). Unmask first position as a dummy
+        # so attention produces a finite (if meaningless) output for those channels.
+        all_masked = ~text_mask_bool.any(dim=1)  # (B*C,) True where entire row is masked
+        if all_masked.any():
+            text_mask_bool = text_mask_bool.clone()
+            text_mask_bool[all_masked, 0] = True
 
         # Step 1: Pool each channel's text tokens to single embedding
-        # Only C attention operations (not B*P*C)!
-        queries = self.queries.unsqueeze(0).expand(C, -1, -1)  # (C, num_queries, D)
+        # B*C attention operations in one batched call
+        queries = self.queries.unsqueeze(0).expand(B * C, -1, -1)  # (B*C, num_queries, D)
 
         attn_out, _ = self.cross_attn(
             query=queries,
-            key=text_tokens,
-            value=text_tokens,
+            key=text_tokens_flat,
+            value=text_tokens_flat,
             key_padding_mask=~text_mask_bool
         )
         attn_out = self.norm1(queries + attn_out)
 
-        # Combine queries: (C, num_queries, D) → (C, D)
-        channel_embs = self.out_proj(attn_out.reshape(C, -1))
+        # Combine queries: (B*C, num_queries, D) → (B*C, D)
+        channel_embs = self.out_proj(attn_out.reshape(B * C, -1))
 
-        # Step 2: Broadcast channel embeddings to all sensor tokens
-        # channel_embs: (C, D) → (1, 1, C, D) for broadcasting
-        channel_embs = channel_embs.unsqueeze(0).unsqueeze(0)
+        # Step 2: Reshape and broadcast to all patches
+        # (B*C, D) → (B, 1, C, D) for broadcasting across patches
+        channel_embs = channel_embs.reshape(B, C, D).unsqueeze(1)
 
         # Gated fusion: sensor tokens control how much text to incorporate
         gate = self.gate(torch.cat([sensor_tokens, channel_embs.expand(B, P, -1, -1)], dim=-1))
@@ -381,13 +391,14 @@ class LearnableLabelBank(nn.Module):
         num_heads: int = 4,
         num_queries: int = 4,
         dropout: float = 0.1,
-        use_mean_pooling: bool = False  # Ablation: use mean pooling instead of learned attention
+        use_mean_pooling: bool = False,  # Ablation: use mean pooling instead of learned attention
+        text_encoder: Optional['TokenTextEncoder'] = None  # Share with model to save ~100MB GPU
     ):
         super().__init__()
         self.device = device if device else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.use_mean_pooling = use_mean_pooling
 
-        self.text_encoder = TokenTextEncoder()
+        self.text_encoder = text_encoder if text_encoder is not None else TokenTextEncoder()
 
         if use_mean_pooling:
             # No learnable pooling - use mean pooling like default SentenceBERT
@@ -465,19 +476,22 @@ def test_modules():
     print(f"   Output: {emb.shape}")
     print(f"   Normalized: {torch.allclose(emb.norm(dim=-1), torch.ones(2, device=device))}")
 
-    # 3. ChannelTextFusion
-    print("\n3. ChannelTextFusion")
+    # 3. ChannelTextFusion (batched)
+    print("\n3. ChannelTextFusion (batched)")
     fusion = ChannelTextFusion().to(device)
 
     # Dummy sensor data
     B, P, C, D = 2, 4, 6, 384
     sensor = torch.randn(B, P, C, D, device=device)
 
-    # Channel descriptions
+    # Channel descriptions (batched: B sets of C descriptions)
     channels = ["acc x", "acc y", "acc z", "gyro x", "gyro y", "gyro z"]
     ch_tokens, ch_mask = encoder.encode(channels, device)
+    # Expand to batch: (C, seq_len, D) → (B, C, seq_len, D)
+    ch_tokens_batched = ch_tokens.unsqueeze(0).expand(B, -1, -1, -1)
+    ch_mask_batched = ch_mask.unsqueeze(0).expand(B, -1, -1)
 
-    fused = fusion(sensor, ch_tokens, ch_mask)
+    fused = fusion(sensor, ch_tokens_batched, ch_mask_batched)
     print(f"   Sensor: {sensor.shape}")
     print(f"   Fused: {fused.shape}")
 

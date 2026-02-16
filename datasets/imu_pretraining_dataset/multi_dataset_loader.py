@@ -136,7 +136,9 @@ class IMUPretrainingDataset(Dataset):
         max_channel_groups: int = None,  # Maximum groups (None = all available)
         max_sessions_per_dataset: Optional[int] = None,  # Limit sessions per dataset for faster experiments
         channel_filter: Optional[List[str]] = None,  # Filter channels by prefix patterns (e.g., ['acc_', 'gyro_'])
-        seed: int = 42
+        seed: int = 42,
+        target_patch_size: Optional[int] = None,  # If set, preprocess patches in DataLoader (faster training)
+        max_patches_per_sample: int = 48,  # Max patches per sample (only used when target_patch_size is set)
     ):
         """
         Args:
@@ -180,6 +182,8 @@ class IMUPretrainingDataset(Dataset):
         self.max_channel_groups = max_channel_groups
         self.max_sessions_per_dataset = max_sessions_per_dataset
         self.channel_filter = channel_filter
+        self.target_patch_size = target_patch_size
+        self.max_patches_per_sample = max_patches_per_sample
 
         # Set and store random seed (used by worker_init_fn)
         self.seed = seed
@@ -391,6 +395,58 @@ class IMUPretrainingDataset(Dataset):
             use_templates=True
         )
 
+        # If target_patch_size is set, preprocess patches here (parallelized across workers)
+        if self.target_patch_size is not None:
+            from tools.models.imu_activity_recognition_encoder.preprocessing import preprocess_imu_data
+
+            # Patch size augmentation: randomly select from valid range during training
+            actual_patch_size = patch_size_sec
+            if self.split == 'train' and patch_size_range is not None:
+                min_sec, max_sec, step_sec = patch_size_range
+                session_duration = len(data) / sampling_rate
+                # Cap max by session duration (need at least 1 patch)
+                actual_max = min(max_sec, session_duration)
+                if actual_max >= min_sec:
+                    num_steps = int((actual_max - min_sec) / step_sec) + 1
+                    valid_sizes = [min_sec + i * step_sec for i in range(num_steps)]
+                    actual_patch_size = random.choice(valid_sizes)
+
+            try:
+                patches, _ = preprocess_imu_data(
+                    data=data,
+                    sampling_rate_hz=sampling_rate,
+                    patch_size_sec=actual_patch_size,
+                    target_patch_size=self.target_patch_size,
+                )
+            except ValueError:
+                # Session too short for this patch size — use full session as one patch
+                patches, _ = preprocess_imu_data(
+                    data=data,
+                    sampling_rate_hz=sampling_rate,
+                    patch_size_sec=len(data) / sampling_rate,
+                    target_patch_size=self.target_patch_size,
+                )
+
+            # Cap patches
+            if len(patches) > self.max_patches_per_sample:
+                patches = patches[:self.max_patches_per_sample]
+
+            return {
+                'patches': patches,  # (num_patches, target_patch_size, num_channels)
+                'label_text': label_text,
+                'metadata': {
+                    'dataset': dataset_name,
+                    'session_id': session_info['session_id'],
+                    'label': session_info['label'],
+                    'label_text': label_text,
+                    'channels': selected_channels,
+                    'channel_descriptions': channel_descriptions,
+                    'sampling_rate_hz': sampling_rate,
+                    'patch_size_sec': actual_patch_size,
+                    'num_channels': num_channels
+                }
+            }
+
         return {
             'data': data,
             'attention_mask': attention_mask,
@@ -460,6 +516,71 @@ class IMUPretrainingDataset(Dataset):
             'label_texts': label_texts,
             'metadata': metadata_list
         }
+
+    @staticmethod
+    def collate_patches_fn(batch: List[Dict]) -> Dict:
+        """
+        Collate batch of pre-patched samples with padding for variable patches and channels.
+
+        Used when target_patch_size is set (preprocessing done in DataLoader workers).
+
+        Args:
+            batch: List of samples from __getitem__ with 'patches' key
+
+        Returns:
+            Batched dictionary with:
+            - patches: (batch, max_patches, target_patch_size, max_channels) with zero padding
+            - patch_mask: (batch, max_patches) Boolean mask for valid patches
+            - channel_mask: (batch, max_channels) Boolean mask for valid channels
+            - label_texts: List of label text strings
+            - metadata: List of metadata dicts
+        """
+        batch_size = len(batch)
+        max_patches = max(sample['patches'].shape[0] for sample in batch)
+        target_patch_size = batch[0]['patches'].shape[1]
+        max_channels = max(sample['patches'].shape[2] for sample in batch)
+
+        padded_patches = torch.zeros(batch_size, max_patches, target_patch_size, max_channels)
+        patch_mask = torch.zeros(batch_size, max_patches, dtype=torch.bool)
+        channel_mask = torch.zeros(batch_size, max_channels, dtype=torch.bool)
+
+        metadata_list = []
+        label_texts = []
+
+        for i, sample in enumerate(batch):
+            patches = sample['patches']
+            num_patches, _, num_channels = patches.shape
+
+            padded_patches[i, :num_patches, :, :num_channels] = patches
+            patch_mask[i, :num_patches] = True
+            channel_mask[i, :num_channels] = True
+
+            metadata_list.append(sample['metadata'])
+            label_texts.append(sample['label_text'])
+
+        return {
+            'patches': padded_patches,
+            'patch_mask': patch_mask,
+            'channel_mask': channel_mask,
+            'label_texts': label_texts,
+            'metadata': metadata_list
+        }
+
+    def get_channel_counts(self) -> List[int]:
+        """
+        Return the number of IMU channels per sample.
+
+        Used by ChannelBucketBatchSampler to group same-channel-count
+        samples into batches, reducing padding waste.
+        """
+        IMU_PATTERNS = ['acc', 'gyro', 'mag', 'ori']
+        channel_counts = []
+        for session in self.sessions:
+            dataset_name = session['dataset']
+            channels = self.dataset_info[dataset_name]['channels']
+            imu_channels = [ch for ch in channels if any(p in ch.lower() for p in IMU_PATTERNS)]
+            channel_counts.append(len(imu_channels))
+        return channel_counts
 
     def compute_group_weights(self, max_oversample_ratio: float = 20.0) -> torch.Tensor:
         """

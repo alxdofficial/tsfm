@@ -23,7 +23,7 @@ import json
 import math
 
 from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders, IMUPretrainingDataset, worker_init_fn
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader, WeightedRandomSampler, Sampler
 from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
 from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
 from imu_activity_recognition_encoder.token_text_encoder import (
@@ -35,6 +35,70 @@ from training_scripts.human_activity_recognition.memory_bank import MemoryBank
 from val_scripts.human_activity_recognition.evaluation_metrics import compute_group_accuracy
 import random
 from typing import Tuple, Optional, List
+
+class ChannelBucketBatchSampler:
+    """
+    Batch sampler that groups samples by channel count to minimize padding waste.
+
+    Maintains class-balanced weighted sampling within each bucket.
+    Replaces WeightedRandomSampler + default BatchSampler.
+
+    Channel count distribution across datasets:
+        3: unimib_shar | 6: hhar, hapt, kuhar, recgym | 9: uci_har, dsads
+        12: wisdm | 21: mhealth | 52: pamap2
+
+    Without bucketing: joint patch×channel utilization ~11% (89% wasted compute).
+    With bucketing: channel utilization ~80-100% within each bucket.
+    """
+
+    def __init__(self, channel_counts, sample_weights, batch_size, num_samples=None):
+        self.batch_size = batch_size
+
+        # Group indices by channel count
+        self.buckets = {}
+        for idx, ch_count in enumerate(channel_counts):
+            if ch_count not in self.buckets:
+                self.buckets[ch_count] = []
+            self.buckets[ch_count].append(idx)
+
+        # Store weights per bucket for weighted sampling
+        self.bucket_weights = {}
+        for ch_count, indices in self.buckets.items():
+            idx_tensor = torch.tensor(indices, dtype=torch.long)
+            self.bucket_weights[ch_count] = sample_weights[idx_tensor]
+
+        # Total batches per epoch (at least 1 to avoid division-by-zero)
+        total_samples = num_samples if num_samples is not None else len(channel_counts)
+        self.num_batches = max(1, total_samples // batch_size)
+
+        # Bucket selection probabilities (proportional to sum of sample weights,
+        # not bucket size, to preserve global group-balanced weighting intent)
+        self.bucket_keys = list(self.buckets.keys())
+        bucket_weight_sums = torch.tensor(
+            [self.bucket_weights[k].sum().item() for k in self.bucket_keys],
+            dtype=torch.float32
+        )
+        self.bucket_probs = bucket_weight_sums / bucket_weight_sums.sum()
+
+        # Log bucket info
+        for k in sorted(self.bucket_keys):
+            print(f"  Channel bucket {k:2d}ch: {len(self.buckets[k]):5d} samples")
+
+    def __iter__(self):
+        for _ in range(self.num_batches):
+            # Select bucket proportional to size
+            bucket_idx = torch.multinomial(self.bucket_probs, 1).item()
+            ch_count = self.bucket_keys[bucket_idx]
+            indices = self.buckets[ch_count]
+            weights = self.bucket_weights[ch_count]
+
+            # Weighted sample within bucket (replacement=True for class balance)
+            sampled = torch.multinomial(weights, self.batch_size, replacement=True)
+            yield [indices[i] for i in sampled.tolist()]
+
+    def __len__(self):
+        return self.num_batches
+
 
 # ======================== HYPERPARAMETERS ========================
 
@@ -112,7 +176,7 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
 EPOCHS = 100
-BATCH_SIZE = 16  # Micro-batch size (reduced for 48-channel datasets like PAMAP2)
+BATCH_SIZE = 16  # Micro-batch size (per-sample loop limits GPU parallelism — 16 is optimal throughput)
 ACCUMULATION_STEPS = 32  # Effective batch = 16 × 32 = 512
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
 WARMUP_EPOCHS = 3
@@ -137,7 +201,7 @@ SOFT_TARGET_WEIGHT = 1.0  # Pure soft targets with adaptive recalibration
 # This is actually CORRECT for foundation models: any "walking" IMU should match any "walking" text.
 # Gradient direction is preserved (0.99 cosine similarity), magnitude slightly diluted.
 USE_MEMORY_BANK = True
-MEMORY_BANK_SIZE = 256  # Provides 16 + 256 = 272 negatives per step
+MEMORY_BANK_SIZE = 256  # Provides batch + 256 negatives per step
 
 # Class balancing configuration
 # Caps oversampling to prevent rare labels from dominating training
@@ -153,11 +217,11 @@ MAX_OVERSAMPLE_RATIO = 20.0  # Max oversampling factor for rare groups
 # This allows task-specific adaptation of frozen semantic embeddings.
 
 # Plotting
-PLOT_EVERY_N_BATCHES = 10
+PLOT_EVERY_N_BATCHES = 50
 
 # Embedding visualization
 VISUALIZE_EMBEDDINGS = True  # Generate UMAP plots showing IMU-text alignment
-VISUALIZE_EVERY_N_EPOCHS = 1  # How often to generate embedding plots (1 = every epoch)
+VISUALIZE_EVERY_N_EPOCHS = 10  # How often to generate embedding plots
 
 # Classification metrics during training
 COMPUTE_CLASSIFICATION_METRICS = True  # Compute group-aware accuracy during validation
@@ -167,7 +231,7 @@ UMAP_N_NEIGHBORS = 15  # UMAP parameter: 5-50, higher = more global structure
 UMAP_MIN_DIST = 0.1  # UMAP parameter: 0.0-0.99, lower = tighter clusters
 
 # Debug configuration
-DEBUG_METRIC_FREQUENCY = 10  # Compute expensive debug metrics every N batches (not every batch)
+DEBUG_METRIC_FREQUENCY = 50  # Compute expensive debug metrics every N batches (not every batch)
 
 # Token-level text encoding configuration
 # Uses cross-attention between sensor tokens and channel description tokens,
@@ -237,7 +301,8 @@ class SemanticAlignmentModel(nn.Module):
         num_heads: int = 4,
         dropout: float = 0.1,
         use_patch_augmentation: bool = False,
-        min_patches_per_sample: int = 2
+        min_patches_per_sample: int = 2,
+        text_encoder: Optional['TokenTextEncoder'] = None
     ):
         super().__init__()
         self.encoder = encoder
@@ -245,8 +310,8 @@ class SemanticAlignmentModel(nn.Module):
         self.use_patch_augmentation = use_patch_augmentation
         self.min_patches_per_sample = min_patches_per_sample
 
-        # Token-level text encoder (frozen backbone)
-        self.text_encoder = TokenTextEncoder()
+        # Token-level text encoder (frozen backbone) — shared with label_bank to save ~100MB
+        self.text_encoder = text_encoder if text_encoder is not None else TokenTextEncoder()
 
         # Channel text fusion (learnable cross-attention)
         self.channel_fusion = ChannelTextFusion(
@@ -291,137 +356,49 @@ class SemanticAlignmentModel(nn.Module):
 
         return random.choice(valid_sizes)
 
-    def forward(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                patch_ranges: Optional[List] = None, attention_mask: Optional[torch.Tensor] = None):
+    def forward(self, patches, channel_descriptions, channel_mask, patch_mask):
         """
-        Forward pass with optional patch size augmentation.
+        Forward pass with pre-patched data from DataLoader.
 
         Args:
-            data: (batch, timesteps, channels) padded IMU data
-            channel_descriptions: List of channel description lists
-            channel_mask: (batch, channels) boolean mask
-            sampling_rates: List of sampling rates per sample
-            patch_sizes: List of default patch sizes per sample
-            patch_ranges: Optional list of (min, max, step) tuples for patch augmentation
-            attention_mask: Optional (batch, timesteps) boolean mask for valid timesteps
+            patches: (batch, max_patches, target_patch_size, max_channels) padded patches
+            channel_descriptions: List of channel description lists per sample
+            channel_mask: (batch, max_channels) boolean mask for valid channels
+            patch_mask: (batch, max_patches) boolean mask for valid patches
         """
-        batch_size = data.shape[0]
-        device = data.device
+        batch_size = patches.shape[0]
+        max_channels = patches.shape[3]
+        device = patches.device
 
-        # Step 1: Preprocess all samples
-        all_patches = []
-        all_channel_descs = []
-        valid_samples = []
-
-        with torch.no_grad():
-            for i in range(batch_size):
-                # Trim to valid timesteps (avoid preprocessing zero-padded regions)
-                if attention_mask is not None:
-                    valid_len = attention_mask[i].sum().item()
-                    sample_data = data[i, :valid_len]
-                else:
-                    sample_data = data[i]
-
-                session_timesteps = sample_data.shape[0]
-
-                # Determine patch size (augmented during training, fixed during eval)
-                if self.training and self.use_patch_augmentation and patch_ranges is not None:
-                    session_duration = session_timesteps / sampling_rates[i]
-                    patch_range = patch_ranges[i] if i < len(patch_ranges) else None
-                    actual_patch_size = self._get_valid_patch_size(
-                        session_duration, patch_range, patch_sizes[i]
-                    )
-                else:
-                    actual_patch_size = patch_sizes[i]
-
-                patches, _ = self.encoder.preprocess(
-                    sample_data, sampling_rate_hz=sampling_rates[i], patch_size_sec=actual_patch_size
-                )
-
-                if patches is None or len(patches) == 0:
-                    all_patches.append(None)
-                    all_channel_descs.append(None)
-                    valid_samples.append(False)
-                    continue
-
-                if len(patches) > MAX_PATCHES_PER_SAMPLE:
-                    patches = patches[:MAX_PATCHES_PER_SAMPLE]
-
-                num_channels = data[i].shape[1]
-                channel_descs = channel_descriptions[i]
-                padded_descs = channel_descs + ["[PAD]"] * (num_channels - len(channel_descs))
-
-                all_patches.append(patches)
-                all_channel_descs.append(padded_descs)
-                valid_samples.append(True)
-
-        # Step 2: Batch valid patches
-        valid_indices = [i for i, v in enumerate(valid_samples) if v]
-
-        if len(valid_indices) == 0:
-            max_channels = data.shape[2]
-            padded_encoder_output = torch.zeros(batch_size, 1, max_channels, D_MODEL, device=device)
-            padded_patch_mask = torch.zeros(batch_size, 1, dtype=torch.bool, device=device)
-            return self.semantic_head(padded_encoder_output, channel_mask=channel_mask,
-                                       patch_mask=padded_patch_mask, normalize=True)
-
-        max_patches_valid = max(len(all_patches[i]) for i in valid_indices)
-        max_channels = data.shape[2]
-
-        num_valid = len(valid_indices)
-        batched_patches = torch.zeros(num_valid, max_patches_valid, TARGET_PATCH_SIZE, max_channels, device=device)
+        # Pad channel descriptions to max_channels
         batched_channel_descs = []
+        for i in range(batch_size):
+            descs = channel_descriptions[i]
+            padded_descs = descs + ["[PAD]"] * (max_channels - len(descs))
+            batched_channel_descs.append(padded_descs)
 
-        for batch_idx, sample_idx in enumerate(valid_indices):
-            patches = all_patches[sample_idx]
-            num_patches = len(patches)
-            batched_patches[batch_idx, :num_patches] = patches
-            batched_channel_descs.append(all_channel_descs[sample_idx])
-
-        # Subset channel_mask to valid samples only (encoder needs it for cross-channel attention)
-        valid_indices_t = torch.tensor(valid_indices, device=device)
-        batched_channel_mask = channel_mask[valid_indices_t]
-
-        # Step 3: Encode with frozen/unfrozen encoder
+        # Encode with frozen/unfrozen encoder (already batched — patches from DataLoader)
         if FREEZE_ENCODER:
             with torch.no_grad():
-                encoded_batch = self.encoder(batched_patches, batched_channel_descs, channel_mask=batched_channel_mask)
+                encoded_batch = self.encoder(patches, batched_channel_descs, channel_mask=channel_mask)
         else:
-            encoded_batch = self.encoder(batched_patches, batched_channel_descs, channel_mask=batched_channel_mask)
+            encoded_batch = self.encoder(patches, batched_channel_descs, channel_mask=channel_mask)
 
-        # Step 4: Apply channel text fusion per sample (each sample has different channel descriptions)
-        # Text encoding is cached, so per-sample loop has minimal overhead
-        fused_samples = []
-        for i in range(num_valid):
-            sample_channel_descs = batched_channel_descs[i][:max_channels]
-            channel_tokens, channel_mask_text = self.text_encoder.encode(sample_channel_descs, device)
-            # Cross-attention between this sample's sensor tokens and its channel text tokens
-            fused_sample = self.channel_fusion(encoded_batch[i:i+1], channel_tokens, channel_mask_text)
-            fused_samples.append(fused_sample)
-        encoded_batch = torch.cat(fused_samples, dim=0)
+        # Batch-encode ALL channel descriptions at once (per-label cache handles dedup)
+        # Flatten: B lists of max_channels strings → B*max_channels strings
+        all_descs = [desc for descs in batched_channel_descs for desc in descs]
+        all_tokens, all_masks = self.text_encoder.encode(all_descs, device)
 
-        # Step 5: Map outputs back to original batch positions
-        encoder_outputs = [None] * batch_size
-        patch_masks = [None] * batch_size
+        # Reshape to (B, C, seq_len, D) for batched fusion
+        seq_len = all_tokens.shape[1]
+        text_tokens = all_tokens.reshape(batch_size, max_channels, seq_len, -1)
+        text_masks = all_masks.reshape(batch_size, max_channels, seq_len)
 
-        for batch_idx, sample_idx in enumerate(valid_indices):
-            num_patches = len(all_patches[sample_idx])
-            encoder_outputs[sample_idx] = encoded_batch[batch_idx, :num_patches]
-            patch_masks[sample_idx] = torch.ones(num_patches, dtype=torch.bool, device=device)
+        # Batched channel text fusion — single call replaces per-sample loop
+        encoded_batch = self.channel_fusion(encoded_batch, text_tokens, text_masks)
 
-        # Step 6: Final padding
-        max_patches = max(len(p) for p in patch_masks if p is not None)
-        padded_encoder_output = torch.zeros(batch_size, max_patches, max_channels, D_MODEL, device=device)
-        padded_patch_mask = torch.zeros(batch_size, max_patches, dtype=torch.bool, device=device)
-
-        for i, (enc_out, p_mask) in enumerate(zip(encoder_outputs, patch_masks)):
-            if enc_out is not None:
-                num_patches, num_channels, _ = enc_out.shape
-                padded_encoder_output[i, :num_patches, :num_channels, :] = enc_out
-                padded_patch_mask[i, :num_patches] = p_mask
-
-        return self.semantic_head(padded_encoder_output, channel_mask=channel_mask,
-                                   patch_mask=padded_patch_mask, normalize=True)
+        return self.semantic_head(encoded_batch, channel_mask=channel_mask,
+                                   patch_mask=patch_mask, normalize=True)
 
     def get_attention_stats(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
                             attention_mask: Optional[torch.Tensor] = None):
@@ -553,7 +530,7 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
     
     # Calculate how many batches needed to fill queue
     if num_batches is None:
-        batch_size = dataloader.batch_size
+        batch_size = dataloader.batch_size or BATCH_SIZE  # batch_size is None with batch_sampler
         num_batches = math.ceil(memory_bank.queue_size / batch_size)
     
     num_batches = min(num_batches, len(dataloader))
@@ -562,23 +539,20 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
         for batch_idx, batch in enumerate(dataloader):
             if batch_idx >= num_batches:
                 break
-                
-            data = batch['data'].to(device)
+
+            patches = batch['patches'].to(device)
             channel_mask = batch['channel_mask'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
+            patch_mask = batch['patch_mask'].to(device)
             label_texts = batch['label_texts']
             metadata = batch['metadata']
 
-            sampling_rates = [m['sampling_rate_hz'] for m in metadata]
-            patch_sizes = [m['patch_size_sec'] for m in metadata]
             channel_descriptions = [m['channel_descriptions'] for m in metadata]
 
             # Encode text embeddings
             text_embeddings = label_bank.encode(label_texts, normalize=True)
 
             # Forward pass (no gradients)
-            imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                                   attention_mask=attention_mask)
+            imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
 
             # Update memory bank with both embeddings
             memory_bank.update(imu_embeddings, text_embeddings)
@@ -694,15 +668,12 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
     accum_step_count = 0
 
     for batch_idx, batch in enumerate(pbar):
-        data = batch['data'].to(device)
-        channel_mask = batch['channel_mask'].to(device)
-        attention_mask = batch['attention_mask'].to(device)
+        patches = batch['patches'].to(device, non_blocking=True)
+        channel_mask = batch['channel_mask'].to(device, non_blocking=True)
+        patch_mask = batch['patch_mask'].to(device, non_blocking=True)
         label_texts = batch['label_texts']
         metadata = batch['metadata']
 
-        sampling_rates = [m['sampling_rate_hz'] for m in metadata]
-        patch_sizes = [m['patch_size_sec'] for m in metadata]
-        patch_ranges = [m.get('patch_size_range', None) for m in metadata]
         channel_descriptions = [m['channel_descriptions'] for m in metadata]
 
         # NOTE: label_bank.encode() needs gradients for learnable pooling!
@@ -717,8 +688,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             imu_queue, text_queue = None, None
 
         with autocast('cuda', enabled=device.type == 'cuda'):
-            imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                                   patch_ranges=patch_ranges, attention_mask=attention_mask)
+            imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
             loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
                                      return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
 
@@ -731,9 +701,6 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
         if batch_idx % DEBUG_METRIC_FREQUENCY == 0:
             with torch.no_grad():
                 debug_metrics = compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue, text_queue)
-                # Add attention stats from cross-channel fusion
-                attn_stats = model.get_attention_stats(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes, attention_mask=attention_mask)
-                debug_metrics.update(attn_stats)
 
         # Backward pass (accumulate gradients)
         if scaler is not None:
@@ -809,9 +776,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
                 dataset_counts[ds] = dataset_counts.get(ds, 0) + 1
             print(f"\n[NaN DETECTED] Batch {batch_idx}, Epoch {epoch}")
             print(f"  Datasets in batch: {dataset_counts}")
-            print(f"  Labels: {label_texts[:5]}...")  # First 5 labels
-            print(f"  Patch sizes: {patch_sizes[:5]}...")
-            print(f"  Sampling rates: {sampling_rates[:5]}...")
+            print(f"  Labels: {label_texts[:5]}...")
             # Skip this batch's contribution to avoid NaN propagation
             # (the loss still backprops, but we don't let it corrupt epoch metrics)
             batch_loss = 0.0  # Replace NaN with 0 for epoch averaging
@@ -929,22 +894,18 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
 
     with torch.no_grad():
         for batch in pbar:
-            data = batch['data'].to(device)
-            channel_mask = batch['channel_mask'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
+            patches = batch['patches'].to(device, non_blocking=True)
+            channel_mask = batch['channel_mask'].to(device, non_blocking=True)
+            patch_mask = batch['patch_mask'].to(device, non_blocking=True)
             label_texts = batch['label_texts']
             metadata = batch['metadata']
 
-            sampling_rates = [m['sampling_rate_hz'] for m in metadata]
-            patch_sizes = [m['patch_size_sec'] for m in metadata]
             channel_descriptions = [m['channel_descriptions'] for m in metadata]
 
             text_embeddings = label_bank.encode(label_texts, normalize=True)
 
             with autocast('cuda', enabled=device.type == 'cuda'):
-                # No patch augmentation during validation (patch_ranges=None)
-                imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                                       patch_ranges=None, attention_mask=attention_mask)
+                imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
                 _, metrics = criterion(imu_embeddings, text_embeddings, label_texts, return_metrics=True)
 
             # NaN detection for validation
@@ -1024,19 +985,16 @@ def evaluate_unseen(model, label_bank, dataloader, device, epoch):
 
     with torch.no_grad():
         for batch in tqdm(dataloader, desc=f"[Epoch {epoch}] Unseen eval", leave=False):
-            data = batch['data'].to(device)
+            patches = batch['patches'].to(device)
             channel_mask = batch['channel_mask'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
+            patch_mask = batch['patch_mask'].to(device)
             label_texts = batch['label_texts']
             metadata = batch['metadata']
 
-            sampling_rates = [m['sampling_rate_hz'] for m in metadata]
-            patch_sizes = [m['patch_size_sec'] for m in metadata]
             channel_descriptions = [m['channel_descriptions'] for m in metadata]
 
             with autocast('cuda', enabled=device.type == 'cuda'):
-                imu_embeddings = model(data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                                       attention_mask=attention_mask)
+                imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
 
             all_imu_embeddings.append(imu_embeddings)
             all_labels.extend(label_texts)
@@ -1115,6 +1073,13 @@ def main():
 
     torch.manual_seed(SEED)
 
+    # Enable cuDNN benchmark and TF32 for faster matmul on RTX 4090
+    if device.type == 'cuda':
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        print("✓ Enabled cuDNN benchmark + TF32")
+
     # Initialize models
     print("\nInitializing encoder...")
     encoder = IMUActivityRecognitionEncoder(
@@ -1155,13 +1120,17 @@ def main():
         num_pool_queries=NUM_POOL_QUERIES, use_pool_self_attention=USE_POOL_SELF_ATTENTION
     ).to(device)
 
+    # Create shared text encoder (one MiniLM instance for model + label_bank, saves ~100MB GPU)
+    shared_text_encoder = TokenTextEncoder()
+
     print("Using token-level text encoding with cross-attention")
     model = SemanticAlignmentModel(
         encoder, semantic_head,
         num_heads=TOKEN_TEXT_NUM_HEADS,
         dropout=DROPOUT,
         use_patch_augmentation=USE_PATCH_SIZE_AUGMENTATION,
-        min_patches_per_sample=MIN_PATCHES_PER_SAMPLE
+        min_patches_per_sample=MIN_PATCHES_PER_SAMPLE,
+        text_encoder=shared_text_encoder
     ).to(device)
 
     if USE_PATCH_SIZE_AUGMENTATION:
@@ -1197,7 +1166,8 @@ def main():
         num_heads=TOKEN_TEXT_NUM_HEADS,
         num_queries=TOKEN_TEXT_NUM_QUERIES,
         dropout=DROPOUT,
-        use_mean_pooling=USE_MEAN_POOLING
+        use_mean_pooling=USE_MEAN_POOLING,
+        text_encoder=shared_text_encoder  # Share MiniLM with model
     )
     print(f"✓ Label bank initialized (embedding_dim={label_bank.embedding_dim}, pooling={pooling_type})")
 
@@ -1209,9 +1179,9 @@ def main():
     # Initialize memory bank if enabled
     memory_bank = None
     if USE_MEMORY_BANK:
-        print(f"Initializing memory bank (queue_size={MEMORY_BANK_SIZE}, embedding_dim={SEMANTIC_DIM})...")
-        memory_bank = MemoryBank(queue_size=MEMORY_BANK_SIZE, embedding_dim=SEMANTIC_DIM)
-        print(f"✓ Memory bank initialized - provides {MEMORY_BANK_SIZE} additional negatives")
+        print(f"Initializing memory bank (queue_size={MEMORY_BANK_SIZE}, embedding_dim={SEMANTIC_DIM}, device={device})...")
+        memory_bank = MemoryBank(queue_size=MEMORY_BANK_SIZE, embedding_dim=SEMANTIC_DIM, device=device)
+        print(f"✓ Memory bank initialized on {device} - provides {MEMORY_BANK_SIZE} additional negatives (no CPU round-trips)")
 
     plotter = TrainingPlotter(plot_dir)
 
@@ -1238,7 +1208,9 @@ def main():
         patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
         patch_size_range_per_dataset=PATCH_SIZE_RANGE_PER_DATASET if USE_PATCH_SIZE_AUGMENTATION else None,
         max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
-        seed=SEED
+        seed=SEED,
+        target_patch_size=TARGET_PATCH_SIZE,
+        max_patches_per_sample=MAX_PATCHES_PER_SAMPLE,
     )
     val_dataset = IMUPretrainingDataset(
         data_root=DATA_ROOT,
@@ -1247,33 +1219,39 @@ def main():
         patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
         patch_size_range_per_dataset=None,  # No augmentation for validation
         max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
-        seed=SEED
+        seed=SEED,
+        target_patch_size=TARGET_PATCH_SIZE,
+        max_patches_per_sample=MAX_PATCHES_PER_SAMPLE,
     )
 
-    # Create train dataloader with optional group-balanced sampling
+    # Create train dataloader with channel-bucketed + group-balanced sampling
     if USE_GROUP_BALANCED_SAMPLING:
         # Compute weights for group-balanced sampling (with capped oversampling)
         sample_weights = train_dataset.compute_group_weights(max_oversample_ratio=MAX_OVERSAMPLE_RATIO)
-        sampler = WeightedRandomSampler(
-            weights=sample_weights,
-            num_samples=len(train_dataset),
-            replacement=True  # Allow resampling rare groups
+
+        # Channel-bucketed batch sampler: groups same-channel-count samples
+        # to minimize padding waste (joint util ~11% → ~80-100%)
+        channel_counts = train_dataset.get_channel_counts()
+        print(f"\n=== Channel-Bucketed + Group-Balanced Sampling ===")
+        bucket_sampler = ChannelBucketBatchSampler(
+            channel_counts=channel_counts,
+            sample_weights=sample_weights,
+            batch_size=BATCH_SIZE,
+            num_samples=len(train_dataset)
         )
         train_loader = DataLoader(
             train_dataset,
-            batch_size=BATCH_SIZE,
-            sampler=sampler,  # Replaces shuffle=True
+            batch_sampler=bucket_sampler,  # Replaces batch_size + sampler
             num_workers=NUM_WORKERS,
             prefetch_factor=PREFETCH_FACTOR,
             persistent_workers=PERSISTENT_WORKERS,
-            collate_fn=IMUPretrainingDataset.collate_fn,
+            collate_fn=IMUPretrainingDataset.collate_patches_fn,
             pin_memory=True,
             worker_init_fn=worker_init_fn
         )
 
         # Log group distribution
         group_dist = train_dataset.get_group_distribution()
-        print(f"\n=== Group-Balanced Sampling Enabled ===")
         print(f"Groups: {len(group_dist)}")
         most_common = max(group_dist.items(), key=lambda x: x[1])
         least_common = min(group_dist.items(), key=lambda x: x[1])
@@ -1288,7 +1266,7 @@ def main():
             num_workers=NUM_WORKERS,
             prefetch_factor=PREFETCH_FACTOR,
             persistent_workers=PERSISTENT_WORKERS,
-            collate_fn=IMUPretrainingDataset.collate_fn,
+            collate_fn=IMUPretrainingDataset.collate_patches_fn,
             pin_memory=True,
             worker_init_fn=worker_init_fn
         )
@@ -1301,7 +1279,7 @@ def main():
         num_workers=NUM_WORKERS,
         prefetch_factor=PREFETCH_FACTOR,
         persistent_workers=PERSISTENT_WORKERS,
-        collate_fn=IMUPretrainingDataset.collate_fn,
+        collate_fn=IMUPretrainingDataset.collate_patches_fn,
         pin_memory=True,
         worker_init_fn=worker_init_fn
     )
@@ -1315,14 +1293,16 @@ def main():
                 datasets=[UNSEEN_DATASET],
                 split='val',
                 max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
-                seed=SEED
+                seed=SEED,
+                target_patch_size=TARGET_PATCH_SIZE,
+                max_patches_per_sample=MAX_PATCHES_PER_SAMPLE,
             )
             unseen_loader = DataLoader(
                 unseen_dataset,
                 batch_size=BATCH_SIZE,
                 shuffle=False,
                 num_workers=0,
-                collate_fn=IMUPretrainingDataset.collate_fn,
+                collate_fn=IMUPretrainingDataset.collate_patches_fn,
                 pin_memory=True
             )
             print(f"Loaded unseen dataset '{UNSEEN_DATASET}' with {len(unseen_dataset)} samples")
@@ -1391,6 +1371,38 @@ def main():
             label_bank.load_state_dict(resume_checkpoint['label_bank_state_dict'])
             print("✓ Loaded label_bank state (learnable attention pooling)")
 
+    # Apply torch.compile for JIT optimization (after all state loading)
+    # Compiles sub-modules individually since forward() has Python logic (cache, list ops)
+    # that would cause graph breaks. dynamic=True handles variable batch/patch/channel shapes.
+    if device.type == 'cuda' and hasattr(torch, 'compile'):
+        # Detect best available backend: inductor (Triton) > aot_eager > skip
+        compile_backend = None
+        _test_model = None
+        try:
+            _test_model = torch.compile(torch.nn.Linear(8, 8).to(device), dynamic=True)
+            _test_model(torch.randn(2, 8, device=device))
+            compile_backend = 'inductor'
+        except Exception:
+            try:
+                _test_model = torch.compile(torch.nn.Linear(8, 8).to(device), backend='aot_eager', dynamic=True)
+                _test_model(torch.randn(2, 8, device=device))
+                compile_backend = 'aot_eager'
+            except Exception:
+                pass
+        del _test_model
+
+        if compile_backend:
+            compile_kwargs = {'dynamic': True}
+            if compile_backend != 'inductor':
+                compile_kwargs['backend'] = compile_backend
+            print(f"\nApplying torch.compile (backend={compile_backend}, dynamic=True)...")
+            model.encoder = torch.compile(model.encoder, **compile_kwargs)
+            model.channel_fusion = torch.compile(model.channel_fusion, **compile_kwargs)
+            model.semantic_head = torch.compile(model.semantic_head, **compile_kwargs)
+            print("✓ torch.compile applied (first batch will be slower due to compilation)")
+        else:
+            print("\nWarning: torch.compile not available (missing python-dev headers), using eager mode")
+
     # Warmup memory bank if enabled (reduces early training volatility)
     # Skip if resuming since memory bank is restored from checkpoint
     if memory_bank is not None and USE_MEMORY_BANK and resume_checkpoint is None:
@@ -1456,9 +1468,13 @@ def main():
 
         # Save checkpoints
         if epoch % SAVE_EVERY == 0 or val_metrics['loss'] < best_val_loss:
+            # Strip _orig_mod. prefix from compiled modules so checkpoints
+            # are compatible with both compiled and uncompiled models
+            raw_state = model.state_dict()
+            clean_state = {k.replace('_orig_mod.', ''): v for k, v in raw_state.items()}
             checkpoint = {
                 'epoch': epoch,
-                'model_state_dict': model.state_dict(),
+                'model_state_dict': clean_state,
                 'label_bank_state_dict': label_bank.state_dict(),  # Save learnable label embeddings
                 'criterion_state_dict': criterion.state_dict(),  # Save learnable temperature
                 'optimizer_state_dict': optimizer.state_dict(),

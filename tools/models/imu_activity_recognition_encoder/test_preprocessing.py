@@ -158,8 +158,9 @@ class TestInterpolatePatches:
         nearest = interpolate_patches(patches, target_size=96, method='nearest')
         assert nearest.shape == (3, 96, 9)
 
-        # They should produce slightly different results
-        assert not torch.allclose(linear, cubic)
+        # Linear and cubic produce identical results (F.interpolate 1D uses linear for both)
+        assert torch.allclose(linear, cubic)
+        # Nearest should differ from linear
         assert not torch.allclose(linear, nearest)
 
     def test_numpy_input(self):

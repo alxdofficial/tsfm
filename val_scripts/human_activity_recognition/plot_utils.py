@@ -5,11 +5,12 @@ Replaces TensorBoard with local PNG plots saved to disk.
 """
 
 import json
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
+matplotlib.use('Agg')  # Use non-interactive backend (thread-safe with OO API)
 import numpy as np
 
 
@@ -31,10 +32,14 @@ class TrainingPlotter:
             'train_per_dataset': {},  # {dataset: {metric: [(step, value), ...]}}
             'val_per_dataset': {},
         }
+        self._metrics_lock = threading.Lock()  # Guards self.metrics access
 
         # Track current epoch and batch
         self.current_epoch = 0
         self.global_batch = 0  # Global batch counter across all epochs
+
+        # Background plotting thread (Agg backend + OO API is thread-safe)
+        self._plot_thread = None
 
     def add_scalar(self, tag: str, value: float, step: int):
         """
@@ -48,45 +53,46 @@ class TrainingPlotter:
         # Parse tag
         parts = tag.split('/')
 
-        if parts[0] == 'epoch':
-            # Epoch-level metrics - dynamically add if not exists
-            metric_name = parts[1]
-            if metric_name not in self.metrics['epoch']:
-                self.metrics['epoch'][metric_name] = []
-            self.metrics['epoch'][metric_name].append((step, value))
+        with self._metrics_lock:
+            if parts[0] == 'epoch':
+                # Epoch-level metrics - dynamically add if not exists
+                metric_name = parts[1]
+                if metric_name not in self.metrics['epoch']:
+                    self.metrics['epoch'][metric_name] = []
+                self.metrics['epoch'][metric_name].append((step, value))
 
-        elif parts[0] == 'batch':
-            # Batch-level training metrics - dynamically add if not exists
-            metric_name = parts[1]
-            if metric_name not in self.metrics['batch']:
-                self.metrics['batch'][metric_name] = []
-            self.metrics['batch'][metric_name].append((step, value))
+            elif parts[0] == 'batch':
+                # Batch-level training metrics - dynamically add if not exists
+                metric_name = parts[1]
+                if metric_name not in self.metrics['batch']:
+                    self.metrics['batch'][metric_name] = []
+                self.metrics['batch'][metric_name].append((step, value))
 
-        elif parts[0] == 'train_per_dataset':
-            # Per-dataset training metrics - dynamically add dataset and metric
-            dataset_name = parts[1]
-            metric_name = parts[2]
+            elif parts[0] == 'train_per_dataset':
+                # Per-dataset training metrics - dynamically add dataset and metric
+                dataset_name = parts[1]
+                metric_name = parts[2]
 
-            if dataset_name not in self.metrics['train_per_dataset']:
-                self.metrics['train_per_dataset'][dataset_name] = {}
+                if dataset_name not in self.metrics['train_per_dataset']:
+                    self.metrics['train_per_dataset'][dataset_name] = {}
 
-            if metric_name not in self.metrics['train_per_dataset'][dataset_name]:
-                self.metrics['train_per_dataset'][dataset_name][metric_name] = []
+                if metric_name not in self.metrics['train_per_dataset'][dataset_name]:
+                    self.metrics['train_per_dataset'][dataset_name][metric_name] = []
 
-            self.metrics['train_per_dataset'][dataset_name][metric_name].append((step, value))
+                self.metrics['train_per_dataset'][dataset_name][metric_name].append((step, value))
 
-        elif parts[0] == 'val_per_dataset':
-            # Per-dataset validation metrics - dynamically add dataset and metric
-            dataset_name = parts[1]
-            metric_name = parts[2]
+            elif parts[0] == 'val_per_dataset':
+                # Per-dataset validation metrics - dynamically add dataset and metric
+                dataset_name = parts[1]
+                metric_name = parts[2]
 
-            if dataset_name not in self.metrics['val_per_dataset']:
-                self.metrics['val_per_dataset'][dataset_name] = {}
+                if dataset_name not in self.metrics['val_per_dataset']:
+                    self.metrics['val_per_dataset'][dataset_name] = {}
 
-            if metric_name not in self.metrics['val_per_dataset'][dataset_name]:
-                self.metrics['val_per_dataset'][dataset_name][metric_name] = []
+                if metric_name not in self.metrics['val_per_dataset'][dataset_name]:
+                    self.metrics['val_per_dataset'][dataset_name][metric_name] = []
 
-            self.metrics['val_per_dataset'][dataset_name][metric_name].append((step, value))
+                self.metrics['val_per_dataset'][dataset_name][metric_name].append((step, value))
 
     def save_metrics(self):
         """Save metrics to JSON file."""
@@ -105,7 +111,9 @@ class TrainingPlotter:
 
         if metrics_file.exists():
             with open(metrics_file, 'r') as f:
-                self.metrics = json.load(f)
+                loaded = json.load(f)
+            with self._metrics_lock:
+                self.metrics = loaded
             print(f"✓ Loaded existing metrics from {metrics_file}")
 
             # Print summary of loaded data
@@ -116,14 +124,41 @@ class TrainingPlotter:
         return False
 
     def plot_all(self):
-        """Generate all plots and save as PNG files."""
-        self._plot_batch_training_losses()  # Real-time training convergence
-        self._plot_debug_metrics()  # Real-time debug metrics (gradients, collapse indicators)
-        self._plot_overall_loss()  # Epoch-level train vs val
-        self._plot_loss_components()  # Epoch-level MAE vs Contrastive
-        self._plot_per_dataset_losses()
-        self._plot_learning_rate()
-        self.save_metrics()
+        """Generate all plots in a background thread.
+
+        Skips if the previous plot is still running to avoid piling up.
+        Uses Agg backend + OO matplotlib API which is thread-safe.
+        """
+        # Skip if previous plot still running
+        if self._plot_thread is not None and self._plot_thread.is_alive():
+            return
+
+        self._plot_thread = threading.Thread(target=self._plot_all_sync, daemon=True)
+        self._plot_thread.start()
+
+    def _plot_all_sync(self):
+        """Synchronous plot implementation (runs in background thread)."""
+        import copy
+        # Snapshot metrics under lock to avoid racing with add_scalar
+        with self._metrics_lock:
+            snapshot = copy.deepcopy(self.metrics)
+        # Use snapshot for all plotting (avoids holding lock during slow I/O)
+        real_metrics = self.metrics
+        self.metrics = snapshot
+        try:
+            self._plot_batch_training_losses()
+            self._plot_debug_metrics()
+            self._plot_overall_loss()
+            self._plot_loss_components()
+            self._plot_per_dataset_losses()
+            self._plot_learning_rate()
+        except Exception as e:
+            print(f"Warning: Background plotting failed: {e}")
+        finally:
+            self.metrics = real_metrics
+        # Save real (up-to-date) metrics under lock
+        with self._metrics_lock:
+            self.save_metrics()
 
     def _plot_batch_training_losses(self):
         """Plot batch-level training losses for real-time convergence monitoring."""
@@ -454,7 +489,11 @@ class TrainingPlotter:
 
     def close(self):
         """Finalize plotting (mimics TensorBoard API)."""
-        self.plot_all()
+        # Wait for any background plot to finish
+        if self._plot_thread is not None and self._plot_thread.is_alive():
+            self._plot_thread.join(timeout=30)
+        # Final plot synchronously to ensure everything is saved
+        self._plot_all_sync()
         print(f"\n✓ Plots saved to {self.output_dir}")
         print(f"  - batch_training_losses.png (real-time training convergence)")
         print(f"  - debug_metrics.png (gradients, collapse, similarity, attention)")
