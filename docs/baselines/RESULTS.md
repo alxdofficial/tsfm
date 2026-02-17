@@ -11,6 +11,7 @@ Generated: 2026-02-17 | Framework: 5-metric unified evaluation | Seed: 3431
 | **MOMENT** | General time-series foundation model | Time Series Pile (no HAR data) | 6144 | No | SVM-RBF |
 | **CrossHAR** | Self-supervised (contrastive) | 10 HAR datasets (paper checkpoint) | 72 | No | Transformer_ft |
 | **LanHAR** | Text-aligned (trained from scratch) | 10 HAR datasets (fresh each run) | 768 | Yes | Linear |
+| **NLS-HAR** * | Text-aligned (NLS) | Capture-24 (single dataset) | — | Yes | — |
 
 ## Fairness Notes
 
@@ -47,6 +48,9 @@ Higher dimensions give more capacity but the linear probe uses the same architec
 | **MOMENT** | N/A | N/A | N/A | N/A | 58.4 | 54.7 | 74.5 | 71.8 | 82.7 | 81.3 |
 | **CrossHAR** | N/A | N/A | N/A | N/A | 51.6 | 46.7 | 66.5 | 60.9 | 65.8 | 55.8 |
 | **LanHAR** | 12.7 | 6.1 | 22.9 | 16.1 | 30.9 | 27.1 | 41.7 | 34.7 | 47.6 | 34.0 |
+| **NLS-HAR** * | — | 28.0 | — | — | — | — | — | — | — | — |
+
+*\* NLS-HAR numbers from published paper, not re-evaluated on our pipeline. See [caveats below](#nls-har-caveats).*
 
 ---
 
@@ -60,6 +64,7 @@ Higher dimensions give more capacity but the linear probe uses the same architec
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM (ours)** | 30.7 | 7.2 | 26.7 | 7.4 | 22.1 | 7.0 | 4.4 | 1.1 |
 | **LanHAR** | 11.4 | 4.4 | 14.0 | 6.4 | 17.3 | 11.4 | 8.3 | 2.1 |
+| **NLS-HAR** * | — | 16.9 | — | 39.0 | — | — | — | — |
 
 ### Zero-Shot Closed-Set
 
@@ -102,26 +107,14 @@ Higher dimensions give more capacity but the linear probe uses the same architec
 
 ---
 
-## NLS-HAR Paper Results (External Reference)
+## NLS-HAR Caveats
 
-The NLS paper ([Limitations in Employing NLS for Sensor-Based HAR](https://arxiv.org/abs/2408.12023))
-reports results on MobiAct and MotionSense, which overlap with our test sets. Their numbers are
-included below for reference, but **direct comparison is not meaningful** due to fundamental
-protocol differences.
+NLS-HAR zero-shot numbers are from the published paper
+([Haresamudram et al., 2024](https://arxiv.org/abs/2408.12023)), **not re-evaluated on our
+pipeline**. They are included in the zero-shot table for reference since the zero-shot setting
+(pretrain on separate data, predict on target with no target training) is conceptually comparable.
 
-### NLS-HAR Published Results (Macro F1, 5-fold user-level CV)
-
-| Method | MobiAct F1 | MotionSense F1 |
-|--------|-----------|----------------|
-| NLS Zero-Shot (Capture-24 pretrain) | 16.9 | 39.0 |
-| NLS + target train pretrain | 59.1 | 73.4 |
-| NLS + adaptation + improved text | 65.3 | — |
-| Conv. Classifier (fully supervised) | 79.0 | 89.0 |
-| SimCLR + MLP (self-supervised) | 75.8 | 87.9 |
-
-### Why Direct Comparison is NOT Fair
-
-Including NLS-HAR numbers alongside our benchmark would be misleading due to these differences:
+### Protocol Differences
 
 | Aspect | Our Benchmark | NLS-HAR Paper |
 |--------|---------------|---------------|
@@ -129,36 +122,23 @@ Including NLS-HAR numbers alongside our benchmark would be misleading due to the
 | **Window size** | 6.0s (120 @ 20Hz) | 2.0s (100 @ 50Hz) |
 | **Sampling rate** | 20 Hz | 50 Hz |
 | **MobiAct classes** | 13 | 11 |
-| **Eval protocol** | Window-level random split | User-level 5-fold CV |
-| **Metric** | Accuracy + F1 macro | F1 macro only |
 | **Pretrain data** | 10 HAR datasets | Capture-24 (single dataset) |
+| **Metric reported** | Accuracy + F1 macro | F1 macro only |
+| **Eval protocol** | Window-level random split | User-level 5-fold CV |
 
-**Key incompatibilities:**
+**Note on splits**: For zero-shot (no target training data), the split protocol does not affect the
+result — both approaches evaluate on the full target dataset with no target-specific training. The
+split difference only matters for supervised metrics, which is why NLS-HAR is only included in the
+zero-shot table.
 
-1. **Different input representations**: 3-axis acc at 50Hz vs 6-axis acc+gyro at 20Hz produce
-   fundamentally different feature spaces. Models trained on one cannot be directly compared to
-   models trained on the other.
+### NLS-HAR Additional Published Results (for reference)
 
-2. **Different window sizes**: 2s windows capture different temporal patterns than 6s windows.
-   Shorter windows miss longer-duration activities; longer windows capture more context.
-
-3. **Different split protocols**: User-level splits (NLS-HAR) are harder than random window splits
-   (our benchmark) because the model can't memorize user-specific patterns. This makes NLS-HAR's
-   numbers artificially lower.
-
-4. **Different activity sets**: NLS-HAR uses 11 MobiAct activities vs our 13. Different label
-   counts change random-chance baselines and class distributions.
-
-### Recommendation
-
-NLS-HAR results should be **cited in the paper as related work** with a note that protocols differ,
-but should **NOT be placed in the same results table** as our benchmark numbers. The comparison
-would be apples-to-oranges and could mislead readers about relative model quality.
-
-If a direct comparison is desired, NLS-HAR would need to be re-evaluated on our exact benchmark
-pipeline (same data format, same splits, same metrics). However, the NLS-HAR code
-pretrained on Capture-24 (a UK Biobank accelerometer dataset) — not publicly available for
-reproduction.
+| Method | MobiAct F1 | MotionSense F1 |
+|--------|-----------|----------------|
+| NLS Zero-Shot (Capture-24 pretrain) | 16.9 | 39.0 |
+| NLS + target train pretrain | 59.1 | 73.4 |
+| NLS + adaptation + improved text | 65.3 | — |
+| Conv. Classifier (fully supervised) | 79.0 | 89.0 |
 
 ---
 
