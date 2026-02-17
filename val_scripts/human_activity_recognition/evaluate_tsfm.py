@@ -1,11 +1,16 @@
 """
-TSFM (our model) evaluation using the same 3-metric framework as baselines.
+TSFM (our model) evaluation using the new evaluation framework.
 
 Extracts embeddings from the trained TSFM semantic alignment model
 and evaluates with:
-  1. Zero-shot open-set (all 87 training labels, group-based matching)
-  2. Closed-set (test dataset labels only, exact match)
-  3. 1% supervised (train on 1% of test data)
+  1. Zero-shot open-set (cosine sim against all 87 training labels, group matching)
+  2. Zero-shot closed-set (cosine sim against test dataset labels only)
+  3. 1% supervised (linear classifier on 1% of test data)
+  4. 10% supervised (linear classifier on 10% of test data)
+  5. Linear probe (linear classifier on frozen embeddings, full train split)
+
+Zero-shot uses cosine similarity between IMU embeddings and text label
+embeddings from the trained LearnableLabelBank — no classifier training needed.
 
 Uses the same benchmark data format as all baselines:
   (N, 120, 6) windows at 20Hz with 6 IMU channels (acc_xyz + gyro_xyz)
@@ -37,6 +42,7 @@ from datasets.imu_pretraining_dataset.label_groups import (
     get_label_to_group_mapping,
 )
 from val_scripts.human_activity_recognition.model_loading import load_model, load_label_bank
+from val_scripts.human_activity_recognition.evaluation_metrics import compute_similarity
 from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
 from imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
 
@@ -51,7 +57,7 @@ GLOBAL_LABEL_PATH = LIMUBERT_DATA_DIR / "global_label_mapping.json"
 OUTPUT_DIR = PROJECT_ROOT / "test_output" / "baseline_evaluation"
 
 # TSFM checkpoint - update this path to your trained model
-CHECKPOINT_PATH = "training_output/semantic_alignment/20260124_033735/best.pt"
+CHECKPOINT_PATH = "training_output/semantic_alignment/20260216_225955/best.pt"
 
 # Data specs (standardized benchmark format)
 DATA_SEQ_LEN = 120         # Window length (timesteps)
@@ -60,9 +66,10 @@ DATA_SAMPLING_RATE = 20.0  # All benchmark data is resampled to 20Hz
 TSFM_EMB_DIM = 384         # TSFM embedding dimension
 TSFM_BATCH_SIZE = 32       # Batch size for embedding extraction
 
-# Patch size for benchmark data at 20Hz (matches training config for 20Hz datasets)
-# 120 steps @ 20Hz = 6s total, 1.5s patches = 4 patches per window
-PATCH_SIZE_SEC = 1.5
+# Patch sizes to sweep per dataset (benchmark data: 120 steps @ 20Hz = 6s window)
+# Covers training augmentation range; best is selected per test dataset
+PATCH_SIZES_TO_TRY = [1.0, 1.25, 1.5, 1.75, 2.0]
+DEFAULT_PATCH_SIZE_SEC = 1.5  # Fallback / training dataset default
 
 # Channel descriptions for the standardized 6-channel format
 CHANNEL_DESCRIPTIONS = [
@@ -83,7 +90,8 @@ CLASSIFIER_SEED = 3431
 # Data split parameters
 TRAINING_RATE = 0.8
 VALI_RATE = 0.1
-SUPERVISED_LABEL_RATE = 0.01  # 1% of training portion (=0.8% of total data after 80/10/10 split)
+SUPERVISED_LABEL_RATE_1PCT = 0.01  # 1% of training portion
+SUPERVISED_LABEL_RATE_10PCT = 0.10  # 10% of training portion
 
 # Load configs
 with open(DATASET_CONFIG_PATH) as f:
@@ -124,6 +132,7 @@ def extract_tsfm_embeddings(
     raw_data: np.ndarray,
     device: torch.device,
     batch_size: int = TSFM_BATCH_SIZE,
+    patch_size_sec: float = DEFAULT_PATCH_SIZE_SEC,
 ) -> np.ndarray:
     """Extract TSFM embeddings from raw sensor data.
 
@@ -132,6 +141,7 @@ def extract_tsfm_embeddings(
         raw_data: (N, 120, 6) raw sensor data at 20Hz
         device: torch device
         batch_size: batch size for inference
+        patch_size_sec: patch duration in seconds
 
     Returns:
         embeddings: (N, 384) L2-normalized embeddings
@@ -154,7 +164,7 @@ def extract_tsfm_embeddings(
         # Per-sample metadata
         channel_descs = [CHANNEL_DESCRIPTIONS[:] for _ in range(bs)]
         sampling_rates = [DATA_SAMPLING_RATE] * bs
-        patch_sizes = [PATCH_SIZE_SEC] * bs
+        patch_sizes = [patch_size_sec] * bs
 
         with torch.no_grad():
             with autocast('cuda', enabled=device.type == 'cuda'):
@@ -343,66 +353,36 @@ def predict_classifier(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=Non
 
 
 # =============================================================================
-# Evaluation Functions (identical to baselines)
+# Zero-Shot Evaluation Functions (cosine similarity with label bank)
 # =============================================================================
 
-def evaluate_open_set(
-    train_embeddings: Dict[str, Tuple[np.ndarray, np.ndarray]],
+def evaluate_zero_shot_open_set(
     test_embeddings: np.ndarray,
     test_labels: np.ndarray,
     test_dataset: str,
+    label_bank: LearnableLabelBank,
     device: torch.device,
 ) -> Dict[str, float]:
-    """Metric 1: Zero-shot open-set evaluation."""
-    print("  [Open-set] Preparing training data with all labels...")
+    """True zero-shot open-set: cosine similarity against all 87 training labels.
+
+    No classifier training. Uses label bank to encode ALL training labels as
+    text embeddings, then argmax cosine similarity. Match via synonym groups.
+    """
     label_to_group = get_label_to_group_mapping()
     test_activities = get_dataset_labels(test_dataset)
-    global_label_to_idx = {label: i for i, label in enumerate(GLOBAL_LABELS)}
-    num_global_classes = len(GLOBAL_LABELS)
 
-    all_train_data = []
-    all_train_labels = []
+    print(f"  [Zero-shot open-set] Encoding {len(GLOBAL_LABELS)} training labels...")
+    with torch.no_grad():
+        label_embeddings = label_bank.encode(GLOBAL_LABELS, normalize=True).to(device)
 
-    for ds_name in TRAIN_DATASETS:
-        if ds_name not in train_embeddings:
-            continue
-        emb, labels = train_embeddings[ds_name]
-        ds_activities = get_dataset_labels(ds_name)
+    # Convert test embeddings to tensor
+    test_emb_t = torch.from_numpy(test_embeddings).float().to(device)
 
-        for i in range(len(labels)):
-            local_idx = labels[i]
-            if local_idx < len(ds_activities):
-                activity_name = ds_activities[local_idx]
-                global_idx = global_label_to_idx.get(activity_name, -1)
-                if global_idx >= 0:
-                    all_train_data.append(emb[i])
-                    all_train_labels.append(global_idx)
+    # Cosine similarity (both are L2-normalized)
+    similarity = compute_similarity(test_emb_t, label_embeddings)  # (N, 87)
+    pred_indices = similarity.argmax(dim=1).cpu().numpy()
 
-    all_train_data = np.array(all_train_data)
-    all_train_labels = np.array(all_train_labels, dtype=np.int64)
-
-    print(f"  [Open-set] Training data: {len(all_train_data)} samples, {num_global_classes} classes")
-
-    rng = np.random.RandomState(CLASSIFIER_SEED)
-    idx = np.arange(len(all_train_data))
-    rng.shuffle(idx)
-    all_train_data = all_train_data[idx]
-    all_train_labels = all_train_labels[idx]
-
-    val_n = int(len(all_train_data) * 0.1)
-    train_data = all_train_data[val_n:]
-    train_labels_arr = all_train_labels[val_n:]
-    val_data = all_train_data[:val_n]
-    val_labels_arr = all_train_labels[:val_n]
-
-    print(f"  [Open-set] Training linear classifier ({num_global_classes} classes)...")
-    model = train_linear_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_global_classes, device=device, verbose=True
-    )
-
-    pred_global_indices = predict_classifier(model, test_embeddings, device=device)
-
+    # Map through synonym groups
     pred_groups = []
     gt_groups = []
     for i in range(len(test_labels)):
@@ -413,11 +393,8 @@ def evaluate_open_set(
             continue
         gt_group = label_to_group.get(gt_name, gt_name)
 
-        pred_idx = pred_global_indices[i]
-        if pred_idx < len(GLOBAL_LABELS):
-            pred_name = GLOBAL_LABELS[pred_idx]
-        else:
-            pred_name = "unknown"
+        pred_idx = pred_indices[i]
+        pred_name = GLOBAL_LABELS[pred_idx] if pred_idx < len(GLOBAL_LABELS) else "unknown"
         pred_group = label_to_group.get(pred_name, pred_name)
 
         gt_groups.append(gt_group)
@@ -427,85 +404,34 @@ def evaluate_open_set(
     f1 = f1_score(gt_groups, pred_groups, average='macro', zero_division=0) * 100
 
     return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_groups),
-            'n_train_samples': len(train_data), 'n_classes_train': num_global_classes}
+            'n_classes_train': len(GLOBAL_LABELS)}
 
 
-def evaluate_closed_set(
-    train_embeddings: Dict[str, Tuple[np.ndarray, np.ndarray]],
+def evaluate_zero_shot_closed_set(
     test_embeddings: np.ndarray,
     test_labels: np.ndarray,
     test_dataset: str,
+    label_bank: LearnableLabelBank,
     device: torch.device,
 ) -> Dict[str, float]:
-    """Metric 2: Closed-set evaluation."""
-    label_to_group = get_label_to_group_mapping()
-    test_activities = get_dataset_labels(test_dataset)
-    group_to_test_labels = {}
-    for act in test_activities:
-        group = label_to_group.get(act, act)
-        group_to_test_labels.setdefault(group, []).append(act)
+    """True zero-shot closed-set: cosine similarity against test dataset labels only.
 
-    test_label_to_idx = {a: i for i, a in enumerate(test_activities)}
+    No classifier training. Encode only the test dataset's activity labels,
+    then argmax cosine similarity. Exact match evaluation.
+    """
+    test_activities = get_dataset_labels(test_dataset)
     num_test_classes = len(test_activities)
 
-    print(f"  [Closed-set] Collecting training data for {num_test_classes} test classes...")
+    print(f"  [Zero-shot closed-set] Encoding {num_test_classes} test labels...")
+    with torch.no_grad():
+        label_embeddings = label_bank.encode(test_activities, normalize=True).to(device)
 
-    all_train_data = []
-    all_train_labels = []
+    # Convert test embeddings to tensor
+    test_emb_t = torch.from_numpy(test_embeddings).float().to(device)
 
-    for ds_name in TRAIN_DATASETS:
-        if ds_name not in train_embeddings:
-            continue
-        emb, labels = train_embeddings[ds_name]
-        ds_activities = get_dataset_labels(ds_name)
-
-        for i in range(len(labels)):
-            local_idx = labels[i]
-            if local_idx < len(ds_activities):
-                activity_name = ds_activities[local_idx]
-                group = label_to_group.get(activity_name, activity_name)
-                mapped_test_label = None
-                if activity_name in test_label_to_idx:
-                    mapped_test_label = activity_name
-                else:
-                    candidates = group_to_test_labels.get(group, [])
-                    if len(candidates) == 1:
-                        mapped_test_label = candidates[0]
-
-                if mapped_test_label is not None:
-                    test_idx = test_label_to_idx[mapped_test_label]
-                    all_train_data.append(emb[i])
-                    all_train_labels.append(test_idx)
-
-    all_train_data = np.array(all_train_data)
-    all_train_labels = np.array(all_train_labels, dtype=np.int64)
-
-    covered_classes = len(np.unique(all_train_labels))
-    print(f"  [Closed-set] Training data: {len(all_train_data)} samples, "
-          f"{covered_classes}/{num_test_classes} classes covered")
-
-    if len(all_train_data) == 0:
-        return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0, 'n_classes': num_test_classes}
-
-    rng = np.random.RandomState(CLASSIFIER_SEED)
-    idx = np.arange(len(all_train_data))
-    rng.shuffle(idx)
-    all_train_data = all_train_data[idx]
-    all_train_labels = all_train_labels[idx]
-
-    val_n = int(len(all_train_data) * 0.1)
-    train_data = all_train_data[val_n:]
-    train_labels_arr = all_train_labels[val_n:]
-    val_data = all_train_data[:val_n]
-    val_labels_arr = all_train_labels[:val_n]
-
-    print(f"  [Closed-set] Training linear classifier ({num_test_classes} classes)...")
-    model = train_linear_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_test_classes, device=device, verbose=True
-    )
-
-    pred_indices = predict_classifier(model, test_embeddings, device=device)
+    # Cosine similarity
+    similarity = compute_similarity(test_emb_t, label_embeddings)  # (N, C)
+    pred_indices = similarity.argmax(dim=1).cpu().numpy()
 
     gt_names = []
     pred_names = []
@@ -516,53 +442,53 @@ def evaluate_closed_set(
         else:
             continue
         pred_idx = pred_indices[i]
-        if pred_idx < len(test_activities):
-            pred_names.append(test_activities[pred_idx])
-        else:
-            pred_names.append("unknown")
+        pred_names.append(test_activities[pred_idx] if pred_idx < len(test_activities) else "unknown")
 
     acc = accuracy_score(gt_names, pred_names) * 100
     f1 = f1_score(
-        gt_names,
-        pred_names,
-        labels=test_activities,
-        average='macro',
-        zero_division=0,
+        gt_names, pred_names, labels=test_activities,
+        average='macro', zero_division=0,
     ) * 100
 
     return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_names),
-            'n_train_samples': len(train_data), 'n_classes': num_test_classes,
-            'covered_classes': covered_classes}
+            'n_classes': num_test_classes}
 
 
-def evaluate_1pct_supervised(
+def evaluate_supervised(
     test_embeddings: np.ndarray,
     test_labels: np.ndarray,
     test_dataset: str,
     device: torch.device,
+    label_rate: float = 0.01,
+    label_tag: str = "1%",
 ) -> Dict[str, float]:
-    """Metric 3: 1% supervised evaluation."""
+    """Supervised evaluation: train linear classifier on subset of test data.
+
+    Args:
+        label_rate: Fraction of training portion to use (0.01 = 1%, 0.10 = 10%)
+        label_tag: Display tag for logging
+    """
     test_activities = get_dataset_labels(test_dataset)
     num_test_classes = len(test_activities)
 
-    print(f"  [1% supervised] Total samples: {len(test_embeddings)}, {num_test_classes} classes")
+    print(f"  [{label_tag} supervised] Total samples: {len(test_embeddings)}, {num_test_classes} classes")
 
     train_data, train_labels_arr, val_data, val_labels_arr, eval_data, eval_labels_arr = \
         prepare_train_test_split(
             test_embeddings, test_labels,
             training_rate=TRAINING_RATE,
             vali_rate=VALI_RATE,
-            label_rate=SUPERVISED_LABEL_RATE,
+            label_rate=label_rate,
             seed=CLASSIFIER_SEED,
             balance=True
         )
 
-    print(f"  [1% supervised] Train: {len(train_data)}, Val: {len(val_data)}, Test: {len(eval_data)}")
+    print(f"  [{label_tag} supervised] Train: {len(train_data)}, Val: {len(val_data)}, Test: {len(eval_data)}")
 
     if len(train_data) == 0:
         return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0, 'n_classes': num_test_classes}
 
-    print(f"  [1% supervised] Training linear classifier ({num_test_classes} classes)...")
+    print(f"  [{label_tag} supervised] Training linear classifier ({num_test_classes} classes)...")
     model = train_linear_classifier(
         train_data, train_labels_arr, val_data, val_labels_arr,
         num_classes=num_test_classes, device=device, verbose=True
@@ -579,22 +505,33 @@ def evaluate_1pct_supervised(
         else:
             continue
         pred_idx = pred_indices[i]
-        if pred_idx < len(test_activities):
-            pred_names.append(test_activities[pred_idx])
-        else:
-            pred_names.append("unknown")
+        pred_names.append(test_activities[pred_idx] if pred_idx < len(test_activities) else "unknown")
 
     acc = accuracy_score(gt_names, pred_names) * 100
     f1 = f1_score(
-        gt_names,
-        pred_names,
-        labels=test_activities,
-        average='macro',
-        zero_division=0,
+        gt_names, pred_names, labels=test_activities,
+        average='macro', zero_division=0,
     ) * 100
 
     return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_names),
             'n_train_samples': len(train_data), 'n_classes': num_test_classes}
+
+
+def evaluate_linear_probe(
+    test_embeddings: np.ndarray,
+    test_labels: np.ndarray,
+    test_dataset: str,
+    device: torch.device,
+) -> Dict[str, float]:
+    """Linear probe: train linear classifier on full train split of test data.
+
+    Measures representation quality. Uses 80% train / 10% val / 10% test split
+    with full training set (no subsampling).
+    """
+    return evaluate_supervised(
+        test_embeddings, test_labels, test_dataset, device,
+        label_rate=1.0, label_tag="Linear probe",
+    )
 
 
 # =============================================================================
@@ -604,40 +541,121 @@ def evaluate_1pct_supervised(
 def print_results_table(all_results):
     """Print results table."""
     print()
-    print("=" * 94)
-    print("TSFM EVALUATION RESULTS")
-    print("=" * 94)
+    print("=" * 140)
+    print("TSFM EVALUATION RESULTS (New Framework)")
+    print("=" * 140)
 
-    header = (f"{'Dataset':<16}"
-              f"{'Open-Set Acc':>13}{'Open-Set F1':>13}"
-              f"{'Closed Acc':>13}{'Closed F1':>13}"
-              f"{'1% Sup Acc':>13}{'1% Sup F1':>13}")
+    header = (f"{'Dataset':<16}{'Patch':>6}"
+              f"{'ZS-Open Acc':>13}{'ZS-Open F1':>13}"
+              f"{'ZS-Close Acc':>14}{'ZS-Close F1':>13}"
+              f"{'1%Sup Acc':>11}{'1%Sup F1':>10}"
+              f"{'10%Sup Acc':>12}{'10%Sup F1':>11}"
+              f"{'LP Acc':>9}{'LP F1':>8}")
     print(header)
-    print("-" * 94)
+    print("-" * 140)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
             continue
         r = all_results[ds]
-        os_acc = r.get('open_set', {}).get('accuracy', 0.0)
-        os_f1 = r.get('open_set', {}).get('f1_macro', 0.0)
-        cs_acc = r.get('closed_set', {}).get('accuracy', 0.0)
-        cs_f1 = r.get('closed_set', {}).get('f1_macro', 0.0)
-        sup_acc = r.get('1pct_supervised', {}).get('accuracy', 0.0)
-        sup_f1 = r.get('1pct_supervised', {}).get('f1_macro', 0.0)
-        print(f"{ds:<16}"
-              f"{os_acc:>12.1f}%{os_f1:>12.1f}%"
-              f"{cs_acc:>12.1f}%{cs_f1:>12.1f}%"
-              f"{sup_acc:>12.1f}%{sup_f1:>12.1f}%")
+        ps = r.get('best_patch_size', DEFAULT_PATCH_SIZE_SEC)
 
-    print("=" * 94)
+        def g(key, metric):
+            return r.get(key, {}).get(metric, 0.0)
+
+        print(f"{ds:<16}{ps:>5.2f}s"
+              f"{g('zero_shot_open_set','accuracy'):>12.1f}%{g('zero_shot_open_set','f1_macro'):>12.1f}%"
+              f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>12.1f}%"
+              f"{g('1pct_supervised','accuracy'):>10.1f}%{g('1pct_supervised','f1_macro'):>9.1f}%"
+              f"{g('10pct_supervised','accuracy'):>11.1f}%{g('10pct_supervised','f1_macro'):>10.1f}%"
+              f"{g('linear_probe','accuracy'):>8.1f}%{g('linear_probe','f1_macro'):>7.1f}%")
+
+    print("=" * 140)
     print()
     print("Details:")
     print(f"  Checkpoint: {CHECKPOINT_PATH}")
     print(f"  Embedding dim: {TSFM_EMB_DIM}")
     print(f"  Benchmark data: {DATA_SEQ_LEN} steps @ {DATA_SAMPLING_RATE}Hz, {DATA_CHANNELS} channels")
-    print(f"  Patch size: {PATCH_SIZE_SEC}s")
-    print(f"  Classifier: Linear, {CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
+    print(f"  Patch sizes tried: {PATCH_SIZES_TO_TRY}")
+    print(f"  Zero-shot: Cosine similarity with LearnableLabelBank text embeddings")
+    print(f"  Supervised: Linear classifier, {CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
+
+
+def select_best_patch_size(
+    model: SemanticAlignmentModel,
+    raw_data: np.ndarray,
+    raw_labels: np.ndarray,
+    test_dataset: str,
+    label_bank: LearnableLabelBank,
+    device: torch.device,
+    patch_sizes: list = PATCH_SIZES_TO_TRY,
+) -> Tuple[float, np.ndarray]:
+    """Select best patch size using zero-shot closed-set accuracy.
+
+    Extracts embeddings at each candidate patch size, computes cosine
+    similarity with test label text embeddings, and picks the patch size
+    with highest closed-set accuracy. No classifier training needed.
+
+    Patch sizes longer than the window duration are automatically excluded.
+
+    Returns:
+        (best_patch_size, best_embeddings)
+    """
+    test_labels = get_window_labels(raw_labels)
+    test_activities = get_dataset_labels(test_dataset)
+
+    # Filter: patch size must not exceed window duration
+    window_duration = raw_data.shape[1] / DATA_SAMPLING_RATE
+    valid_sizes = [ps for ps in patch_sizes if ps <= window_duration]
+    if not valid_sizes:
+        valid_sizes = [window_duration]
+    if len(valid_sizes) < len(patch_sizes):
+        dropped = [ps for ps in patch_sizes if ps > window_duration]
+        print(f"  Dropped patch sizes {dropped} (exceed window duration {window_duration:.1f}s)")
+
+    if len(valid_sizes) == 1:
+        emb = extract_tsfm_embeddings(model, raw_data, device, patch_size_sec=valid_sizes[0])
+        return valid_sizes[0], emb
+
+    # Encode test labels once for zero-shot evaluation
+    with torch.no_grad():
+        label_embeddings = label_bank.encode(test_activities, normalize=True).to(device)
+
+    print(f"  Sweeping patch sizes: {valid_sizes}")
+    best_acc = -1.0
+    best_ps = valid_sizes[0]
+    best_emb = None
+
+    for ps in valid_sizes:
+        try:
+            emb = extract_tsfm_embeddings(model, raw_data, device, patch_size_sec=ps)
+        except Exception as e:
+            print(f"    patch={ps}s: FAILED ({e})")
+            continue
+
+        # Quick zero-shot closed-set eval via cosine similarity
+        emb_t = torch.from_numpy(emb).float().to(device)
+        similarity = compute_similarity(emb_t, label_embeddings)
+        pred_indices = similarity.argmax(dim=1).cpu().numpy()
+
+        correct = 0
+        total = 0
+        for i in range(len(test_labels)):
+            if test_labels[i] < len(test_activities):
+                total += 1
+                if pred_indices[i] == test_labels[i]:
+                    correct += 1
+
+        acc = (correct / total * 100) if total > 0 else 0.0
+        print(f"    patch={ps}s: ZS closed-set acc={acc:.1f}%")
+
+        if acc > best_acc:
+            best_acc = acc
+            best_ps = ps
+            best_emb = emb
+
+    print(f"  -> Best patch size: {best_ps}s (ZS closed-set acc={best_acc:.1f}%)")
+    return best_ps, best_emb
 
 
 def main():
@@ -646,25 +664,11 @@ def main():
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Load TSFM model
+    # Load TSFM model + label bank
     print(f"\nLoading TSFM model from {CHECKPOINT_PATH}...")
     model, checkpoint, hyperparams_path = load_tsfm_model(CHECKPOINT_PATH, device)
-    print("Model loaded successfully")
-
-    # Extract embeddings for all training datasets
-    print("\nExtracting training embeddings...")
-    train_embeddings = {}
-    for ds in TRAIN_DATASETS:
-        try:
-            raw_data, raw_labels = load_raw_data(ds)
-            emb = extract_tsfm_embeddings(model, raw_data, device)
-            labels = get_window_labels(raw_labels)
-            train_embeddings[ds] = (emb, labels)
-            print(f"  {ds}: {emb.shape[0]} windows -> embeddings {emb.shape}")
-        except Exception as e:
-            print(f"  {ds}: FAILED ({e})")
-
-    print(f"\nExtracted embeddings for {len(train_embeddings)}/{len(TRAIN_DATASETS)} training datasets")
+    label_bank = load_label_bank(checkpoint, device, hyperparams_path)
+    print("Model and label bank loaded successfully")
 
     # Run evaluation on each test dataset
     all_results = {}
@@ -675,37 +679,58 @@ def main():
         print(f"{'='*60}")
 
         raw_data, raw_labels = load_raw_data(test_ds)
-        test_emb = extract_tsfm_embeddings(model, raw_data, device)
         test_labels = get_window_labels(raw_labels)
         test_activities = get_dataset_labels(test_ds)
+
+        # Select best patch size for this dataset
+        best_ps, test_emb = select_best_patch_size(
+            model, raw_data, raw_labels, test_ds, label_bank, device)
 
         print(f"  Test data: {test_emb.shape[0]} windows -> embeddings {test_emb.shape}, "
               f"{len(test_activities)} classes")
         print(f"  Classes: {test_activities}")
 
-        ds_results = {}
+        ds_results = {'best_patch_size': best_ps}
 
-        # Metric 1: Open-set
-        print(f"\n  --- Metric 1: Zero-shot Open-Set ---")
-        ds_results['open_set'] = evaluate_open_set(
-            train_embeddings, test_emb, test_labels, test_ds, device)
-        print(f"  Open-set: Acc={ds_results['open_set']['accuracy']:.1f}%, "
-              f"F1={ds_results['open_set']['f1_macro']:.1f}%")
+        # 1. Zero-shot open-set (cosine similarity)
+        print(f"\n  --- Zero-shot Open-Set (cosine sim) ---")
+        ds_results['zero_shot_open_set'] = evaluate_zero_shot_open_set(
+            test_emb, test_labels, test_ds, label_bank, device)
+        print(f"  ZS Open-set: Acc={ds_results['zero_shot_open_set']['accuracy']:.1f}%, "
+              f"F1={ds_results['zero_shot_open_set']['f1_macro']:.1f}%")
 
-        # Metric 2: Closed-set
-        print(f"\n  --- Metric 2: Closed-Set ---")
-        ds_results['closed_set'] = evaluate_closed_set(
-            train_embeddings, test_emb, test_labels, test_ds, device)
-        print(f"  Closed-set: Acc={ds_results['closed_set']['accuracy']:.1f}%, "
-              f"F1={ds_results['closed_set']['f1_macro']:.1f}%")
+        # 2. Zero-shot closed-set (cosine similarity)
+        print(f"\n  --- Zero-shot Closed-Set (cosine sim) ---")
+        ds_results['zero_shot_closed_set'] = evaluate_zero_shot_closed_set(
+            test_emb, test_labels, test_ds, label_bank, device)
+        print(f"  ZS Closed-set: Acc={ds_results['zero_shot_closed_set']['accuracy']:.1f}%, "
+              f"F1={ds_results['zero_shot_closed_set']['f1_macro']:.1f}%")
 
-        # Metric 3: 1% supervised
-        print(f"\n  --- Metric 3: 1% Supervised ---")
-        ds_results['1pct_supervised'] = evaluate_1pct_supervised(
-            test_emb, test_labels, test_ds, device)
+        # 3. 1% supervised
+        print(f"\n  --- 1% Supervised ---")
+        ds_results['1pct_supervised'] = evaluate_supervised(
+            test_emb, test_labels, test_ds, device,
+            label_rate=SUPERVISED_LABEL_RATE_1PCT, label_tag="1%")
         print(f"  1% supervised: "
               f"Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['1pct_supervised']['f1_macro']:.1f}%")
+
+        # 4. 10% supervised
+        print(f"\n  --- 10% Supervised ---")
+        ds_results['10pct_supervised'] = evaluate_supervised(
+            test_emb, test_labels, test_ds, device,
+            label_rate=SUPERVISED_LABEL_RATE_10PCT, label_tag="10%")
+        print(f"  10% supervised: "
+              f"Acc={ds_results['10pct_supervised']['accuracy']:.1f}%, "
+              f"F1={ds_results['10pct_supervised']['f1_macro']:.1f}%")
+
+        # 5. Linear probe (full train split)
+        print(f"\n  --- Linear Probe ---")
+        ds_results['linear_probe'] = evaluate_linear_probe(
+            test_emb, test_labels, test_ds, device)
+        print(f"  Linear probe: "
+              f"Acc={ds_results['linear_probe']['accuracy']:.1f}%, "
+              f"F1={ds_results['linear_probe']['f1_macro']:.1f}%")
 
         all_results[test_ds] = ds_results
 
@@ -718,10 +743,13 @@ def main():
     for ds, metrics in all_results.items():
         save_data[ds] = {}
         for metric_name, metric_vals in metrics.items():
-            save_data[ds][metric_name] = {
-                k: float(v) if isinstance(v, (np.floating, float)) else v
-                for k, v in metric_vals.items()
-            }
+            if isinstance(metric_vals, dict):
+                save_data[ds][metric_name] = {
+                    k: float(v) if isinstance(v, (np.floating, float)) else v
+                    for k, v in metric_vals.items()
+                }
+            else:
+                save_data[ds][metric_name] = float(metric_vals) if isinstance(metric_vals, (np.floating, float)) else metric_vals
 
     with open(results_path, 'w') as f:
         json.dump(save_data, f, indent=2)

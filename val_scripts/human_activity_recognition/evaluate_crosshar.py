@@ -1,15 +1,14 @@
 """
-CrossHAR baseline scoring.
+CrossHAR baseline evaluation using the new evaluation framework.
 
-Loads the pretrained CrossHAR masked model, extracts sequence embeddings,
-then trains a Transformer_ft classifier (matching the original CrossHAR
-evaluation protocol) for the 3-metric framework:
-  1. Zero-shot open-set (all 87 training labels, group-based matching)
-  2. Closed-set (test dataset labels only, exact match)
-  3. 1% supervised (train on 1% of test data)
+CrossHAR is NOT text-aligned, so zero-shot evaluation is N/A.
+Evaluates with:
+  1. 1% supervised (Transformer_ft classifier - paper's architecture)
+  2. 10% supervised (Transformer_ft classifier)
+  3. Linear probe (linear classifier on frozen mean-pooled embeddings, full train split)
 
 Usage:
-    python val_scripts/human_activity_recognition/score_crosshar.py
+    python val_scripts/human_activity_recognition/evaluate_crosshar.py
 """
 
 import json
@@ -30,10 +29,6 @@ from sklearn.metrics import f1_score, accuracy_score
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from datasets.imu_pretraining_dataset.label_groups import (
-    LABEL_GROUPS,
-    get_label_to_group_mapping,
-)
 
 # =============================================================================
 # Configuration
@@ -42,7 +37,6 @@ from datasets.imu_pretraining_dataset.label_groups import (
 BENCHMARK_DIR = PROJECT_ROOT / "benchmark_data"
 LIMUBERT_DATA_DIR = BENCHMARK_DIR / "processed" / "limubert"
 DATASET_CONFIG_PATH = BENCHMARK_DIR / "dataset_config.json"
-GLOBAL_LABEL_PATH = LIMUBERT_DATA_DIR / "global_label_mapping.json"
 OUTPUT_DIR = PROJECT_ROOT / "test_output" / "baseline_evaluation"
 
 CROSSHAR_DIR = PROJECT_ROOT / "auxiliary_repos" / "CrossHAR"
@@ -65,7 +59,8 @@ CLASSIFIER_SEED = 3431
 
 TRAINING_RATE = 0.8
 VALI_RATE = 0.1
-SUPERVISED_LABEL_RATE = 0.01  # 1% of training portion (=0.8% of total data after 80/10/10 split)
+SUPERVISED_LABEL_RATE_1PCT = 0.01
+SUPERVISED_LABEL_RATE_10PCT = 0.10
 
 EMBED_BATCH_SIZE = 256
 
@@ -73,10 +68,6 @@ EMBED_BATCH_SIZE = 256
 with open(DATASET_CONFIG_PATH) as f:
     DATASET_CONFIG = json.load(f)
 
-with open(GLOBAL_LABEL_PATH) as f:
-    GLOBAL_LABELS = json.load(f)["labels"]
-
-TRAIN_DATASETS = DATASET_CONFIG["train_datasets"]
 TEST_DATASETS = DATASET_CONFIG["zero_shot_datasets"]
 
 
@@ -538,232 +529,152 @@ def predict_transformer_classifier(model, data, batch_size=CLASSIFIER_BATCH_SIZE
 
 
 # =============================================================================
-# Scoring Functions
+# Linear Classifier (for linear probe)
 # =============================================================================
 
-def score_open_set(
-    train_embeddings: Dict[str, Tuple[np.ndarray, np.ndarray]],
-    test_embeddings: np.ndarray,
-    test_labels: np.ndarray,
-    test_dataset: str,
-    device: torch.device,
-) -> Dict[str, float]:
-    """Metric 1: Zero-shot open-set."""
-    print("  [Open-set] Preparing training data with all labels...")
-    label_to_group = get_label_to_group_mapping()
-    test_activities = get_dataset_labels(test_dataset)
-    global_label_to_idx = {label: i for i, label in enumerate(GLOBAL_LABELS)}
-    num_global_classes = len(GLOBAL_LABELS)
+class LinearClassifier(nn.Module):
+    def __init__(self, input_dim: int, num_classes: int):
+        super().__init__()
+        self.linear = nn.Linear(input_dim, num_classes)
 
-    all_train_data = []
-    all_train_labels = []
+    def forward(self, x, training=False):
+        if training:
+            x = F.dropout(x, p=0.3, training=True)
+        return self.linear(x)
 
-    for ds_name in TRAIN_DATASETS:
-        if ds_name not in train_embeddings:
-            continue
-        emb, labels = train_embeddings[ds_name]
-        ds_activities = get_dataset_labels(ds_name)
 
-        for i in range(len(labels)):
-            local_idx = labels[i]
-            if local_idx < len(ds_activities):
-                activity_name = ds_activities[local_idx]
-                global_idx = global_label_to_idx.get(activity_name, -1)
-                if global_idx >= 0:
-                    all_train_data.append(emb[i])
-                    all_train_labels.append(global_idx)
+def mean_pool_embeddings(embeddings: np.ndarray) -> np.ndarray:
+    """Mean-pool (N, 120, 72) sequence embeddings to (N, 72)."""
+    return embeddings.mean(axis=1)
 
-    all_train_data = np.array(all_train_data)
-    all_train_labels = np.array(all_train_labels, dtype=np.int64)
 
-    print(f"  [Open-set] Training data: {len(all_train_data)} samples, {num_global_classes} classes")
+def train_linear_classifier(
+    train_data, train_labels, val_data, val_labels,
+    num_classes, input_dim=EMB_DIM,
+    epochs=CLASSIFIER_EPOCHS, batch_size=CLASSIFIER_BATCH_SIZE,
+    lr=CLASSIFIER_LR, device=None, verbose=False,
+):
+    """Train a linear classifier on mean-pooled embeddings."""
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    rng = np.random.RandomState(CLASSIFIER_SEED)
-    idx = np.arange(len(all_train_data))
-    rng.shuffle(idx)
-    all_train_data = all_train_data[idx]
-    all_train_labels = all_train_labels[idx]
+    model = LinearClassifier(input_dim=input_dim, num_classes=num_classes).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    criterion = nn.CrossEntropyLoss()
 
-    val_n = int(len(all_train_data) * 0.1)
-    train_data = all_train_data[val_n:]
-    train_labels_arr = all_train_labels[val_n:]
-    val_data = all_train_data[:val_n]
-    val_labels_arr = all_train_labels[:val_n]
-
-    print(f"  [Open-set] Training Transformer_ft classifier ({num_global_classes} classes)...")
-    model = train_transformer_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_global_classes, device=device, verbose=True
+    train_ds = TensorDataset(
+        torch.from_numpy(train_data).float(),
+        torch.from_numpy(train_labels).long()
     )
-
-    pred_global_indices = predict_transformer_classifier(model, test_embeddings, device=device)
-
-    pred_groups = []
-    gt_groups = []
-    for i in range(len(test_labels)):
-        local_idx = test_labels[i]
-        if local_idx < len(test_activities):
-            gt_name = test_activities[local_idx]
-        else:
-            continue
-        gt_group = label_to_group.get(gt_name, gt_name)
-
-        pred_idx = pred_global_indices[i]
-        if pred_idx < len(GLOBAL_LABELS):
-            pred_name = GLOBAL_LABELS[pred_idx]
-        else:
-            pred_name = "unknown"
-        pred_group = label_to_group.get(pred_name, pred_name)
-
-        gt_groups.append(gt_group)
-        pred_groups.append(pred_group)
-
-    acc = accuracy_score(gt_groups, pred_groups) * 100
-    f1 = f1_score(gt_groups, pred_groups, average='macro', zero_division=0) * 100
-
-    return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_groups),
-            'n_train_samples': len(train_data), 'n_classes_train': num_global_classes}
-
-
-def score_closed_set(
-    train_embeddings: Dict[str, Tuple[np.ndarray, np.ndarray]],
-    test_embeddings: np.ndarray,
-    test_labels: np.ndarray,
-    test_dataset: str,
-    device: torch.device,
-) -> Dict[str, float]:
-    """Metric 2: Closed-set."""
-    label_to_group = get_label_to_group_mapping()
-    test_activities = get_dataset_labels(test_dataset)
-    group_to_test_labels = {}
-    for act in test_activities:
-        group = label_to_group.get(act, act)
-        group_to_test_labels.setdefault(group, []).append(act)
-
-    test_label_to_idx = {a: i for i, a in enumerate(test_activities)}
-    num_test_classes = len(test_activities)
-
-    print(f"  [Closed-set] Collecting training data for {num_test_classes} test classes...")
-
-    all_train_data = []
-    all_train_labels = []
-
-    for ds_name in TRAIN_DATASETS:
-        if ds_name not in train_embeddings:
-            continue
-        emb, labels = train_embeddings[ds_name]
-        ds_activities = get_dataset_labels(ds_name)
-
-        for i in range(len(labels)):
-            local_idx = labels[i]
-            if local_idx < len(ds_activities):
-                activity_name = ds_activities[local_idx]
-                group = label_to_group.get(activity_name, activity_name)
-                mapped_test_label = None
-                if activity_name in test_label_to_idx:
-                    mapped_test_label = activity_name
-                else:
-                    candidates = group_to_test_labels.get(group, [])
-                    if len(candidates) == 1:
-                        mapped_test_label = candidates[0]
-
-                if mapped_test_label is not None:
-                    test_idx = test_label_to_idx[mapped_test_label]
-                    all_train_data.append(emb[i])
-                    all_train_labels.append(test_idx)
-
-    all_train_data = np.array(all_train_data)
-    all_train_labels = np.array(all_train_labels, dtype=np.int64)
-
-    covered_classes = len(np.unique(all_train_labels))
-    print(f"  [Closed-set] Training data: {len(all_train_data)} samples, "
-          f"{covered_classes}/{num_test_classes} classes covered")
-
-    if len(all_train_data) == 0:
-        return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0, 'n_classes': num_test_classes}
-
-    rng = np.random.RandomState(CLASSIFIER_SEED)
-    idx = np.arange(len(all_train_data))
-    rng.shuffle(idx)
-    all_train_data = all_train_data[idx]
-    all_train_labels = all_train_labels[idx]
-
-    val_n = int(len(all_train_data) * 0.1)
-    train_data = all_train_data[val_n:]
-    train_labels_arr = all_train_labels[val_n:]
-    val_data = all_train_data[:val_n]
-    val_labels_arr = all_train_labels[:val_n]
-
-    print(f"  [Closed-set] Training Transformer_ft classifier ({num_test_classes} classes)...")
-    model = train_transformer_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_test_classes, device=device, verbose=True
+    val_ds = TensorDataset(
+        torch.from_numpy(val_data).float(),
+        torch.from_numpy(val_labels).long()
     )
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
-    pred_indices = predict_transformer_classifier(model, test_embeddings, device=device)
+    best_val_acc = 0.0
+    best_state = None
 
-    gt_names = []
-    pred_names = []
-    for i in range(len(test_labels)):
-        local_idx = test_labels[i]
-        if local_idx < len(test_activities):
-            gt_names.append(test_activities[local_idx])
-        else:
-            continue
-        pred_idx = pred_indices[i]
-        if pred_idx < len(test_activities):
-            pred_names.append(test_activities[pred_idx])
-        else:
-            pred_names.append("unknown")
+    for epoch in range(epochs):
+        model.train()
+        for batch_data, batch_labels in train_loader:
+            batch_data = batch_data.to(device)
+            batch_labels = batch_labels.to(device)
+            optimizer.zero_grad()
+            logits = model(batch_data, training=True)
+            loss = criterion(logits, batch_labels)
+            loss.backward()
+            optimizer.step()
 
-    acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(
-        gt_names,
-        pred_names,
-        labels=test_activities,
-        average='macro',
-        zero_division=0,
-    ) * 100
+        model.eval()
+        val_preds = []
+        val_gt = []
+        with torch.no_grad():
+            for batch_data, batch_labels in val_loader:
+                batch_data = batch_data.to(device)
+                logits = model(batch_data, training=False)
+                preds = logits.argmax(dim=1).cpu().numpy()
+                val_preds.extend(preds)
+                val_gt.extend(batch_labels.numpy())
 
-    return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_names),
-            'n_train_samples': len(train_data), 'n_classes': num_test_classes,
-            'covered_classes': covered_classes}
+        val_acc = accuracy_score(val_gt, val_preds)
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_state = copy.deepcopy(model.state_dict())
+
+        if verbose and (epoch + 1) % 20 == 0:
+            val_f1 = f1_score(val_gt, val_preds, average='macro', zero_division=0)
+            print(f"    Epoch {epoch+1}/{epochs}: val_acc={val_acc:.3f}, val_f1={val_f1:.3f}")
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    model.eval()
+    return model
 
 
-def score_1pct_supervised(
+def predict_linear(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=None):
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.eval()
+    ds = TensorDataset(torch.from_numpy(data).float())
+    loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
+    all_preds = []
+    with torch.no_grad():
+        for (batch_data,) in loader:
+            batch_data = batch_data.to(device)
+            logits = model(batch_data, training=False)
+            preds = logits.argmax(dim=1).cpu().numpy()
+            all_preds.extend(preds)
+    return np.array(all_preds)
+
+
+# =============================================================================
+# Evaluation Functions
+# =============================================================================
+
+def score_supervised(
     test_embeddings: np.ndarray,
     test_labels: np.ndarray,
     test_dataset: str,
     device: torch.device,
+    label_rate: float = 0.01,
+    label_tag: str = "1%",
 ) -> Dict[str, float]:
-    """Metric 3: 1% supervised."""
+    """Supervised fine-tuning with Transformer_ft classifier (paper's architecture).
+
+    Splits test dataset into 80/10/10 train/val/test, subsamples train by label_rate.
+    """
     test_activities = get_dataset_labels(test_dataset)
     num_test_classes = len(test_activities)
 
-    print(f"  [1% supervised] Total samples: {len(test_embeddings)}, {num_test_classes} classes")
+    print(f"  [{label_tag} supervised] Total samples: {len(test_embeddings)}, "
+          f"{num_test_classes} classes")
 
     train_data, train_labels_arr, val_data, val_labels_arr, test_data, test_labels_arr = \
         prepare_train_test_split(
             test_embeddings, test_labels,
             training_rate=TRAINING_RATE,
             vali_rate=VALI_RATE,
-            label_rate=SUPERVISED_LABEL_RATE,
+            label_rate=label_rate,
             seed=CLASSIFIER_SEED,
-            balance=True
+            balance=True,
         )
 
-    print(f"  [1% supervised] Train: {len(train_data)}, Val: {len(val_data)}, Test: {len(test_data)}")
+    print(f"  [{label_tag} supervised] Train: {len(train_data)}, Val: {len(val_data)}, "
+          f"Test: {len(test_data)}")
 
     if len(train_data) == 0:
         return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0, 'n_classes': num_test_classes}
 
-    print(f"  [1% supervised] Training Transformer_ft classifier ({num_test_classes} classes)...")
-    model = train_transformer_classifier(
+    print(f"  [{label_tag} supervised] Training Transformer_ft classifier "
+          f"({num_test_classes} classes)...")
+    clf = train_transformer_classifier(
         train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_test_classes, device=device, verbose=True
+        num_classes=num_test_classes, device=device, verbose=True,
     )
 
-    pred_indices = predict_transformer_classifier(model, test_data, device=device)
+    pred_indices = predict_transformer_classifier(clf, test_data, device=device)
 
     gt_names = []
     pred_names = []
@@ -780,16 +691,80 @@ def score_1pct_supervised(
             pred_names.append("unknown")
 
     acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(
-        gt_names,
-        pred_names,
-        labels=test_activities,
-        average='macro',
-        zero_division=0,
-    ) * 100
+    f1 = f1_score(gt_names, pred_names, labels=test_activities,
+                  average='macro', zero_division=0) * 100
 
-    return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_names),
-            'n_train_samples': len(train_data), 'n_classes': num_test_classes}
+    return {
+        'accuracy': acc, 'f1_macro': f1,
+        'n_samples': len(gt_names), 'n_train_samples': len(train_data),
+        'n_classes': num_test_classes,
+    }
+
+
+def score_linear_probe(
+    test_embeddings: np.ndarray,
+    test_labels: np.ndarray,
+    test_dataset: str,
+    device: torch.device,
+) -> Dict[str, float]:
+    """Linear probe on frozen mean-pooled embeddings (full train split).
+
+    Mean-pools (N, 120, 72) -> (N, 72), then trains nn.Linear on 80/10/10 split.
+    """
+    test_activities = get_dataset_labels(test_dataset)
+    num_test_classes = len(test_activities)
+
+    # Mean-pool sequence embeddings
+    pooled = mean_pool_embeddings(test_embeddings)  # (N, 72)
+
+    print(f"  [Linear probe] Pooled embeddings: {pooled.shape}, {num_test_classes} classes")
+
+    train_data, train_labels_arr, val_data, val_labels_arr, test_data, test_labels_arr = \
+        prepare_train_test_split(
+            pooled, test_labels,
+            training_rate=TRAINING_RATE,
+            vali_rate=VALI_RATE,
+            label_rate=1.0,
+            seed=CLASSIFIER_SEED,
+            balance=False,
+        )
+
+    print(f"  [Linear probe] Train: {len(train_data)}, Val: {len(val_data)}, "
+          f"Test: {len(test_data)}")
+
+    if len(train_data) == 0:
+        return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0, 'n_classes': num_test_classes}
+
+    clf = train_linear_classifier(
+        train_data, train_labels_arr, val_data, val_labels_arr,
+        num_classes=num_test_classes, device=device, verbose=True,
+    )
+
+    pred_indices = predict_linear(clf, test_data, device=device)
+
+    gt_names = []
+    pred_names = []
+    for i in range(len(test_labels_arr)):
+        local_idx = test_labels_arr[i]
+        if local_idx < len(test_activities):
+            gt_names.append(test_activities[local_idx])
+        else:
+            continue
+        pred_idx = pred_indices[i]
+        if pred_idx < len(test_activities):
+            pred_names.append(test_activities[pred_idx])
+        else:
+            pred_names.append("unknown")
+
+    acc = accuracy_score(gt_names, pred_names) * 100
+    f1 = f1_score(gt_names, pred_names, labels=test_activities,
+                  average='macro', zero_division=0) * 100
+
+    return {
+        'accuracy': acc, 'f1_macro': f1,
+        'n_samples': len(gt_names), 'n_train_samples': len(train_data),
+        'n_classes': num_test_classes,
+    }
 
 
 # =============================================================================
@@ -798,41 +773,44 @@ def score_1pct_supervised(
 
 def print_results_table(all_results):
     print()
-    print("=" * 94)
+    print("=" * 100)
     print("CROSSHAR BASELINE RESULTS")
-    print("=" * 94)
+    print("=" * 100)
 
     header = (f"{'Dataset':<16}"
-              f"{'Open-Set Acc':>13}{'Open-Set F1':>13}"
-              f"{'Closed Acc':>13}{'Closed F1':>13}"
-              f"{'1% Sup Acc':>13}{'1% Sup F1':>13}")
+              f"{'1% Sup Acc':>12}{'1% Sup F1':>12}"
+              f"{'10% Sup Acc':>13}{'10% Sup F1':>13}"
+              f"{'LP Acc':>10}{'LP F1':>10}")
     print(header)
-    print("-" * 94)
+    print("-" * 100)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
             continue
         r = all_results[ds]
-        os_acc = r.get('open_set', {}).get('accuracy', 0.0)
-        os_f1 = r.get('open_set', {}).get('f1_macro', 0.0)
-        cs_acc = r.get('closed_set', {}).get('accuracy', 0.0)
-        cs_f1 = r.get('closed_set', {}).get('f1_macro', 0.0)
-        sup_acc = r.get('1pct_supervised', {}).get('accuracy', 0.0)
-        sup_f1 = r.get('1pct_supervised', {}).get('f1_macro', 0.0)
+        s1_acc = r.get('1pct_supervised', {}).get('accuracy', 0.0)
+        s1_f1 = r.get('1pct_supervised', {}).get('f1_macro', 0.0)
+        s10_acc = r.get('10pct_supervised', {}).get('accuracy', 0.0)
+        s10_f1 = r.get('10pct_supervised', {}).get('f1_macro', 0.0)
+        lp_acc = r.get('linear_probe', {}).get('accuracy', 0.0)
+        lp_f1 = r.get('linear_probe', {}).get('f1_macro', 0.0)
         print(f"{ds:<16}"
-              f"{os_acc:>12.1f}%{os_f1:>12.1f}%"
-              f"{cs_acc:>12.1f}%{cs_f1:>12.1f}%"
-              f"{sup_acc:>12.1f}%{sup_f1:>12.1f}%")
+              f"{s1_acc:>11.1f}%{s1_f1:>11.1f}%"
+              f"{s10_acc:>12.1f}%{s10_f1:>12.1f}%"
+              f"{lp_acc:>9.1f}%{lp_f1:>9.1f}%")
 
-    print("=" * 94)
+    print("=" * 100)
     print()
     print("Details:")
     print(f"  Model: CrossHAR (Masked Transformer + Contrastive)")
     print(f"  Hidden dim: {HIDDEN}, Layers: {N_LAYERS}, Heads: {N_HEADS}")
     print(f"  Embedding dim: {EMB_DIM} (full sequence, 120 timesteps)")
     print(f"  Checkpoint: {CROSSHAR_CHECKPOINT.relative_to(PROJECT_ROOT)}")
-    print(f"  Classifier: Transformer_ft (hidden={FT_HIDDEN_SIZE}, heads={FT_NUM_HEADS}, "
-          f"ff={FT_DIM_FEEDFORWARD}), {CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
+    print(f"  Supervised classifier: Transformer_ft (hidden={FT_HIDDEN_SIZE}, "
+          f"heads={FT_NUM_HEADS}, ff={FT_DIM_FEEDFORWARD}), "
+          f"{CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
+    print(f"  Linear probe: nn.Linear({EMB_DIM}, num_classes), "
+          f"{CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
 
 
 def main():
@@ -848,34 +826,19 @@ def main():
         print("Make sure CrossHAR pretraining has completed.")
         sys.exit(1)
 
-    model = load_crosshar_model(str(CROSSHAR_CHECKPOINT), device)
+    crosshar_model = load_crosshar_model(str(CROSSHAR_CHECKPOINT), device)
     print("Model loaded successfully")
-
-    # Extract embeddings for all training datasets
-    print("\nExtracting training embeddings...")
-    train_embeddings = {}
-    for ds in TRAIN_DATASETS:
-        try:
-            raw_data, raw_labels = load_raw_data(ds)
-            emb = extract_crosshar_embeddings(model, raw_data, device)
-            labels = get_window_labels(raw_labels)
-            train_embeddings[ds] = (emb, labels)
-            print(f"  {ds}: {emb.shape[0]} windows -> embeddings {emb.shape}")
-        except Exception as e:
-            print(f"  {ds}: FAILED ({e})")
-
-    print(f"\nExtracted embeddings for {len(train_embeddings)}/{len(TRAIN_DATASETS)} training datasets")
 
     # Run scoring on each test dataset
     all_results = {}
 
     for test_ds in TEST_DATASETS:
         print(f"\n{'='*60}")
-        print(f"Testing CrossHAR on {test_ds}")
+        print(f"Scoring CrossHAR on {test_ds}")
         print(f"{'='*60}")
 
         raw_data, raw_labels = load_raw_data(test_ds)
-        test_emb = extract_crosshar_embeddings(model, raw_data, device)
+        test_emb = extract_crosshar_embeddings(crosshar_model, raw_data, device)
         test_labels = get_window_labels(raw_labels)
         test_activities = get_dataset_labels(test_ds)
 
@@ -885,27 +848,28 @@ def main():
 
         ds_results = {}
 
-        # Metric 1: Open-set
-        print(f"\n  --- Metric 1: Zero-shot Open-Set ---")
-        ds_results['open_set'] = score_open_set(
-            train_embeddings, test_emb, test_labels, test_ds, device)
-        print(f"  Open-set: Acc={ds_results['open_set']['accuracy']:.1f}%, "
-              f"F1={ds_results['open_set']['f1_macro']:.1f}%")
-
-        # Metric 2: Closed-set
-        print(f"\n  --- Metric 2: Closed-Set ---")
-        ds_results['closed_set'] = score_closed_set(
-            train_embeddings, test_emb, test_labels, test_ds, device)
-        print(f"  Closed-set: Acc={ds_results['closed_set']['accuracy']:.1f}%, "
-              f"F1={ds_results['closed_set']['f1_macro']:.1f}%")
-
-        # Metric 3: 1% supervised
-        print(f"\n  --- Metric 3: 1% Supervised ---")
-        ds_results['1pct_supervised'] = score_1pct_supervised(
-            test_emb, test_labels, test_ds, device)
-        print(f"  1% supervised: "
-              f"Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
+        # 1% supervised (Transformer_ft)
+        print(f"\n  --- 1% Supervised (Transformer_ft) ---")
+        ds_results['1pct_supervised'] = score_supervised(
+            test_emb, test_labels, test_ds, device,
+            label_rate=SUPERVISED_LABEL_RATE_1PCT, label_tag="1%")
+        print(f"  1% supervised: Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['1pct_supervised']['f1_macro']:.1f}%")
+
+        # 10% supervised (Transformer_ft)
+        print(f"\n  --- 10% Supervised (Transformer_ft) ---")
+        ds_results['10pct_supervised'] = score_supervised(
+            test_emb, test_labels, test_ds, device,
+            label_rate=SUPERVISED_LABEL_RATE_10PCT, label_tag="10%")
+        print(f"  10% supervised: Acc={ds_results['10pct_supervised']['accuracy']:.1f}%, "
+              f"F1={ds_results['10pct_supervised']['f1_macro']:.1f}%")
+
+        # Linear probe (mean-pooled -> nn.Linear)
+        print(f"\n  --- Linear Probe ---")
+        ds_results['linear_probe'] = score_linear_probe(
+            test_emb, test_labels, test_ds, device)
+        print(f"  Linear probe: Acc={ds_results['linear_probe']['accuracy']:.1f}%, "
+              f"F1={ds_results['linear_probe']['f1_macro']:.1f}%")
 
         all_results[test_ds] = ds_results
 
@@ -913,7 +877,7 @@ def main():
     print_results_table(all_results)
 
     # Save results
-    results_path = OUTPUT_DIR / "crosshar_results.json"
+    results_path = OUTPUT_DIR / "crosshar_evaluation.json"
     save_data = {}
     for ds, metrics in all_results.items():
         save_data[ds] = {}

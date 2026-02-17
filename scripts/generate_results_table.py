@@ -1,0 +1,162 @@
+"""
+Generate a combined Markdown results table from all baseline evaluation JSONs.
+
+New 5-metric framework:
+  - Zero-shot open-set (text-aligned models only: TSFM, LanHAR)
+  - Zero-shot closed-set (text-aligned models only: TSFM, LanHAR)
+  - 1% supervised (all models)
+  - 10% supervised (all models)
+  - Linear probe (all models)
+
+Reads from test_output/baseline_evaluation/*.json and writes:
+  test_output/baseline_evaluation/results_table.md
+"""
+
+import json
+from pathlib import Path
+
+OUTPUT_DIR = Path("test_output/baseline_evaluation")
+
+# Map JSON filenames to display names (ordered)
+BASELINE_FILES = [
+    ("tsfm_evaluation.json", "TSFM (ours)"),
+    ("limubert_evaluation.json", "LiMU-BERT"),
+    ("moment_evaluation.json", "MOMENT"),
+    ("crosshar_evaluation.json", "CrossHAR"),
+    ("lanhar_evaluation.json", "LanHAR"),
+]
+
+# Text-aligned models that have zero-shot metrics
+TEXT_ALIGNED_MODELS = {"TSFM (ours)", "LanHAR"}
+
+# All metric keys in display order
+METRIC_TABLES = [
+    ("Zero-Shot Open-Set", "zero_shot_open_set"),
+    ("Zero-Shot Closed-Set", "zero_shot_closed_set"),
+    ("1% Supervised", "1pct_supervised"),
+    ("10% Supervised", "10pct_supervised"),
+    ("Linear Probe", "linear_probe"),
+]
+
+
+def load_results():
+    """Load all available result files, preserving order."""
+    results = []
+    for filename, display_name in BASELINE_FILES:
+        path = OUTPUT_DIR / filename
+        if path.exists():
+            with open(path) as f:
+                results.append((display_name, json.load(f)))
+            print(f"  Loaded {filename}")
+        else:
+            print(f"  Skipped {filename} (not found)")
+    return results
+
+
+def generate_table(results):
+    """Generate Markdown table from results."""
+    if not results:
+        return "No results found.\n"
+
+    # Collect all test datasets across all baselines
+    all_datasets = set()
+    for _, baseline_data in results:
+        all_datasets.update(baseline_data.keys())
+    datasets = sorted(all_datasets)
+
+    lines = []
+    lines.append("# Baseline Evaluation Results\n")
+    lines.append("Generated from `test_output/baseline_evaluation/`\n")
+
+    # One table per metric
+    for table_title, metric_key in METRIC_TABLES:
+        is_zero_shot = metric_key.startswith("zero_shot")
+
+        lines.append(f"\n## {table_title}\n")
+
+        if is_zero_shot:
+            lines.append("*Only available for text-aligned models (TSFM, LanHAR)*\n")
+
+        # Header
+        header = "| Model |"
+        separator = "| :--- |"
+        for ds in datasets:
+            header += f" {ds} Acc | {ds} F1 |"
+            separator += " ---: | ---: |"
+        lines.append(header)
+        lines.append(separator)
+
+        # Rows
+        for baseline_name, baseline_data in results:
+            # Skip non-text-aligned models for zero-shot tables
+            if is_zero_shot and baseline_name not in TEXT_ALIGNED_MODELS:
+                continue
+
+            row = f"| **{baseline_name}** |"
+            for ds in datasets:
+                if ds in baseline_data and metric_key in baseline_data[ds]:
+                    acc = baseline_data[ds][metric_key].get("accuracy", 0.0)
+                    f1 = baseline_data[ds][metric_key].get("f1_macro", 0.0)
+                    row += f" {acc:.1f} | {f1:.1f} |"
+                else:
+                    row += " - | - |"
+            lines.append(row)
+
+    # Compact averages summary
+    lines.append("\n## Average Across Datasets\n")
+
+    header = "| Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 | LP Acc | LP F1 |"
+    separator = "| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+    lines.append(header)
+    lines.append(separator)
+
+    all_metric_keys = [mk for _, mk in METRIC_TABLES]
+
+    for baseline_name, baseline_data in results:
+        row = f"| **{baseline_name}** |"
+
+        for metric_key in all_metric_keys:
+            is_zero_shot = metric_key.startswith("zero_shot")
+
+            if is_zero_shot and baseline_name not in TEXT_ALIGNED_MODELS:
+                row += " N/A | N/A |"
+                continue
+
+            accs = []
+            f1s = []
+            for ds in datasets:
+                if ds in baseline_data and metric_key in baseline_data[ds]:
+                    accs.append(baseline_data[ds][metric_key].get("accuracy", 0.0))
+                    f1s.append(baseline_data[ds][metric_key].get("f1_macro", 0.0))
+
+            avg_acc = sum(accs) / len(accs) if accs else 0.0
+            avg_f1 = sum(f1s) / len(f1s) if f1s else 0.0
+            row += f" {avg_acc:.1f} | {avg_f1:.1f} |"
+
+        lines.append(row)
+
+    return "\n".join(lines) + "\n"
+
+
+def main():
+    print("Generating combined results table...")
+    results = load_results()
+
+    if not results:
+        print("No result files found. Run evaluations first.")
+        return
+
+    table = generate_table(results)
+
+    output_path = OUTPUT_DIR / "results_table.md"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w") as f:
+        f.write(table)
+
+    print(f"\nResults table written to: {output_path}")
+    print("\nPreview:\n")
+    print(table)
+
+
+if __name__ == "__main__":
+    main()

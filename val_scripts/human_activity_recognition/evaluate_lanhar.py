@@ -1,23 +1,24 @@
 """
-LanHAR baseline assessment.
+LanHAR baseline evaluation using the new evaluation framework.
 
-Trains a LanHAR-style model (Language-guided HAR) on our 10 training datasets
-and runs the same 3-metric framework as LiMU-BERT and MOMENT:
-  1. Zero-shot open-set (all 87 training labels, group-based matching)
-  2. Closed-set (test dataset labels only, exact match)
-  3. 1% supervised (train on 1% of test data)
+LanHAR IS text-aligned (CLIP-style), so zero-shot evaluation via cosine similarity
+is available. Evaluates with:
+  1. Zero-shot open-set (cosine sim with all 87 text prototypes, group-based matching)
+  2. Zero-shot closed-set (cosine sim with test dataset text prototypes, exact match)
+  3. 1% supervised (linear classifier on 1% labeled test data)
+  4. 10% supervised (linear classifier on 10% labeled test data)
+  5. Linear probe (linear classifier on full train split of test data)
 
 LanHAR uses a CLIP-style approach:
   - SciBERT text encoder for activity descriptions
   - TimeSeriesTransformer sensor encoder for IMU data
   - Contrastive learning to align sensor and text embeddings
 
-After training, 768-dim sensor embeddings are extracted for scoring.
-
 Two training stages:
   Stage 1: Fine-tune SciBERT with CLIP + CE + triplet loss on text prototypes
-           (matching original LanHAR: CLIP_multipos + 0.3*CE + 0.5*triplet1 + 0.5*triplet2)
   Stage 2: Train sensor encoder with CLIP loss on sensor-text pairs
+
+After training, projected+normalized 768-dim sensor/text embeddings are used for scoring.
 
 Usage:
     python val_scripts/human_activity_recognition/evaluate_lanhar.py
@@ -39,6 +40,8 @@ from torch.utils.data import DataLoader, TensorDataset, Dataset
 from torch.cuda.amp import GradScaler
 from torch import amp
 from sklearn.metrics import f1_score, accuracy_score
+import pandas as pd
+from scipy.signal import butter, sosfiltfilt
 from transformers import AutoTokenizer, AutoModel
 
 # Add project root to path
@@ -56,6 +59,7 @@ from datasets.imu_pretraining_dataset.label_groups import (
 
 BENCHMARK_DIR = PROJECT_ROOT / "benchmark_data"
 LIMUBERT_DATA_DIR = BENCHMARK_DIR / "processed" / "limubert"
+LANHAR_DESC_DIR = BENCHMARK_DIR / "processed" / "lanhar_descriptions"
 DATASET_CONFIG_PATH = BENCHMARK_DIR / "dataset_config.json"
 GLOBAL_LABEL_PATH = LIMUBERT_DATA_DIR / "global_label_mapping.json"
 OUTPUT_DIR = PROJECT_ROOT / "test_output" / "baseline_evaluation"
@@ -72,7 +76,7 @@ STAGE1_EPOCHS = 10
 STAGE1_BATCH_SIZE = 10  # Matches original LanHAR paper
 STAGE1_LR = 1e-5
 
-STAGE2_EPOCHS = 50   # Matches original LanHAR paper (was 30)
+STAGE2_EPOCHS = 50   # Matches original LanHAR training_stage2.py default
 STAGE2_BATCH_SIZE = 128  # Original paper uses 256, reduced to fit shared GPU
 STAGE2_LR = 4e-5
 
@@ -85,7 +89,8 @@ CLASSIFIER_SEED = 3431
 # Data split parameters
 TRAINING_RATE = 0.8
 VALI_RATE = 0.1
-SUPERVISED_LABEL_RATE = 0.01  # 1% of training portion (=0.8% of total data after 80/10/10 split)
+SUPERVISED_LABEL_RATE_1PCT = 0.01
+SUPERVISED_LABEL_RATE_10PCT = 0.10
 
 SEED = 3431
 
@@ -661,6 +666,50 @@ def build_label_prototypes(model, tokenizer, text_protos, labels, device,
     return torch.from_numpy(prototypes).float().to(device)
 
 
+def build_zero_shot_prototypes(
+    model, tokenizer, text_protos, labels, device,
+) -> torch.Tensor:
+    """Build projected text prototypes for zero-shot cosine similarity.
+
+    Uses model.get_text_embedding() (projected + normalized) to encode each
+    label's text descriptions, then averages and re-normalizes per class.
+
+    Returns: (num_classes, 768) tensor of normalized projected prototypes
+    """
+    model_training = model.training
+    model.eval()
+
+    num_classes = len(labels)
+    prototypes = torch.zeros(num_classes, model.hidden_size, device=device)
+
+    with torch.no_grad():
+        for i, label in enumerate(labels):
+            descs = text_protos.get(label, [label.replace("_", " ")])
+            wrapped = [wrap_template(label, d) for d in descs]
+
+            emb_list = []
+            for start in range(0, len(wrapped), 32):
+                batch = wrapped[start:start + 32]
+                enc = tokenizer(
+                    batch, padding=True, truncation=True,
+                    max_length=model.max_len, return_tensors="pt",
+                )
+                e = model.get_text_embedding(
+                    enc["input_ids"].to(device),
+                    enc["attention_mask"].to(device),
+                )
+                emb_list.append(e)
+
+            all_emb = torch.cat(emb_list, dim=0)  # (K, H) projected + normalized
+            mean_emb = all_emb.mean(dim=0)
+            prototypes[i] = F.normalize(mean_emb, dim=0)
+
+    if model_training:
+        model.train()
+
+    return prototypes  # (num_classes, 768)
+
+
 def clip_loss_multipos(z_a, z_b, labels, temperature=0.1, eps=1e-12):
     """Multi-positive CLIP loss for supervised contrastive learning."""
     dev = z_a.device
@@ -832,13 +881,22 @@ def train_stage1(model, tokenizer, text_protos, labels, device,
 # =============================================================================
 
 class SensorTextDataset(Dataset):
-    """Dataset pairing sensor windows with text descriptions for CLIP training."""
+    """Dataset pairing sensor windows with text descriptions for CLIP training.
 
-    def __init__(self, sensor_data, labels, text_protos, label_list):
+    Supports both per-class descriptions (from text_protos) and per-sample
+    descriptions (from LLM-generated CSV files). When per-sample descriptions
+    are available, uses them with 70% probability and falls back to per-class
+    descriptions otherwise, matching the original LanHAR's use of GPT-4
+    generated per-sample descriptions.
+    """
+
+    def __init__(self, sensor_data, labels, text_protos, label_list,
+                 per_sample_descriptions=None):
         self.sensor_data = sensor_data
         self.labels = labels
         self.text_protos = text_protos
         self.label_list = label_list
+        self.per_sample_descs = per_sample_descriptions or {}
 
     def __len__(self):
         return len(self.sensor_data)
@@ -848,8 +906,12 @@ class SensorTextDataset(Dataset):
         label_idx = int(self.labels[idx])
         label_name = self.label_list[label_idx]
 
-        desc = random.choice(self.text_protos[label_name])
-        text = wrap_template(label_name, desc)
+        # Use per-sample LLM description if available (70% of time)
+        if idx in self.per_sample_descs and random.random() < 0.7:
+            text = self.per_sample_descs[idx]
+        else:
+            desc = random.choice(self.text_protos[label_name])
+            text = wrap_template(label_name, desc)
 
         return torch.from_numpy(ts).float(), text, label_idx
 
@@ -868,15 +930,35 @@ def collate_stage2(batch, tokenizer, max_len=512):
 
 
 def train_stage2(model, tokenizer, train_data, train_labels, text_protos, label_list,
-                 device, epochs=STAGE2_EPOCHS, lr=STAGE2_LR, batch_size=STAGE2_BATCH_SIZE):
+                 device, target_data=None, target_labels=None,
+                 per_sample_descs=None,
+                 epochs=STAGE2_EPOCHS, lr=STAGE2_LR, batch_size=STAGE2_BATCH_SIZE):
     """Train sensor encoder with CLIP loss on sensor-text pairs.
+
+    Matches original LanHAR Stage 2 (training_stage2.py): combines source (training)
+    data with target (test) domain data. The original loads per-sample GPT-generated
+    text descriptions; we use per-class descriptions from text_protos as a substitute.
 
     Uses validation-based model selection by retrieval accuracy, matching
     the original LanHAR (auxiliary_repos/LanHAR/models/training_stage2.py:168-170).
     """
-    print(f"\n  Stage 2: Training sensor encoder ({epochs} epochs, lr={lr}, "
-          f"batch_size={batch_size})...")
-    print(f"    Training samples: {len(train_data)}")
+    # Combine source + target data (matching original generate_step2)
+    combined_descs = dict(per_sample_descs) if per_sample_descs else {}
+    if target_data is not None and target_labels is not None:
+        source_n = len(train_data)
+        combined_data = np.concatenate([train_data, target_data], axis=0)
+        combined_labels = np.concatenate([train_labels, target_labels], axis=0)
+        print(f"\n  Stage 2: Training sensor encoder ({epochs} epochs, lr={lr}, "
+              f"batch_size={batch_size})...")
+        print(f"    Source samples: {len(train_data)}, Target samples: {len(target_data)}, "
+              f"Combined: {len(combined_data)}")
+    else:
+        combined_data = train_data
+        combined_labels = train_labels
+        print(f"\n  Stage 2: Training sensor encoder ({epochs} epochs, lr={lr}, "
+              f"batch_size={batch_size})...")
+        print(f"    Training samples: {len(combined_data)}")
+    print(f"    Per-sample descriptions: {len(combined_descs)}")
 
     device_type = "cuda" if device.type == "cuda" else "cpu"
 
@@ -896,20 +978,26 @@ def train_stage2(model, tokenizer, train_data, train_labels, text_protos, label_
 
     # Split into train/val (90/10)
     rng = np.random.RandomState(SEED)
-    n_total = len(train_data)
+    n_total = len(combined_data)
     indices = np.arange(n_total)
     rng.shuffle(indices)
     val_n = int(n_total * 0.1)
     val_indices = indices[:val_n]
     train_indices = indices[val_n:]
 
+    # Map per-sample descriptions to train/val indices
+    train_descs = {i: combined_descs[orig_i]
+                   for i, orig_i in enumerate(train_indices) if orig_i in combined_descs}
+    val_descs = {i: combined_descs[orig_i]
+                 for i, orig_i in enumerate(val_indices) if orig_i in combined_descs}
+
     train_dataset = SensorTextDataset(
-        train_data[train_indices], train_labels[train_indices],
-        text_protos, label_list,
+        combined_data[train_indices], combined_labels[train_indices],
+        text_protos, label_list, per_sample_descriptions=train_descs,
     )
     val_dataset = SensorTextDataset(
-        train_data[val_indices], train_labels[val_indices],
-        text_protos, label_list,
+        combined_data[val_indices], combined_labels[val_indices],
+        text_protos, label_list, per_sample_descriptions=val_descs,
     )
 
     collate_fn = partial(collate_stage2, tokenizer=tokenizer, max_len=model.max_len)
@@ -922,28 +1010,33 @@ def train_stage2(model, tokenizer, train_data, train_labels, text_protos, label_
         collate_fn=collate_fn, num_workers=0, drop_last=False,
     )
 
-    # Compute label embeddings once (BERT is frozen, so these don't change)
-    # Used for retrieval accuracy: sensor_vec @ label_embs.T → argmax → compare to GT
     num_classes = len(label_list)
-    model.train(False)
-    label_embs_list = []
-    with torch.no_grad():
-        for i in range(0, num_classes, 32):
-            batch_labels = label_list[i:i + 32]
-            batch_texts = [
-                wrap_template(lbl, text_protos[lbl][0])
-                for lbl in batch_labels
-            ]
-            enc = tokenizer(
-                batch_texts, padding=True, truncation=True,
-                max_length=model.max_len, return_tensors="pt",
-            )
-            emb = model.get_text_embedding(
-                enc["input_ids"].to(device),
-                enc["attention_mask"].to(device),
-            )
-            label_embs_list.append(emb)
-    label_embs = torch.cat(label_embs_list, dim=0)  # (num_classes, H), already normalized
+
+    def compute_label_embeddings():
+        """Recompute label embeddings from current txt_proj weights.
+
+        Must be called each validation step because txt_proj is trained.
+        BERT is frozen so BERT outputs don't change, but txt_proj transforms them.
+        """
+        model.train(False)
+        chunks = []
+        with torch.no_grad():
+            for i in range(0, num_classes, 32):
+                batch_labels = label_list[i:i + 32]
+                batch_texts = [
+                    wrap_template(lbl, text_protos[lbl][0])
+                    for lbl in batch_labels
+                ]
+                enc = tokenizer(
+                    batch_texts, padding=True, truncation=True,
+                    max_length=model.max_len, return_tensors="pt",
+                )
+                emb = model.get_text_embedding(
+                    enc["input_ids"].to(device),
+                    enc["attention_mask"].to(device),
+                )
+                chunks.append(emb)
+        return torch.cat(chunks, dim=0)  # (num_classes, H), normalized
 
     best_val_accuracy = -1.0
     best_state = None
@@ -977,6 +1070,8 @@ def train_stage2(model, tokenizer, train_data, train_labels, text_protos, label_
         avg_train_loss = total_loss / max(1, n_batches)
 
         # Validation: compute retrieval accuracy (matching original LanHAR)
+        # Recompute label embeddings each epoch since txt_proj is trained
+        label_embs = compute_label_embeddings()
         model.train(False)
         val_sensor_embs = []
         val_true_labels = []
@@ -1040,6 +1135,152 @@ def extract_lanhar_embeddings(
             all_embeddings.append(emb.cpu().numpy())
 
     return np.concatenate(all_embeddings, axis=0)
+
+
+# =============================================================================
+# Gravity Alignment Preprocessing (matching LanHAR paper)
+# =============================================================================
+
+# Our data is 20Hz; original paper uses 50Hz. Filter frequencies are in Hz
+# and are independent of sampling rate, but Nyquist limit must be respected.
+DATA_SAMPLING_RATE = 20.0  # Hz (our benchmark data)
+
+
+def _rotmat_from_to(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Rodrigues rotation matrix to rotate vector a onto vector b.
+
+    Matches original LanHAR data_processing.py _rotmat_from_to().
+    """
+    a = a / (np.linalg.norm(a) + 1e-12)
+    b = b / (np.linalg.norm(b) + 1e-12)
+    v = np.cross(a, b)
+    c = np.dot(a, b)
+    s = np.linalg.norm(v)
+
+    if s < 1e-12:
+        if c > 0:
+            return np.eye(3)
+        else:
+            # 180-degree rotation: find an orthogonal axis
+            axis = np.array([1.0, 0.0, 0.0])
+            if abs(np.dot(a, axis)) > 0.9:
+                axis = np.array([0.0, 1.0, 0.0])
+            axis = axis - np.dot(axis, a) * a
+            axis = axis / (np.linalg.norm(axis) + 1e-12)
+            return -np.eye(3) + 2.0 * np.outer(axis, axis)
+
+    K = np.array([
+        [0, -v[2], v[1]],
+        [v[2], 0, -v[0]],
+        [-v[1], v[0], 0],
+    ])
+    R = np.eye(3) + K + K @ K * ((1 - c) / (s * s))
+    return R
+
+
+def _estimate_gravity(acc_xyz: np.ndarray, fs: float = DATA_SAMPLING_RATE,
+                      lp_fc: float = 0.30) -> np.ndarray:
+    """Estimate gravity vector via lowpass filter on accelerometer data.
+
+    Matches original LanHAR data_processing.py _estimate_gravity().
+    """
+    nyq = fs / 2.0
+    if lp_fc >= nyq:
+        # If filter cutoff exceeds Nyquist, just use mean
+        return np.mean(acc_xyz, axis=0)
+
+    N = acc_xyz.shape[0]
+    if N < int(fs * 1.2):
+        # Short segment: use simple mean
+        return np.mean(acc_xyz, axis=0)
+
+    sos_lp = butter(2, lp_fc / nyq, btype='low', output='sos')
+    g_vec_lp = np.mean(sosfiltfilt(sos_lp, acc_xyz, axis=0), axis=0)
+    return g_vec_lp
+
+
+def gravity_align_window(acc_xyz: np.ndarray, gyro_xyz: np.ndarray,
+                         fs: float = DATA_SAMPLING_RATE) -> Tuple[np.ndarray, np.ndarray]:
+    """Apply gravity alignment to a single sensor window.
+
+    Estimates gravity direction from accelerometer, computes Rodrigues rotation
+    to align gravity to +Z axis, applies to both accelerometer and gyroscope.
+    Matches original LanHAR data_processing.py preprocess_acc_segment().
+
+    Args:
+        acc_xyz: (T, 3) accelerometer data
+        gyro_xyz: (T, 3) gyroscope data
+        fs: sampling rate in Hz
+
+    Returns:
+        (aligned_acc, aligned_gyro): both (T, 3) in gravity-aligned frame
+    """
+    g_vec = _estimate_gravity(acc_xyz, fs=fs)
+    g_mag = np.linalg.norm(g_vec)
+
+    if g_mag < 1e-6:
+        return acc_xyz, gyro_xyz
+
+    # Rotate gravity to +Z axis
+    target = np.array([0.0, 0.0, g_mag])
+    R = _rotmat_from_to(g_vec, target)
+
+    aligned_acc = acc_xyz @ R.T
+    aligned_gyro = gyro_xyz @ R.T
+
+    return aligned_acc, aligned_gyro
+
+
+def gravity_align_dataset(data: np.ndarray,
+                          fs: float = DATA_SAMPLING_RATE) -> np.ndarray:
+    """Apply gravity alignment to all windows in a dataset.
+
+    Args:
+        data: (N, T, 6) sensor data where channels are [acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z]
+        fs: sampling rate in Hz
+
+    Returns:
+        aligned: (N, T, 6) gravity-aligned sensor data
+    """
+    N = data.shape[0]
+    aligned = np.empty_like(data)
+
+    for i in range(N):
+        acc = data[i, :, :3]
+        gyro = data[i, :, 3:]
+        aligned_acc, aligned_gyro = gravity_align_window(acc, gyro, fs=fs)
+        aligned[i, :, :3] = aligned_acc
+        aligned[i, :, 3:] = aligned_gyro
+
+    return aligned
+
+
+# =============================================================================
+# Per-Sample Text Descriptions (matching original LanHAR GPT-4 pipeline)
+# =============================================================================
+
+def load_per_sample_descriptions(dataset_name: str) -> Dict[int, str]:
+    """Load pre-generated per-sample text descriptions if available.
+
+    These are generated by generate_lanhar_descriptions.py using a local LLM,
+    replicating the original LanHAR GPT-4 prompt generation pipeline.
+
+    Returns:
+        dict mapping window index -> pattern text, or empty dict if not available
+    """
+    desc_path = LANHAR_DESC_DIR / f"{dataset_name}_descriptions.csv"
+    if not desc_path.exists():
+        return {}
+
+    df = pd.read_csv(desc_path)
+    descriptions = {}
+    for _, row in df.iterrows():
+        idx = int(row["index"])
+        pattern = str(row.get("pattern", ""))
+        if pattern and pattern != "LLM generation failed" and pattern != "nan":
+            descriptions[idx] = pattern
+
+    return descriptions
 
 
 # =============================================================================
@@ -1225,63 +1466,25 @@ def predict_classifier(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=Non
 # Scoring Functions
 # =============================================================================
 
-def score_open_set(
-    train_embeddings: Dict[str, Tuple[np.ndarray, np.ndarray]],
+def score_zero_shot_open_set(
     test_embeddings: np.ndarray,
     test_labels: np.ndarray,
     test_dataset: str,
+    global_prototypes: torch.Tensor,
     device: torch.device,
 ) -> Dict[str, float]:
-    """Metric 1: Zero-shot open-set scoring."""
-    print("  [Open-set] Preparing training data with all labels...")
+    """Zero-shot open-set via cosine similarity with all 87 text prototypes.
+
+    Predicts from all 87 training labels, uses group-based matching for accuracy.
+    """
     label_to_group = get_label_to_group_mapping()
     test_activities = get_dataset_labels(test_dataset)
-    global_label_to_idx = {label: i for i, label in enumerate(GLOBAL_LABELS)}
     num_global_classes = len(GLOBAL_LABELS)
 
-    all_train_data = []
-    all_train_labels = []
-
-    for ds_name in TRAIN_DATASETS:
-        if ds_name not in train_embeddings:
-            continue
-        emb, labels = train_embeddings[ds_name]
-        ds_activities = get_dataset_labels(ds_name)
-
-        for i in range(len(labels)):
-            local_idx = labels[i]
-            if local_idx < len(ds_activities):
-                activity_name = ds_activities[local_idx]
-                global_idx = global_label_to_idx.get(activity_name, -1)
-                if global_idx >= 0:
-                    all_train_data.append(emb[i])
-                    all_train_labels.append(global_idx)
-
-    all_train_data = np.array(all_train_data)
-    all_train_labels = np.array(all_train_labels, dtype=np.int64)
-
-    print(f"  [Open-set] Training data: {len(all_train_data)} samples, "
-          f"{num_global_classes} classes")
-
-    rng = np.random.RandomState(CLASSIFIER_SEED)
-    idx = np.arange(len(all_train_data))
-    rng.shuffle(idx)
-    all_train_data = all_train_data[idx]
-    all_train_labels = all_train_labels[idx]
-
-    val_n = int(len(all_train_data) * 0.1)
-    train_data = all_train_data[val_n:]
-    train_labels_arr = all_train_labels[val_n:]
-    val_data = all_train_data[:val_n]
-    val_labels_arr = all_train_labels[:val_n]
-
-    print(f"  [Open-set] Training linear classifier ({num_global_classes} classes)...")
-    clf = train_linear_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_global_classes, device=device, verbose=True,
-    )
-
-    pred_global_indices = predict_classifier(clf, test_embeddings, device=device)
+    # Cosine similarity: (N, 87)
+    emb_tensor = torch.from_numpy(test_embeddings).float().to(device)
+    sims = emb_tensor @ global_prototypes.T  # both already normalized
+    pred_global_indices = sims.argmax(dim=1).cpu().numpy()
 
     pred_groups = []
     gt_groups = []
@@ -1294,7 +1497,7 @@ def score_open_set(
         gt_group = label_to_group.get(gt_name, gt_name)
 
         pred_idx = pred_global_indices[i]
-        pred_name = GLOBAL_LABELS[pred_idx] if pred_idx < len(GLOBAL_LABELS) else "unknown"
+        pred_name = GLOBAL_LABELS[pred_idx] if pred_idx < num_global_classes else "unknown"
         pred_group = label_to_group.get(pred_name, pred_name)
 
         gt_groups.append(gt_group)
@@ -1302,88 +1505,38 @@ def score_open_set(
 
     acc = accuracy_score(gt_groups, pred_groups) * 100
     f1 = f1_score(gt_groups, pred_groups, average="macro", zero_division=0) * 100
+    f1_w = f1_score(gt_groups, pred_groups, average="weighted", zero_division=0) * 100
 
-    return {"accuracy": acc, "f1_macro": f1, "n_samples": len(gt_groups),
-            "n_train_samples": len(train_data), "n_classes_train": num_global_classes}
+    return {"accuracy": acc, "f1_macro": f1, "f1_weighted": f1_w,
+            "n_samples": len(gt_groups),
+            "n_classes_train": num_global_classes,
+            "n_classes_test": len(test_activities)}
 
 
-def score_closed_set(
-    train_embeddings: Dict[str, Tuple[np.ndarray, np.ndarray]],
+def score_zero_shot_closed_set(
     test_embeddings: np.ndarray,
     test_labels: np.ndarray,
     test_dataset: str,
+    model, tokenizer, text_protos,
     device: torch.device,
 ) -> Dict[str, float]:
-    """Metric 2: Closed-set scoring."""
-    label_to_group = get_label_to_group_mapping()
-    test_activities = get_dataset_labels(test_dataset)
-    group_to_test_labels = {}
-    for act in test_activities:
-        group = label_to_group.get(act, act)
-        group_to_test_labels.setdefault(group, []).append(act)
+    """Zero-shot closed-set via cosine similarity with test dataset's text prototypes.
 
-    test_label_to_idx = {a: i for i, a in enumerate(test_activities)}
+    Builds projected prototypes for only the test dataset's labels, predicts via
+    cosine similarity, exact match scoring.
+    """
+    test_activities = get_dataset_labels(test_dataset)
     num_test_classes = len(test_activities)
 
-    print(f"  [Closed-set] Collecting training data for {num_test_classes} test classes...")
+    # Build prototypes for test labels only
+    test_prototypes = build_zero_shot_prototypes(
+        model, tokenizer, text_protos, test_activities, device,
+    )  # (num_test_classes, 768)
 
-    all_train_data = []
-    all_train_labels = []
-
-    for ds_name in TRAIN_DATASETS:
-        if ds_name not in train_embeddings:
-            continue
-        emb, labels = train_embeddings[ds_name]
-        ds_activities = get_dataset_labels(ds_name)
-
-        for i in range(len(labels)):
-            local_idx = labels[i]
-            if local_idx < len(ds_activities):
-                activity_name = ds_activities[local_idx]
-                group = label_to_group.get(activity_name, activity_name)
-                mapped_test_label = None
-                if activity_name in test_label_to_idx:
-                    mapped_test_label = activity_name
-                else:
-                    candidates = group_to_test_labels.get(group, [])
-                    if len(candidates) == 1:
-                        mapped_test_label = candidates[0]
-
-                if mapped_test_label is not None:
-                    test_idx = test_label_to_idx[mapped_test_label]
-                    all_train_data.append(emb[i])
-                    all_train_labels.append(test_idx)
-
-    all_train_data = np.array(all_train_data)
-    all_train_labels = np.array(all_train_labels, dtype=np.int64)
-
-    covered_classes = len(np.unique(all_train_labels))
-    print(f"  [Closed-set] Training data: {len(all_train_data)} samples, "
-          f"{covered_classes}/{num_test_classes} classes covered")
-
-    if len(all_train_data) == 0:
-        return {"accuracy": 0.0, "f1_macro": 0.0, "n_samples": 0,
-                "n_classes": num_test_classes}
-
-    rng = np.random.RandomState(CLASSIFIER_SEED)
-    idx = np.arange(len(all_train_data))
-    rng.shuffle(idx)
-    all_train_data = all_train_data[idx]
-    all_train_labels = all_train_labels[idx]
-
-    val_n = int(len(all_train_data) * 0.1)
-    train_data = all_train_data[val_n:]
-    train_labels_arr = all_train_labels[val_n:]
-    val_data = all_train_data[:val_n]
-    val_labels_arr = all_train_labels[:val_n]
-
-    print(f"  [Closed-set] Training linear classifier ({num_test_classes} classes)...")
-    clf = train_linear_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_test_classes, device=device, verbose=True,
-    )
-
-    pred_indices = predict_classifier(clf, test_embeddings, device=device)
+    # Cosine similarity: (N, num_test_classes)
+    emb_tensor = torch.from_numpy(test_embeddings).float().to(device)
+    sims = emb_tensor @ test_prototypes.T
+    pred_indices = sims.argmax(dim=1).cpu().numpy()
 
     gt_names = []
     pred_names = []
@@ -1395,51 +1548,51 @@ def score_closed_set(
             continue
         pred_idx = pred_indices[i]
         pred_names.append(
-            test_activities[pred_idx] if pred_idx < len(test_activities) else "unknown"
+            test_activities[pred_idx] if pred_idx < num_test_classes else "unknown"
         )
 
     acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(
-        gt_names,
-        pred_names,
-        labels=test_activities,
-        average="macro",
-        zero_division=0,
-    ) * 100
+    f1 = f1_score(gt_names, pred_names, labels=test_activities,
+                  average="macro", zero_division=0) * 100
+    f1_w = f1_score(gt_names, pred_names, labels=test_activities,
+                    average="weighted", zero_division=0) * 100
 
-    return {"accuracy": acc, "f1_macro": f1, "n_samples": len(gt_names),
-            "n_train_samples": len(train_data), "n_classes": num_test_classes,
-            "covered_classes": covered_classes}
+    return {"accuracy": acc, "f1_macro": f1, "f1_weighted": f1_w,
+            "n_samples": len(gt_names), "n_classes": num_test_classes}
 
 
-def score_1pct_supervised(
+def score_supervised(
     test_embeddings: np.ndarray,
     test_labels: np.ndarray,
     test_dataset: str,
     device: torch.device,
+    label_rate: float = 0.01,
+    label_tag: str = "1%",
 ) -> Dict[str, float]:
-    """Metric 3: 1% supervised scoring."""
+    """Supervised with linear classifier (paper's approach).
+
+    Splits test dataset into 80/10/10 train/val/test, subsamples train by label_rate.
+    """
     test_activities = get_dataset_labels(test_dataset)
     num_test_classes = len(test_activities)
 
-    print(f"  [1% supervised] Total samples: {len(test_embeddings)}, "
+    print(f"  [{label_tag} supervised] Total samples: {len(test_embeddings)}, "
           f"{num_test_classes} classes")
 
     train_data, train_labels_arr, val_data, val_labels_arr, test_data, test_labels_arr = \
         prepare_train_test_split(
             test_embeddings, test_labels,
             training_rate=TRAINING_RATE, vali_rate=VALI_RATE,
-            label_rate=SUPERVISED_LABEL_RATE, seed=CLASSIFIER_SEED, balance=True,
+            label_rate=label_rate, seed=CLASSIFIER_SEED, balance=True,
         )
 
-    print(f"  [1% supervised] Train: {len(train_data)}, Val: {len(val_data)}, "
+    print(f"  [{label_tag} supervised] Train: {len(train_data)}, Val: {len(val_data)}, "
           f"Test: {len(test_data)}")
 
     if len(train_data) == 0:
-        return {"accuracy": 0.0, "f1_macro": 0.0, "n_samples": 0,
-                "n_classes": num_test_classes}
+        return {"accuracy": 0.0, "f1_macro": 0.0, "f1_weighted": 0.0,
+                "n_samples": 0, "n_classes": num_test_classes}
 
-    print(f"  [1% supervised] Training linear classifier ({num_test_classes} classes)...")
     clf = train_linear_classifier(
         train_data, train_labels_arr, val_data, val_labels_arr,
         num_classes=num_test_classes, device=device, verbose=True,
@@ -1461,15 +1614,74 @@ def score_1pct_supervised(
         )
 
     acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(
-        gt_names,
-        pred_names,
-        labels=test_activities,
-        average="macro",
-        zero_division=0,
-    ) * 100
+    f1 = f1_score(gt_names, pred_names, labels=test_activities,
+                  average="macro", zero_division=0) * 100
+    f1_w = f1_score(gt_names, pred_names, labels=test_activities,
+                    average="weighted", zero_division=0) * 100
 
-    return {"accuracy": acc, "f1_macro": f1, "n_samples": len(gt_names),
+    return {"accuracy": acc, "f1_macro": f1, "f1_weighted": f1_w,
+            "n_samples": len(gt_names),
+            "n_train_samples": len(train_data), "n_classes": num_test_classes}
+
+
+def score_linear_probe(
+    test_embeddings: np.ndarray,
+    test_labels: np.ndarray,
+    test_dataset: str,
+    device: torch.device,
+) -> Dict[str, float]:
+    """Linear probe on frozen embeddings (full train split).
+
+    Trains nn.Linear on 80/10/10 split with no label subsampling.
+    """
+    test_activities = get_dataset_labels(test_dataset)
+    num_test_classes = len(test_activities)
+
+    print(f"  [Linear probe] Embeddings: {test_embeddings.shape}, "
+          f"{num_test_classes} classes")
+
+    train_data, train_labels_arr, val_data, val_labels_arr, test_data, test_labels_arr = \
+        prepare_train_test_split(
+            test_embeddings, test_labels,
+            training_rate=TRAINING_RATE, vali_rate=VALI_RATE,
+            label_rate=1.0, seed=CLASSIFIER_SEED, balance=False,
+        )
+
+    print(f"  [Linear probe] Train: {len(train_data)}, Val: {len(val_data)}, "
+          f"Test: {len(test_data)}")
+
+    if len(train_data) == 0:
+        return {"accuracy": 0.0, "f1_macro": 0.0, "f1_weighted": 0.0,
+                "n_samples": 0, "n_classes": num_test_classes}
+
+    clf = train_linear_classifier(
+        train_data, train_labels_arr, val_data, val_labels_arr,
+        num_classes=num_test_classes, device=device, verbose=True,
+    )
+
+    pred_indices = predict_classifier(clf, test_data, device=device)
+
+    gt_names = []
+    pred_names = []
+    for i in range(len(test_labels_arr)):
+        local_idx = test_labels_arr[i]
+        if local_idx < len(test_activities):
+            gt_names.append(test_activities[local_idx])
+        else:
+            continue
+        pred_idx = pred_indices[i]
+        pred_names.append(
+            test_activities[pred_idx] if pred_idx < len(test_activities) else "unknown"
+        )
+
+    acc = accuracy_score(gt_names, pred_names) * 100
+    f1 = f1_score(gt_names, pred_names, labels=test_activities,
+                  average="macro", zero_division=0) * 100
+    f1_w = f1_score(gt_names, pred_names, labels=test_activities,
+                    average="weighted", zero_division=0) * 100
+
+    return {"accuracy": acc, "f1_macro": f1, "f1_weighted": f1_w,
+            "n_samples": len(gt_names),
             "n_train_samples": len(train_data), "n_classes": num_test_classes}
 
 
@@ -1479,35 +1691,39 @@ def score_1pct_supervised(
 
 def print_results_table(all_results):
     print()
-    print("=" * 94)
+    print("=" * 120)
     print("LanHAR BASELINE RESULTS")
-    print("=" * 94)
+    print("=" * 120)
 
     header = (f"{'Dataset':<16}"
-              f"{'Open-Set Acc':>13}{'Open-Set F1':>13}"
-              f"{'Closed Acc':>13}{'Closed F1':>13}"
-              f"{'1% Sup Acc':>13}{'1% Sup F1':>13}")
+              f"{'ZS-Open Acc':>13}{'ZS-Open F1':>13}"
+              f"{'ZS-Close Acc':>14}{'ZS-Close F1':>14}"
+              f"{'1% Sup Acc':>12}{'1% Sup F1':>12}"
+              f"{'10% Sup Acc':>13}{'10% Sup F1':>13}")
     print(header)
-    print("-" * 94)
+    print("-" * 120)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
             continue
         r = all_results[ds]
-        os_acc = r.get("open_set", {}).get("accuracy", 0.0)
-        os_f1 = r.get("open_set", {}).get("f1_macro", 0.0)
-        cs_acc = r.get("closed_set", {}).get("accuracy", 0.0)
-        cs_f1 = r.get("closed_set", {}).get("f1_macro", 0.0)
-        sup_acc = r.get("1pct_supervised", {}).get("accuracy", 0.0)
-        sup_f1 = r.get("1pct_supervised", {}).get("f1_macro", 0.0)
+        os_acc = r.get("zero_shot_open_set", {}).get("accuracy", 0.0)
+        os_f1 = r.get("zero_shot_open_set", {}).get("f1_macro", 0.0)
+        cs_acc = r.get("zero_shot_closed_set", {}).get("accuracy", 0.0)
+        cs_f1 = r.get("zero_shot_closed_set", {}).get("f1_macro", 0.0)
+        s1_acc = r.get("1pct_supervised", {}).get("accuracy", 0.0)
+        s1_f1 = r.get("1pct_supervised", {}).get("f1_macro", 0.0)
+        s10_acc = r.get("10pct_supervised", {}).get("accuracy", 0.0)
+        s10_f1 = r.get("10pct_supervised", {}).get("f1_macro", 0.0)
         print(
             f"{ds:<16}"
             f"{os_acc:>12.1f}%{os_f1:>12.1f}%"
-            f"{cs_acc:>12.1f}%{cs_f1:>12.1f}%"
-            f"{sup_acc:>12.1f}%{sup_f1:>12.1f}%"
+            f"{cs_acc:>13.1f}%{cs_f1:>13.1f}%"
+            f"{s1_acc:>11.1f}%{s1_f1:>11.1f}%"
+            f"{s10_acc:>12.1f}%{s10_f1:>12.1f}%"
         )
 
-    print("=" * 94)
+    print("=" * 120)
     print()
     print("Details:")
     print(f"  Model: LanHAR (SciBERT + TimeSeriesTransformer)")
@@ -1517,6 +1733,7 @@ def print_results_table(all_results):
     print(f"  Stage 2: {STAGE2_EPOCHS} epochs sensor-text CLIP, lr={STAGE2_LR}, "
           f"batch_size={STAGE2_BATCH_SIZE}, accuracy-based selection")
     print(f"  Sensor embedding dim: {EMB_DIM}")
+    print(f"  Zero-shot: cosine similarity with projected text prototypes")
     print(f"  Classifier: Linear, {CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
 
 
@@ -1541,6 +1758,11 @@ def main():
     model = LanHARModel(BERT_MODEL_NAME).float().to(device)
     print("Model loaded successfully")
 
+    # Load per-sample LLM descriptions if available
+    print("\nChecking for per-sample LLM descriptions...")
+    all_per_sample_descs = {}
+    desc_total = 0
+
     # Load all training data with global labels
     print("\nLoading training data...")
     global_label_to_idx = {label: i for i, label in enumerate(GLOBAL_LABELS)}
@@ -1549,8 +1771,13 @@ def main():
 
     for ds in TRAIN_DATASETS:
         raw_data, raw_labels = load_raw_data(ds)
+        # Apply gravity alignment (matching LanHAR paper preprocessing)
+        raw_data = gravity_align_dataset(raw_data)
         labels = get_window_labels(raw_labels)
         ds_activities = get_dataset_labels(ds)
+
+        # Load per-sample descriptions for this dataset
+        ds_descs = load_per_sample_descriptions(ds)
 
         ds_count = 0
         for i in range(len(labels)):
@@ -1559,37 +1786,81 @@ def main():
                 activity = ds_activities[local_idx]
                 global_idx = global_label_to_idx.get(activity, -1)
                 if global_idx >= 0:
+                    combined_idx = len(all_train_sensor)
                     all_train_sensor.append(raw_data[i])
                     all_train_labels.append(global_idx)
+                    if i in ds_descs:
+                        all_per_sample_descs[combined_idx] = ds_descs[i]
+                        desc_total += 1
                     ds_count += 1
-        print(f"  {ds}: {ds_count} samples")
+        print(f"  {ds}: {ds_count} samples, {len(ds_descs)} per-sample descriptions")
 
     all_train_sensor = np.array(all_train_sensor, dtype=np.float32)
     all_train_labels = np.array(all_train_labels, dtype=np.int64)
     print(f"Total training data: {len(all_train_sensor)} samples, "
-          f"{len(np.unique(all_train_labels))} classes")
+          f"{len(np.unique(all_train_labels))} classes, "
+          f"{desc_total} per-sample descriptions")
+
+    # Load target (test) domain data for Stage 2 (matching original LanHAR)
+    print("\nLoading target domain data for Stage 2...")
+    all_target_sensor = []
+    all_target_labels = []
+    target_per_sample_descs = {}
+    target_desc_total = 0
+
+    for ds in TEST_DATASETS:
+        raw_data, raw_labels = load_raw_data(ds)
+        raw_data = gravity_align_dataset(raw_data)
+        labels = get_window_labels(raw_labels)
+        ds_activities = get_dataset_labels(ds)
+
+        ds_descs = load_per_sample_descriptions(ds)
+
+        ds_count = 0
+        for i in range(len(labels)):
+            local_idx = labels[i]
+            if local_idx < len(ds_activities):
+                activity = ds_activities[local_idx]
+                global_idx = global_label_to_idx.get(activity, -1)
+                if global_idx >= 0:
+                    combined_idx = len(all_target_sensor)
+                    all_target_sensor.append(raw_data[i])
+                    all_target_labels.append(global_idx)
+                    if i in ds_descs:
+                        target_per_sample_descs[combined_idx] = ds_descs[i]
+                        target_desc_total += 1
+                    ds_count += 1
+        print(f"  {ds}: {ds_count} samples, {len(ds_descs)} per-sample descriptions")
+
+    all_target_sensor = np.array(all_target_sensor, dtype=np.float32)
+    all_target_labels = np.array(all_target_labels, dtype=np.int64)
+    print(f"Total target data: {len(all_target_sensor)} samples, "
+          f"{len(np.unique(all_target_labels))} classes, "
+          f"{target_desc_total} per-sample descriptions")
 
     # Stage 1: Fine-tune text encoder
     train_stage1(model, tokenizer, text_protos, GLOBAL_LABELS, device)
 
-    # Stage 2: Train sensor encoder
+    # Merge source + target per-sample descriptions with offset
+    combined_per_sample = dict(all_per_sample_descs)
+    source_n = len(all_train_sensor)
+    for idx, desc in target_per_sample_descs.items():
+        combined_per_sample[source_n + idx] = desc
+
+    # Stage 2: Train sensor encoder (source + target, matching original LanHAR)
     train_stage2(
         model, tokenizer, all_train_sensor, all_train_labels,
         text_protos, GLOBAL_LABELS, device,
+        target_data=all_target_sensor, target_labels=all_target_labels,
+        per_sample_descs=combined_per_sample,
     )
 
-    # Extract embeddings for all training datasets
-    print("\nExtracting training embeddings...")
-    train_embeddings = {}
-    for ds in TRAIN_DATASETS:
-        raw_data, raw_labels = load_raw_data(ds)
-        emb = extract_lanhar_embeddings(model, raw_data, device)
-        labels = get_window_labels(raw_labels)
-        train_embeddings[ds] = (emb, labels)
-        print(f"  {ds}: {emb.shape[0]} windows -> embeddings {emb.shape}")
-
-    print(f"\nExtracted embeddings for {len(train_embeddings)}/{len(TRAIN_DATASETS)} "
-          f"training datasets")
+    # Build projected text prototypes for zero-shot (all 87 classes)
+    print("\nBuilding zero-shot text prototypes...")
+    global_prototypes = build_zero_shot_prototypes(
+        model, tokenizer, text_protos, GLOBAL_LABELS, device,
+    )
+    print(f"  Global prototypes: {global_prototypes.shape}")
 
     # Run scoring on each test dataset
     all_results = {}
@@ -1600,6 +1871,8 @@ def main():
         print(f"{'='*60}")
 
         raw_data, raw_labels = load_raw_data(test_ds)
+        # Apply gravity alignment (matching LanHAR paper preprocessing)
+        raw_data = gravity_align_dataset(raw_data)
         test_emb = extract_lanhar_embeddings(model, raw_data, device)
         test_labels = get_window_labels(raw_labels)
         test_activities = get_dataset_labels(test_ds)
@@ -1610,30 +1883,47 @@ def main():
 
         ds_results = {}
 
-        # Metric 1: Open-set
-        print(f"\n  --- Metric 1: Zero-shot Open-Set ---")
-        ds_results["open_set"] = score_open_set(
-            train_embeddings, test_emb, test_labels, test_ds, device
+        # Zero-shot open-set (cosine sim, all 87 labels)
+        print(f"\n  --- Zero-shot Open-Set (cosine sim) ---")
+        ds_results["zero_shot_open_set"] = score_zero_shot_open_set(
+            test_emb, test_labels, test_ds, global_prototypes, device,
         )
-        print(f"  Open-set: Acc={ds_results['open_set']['accuracy']:.1f}%, "
-              f"F1={ds_results['open_set']['f1_macro']:.1f}%")
+        print(f"  Open-set: Acc={ds_results['zero_shot_open_set']['accuracy']:.1f}%, "
+              f"F1={ds_results['zero_shot_open_set']['f1_macro']:.1f}%")
 
-        # Metric 2: Closed-set
-        print(f"\n  --- Metric 2: Closed-Set ---")
-        ds_results["closed_set"] = score_closed_set(
-            train_embeddings, test_emb, test_labels, test_ds, device
+        # Zero-shot closed-set (cosine sim, test labels only)
+        print(f"\n  --- Zero-shot Closed-Set (cosine sim) ---")
+        ds_results["zero_shot_closed_set"] = score_zero_shot_closed_set(
+            test_emb, test_labels, test_ds, model, tokenizer, text_protos, device,
         )
-        print(f"  Closed-set: Acc={ds_results['closed_set']['accuracy']:.1f}%, "
-              f"F1={ds_results['closed_set']['f1_macro']:.1f}%")
+        print(f"  Closed-set: Acc={ds_results['zero_shot_closed_set']['accuracy']:.1f}%, "
+              f"F1={ds_results['zero_shot_closed_set']['f1_macro']:.1f}%")
 
-        # Metric 3: 1% supervised
-        print(f"\n  --- Metric 3: 1% Supervised ---")
-        ds_results["1pct_supervised"] = score_1pct_supervised(
-            test_emb, test_labels, test_ds, device
+        # 1% supervised (Linear)
+        print(f"\n  --- 1% Supervised (Linear) ---")
+        ds_results["1pct_supervised"] = score_supervised(
+            test_emb, test_labels, test_ds, device,
+            label_rate=SUPERVISED_LABEL_RATE_1PCT, label_tag="1%",
         )
-        print(f"  1% supervised: "
-              f"Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
+        print(f"  1% supervised: Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['1pct_supervised']['f1_macro']:.1f}%")
+
+        # 10% supervised (Linear)
+        print(f"\n  --- 10% Supervised (Linear) ---")
+        ds_results["10pct_supervised"] = score_supervised(
+            test_emb, test_labels, test_ds, device,
+            label_rate=SUPERVISED_LABEL_RATE_10PCT, label_tag="10%",
+        )
+        print(f"  10% supervised: Acc={ds_results['10pct_supervised']['accuracy']:.1f}%, "
+              f"F1={ds_results['10pct_supervised']['f1_macro']:.1f}%")
+
+        # Linear probe (full train split)
+        print(f"\n  --- Linear Probe ---")
+        ds_results["linear_probe"] = score_linear_probe(
+            test_emb, test_labels, test_ds, device,
+        )
+        print(f"  Linear probe: Acc={ds_results['linear_probe']['accuracy']:.1f}%, "
+              f"F1={ds_results['linear_probe']['f1_macro']:.1f}%")
 
         all_results[test_ds] = ds_results
 
@@ -1641,7 +1931,7 @@ def main():
     print_results_table(all_results)
 
     # Save results
-    results_path = OUTPUT_DIR / "lanhar_results.json"
+    results_path = OUTPUT_DIR / "lanhar_evaluation.json"
     save_data = {}
     for ds, metrics in all_results.items():
         save_data[ds] = {}
