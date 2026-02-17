@@ -227,3 +227,49 @@ The key insight: for LiMU-BERT/MOMENT/CrossHAR/TSFM, "evaluation" means
 "load a frozen model, extract embeddings, train a small classifier."
 For LanHAR, "evaluation" means "train the entire model from scratch, THEN
 evaluate it."
+
+---
+
+## Model Capabilities
+
+| | LiMU-BERT | MOMENT | CrossHAR | LanHAR | TSFM |
+|---|---|---|---|---|---|
+| **Sees label text?** | No | No | No | Yes (SciBERT) | Yes (label bank) |
+| **Unseen labels?** | Cannot classify | Cannot classify | Cannot classify | Nearest known label | Nearest known label |
+| **Zero-shot capable?** | No | No | No | Yes | Yes |
+| **Foundation model?** | No | **Yes** | No | No | Yes (ours) |
+
+### What "Foundation Model" Means for Each
+
+- **LiMU-BERT** (SenSys 2021): **Self-supervised pretraining for HAR.** BERT-style
+  masked reconstruction on IMU data. The paper calls it "representation learning" —
+  it learns within-dataset features and requires supervised fine-tuning. Not a
+  foundation model: single-domain, no generalization to unseen tasks.
+
+- **MOMENT** (ICML 2024): **True time series foundation model.** Pretrained on "The
+  Time Series Pile" — a large diverse corpus spanning healthcare, engineering, finance,
+  and more. Handles classification, forecasting, anomaly detection, and imputation
+  out-of-the-box. The only genuine foundation model in the comparison, but it is a
+  general-purpose time series model, not HAR-specific, and has no text alignment.
+
+- **CrossHAR** (IMWUT 2024): **Cross-dataset self-supervised pretraining for HAR.**
+  Hierarchical masked reconstruction + contrastive pretraining. The paper itself
+  explicitly states that building "foundation models for HAR" is **future work**,
+  acknowledging CrossHAR is not one. Evaluates only 4 coarse activity classes in
+  the original paper.
+
+- **LanHAR** (IMWUT 2025): **LLM-guided semantic alignment for cross-dataset HAR.**
+  Uses LLM-generated text descriptions to align sensor data with language via CLIP-style
+  training. The paper explicitly contrasts its approach against building a foundation
+  model, claiming lower cost and flexibility. Trains from scratch each time — there is
+  no reusable pretrained encoder.
+
+- **NLS-HAR** (AAAI 2025): **Empirical study of contrastive IMU-text alignment.**
+  Investigates why CLIP-style natural language supervision fails for HAR and proposes
+  mitigations. Single-dataset training, no code released. Frames foundation models
+  for HAR as an aspirational future goal. (Included by citing paper results only.)
+
+- **TSFM** (ours): **Text-aligned IMU foundation model.** Dual-branch Transformer
+  encoder pretrained on 10 HAR datasets via MAE + contrastive learning, then aligned
+  to text via semantic alignment head. Generalizes to unseen datasets and labels via
+  learnable label bank.
