@@ -45,10 +45,12 @@ These are deliberate design choices for a fair unified comparison, not oversight
 
 **Paper**: Xu et al., SenSys 2021
 **Script**: `val_scripts/human_activity_recognition/evaluate_limubert.py`
+**One-liner**: BERT-style masked reconstruction on 20-step IMU sub-windows; predicts masked timesteps from context to learn motion representations.
 
 ### What It Is
 Self-supervised BERT-style masked reconstruction pretraining for IMU data.
-Produces 72-dim embeddings per timestep. NOT text-aligned (no zero-shot capability).
+Produces 72-dim embeddings per timestep. NOT text-aligned — zero-shot uses a
+GRU classifier trained on training data.
 
 ### Pretrained Model
 - Checkpoint: `auxiliary_repos/LIMU-BERT-Public/saved/pretrain_base_recgym_20_120/pretrained_combined.pt`
@@ -80,14 +82,23 @@ After reshaping `(N, 120, 72)` into `(N*6, 20, 72)` sub-windows, only sub-window
 - 100 epochs (using `train_100ep.json` config from original repo), batch_size=512
 - Original paper also provides 700-epoch config
 
-**End-to-end fine-tuning**:
+**End-to-end fine-tuning** *(our addition — paper freezes encoder)*:
 For supervised metrics, the BERT encoder is fine-tuned jointly with a GRU classifier.
 Raw data is normalized (acc/9.8), passed through the encoder, reshaped into sub-windows,
-and classified. Majority vote across sub-windows determines window-level predictions.
+and classified. The original paper only trains the GRU on static pre-extracted embeddings
+(frozen encoder), but we fine-tune end-to-end for consistency with other baselines.
+
+**Window-level majority voting** *(our addition — paper scores sub-windows directly)*:
+The original paper evaluates accuracy/F1 at the sub-window level — each 20-step sub-window
+is scored independently, giving ~6x more evaluation samples per dataset. We aggregate
+sub-window predictions to window-level via majority vote before scoring, so that LiMU-BERT
+is evaluated on the same N windows as all other models. This changes the evaluation unit
+but does not change the model's predictions.
 
 ### What We Do NOT Replicate
 - Original paper evaluates 4 separate per-dataset pretrained models. We use one combined model.
 - Original paper uses specific dataset-to-dataset transfer experiments. We evaluate within-dataset.
+- Original paper scores at sub-window level. We score at window level (majority vote).
 
 ### Intentional Protocol Differences
 - **Batch size**: We use batch_size=512 vs original's 128 for the GRU classifier.
@@ -107,11 +118,12 @@ and classified. Majority vote across sub-windows determines window-level predict
 
 **Paper**: Goswami et al., ICML 2024
 **Script**: `val_scripts/human_activity_recognition/evaluate_moment.py`
+**One-liner**: General time-series Transformer pretrained on diverse data via masked reconstruction; processes each IMU channel as an independent univariate series.
 
 ### What It Is
-General-purpose time series foundation model pretrained on diverse time series data.
-Produces 6144-dim embeddings (6 channels × 1024-dim per channel, concatenated).
-NOT text-aligned (no zero-shot capability).
+General-purpose time series foundation model pretrained on diverse time series data (no HAR).
+Produces 6144-dim embeddings (6 channels x 1024-dim per channel, concatenated).
+NOT text-aligned — zero-shot uses an SVM-RBF classifier trained on training data.
 
 ### Pretrained Model
 - Downloaded from HuggingFace: `AutonLab/MOMENT-1-large`
@@ -143,15 +155,21 @@ The MOMENT paper's `fit_svm` function uses:
 - `max_iter=10000000` (convergence guarantee)
 - If training set > 10,000 samples, stratified subsample to 10,000
 
-**End-to-end fine-tuning**:
+**End-to-end fine-tuning** *(our addition — paper uses SVM only for classification)*:
 For supervised metrics, MOMENT's encoder is fine-tuned jointly with a linear classification
-head (`Linear(6144, num_classes)`). SVM-RBF is not differentiable, so the paper's supervised
-fine-tuning protocol uses a linear head instead. The encoder's original weights are restored
-after each fine-tuning run to isolate evaluations.
+head (`Linear(6144, num_classes)`). The MOMENT paper's classification evaluation only uses
+SVM-RBF on frozen embeddings — it does not fine-tune the encoder for classification tasks.
+However, MOMENT's codebase includes a built-in `ClassificationHead` (linear layer) and
+supports end-to-end fine-tuning in tutorials. We use this for consistency with other baselines'
+end-to-end protocol. SVM is not differentiable and cannot participate in backpropagation.
+The encoder's original weights are restored after each fine-tuning run to isolate evaluations.
 
 ### What We Do NOT Replicate
 - Original paper evaluates on UCR/UEA classification archive. We apply to HAR.
-- Original paper uses their own classification head. We use SVM matching their `fit_svm`.
+- Original paper uses only SVM on frozen embeddings for classification. We add end-to-end
+  fine-tuning with a linear head for supervised metrics.
+- Original pipeline applies `StandardScaler` before MOMENT's internal RevIN normalization.
+  We skip this since RevIN already handles per-sample normalization.
 
 ### Intentional Protocol Differences
 - **Batch sizes**: We use larger batch sizes (512 vs 128) for downstream classifiers
@@ -166,10 +184,12 @@ after each fine-tuning run to isolate evaluations.
 
 **Paper**: Dang et al., IMWUT 2024
 **Script**: `val_scripts/human_activity_recognition/evaluate_crosshar.py`
+**One-liner**: Hierarchical self-supervised pretraining combining masked reconstruction and contrastive learning on IMU sequences for cross-dataset transfer.
 
 ### What It Is
 Hierarchical self-supervised pretraining: masked reconstruction + contrastive learning.
-Produces 72-dim per-timestep embeddings. NOT text-aligned (no zero-shot capability).
+Produces 72-dim per-timestep embeddings. NOT text-aligned — zero-shot uses a Transformer_ft
+classifier trained on training data.
 
 ### Pretrained Model
 - Checkpoint: `auxiliary_repos/CrossHAR/saved/pretrain_base_combined_train_20_120/model_masked_6_1.pt`
@@ -197,15 +217,19 @@ full `(120, 72)` sequence. The classifier embeds to 100-dim, adds positional enc
 - 100 epochs, Adam, lr=1e-3, batch_size=512
 - Model selection by best validation loss
 
-**End-to-end fine-tuning**:
+**End-to-end fine-tuning** *(our addition — paper freezes encoder)*:
 For supervised metrics, the encoder is fine-tuned jointly with a Transformer_ft classifier.
 Raw data is InstanceNorm-preprocessed in a differentiable way, passed through the encoder,
-then through the Transformer_ft head.
+then through the Transformer_ft head. **The original CrossHAR paper freezes the encoder and
+trains only the Transformer_ft classifier on static pre-extracted embeddings.** We fine-tune
+end-to-end for consistency with other baselines. This gives CrossHAR a slight advantage over
+its paper's protocol, since the encoder can adapt to the target dataset.
 
 ### What We Do NOT Replicate
 - Original paper trains on source datasets, evaluates on a held-out target dataset.
   We evaluate within each test dataset using random splits.
 - Original paper uses specific source-target pairs. We use one combined pretrained model.
+- Original paper freezes the encoder during downstream evaluation. We fine-tune end-to-end.
 
 ### Intentional Protocol Differences
 - **Batch size**: We use batch_size=512 vs original's 128 for the Transformer_ft classifier.
@@ -220,6 +244,7 @@ then through the Transformer_ft head.
 
 **Paper**: Hao et al., 2024
 **Script**: `val_scripts/human_activity_recognition/evaluate_lanhar.py`
+**One-liner**: 2-stage CLIP-style alignment: (1) fine-tune SciBERT on activity text, (2) train a sensor Transformer from scratch to align with the text embedding space.
 
 ### What It Is
 CLIP-style sensor-text alignment with 2-stage training. Uses SciBERT for text encoding.
@@ -296,16 +321,23 @@ adding noise to the alignment objective.
 - **Validation split**: Original validates on target domain only (20/80 split). We
   validate on a held-out portion of source data (90/10 split) since we have multiple
   test datasets and evaluate on each independently.
-- **No target data in Stage 2**: Original combines source + target domains in Stage 2.
-  We use only source (training) data, ensuring the sensor encoder never sees test data
-  during training. This matches the constraint on all other baselines and prevents
-  LanHAR from having an unfair distributional advantage.
+- **No target data in Stage 2** *(intentional — paper combines source + target)*: Original
+  combines source + target domains in Stage 2, giving the sensor encoder access to the test
+  data distribution during training. We use only source (training) data, ensuring the sensor
+  encoder never sees test data. This matches the constraint on all other baselines and prevents
+  LanHAR from having an unfair distributional advantage, but slightly disadvantages LanHAR
+  relative to its paper's reported numbers.
+- **Supervised fine-tuning** *(our addition — paper is zero-shot only)*: The original LanHAR
+  paper has no supervised fine-tuning protocol. We add 1%/10% supervised evaluation by
+  fine-tuning the sensor encoder + sen_proj via cosine similarity with frozen text prototypes.
+  This uses LanHAR's native cosine-sim mechanism rather than adding an external classifier.
 
 ---
 
 ## 5. TSFM (Our Model)
 
 **Script**: `val_scripts/human_activity_recognition/evaluate_tsfm.py`
+**One-liner**: Dual-branch Transformer trained with CLIP-style contrastive alignment between variable-length IMU patches and learnable text label embeddings.
 
 ### What It Is
 Our text-aligned IMU foundation model. Dual-branch Transformer encoder with semantic alignment

@@ -100,6 +100,27 @@ TSFM's variable-length architecture accepts any patch size, but we use a fixed 1
 
 For classifier-based baselines, the zero-shot classifier is trained exclusively on embeddings from the 10 **training** datasets — no test data is used. The "zero-shot" refers to the test dataset being unseen, not to the classifier being untrained. This is analogous to how CLIP trains on image-text pairs then evaluates zero-shot on ImageNet: the model is trained, but the test distribution is never seen.
 
+## Adaptations from Original Papers
+
+We adapt each baseline to our unified benchmark. The table below documents every significant
+deviation from the original paper's evaluation protocol and our fairness rationale.
+
+| Baseline | Deviation | Original Paper | Our Adaptation | Effect on Baseline |
+|----------|-----------|---------------|----------------|-------------------|
+| **LiMU-BERT** | Window-level scoring | Scores each 20-step sub-window independently | Majority vote across 6 sub-windows per 120-step window | Neutral (standardizes evaluation unit) |
+| **LiMU-BERT** | Single combined model | Separate per-dataset pretrained models | One model pretrained on all 10 datasets | Neutral |
+| **CrossHAR** | End-to-end fine-tuning | Freezes encoder; trains only Transformer_ft on static embeddings | Fine-tunes encoder + Transformer_ft end-to-end | Slight advantage (encoder adapts to target) |
+| **MOMENT** | Linear head for supervised | Only SVM-RBF on frozen embeddings (no encoder fine-tuning for classification) | End-to-end fine-tuning with linear head from MOMENT codebase | Slight advantage (encoder adapts) |
+| **LanHAR** | No target data in Stage 2 | Sensor encoder trains on source + target data combined | Source data only | Slight disadvantage (no target distribution) |
+| **LanHAR** | Supervised fine-tuning | Not in paper (zero-shot only) | Cosine sim fine-tuning with frozen text prototypes | N/A (extension) |
+| **All** | Unified batch sizes | Each paper uses its own (typically 128) | 512 for classifiers, 32 for fine-tuning | Neutral |
+
+**Why these deviations exist**: A cross-baseline benchmark requires standardized evaluation units,
+identical data splits, and comparable fine-tuning conditions. Replicating each paper's exact
+experiment would produce numbers on different datasets, different splits, and different evaluation
+granularities — defeating the purpose of comparison. We prioritize fairness of comparison over
+exact paper reproduction, and document every deviation transparently.
+
 ## Per-Baseline Summary
 
 ### Classifier and Training Overview

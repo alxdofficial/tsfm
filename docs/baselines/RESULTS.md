@@ -4,13 +4,13 @@ Generated: 2026-02-17 | Framework: 4-metric unified evaluation | Seed: 3431
 
 ## Models
 
-| Model | Type | Pretrain Data | Embed Dim | Zero-Shot Method | Classifier |
-|-------|------|---------------|-----------|------------------|------------|
-| **TSFM (ours)** | Text-aligned foundation model | 10 HAR datasets | 384 | Cosine sim with text embeddings | End-to-end cosine sim |
-| **LiMU-BERT** | Self-supervised (masked reconstruction) | 10 HAR datasets (paper checkpoint) | 72 | Classifier + group scoring | End-to-end encoder + GRU |
-| **MOMENT** | General time-series foundation model | Time Series Pile (no HAR data) | 6144 | Classifier + group scoring | End-to-end encoder + linear |
-| **CrossHAR** | Self-supervised (contrastive) | 10 HAR datasets (paper checkpoint) | 72 | Classifier + group scoring | End-to-end encoder + Transformer_ft |
-| **LanHAR** | Text-aligned (trained from scratch) | 10 HAR datasets (fresh each run) | 768 | Cosine sim with text embeddings | End-to-end cosine sim |
+| Model | How It Works | Embed Dim | Zero-Shot | Supervised |
+|-------|-------------|:---------:|-----------|------------|
+| **TSFM (ours)** | Dual-branch Transformer trained with CLIP-style contrastive alignment between IMU patches and text labels | 384 | Cosine sim with text embeddings | End-to-end cosine sim |
+| **LiMU-BERT** | BERT-style masked reconstruction on 20-step IMU sub-windows; predicts masked timesteps from context | 72 | GRU classifier + group scoring | End-to-end encoder + GRU |
+| **MOMENT** | General time-series Transformer pretrained on diverse time-series data (no HAR); processes each IMU channel independently | 6144 | SVM-RBF + group scoring | End-to-end encoder + linear |
+| **CrossHAR** | Hierarchical self-supervised pretraining combining masked reconstruction and contrastive learning on IMU sequences | 72 | Transformer_ft classifier + group scoring | End-to-end encoder + Transformer_ft |
+| **LanHAR** | 2-stage CLIP-style alignment: (1) fine-tune SciBERT on activity text, (2) train a sensor Transformer to align with text space | 768 | Cosine sim with text embeddings | End-to-end cosine sim |
 
 ## Fairness Notes
 
@@ -31,6 +31,23 @@ with frozen text embeddings. Non-text-aligned models use their paper's native cl
 
 **Embedding dimensions vary**: MOMENT (6144) >> LanHAR (768) > TSFM (384) >> LiMU-BERT/CrossHAR (72).
 Higher dimensions give more capacity for downstream tasks.
+
+## Adaptations from Original Papers
+
+We adapt each baseline to our unified benchmark rather than replicating each paper's exact experiment.
+The table below documents every significant deviation and its fairness rationale.
+
+| Baseline | What We Changed | Original Paper Protocol | Our Adaptation | Fairness Rationale |
+|----------|----------------|------------------------|----------------|-------------------|
+| **LiMU-BERT** | Window-level scoring | Scores each 20-step sub-window independently (6x more evaluation units per window) | Majority vote across 6 sub-windows per 120-step window | All models must be scored on the same evaluation units (windows) for comparable n_samples |
+| **LiMU-BERT** | Single combined checkpoint | Separate pretrained models per dataset | One model pretrained on all 10 datasets combined | Unified pretraining for fair cross-dataset comparison |
+| **CrossHAR** | End-to-end supervised fine-tuning | Freezes encoder; trains only classifier head on static pre-extracted embeddings | Fine-tunes encoder + classifier jointly | All baselines use end-to-end fine-tuning for supervised metrics, giving each encoder a chance to adapt; this slightly *advantages* CrossHAR vs its paper |
+| **MOMENT** | Linear head for supervised | Paper's classification evaluation uses only SVM-RBF on frozen embeddings (no fine-tuning) | Linear head (from MOMENT codebase's `ClassificationHead`) fine-tuned end-to-end | SVM is not differentiable; linear head enables end-to-end fine-tuning consistent with other baselines |
+| **LanHAR** | No target data in Stage 2 | Sensor encoder trains on source + target data combined | Source data only (test data never seen) | No other baseline sees test data during training; exclusion prevents unfair distributional advantage but slightly *disadvantages* LanHAR vs its paper |
+| **LanHAR** | Supervised fine-tuning added | Paper is zero-shot only (no supervised protocol) | Fine-tune sensor encoder via cosine sim with frozen text prototypes | Extension for benchmark completeness; uses LanHAR's native cosine-sim mechanism |
+| **All** | Unified batch sizes | Each paper uses its own batch size (typically 128) | 512 for classifiers, 32 for fine-tuning | Speed optimization; applied uniformly across all baselines |
+
+See [BASELINE_IMPLEMENTATION_NOTES.md](BASELINE_IMPLEMENTATION_NOTES.md) for full per-model implementation details.
 
 ## Test Datasets
 
