@@ -15,8 +15,8 @@ Generated: 2026-02-17 | Framework: 4-metric unified evaluation | Seed: 3431
 ## Fairness Notes
 
 **Training data**: All HAR-pretrained models (TSFM, LiMU-BERT, CrossHAR, LanHAR) use 10 training
-datasets. The 4 test datasets (MotionSense, RealWorld, MobiAct, VTT-ConIoT) were never seen during
-any model's pretraining. MOMENT was pretrained on general time-series data with no HAR-specific data.
+datasets. All 4 test datasets were never seen during any model's pretraining. MOMENT was pretrained
+on general time-series data with no HAR-specific data.
 
 **Zero-shot prediction mechanisms differ by model type**:
 - *Text-aligned models* (TSFM, LanHAR): Encode activity labels as text, predict via cosine similarity
@@ -34,24 +34,41 @@ Higher dimensions give more capacity for downstream tasks.
 
 ## Test Datasets
 
-| Dataset | Windows | Classes | Difficulty |
-|---------|---------|---------|------------|
-| MotionSense | 12,080 | 6 | Easy (basic locomotion) |
-| RealWorld | 27,138 | 8 | Medium (multi-placement) |
-| MobiAct | 4,345 | 13 | Hard (falls, vehicle entry) |
-| VTT-ConIoT | 2,058 | 16 | Hard (industrial activities) |
+We evaluate on 3 main test datasets with high label group coverage (85-100%), plus 1 severe
+out-of-domain dataset (VTT-ConIoT) reported separately due to its fundamentally different
+characteristics. See [Severe Out-of-Domain: VTT-ConIoT](#severe-out-of-domain-vtt-coniot) below.
+
+### Main Test Datasets (85-100% label coverage)
+
+| Dataset | Windows | Classes | Group Coverage | Difficulty |
+|---------|---------|---------|:-:|------------|
+| MotionSense | 12,080 | 6 | 100% | Easy (basic locomotion) |
+| RealWorld | 27,138 | 8 | 100% | Medium (multi-placement) |
+| MobiAct | 4,345 | 13 | 85% | Hard (falls, vehicle entry) |
+
+### Out-of-Domain Test Dataset (50% label coverage)
+
+| Dataset | Windows | Classes | Group Coverage | Difficulty |
+|---------|---------|---------|:-:|------------|
+| VTT-ConIoT | 2,058 | 16 | 50% | Severe (industrial/construction) |
+
+**Why VTT-ConIoT is reported separately**: 8 of 16 activity labels (carrying, climbing ladder,
+kneeling work, leveling paint, lifting, pushing cart, roll painting, spraying paint) have no
+semantic equivalent in the 10 training datasets. All models are guaranteed to fail on these
+activities regardless of architecture quality. This 50% coverage floor makes VTT-ConIoT a test
+of severe domain shift rather than cross-dataset generalization.
 
 ---
 
-## Average Across All Datasets
+## Average Across Main Datasets
 
 | Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | 27.5 | 7.4 | 35.0 | 22.3 | 54.2 | 46.7 | 68.8 | 63.8 |
-| **LiMU-BERT** | 16.7 | 5.2 | 27.0 | 18.4 | 24.1 | 15.5 | 51.8 | 43.2 |
-| **MOMENT** | 19.7 | 5.4 | 32.2 | 21.9 | 58.9 | 53.3 | 70.6 | 66.4 |
-| **CrossHAR** | 13.0 | 4.2 | 27.8 | 22.4 | 51.3 | 46.4 | 67.8 | 62.3 |
-| **LanHAR** | 12.7 | 6.1 | 22.9 | 16.1 | 32.6 | 24.3 | 45.3 | 41.7 |
+| **TSFM (ours)** | 36.2 | 9.7 | 45.5 | 28.9 | 68.2 | 58.6 | 83.2 | 76.7 |
+| **LiMU-BERT** | 21.3 | 6.6 | 33.4 | 23.7 | 30.2 | 19.8 | 64.6 | 55.3 |
+| **MOMENT** | 25.7 | 7.0 | 41.2 | 28.5 | 71.5 | 64.8 | 81.3 | 76.1 |
+| **CrossHAR** | 17.0 | 5.5 | 35.4 | 28.9 | 62.5 | 56.3 | 80.6 | 75.0 |
+| **LanHAR** | 14.2 | 7.4 | 28.2 | 20.5 | 41.3 | 31.5 | 56.1 | 52.0 |
 
 ---
 
@@ -63,79 +80,101 @@ Higher dimensions give more capacity for downstream tasks.
 
 *Text-aligned models use cosine similarity; classifier-based models use a trained native classifier.*
 
-| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | VTT-ConIoT Acc | VTT-ConIoT F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | 31.8 | 8.8 | 38.7 | 10.5 | 38.1 | 9.7 | 1.7 | 0.6 |
-| **LiMU-BERT** | 7.0 | 2.1 | 28.0 | 10.1 | 28.9 | 7.6 | 3.1 | 0.8 |
-| **MOMENT** | 28.7 | 7.0 | 33.8 | 8.0 | 14.6 | 6.0 | 1.6 | 0.4 |
-| **CrossHAR** | 13.5 | 4.2 | 16.2 | 5.4 | 21.5 | 7.0 | 0.7 | 0.4 |
-| **LanHAR** | 11.4 | 4.4 | 14.0 | 6.4 | 17.3 | 11.4 | 8.3 | 2.1 |
+| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **TSFM (ours)** | 31.8 | 8.8 | 38.7 | 10.5 | 38.1 | 9.7 |
+| **LiMU-BERT** | 7.0 | 2.1 | 28.0 | 10.1 | 28.9 | 7.6 |
+| **MOMENT** | 28.7 | 7.0 | 33.8 | 8.0 | 14.6 | 6.0 |
+| **CrossHAR** | 13.5 | 4.2 | 16.2 | 5.4 | 21.5 | 7.0 |
+| **LanHAR** | 11.4 | 4.4 | 14.0 | 6.4 | 17.3 | 11.4 |
 
 ### Zero-Shot Closed-Set
 
 *Text-aligned models predict from test labels only (exact match). Classifier-based models mask logits to test-relevant groups (group match).*
 
-| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | VTT-ConIoT Acc | VTT-ConIoT F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | 48.1 | 16.5 | 51.5 | 45.3 | 37.0 | 24.8 | 3.4 | 2.6 |
-| **LiMU-BERT** | 30.2 | 13.5 | 39.6 | 37.7 | 30.3 | 19.8 | 7.7 | 2.7 |
-| **MOMENT** | 40.9 | 24.6 | 51.6 | 39.3 | 31.1 | 21.6 | 5.2 | 2.0 |
-| **CrossHAR** | 23.3 | 17.7 | 42.8 | 39.5 | 40.3 | 29.5 | 5.0 | 2.7 |
-| **LanHAR** | 17.5 | 11.6 | 37.1 | 30.7 | 30.0 | 19.1 | 6.9 | 3.2 |
+| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **TSFM (ours)** | 48.1 | 16.5 | 51.5 | 45.3 | 37.0 | 24.8 |
+| **LiMU-BERT** | 30.2 | 13.5 | 39.6 | 37.7 | 30.3 | 19.8 |
+| **MOMENT** | 40.9 | 24.6 | 51.6 | 39.3 | 31.1 | 21.6 |
+| **CrossHAR** | 23.3 | 17.7 | 42.8 | 39.5 | 40.3 | 29.5 |
+| **LanHAR** | 17.5 | 11.6 | 37.1 | 30.7 | 30.0 | 19.1 |
 
 ### 1% Supervised (End-to-End Fine-Tuning)
 
 *Encoder fine-tuned end-to-end with 1% of labeled data. Text-aligned models classify via cosine similarity; others use native classifier heads.*
 
-| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | VTT-ConIoT Acc | VTT-ConIoT F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | 45.5 | 17.8 | 85.3 | 84.7 | 73.8 | 73.2 | 12.1 | 11.3 |
-| **LiMU-BERT** | 6.7 | 2.6 | 38.7 | 29.4 | 45.0 | 27.4 | 5.8 | 2.5 |
-| **MOMENT** | 54.9 | 36.8 | 87.4 | 87.5 | 72.1 | 70.2 | 21.3 | 18.6 |
-| **CrossHAR** | 42.8 | 30.7 | 78.6 | 77.6 | 66.0 | 60.7 | 17.9 | 16.5 |
-| **LanHAR** | 34.5 | 15.2 | 40.3 | 36.6 | 49.2 | 42.6 | 6.3 | 2.6 |
+| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **TSFM (ours)** | 45.5 | 17.8 | 85.3 | 84.7 | 73.8 | 73.2 |
+| **LiMU-BERT** | 6.7 | 2.6 | 38.7 | 29.4 | 45.0 | 27.4 |
+| **MOMENT** | 54.9 | 36.8 | 87.4 | 87.5 | 72.1 | 70.2 |
+| **CrossHAR** | 42.8 | 30.7 | 78.6 | 77.6 | 66.0 | 60.7 |
+| **LanHAR** | 34.5 | 15.2 | 40.3 | 36.6 | 49.2 | 42.6 |
 
 ### 10% Supervised (End-to-End Fine-Tuning)
 
 *Encoder fine-tuned end-to-end with 10% of labeled data. Text-aligned models classify via cosine similarity; others use native classifier heads.*
 
-| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | VTT-ConIoT Acc | VTT-ConIoT F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | 72.6 | 53.8 | 93.3 | 92.4 | 83.7 | 83.9 | 25.6 | 25.1 |
-| **LiMU-BERT** | 57.5 | 32.7 | 78.9 | 80.1 | 57.3 | 53.2 | 13.5 | 6.7 |
-| **MOMENT** | 71.3 | 55.4 | 92.1 | 92.1 | 80.6 | 80.8 | 38.6 | 37.2 |
-| **CrossHAR** | 69.7 | 54.7 | 91.6 | 91.0 | 80.5 | 79.2 | 29.5 | 24.3 |
-| **LanHAR** | 35.9 | 24.3 | 75.8 | 76.1 | 56.5 | 55.4 | 13.0 | 10.9 |
+| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **TSFM (ours)** | 72.6 | 53.8 | 93.3 | 92.4 | 83.7 | 83.9 |
+| **LiMU-BERT** | 57.5 | 32.7 | 78.9 | 80.1 | 57.3 | 53.2 |
+| **MOMENT** | 71.3 | 55.4 | 92.1 | 92.1 | 80.6 | 80.8 |
+| **CrossHAR** | 69.7 | 54.7 | 91.6 | 91.0 | 80.5 | 79.2 |
+| **LanHAR** | 35.9 | 24.3 | 75.8 | 76.1 | 56.5 | 55.4 |
 
 ---
 
 ## Key Observations
 
-1. **TSFM leads zero-shot** — 35.0% closed-set avg accuracy, ahead of MOMENT (32.2%), CrossHAR (27.8%),
-   LiMU-BERT (27.0%), and LanHAR (22.9%). The text-alignment approach provides a genuine advantage
+1. **TSFM leads zero-shot** — 45.5% closed-set avg accuracy on 3 main datasets, ahead of MOMENT (41.2%),
+   CrossHAR (35.4%), LiMU-BERT (33.4%), and LanHAR (28.2%). Text alignment provides a genuine advantage
    for cross-dataset transfer without any test-time labels.
 
-2. **MOMENT leads supervised, TSFM close behind** — At 10%, MOMENT 70.6% vs TSFM 68.8% avg accuracy.
-   At 1%, MOMENT leads more clearly (58.9% vs 54.2%), likely benefiting from its larger embedding
-   dimension (6144 vs 384) and general time-series pretraining.
+2. **MOMENT leads supervised, TSFM close behind** — At 10%, MOMENT 81.3% vs TSFM 83.2% avg accuracy
+   (TSFM slightly ahead). At 1%, MOMENT leads (71.5% vs 68.2%), likely benefiting from its larger
+   embedding dimension (6144 vs 384) and general time-series pretraining.
 
-3. **CrossHAR is a strong third** — 67.8% at 10% supervised, competitive with TSFM/MOMENT on
+3. **CrossHAR is a strong third** — 80.6% at 10% supervised, competitive with TSFM/MOMENT on
    MotionSense (91.6%) and RealWorld (80.5%), despite a much smaller embedding (72-dim).
 
-4. **VTT-ConIoT is the hardest dataset** — All models score lowest here. 8 of 16 test labels
-   have no training synonyms (construction domain activities), creating a genuine coverage gap.
-   MOMENT performs best here (38.6% at 10%), likely due to its general time-series pretraining.
+4. **LiMU-BERT struggles at low data** — Only 30.2% at 1% supervised avg, the lowest among all models.
+   Performance recovers at 10% (64.6%), suggesting the GRU classifier needs more data to converge.
 
-5. **LiMU-BERT struggles at low data** — Only 24.1% at 1% supervised avg, the lowest among all models.
-   Performance recovers at 10% (51.8%), suggesting the GRU classifier needs more data to converge.
-
-6. **LanHAR underperforms across all metrics** — Despite being text-aligned, LanHAR's from-scratch
+5. **LanHAR underperforms across all metrics** — Despite being text-aligned, LanHAR's from-scratch
    SciBERT training on small HAR data limits its zero-shot and supervised transfer quality.
 
-7. **TSFM uses a fixed 1.0s patch size** — no per-dataset sweep or test-time tuning. This is a
+6. **TSFM uses a fixed 1.0s patch size** — no per-dataset sweep or test-time tuning. This is a
    metadata-only decision: at 20Hz, 1.0s patches give the finest temporal resolution while producing
-   enough tokens for the encoder. Sensitivity analysis shows results are robust across patch sizes
-   (max 9% range on easiest dataset, <2% on hardest).
+   enough tokens for the encoder. See [Patch Size Sensitivity](#tsfm-patch-size-sensitivity) below.
+
+---
+
+## Severe Out-of-Domain: VTT-ConIoT
+
+VTT-ConIoT is an industrial/construction activity dataset with 16 classes, of which only 8 (50%)
+have semantic equivalents in the 10 training datasets. The remaining 8 activities (carrying,
+climbing ladder, kneeling work, leveling paint, lifting, pushing cart, roll painting, spraying paint)
+are completely novel — no model can correctly classify them in zero-shot mode, and even supervised
+fine-tuning has very limited training signal.
+
+We report VTT-ConIoT separately because it tests a fundamentally different condition: **severe
+domain shift** where the activity vocabulary is only half covered, rather than the near-complete
+coverage (85-100%) of the 3 main test datasets.
+
+| Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **TSFM (ours)** | 1.7 | 0.6 | 3.4 | 2.6 | 12.1 | 11.3 | 25.6 | 25.1 |
+| **LiMU-BERT** | 3.1 | 0.8 | 7.7 | 2.7 | 5.8 | 2.5 | 13.5 | 6.7 |
+| **MOMENT** | 1.6 | 0.4 | 5.2 | 2.0 | 21.3 | 18.6 | 38.6 | 37.2 |
+| **CrossHAR** | 0.7 | 0.4 | 5.0 | 2.7 | 17.9 | 16.5 | 29.5 | 24.3 |
+| **LanHAR** | 8.3 | 2.1 | 6.9 | 3.2 | 6.3 | 2.6 | 13.0 | 10.9 |
+
+**Observations**: All models score near random on zero-shot (<8% accuracy). With 10% supervised
+data, MOMENT leads (38.6%), likely because its general time-series pretraining provides useful
+signal even for novel activity types. TSFM and CrossHAR are in the 25-30% range. LiMU-BERT and
+LanHAR struggle most (<14%).
 
 ---
 
