@@ -2,6 +2,16 @@
 
 Unified 5-metric evaluation framework for comparing TSFM against baselines on 4 zero-shot test datasets.
 
+## Design Principles
+
+This protocol is designed to ensure **fair, reproducible comparison** across fundamentally different model architectures:
+
+1. **No test data during training**: All 5 models train on the same 10 datasets; all 4 test datasets are strictly held out. No model ever sees test data during any training stage.
+2. **Native architectures**: Each baseline uses its own paper's downstream classifier — we do not impose a uniform architecture that might favor or penalize any model.
+3. **Identical test data**: All models evaluate on the exact same windows, labels, and data splits (same seed, same preprocessing).
+4. **Multiple metrics**: 5 metrics spanning zero-shot to fully supervised capture different aspects of representation quality, avoiding cherry-picking a single favorable metric.
+5. **Reproducibility**: All evaluators set global seeds (42) and classifier seeds (3431) for deterministic results.
+
 ## Test Datasets
 
 All models are evaluated on 4 datasets that were **never seen during training**:
@@ -21,15 +31,13 @@ All data is standardized to `(N, 120, 6)` windows at 20Hz with 6 IMU channels (a
 
 - **What**: Classify against ALL 87 training labels, score via synonym groups
 - **Why**: Tests open-vocabulary generalization — can the model find the right activity among all possible labels?
-- **Applies to**: All 5 models
 - **Text-aligned (TSFM, LanHAR)**: `argmax(sensor_emb @ all_87_label_embs.T)` via cosine similarity with text embeddings, then group-match prediction to ground truth
-- **Classifier-based (LiMU-BERT, MOMENT, CrossHAR)**: Train each model's native classifier on all 10 training datasets (87 global classes), predict over all 87, then group-match prediction to ground truth
+- **Classifier-based (LiMU-BERT, MOMENT, CrossHAR)**: Each model's native classifier predicts over all 87 classes, then group-match prediction to ground truth
 
 ### Metric 2: Zero-Shot Closed-Set
 
 - **What**: Classify against only labels relevant to the test dataset
 - **Why**: Tests discriminative quality when the label space is constrained
-- **Applies to**: All 5 models
 - **Text-aligned (TSFM, LanHAR)**: Encode only the test dataset's activity labels as text, `argmax(sensor_emb @ test_label_embs.T)`, exact label matching
 - **Classifier-based (LiMU-BERT, MOMENT, CrossHAR)**: Mask each model's native classifier logits/scores to training labels whose synonym group appears in the test dataset, `argmax(masked_logits)`, group-match scoring
 
@@ -42,31 +50,80 @@ All data is standardized to `(N, 120, 6)` windows at 20Hz with 6 IMU channels (a
 | MobiAct | 9 | 34 | vehicle_entry group has 0 training members |
 | VTT-ConIoT | 11 | 20 | 4 groups (carrying, climbing, kneeling, painting) have 0 training members |
 
-**Fairness note**: Text-aligned and classifier-based models use different prediction mechanisms for zero-shot metrics, so direct comparison should be interpreted carefully. Text-aligned models have the advantage of encoding arbitrary label text; classifier-based models are limited to predicting among training labels and use group scoring to bridge the gap.
-
 ### Metric 3: 1% Supervised
 
-- **What**: Train a downstream classifier using 1% of labeled data
+- **What**: Train a downstream classifier using 1% of labeled data from the test dataset
 - **How**: Split 80/10/10 (train/val/test), subsample 1% of train via balanced_subsample, train classifier, evaluate on test split
-- **Why**: Tests few-shot transfer quality of frozen embeddings
-- **Applies to**: All 5 models
+- **Why**: Tests few-shot transfer — how useful are the frozen embeddings with minimal supervision?
 
 ### Metric 4: 10% Supervised
 
 - **What**: Same as 1% but with 10% labeled data
-- **Why**: Tests semi-supervised regime
-- **Applies to**: All 5 models
+- **Why**: Tests semi-supervised regime — practical for real deployments where some labels are available
 
 ### Metric 5: Linear Probe
 
-- **What**: Train a linear classifier on full training split of frozen embeddings
+- **What**: Train a linear classifier on the full training split of frozen embeddings
 - **How**: Split 80/10/10, train linear layer (100 epochs), evaluate on test split
-- **Why**: Standard representation quality benchmark
-- **Applies to**: All 5 models
+- **Why**: Standard representation quality benchmark used across the self-supervised learning literature
+
+## Fairness Justifications
+
+### Why native classifiers instead of a shared architecture?
+
+Each baseline's original paper evaluates with its own downstream classifier (e.g., MOMENT uses SVM-RBF, LiMU-BERT uses GRU). Imposing a uniform linear classifier would disadvantage models designed for non-linear classifiers and would not reflect each model's real-world performance. By using each paper's native classifier, we measure each model's representations in the way they were designed to be used.
+
+### Why group-based scoring for classifier-based zero-shot?
+
+Non-text-aligned models can only predict training labels (e.g., "jogging"), not test-specific labels (e.g., "running"). Since "jogging" and "running" are semantically equivalent, we map both through synonym groups before scoring. Without this, classifier-based models would be unfairly penalized for vocabulary mismatch even when their predictions are semantically correct.
+
+### Why different zero-shot mechanisms for text-aligned vs classifier-based?
+
+Text-aligned models (TSFM, LanHAR) can encode arbitrary label text at test time — this is a genuine architectural advantage and a core motivation for text alignment. Classifier-based models cannot do this, so they use their native classifiers trained on training data. This asymmetry is inherent to the model designs, not an evaluation bias. We include both zero-shot AND supervised metrics so readers can assess both capabilities.
+
+### Why is the TSFM patch-size sweep fair?
+
+TSFM's variable-length architecture requires choosing a patch size per dataset. To prevent test-time hyperparameter tuning from inflating metrics, we use a 20% held-out sweep split (seed=42) for patch-size selection, then report all metrics on the full dataset. The sweep split is not used for reporting. Other baselines use fixed embedding extraction with no per-dataset tuning.
+
+### Why does zero-shot classifier training not violate the "zero-shot" definition?
+
+For classifier-based baselines, the zero-shot classifier is trained exclusively on embeddings from the 10 **training** datasets — no test data is used. The "zero-shot" refers to the test dataset being unseen, not to the classifier being untrained. This is analogous to how CLIP trains on image-text pairs then evaluates zero-shot on ImageNet: the model is trained, but the test distribution is never seen.
+
+## Per-Baseline Summary
+
+### Classifier and Training Overview
+
+| Baseline | Text-Aligned? | ZS Method | Supervised Classifier | Extra Training for ZS | Embedding Dim |
+|----------|:---:|-----------|----------------------|----------------------|:---:|
+| **TSFM** | Yes | Cosine sim (LearnableLabelBank) | Linear | None (cosine sim) | 384 |
+| **LanHAR** | Yes | Cosine sim (SciBERT prototypes) | Linear | None (cosine sim) | 768 |
+| **LiMU-BERT** | No | GRU classifier | GRU | Train GRU on 87-class training embeddings | 72 |
+| **MOMENT** | No | SVM-RBF classifier | SVM-RBF | Train SVM on 87-class training embeddings | 6144 |
+| **CrossHAR** | No | Transformer_ft classifier | Transformer_ft | Train Transformer on 87-class training embeddings | 72 |
+
+**Key**: Text-aligned models require no extra classifier training for zero-shot — they use cosine similarity with text prototypes directly. Classifier-based models require training a classifier on the 10 training datasets' embeddings (using only training data, never test data).
+
+### Label Group Mapping Coverage per Test Dataset
+
+| Dataset | Total Activities | Mappable | Novel | Coverage | Closed-Set Mask | Unmappable Activities |
+|---------|:---:|:---:|:---:|:---:|:---:|---|
+| **MotionSense** | 6 | 6 | 0 | 100% | 22/87 | — |
+| **RealWorld** | 8 | 8 | 0 | 100% | 30/87 | — |
+| **MobiAct** | 13 | 11 | 2 | 85% | 34/87 | car_step_in, car_step_out |
+| **VTT-ConIoT** | 16 | 8 | 8 | 50% | 20/87 | carrying, climbing_ladder, kneeling_work, leveling_paint, lifting, pushing_cart, roll_painting, spraying_paint |
+
+**How to read this table**:
+- **Mappable**: Test activities that have a semantically equivalent group in the training set (e.g., test "jogging" maps to training group "running")
+- **Novel**: Test activities with no semantic equivalent in training — these are genuinely unseen and all models will struggle
+- **Closed-set mask**: How many of the 87 training labels are "allowed" for closed-set prediction. Lower = easier discrimination
+- For **classifier-based** models (LiMU-BERT, MOMENT, CrossHAR): novel activities are guaranteed wrong since no training label maps to them
+- For **text-aligned** models (TSFM, LanHAR): novel activities can still be attempted via text similarity, though performance will be weak
+
+**Difficulty ranking**: MotionSense (easiest) > RealWorld > MobiAct > VTT-ConIoT (hardest, 50% novel activities from construction domain)
 
 ## Per-Baseline Classifiers
 
-Each baseline uses its original paper's downstream classifier to ensure fairness:
+Each baseline uses its original paper's downstream classifier:
 
 | Baseline | Supervised Classifier | Epochs | Architecture |
 |----------|----------------------|--------|-------------|
@@ -104,7 +161,7 @@ For each test dataset:
 
 1. **Random window-level split**: 80% train / 10% val / 10% test (seed=3431)
 2. **Balanced subsampling**: For 1%/10% supervised, `balanced_subsample()` draws proportionally from each class, with `max(1, ...)` to ensure every class has at least 1 sample
-3. **Consistent across baselines**: Same seed, same splits, same subsampling
+3. **Consistent across baselines**: Same seed, same splits, same subsampling — every model sees identical train/val/test windows
 4. **Global seeds**: All evaluators set `torch.manual_seed(42)`, `np.random.seed(42)`, `random.seed(42)` at startup for full reproducibility
 5. **TSFM patch-size sweep**: Uses a separate 20% held-out split (seed=42) per test dataset for patch selection; metrics are reported on the full dataset
 
@@ -113,7 +170,7 @@ For each test dataset:
 For each dataset x metric combination:
 - **Accuracy** (%)
 - **F1 Macro** (%) — with `zero_division=0` for absent classes
-- **F1 Weighted** (%) — matches LanHAR paper's metric
+- **F1 Weighted** (%) — weighted by class support, matches LanHAR paper's metric
 - **N samples** — test set size
 - **N train samples** — training samples used (varies by metric)
 
