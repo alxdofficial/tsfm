@@ -1,447 +1,206 @@
-# IMU Activity Recognition Encoder - Pretraining
+# TSFM: Language-Aligned IMU Foundation Model for Human Activity Recognition
 
-**Self-supervised pretraining of a dual-branch transformer encoder for IMU-based human activity recognition across multiple datasets.**
-
----
-
-## 🎯 What is This?
-
-This project implements a **pretrained encoder** for IMU (Inertial Measurement Unit) time series data that can be fine-tuned for various activity recognition tasks. The encoder uses a **two-stage training pipeline**:
-
-### Stage 1: Self-Supervised Pretraining
-1. **Masked Autoencoding (MAE)** - Reconstructs randomly masked sensor patches
-2. **Contrastive Learning** - Aligns augmented views of the same data
-3. **Dual-Branch Transformer** - Captures both temporal dynamics and cross-sensor relationships
-
-### Stage 2: Semantic Alignment
-4. **Text-IMU Alignment** - Aligns IMU embeddings with activity text descriptions
-5. **Prototype Learning** - Learns activity prototypes with memory bank
-6. **Zero-shot Classification** - Enables classification without fine-tuning
-
-### Key Features
-
-- ✅ **Cross-channel attention**: Models relationships between different sensors (accelerometer ↔ gyroscope)
-- ✅ **Variable channel support**: Handles 6-52 channels with automatic padding/masking
-- ✅ **Multi-dataset pretraining**: Trains on 10 datasets (UCI HAR, HHAR, MHEALTH, PAMAP2, WISDM, UniMiB, DSADS, HAPT, KU-HAR, RecGym)
-- ✅ **Semantic alignment**: Align IMU embeddings with natural language descriptions
-- ✅ **Multi-prototype learning**: K prototypes per activity class (currently K=1, multi-prototype disabled for debugging)
-- ✅ **SO(3) rotation augmentation**: Random 3D rotations for sensor orientation invariance (currently disabled for debugging)
-- ✅ **Structured masking**: Span masking + channel dropout for robust Stage 1 pretraining
-- ✅ **Group-balanced sampling**: Capped oversampling for class balance across datasets
-- ✅ **Physically-plausible augmentations**: Jitter, time warp, magnitude scaling, channel shuffling, rotation
-- ✅ **Mixed precision training**: FP16 with torch.compile for ~4x speedup
-- ✅ **Per-dataset tracking**: Monitor learning progress per dataset
+A foundation model that aligns IMU sensor embeddings with natural language descriptions, enabling zero-shot activity recognition on unseen datasets. Trained end-to-end on 10 diverse HAR datasets and evaluated against 4 baselines on 4 held-out test datasets.
 
 ---
 
-## 🏗️ Architecture Overview
+## Overview
+
+TSFM uses a **CLIP-style** training approach: a dual-branch transformer encoder processes variable-length, variable-channel IMU data into fixed-dimension embeddings, which are aligned with text activity descriptions via contrastive learning. At inference time, activity recognition is performed via cosine similarity between sensor embeddings and text label embeddings — no classifier training needed.
+
+### Architecture
 
 ```
-Raw IMU Data (variable length, 6-52 channels)
-         ↓
-    Preprocessing (interpolate to 64-sample patches)
-         ↓
-    Patch Tokenization (2-second windows → patches)
-         ↓
-┌────────────────────────────────────────────────┐
-│  Dual-Branch Transformer Encoder               │
-│                                                 │
-│  For each of 4 transformer blocks:            │
-│  1. Temporal Self-Attention                    │
-│     └─ Attention over time (patch dim)        │
-│  2. Cross-Channel Self-Attention               │
-│     └─ Attention over sensors (channel dim)   │
-│  3. Feed-Forward Network                       │
-│                                                 │
-│  Output: (batch, patches, channels, d_model)  │
-└────────────────────────────────────────────────┘
-         ↓                    ↓
-   Projection Head    Reconstruction Head
-   (for contrastive)  (for MAE)
-         ↓                    ↓
-   InfoNCE Loss        MSE Loss
-         ↘                  ↙
-        Combined Loss → Backprop
+Raw IMU Data (variable length, 6-48 channels)
+         |
+    Patch Tokenization (variable-size patches, interpolated to 64 timesteps)
+         |
+    Dual-Branch Transformer Encoder (4 layers)
+    [Temporal Self-Attention] + [Cross-Channel Self-Attention]
+         |
+    Semantic Alignment Head
+    [Channel Fusion (cross-attention)] -> [Temporal Pooling (cross-attention)]
+         |
+    384-dim L2-normalized embedding
+         |
+    Cosine Similarity with LearnableLabelBank text embeddings
+         |
+    Zero-shot activity prediction
 ```
+
+### Key Design Choices
+
+- **Channel-independent encoding**: Each sensor channel is processed independently through shared temporal attention, then fused via cross-channel attention. This handles 6-48 channels without retraining.
+- **Learnable label bank**: Text embeddings are initialized from SentenceBERT (all-MiniLM-L6-v2) then refined via learnable attention pooling during training.
+- **Soft targets**: Contrastive loss uses pairwise text similarity to weight targets, preventing synonym labels (e.g., "walking" and "strolling") from being treated as negatives.
+- **Group-balanced sampling**: Training samples are weighted by inverse semantic group frequency with capped oversampling (max 20x) to handle class imbalance across datasets.
 
 ---
 
-## 📂 Repository Structure
+## Training
+
+Training runs end-to-end from randomly initialized encoder weights:
+
+```bash
+python training_scripts/human_activity_recognition/semantic_alignment_train.py
+```
+
+**Configuration**: All hyperparameters are constants at the top of the training script. Key settings:
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Effective batch size | 512 | 32 micro-batch x 16 accumulation steps |
+| Learning rate | 1e-4 | With 3-epoch warmup + cosine decay |
+| Epochs | 100 | ~2 min/epoch on RTX 4090 |
+| Encoder | 384-dim, 8 heads, 4 layers | 21M parameters |
+| Training datasets | 10 | See table below |
+| Temperature | 0.07 | CLIP default |
+| Memory bank | 256 queue size | MoCo-style additional negatives |
+
+**Training outputs** are saved to `training_output/semantic_alignment/{timestamp}/` with checkpoints every 5 epochs, loss plots, and embedding visualizations.
+
+---
+
+## Datasets
+
+### Training (10 datasets, 87 global activity labels)
+
+| Dataset | Channels | Rate | Activities | Description |
+|---------|:---:|:---:|:---:|-------------|
+| UCI HAR | 9 | 50 Hz | 6 | Smartphone IMU |
+| HHAR | 6 | 50 Hz | 6 | Heterogeneous devices |
+| MHEALTH | 21 | 50 Hz | 12 | Multi-sensor body |
+| PAMAP2 | 48 | 9 Hz | 12 | Physical activity monitoring |
+| WISDM | 12 | 20 Hz | 18 | Phone + watch |
+| UniMiB SHAR | 3 | 50 Hz | 17 | ADL + falls |
+| DSADS | 9 | 25 Hz | 19 | Daily + sports |
+| HAPT | 6 | 50 Hz | 12 | Postural transitions |
+| KU-HAR | 6 | 100 Hz | 17 | 89 subjects |
+| RecGym | 6 | 20 Hz | 11 | Gym exercises |
+
+### Zero-Shot Test (4 datasets, never seen during training)
+
+| Dataset | Activities | Difficulty | Group Coverage |
+|---------|:---:|-----------|:---:|
+| MotionSense | 6 | Easy (basic locomotion) | 100% |
+| RealWorld | 8 | Medium (multi-placement) | 100% |
+| MobiAct | 13 | Hard (falls, vehicle entry) | 85% |
+| VTT-ConIoT | 16 | Hard (industrial/construction) | 50% |
+
+All data is standardized to `(N, 120, 6)` windows at 20Hz with 6 IMU channels (acc_xyz + gyro_xyz) for evaluation.
+
+---
+
+## Baseline Evaluation
+
+We compare TSFM against 4 baselines using a unified 5-metric evaluation framework:
+
+| Baseline | Type | Zero-Shot Method | Embedding Dim |
+|----------|------|------------------|:---:|
+| **TSFM (ours)** | Text-aligned | Cosine similarity | 384 |
+| **LanHAR** | Text-aligned | Cosine similarity (SciBERT) | 768 |
+| **LiMU-BERT** | Encoder-only | GRU classifier | 72 |
+| **MOMENT** | Encoder-only | SVM-RBF classifier | 6144 |
+| **CrossHAR** | Encoder-only | Transformer_ft classifier | 72 |
+
+### 5-Metric Evaluation
+
+1. **Zero-Shot Open-Set**: Classify against all 87 training labels
+2. **Zero-Shot Closed-Set**: Classify against test dataset labels only
+3. **1% Supervised**: Linear classifier on 1% labeled test data
+4. **10% Supervised**: Linear classifier on 10% labeled test data
+5. **Linear Probe**: Linear classifier on full train split
+
+### Running Evaluations
+
+```bash
+# Individual baselines
+python val_scripts/human_activity_recognition/evaluate_tsfm.py
+python val_scripts/human_activity_recognition/evaluate_limubert.py
+python val_scripts/human_activity_recognition/evaluate_moment.py
+python val_scripts/human_activity_recognition/evaluate_crosshar.py
+python val_scripts/human_activity_recognition/evaluate_lanhar.py
+
+# Generate combined comparison table
+python scripts/generate_results_table.py
+```
+
+Results are saved to `test_output/baseline_evaluation/{model}_evaluation.json`.
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| **[docs/baselines/EVALUATION_PROTOCOL.md](docs/baselines/EVALUATION_PROTOCOL.md)** | Evaluation framework, fairness justifications, per-dataset label coverage |
+| **[docs/baselines/BASELINE_IMPLEMENTATION_NOTES.md](docs/baselines/BASELINE_IMPLEMENTATION_NOTES.md)** | Per-baseline implementation details and design decisions |
+| **[docs/baselines/RESULTS.md](docs/baselines/RESULTS.md)** | Current evaluation results table |
+| **[model/README.md](model/README.md)** | Model architecture API |
+| **[datasets/imu_pretraining_dataset/README.md](datasets/imu_pretraining_dataset/README.md)** | Dataset format and loading |
+| **[training_scripts/human_activity_recognition/README.md](training_scripts/human_activity_recognition/README.md)** | Training pipeline details |
+| **[benchmark_data/README.md](benchmark_data/README.md)** | Benchmark data format |
+
+---
+
+## Repository Structure
 
 ```
 tsfm/
-├── README.md                              # This file
-├── DATA_FORMAT.md                         # Data format specification
-├── requirements.txt                       # Python dependencies
+├── model/                          # Model implementations
+│   ├── encoder.py                  # Dual-branch transformer encoder
+│   ├── semantic_alignment.py       # Semantic alignment head
+│   ├── token_text_encoder.py       # LearnableLabelBank, text encoding
+│   ├── preprocessing.py            # Patch tokenization, interpolation
+│   └── positional_encoding.py      # Sinusoidal + semantic position embeddings
 │
-├── data/                                  # Datasets (after processing)
-│   ├── uci_har/                          # Training datasets
-│   ├── hhar/
-│   ├── mhealth/
-│   ├── pamap2/
-│   ├── wisdm/
-│   ├── unimib_shar/
-│   ├── dsads/
-│   ├── hapt/
-│   ├── kuhar/
-│   ├── recgym/
-│   ├── motionsense/                      # Zero-shot test datasets
-│   ├── realworld/
-│   ├── mobiact/
-│   └── vtt_coniot/
+├── training_scripts/human_activity_recognition/
+│   ├── semantic_alignment_train.py # Main training script (end-to-end)
+│   ├── semantic_loss.py            # CLIP-style contrastive loss
+│   └── memory_bank.py             # MoCo-style embedding queue
 │
-├── datascripts/                          # Dataset download & conversion
-│   ├── README.md                         # Dataset documentation
-│   ├── setup_all_datasets.py            # Master pipeline
-│   └── {dataset}/
-│       ├── download.py                   # Download raw data
-│       └── convert.py                    # Convert to standard format
+├── val_scripts/human_activity_recognition/
+│   ├── evaluate_tsfm.py           # TSFM evaluation
+│   ├── evaluate_limubert.py       # LiMU-BERT baseline
+│   ├── evaluate_moment.py         # MOMENT baseline
+│   ├── evaluate_crosshar.py       # CrossHAR baseline
+│   ├── evaluate_lanhar.py         # LanHAR baseline
+│   ├── grouped_zero_shot.py       # Shared zero-shot utilities
+│   ├── model_loading.py           # TSFM model/label bank loading
+│   ├── evaluation_metrics.py      # Group-aware accuracy, similarity
+│   └── plot_utils.py              # Training visualization
 │
-├── datasets/                             # PyTorch dataset classes
-│   └── imu_pretraining_dataset/
-│       ├── README.md                     # Dataset usage docs
-│       ├── multi_dataset_loader.py       # Multi-dataset dataloader
-│       └── augmentations.py              # Physical augmentations
+├── datasets/imu_pretraining_dataset/
+│   ├── multi_dataset_loader.py    # Multi-dataset PyTorch dataloader
+│   ├── label_groups.py            # 87 labels -> 34 semantic groups
+│   └── augmentations.py           # Physical augmentations
 │
-├── model/                                # Model implementations
-│   ├── encoder.py                        # Main encoder
-│   ├── transformer.py                    # Dual-branch transformer
-│   ├── semantic_alignment.py             # Semantic alignment head
-│   ├── token_text_encoder.py             # Text encoding utilities
-│   ├── preprocessing.py                  # Data preprocessing
-│   └── positional_encoding.py            # Position embeddings
-│
-├── training_scripts/                     # Training scripts
-│   └── human_activity_recognition/
-│       ├── README.md                     # Training documentation
-│       ├── pretrain.py                   # Stage 1: MAE + Contrastive pretraining
-│       ├── semantic_alignment_train.py   # Stage 2: Text-IMU alignment
-│       ├── losses.py                     # MAE + Contrastive losses
-│       ├── semantic_loss.py              # Semantic alignment losses
-│       └── memory_bank.py                # Prototype memory bank
-│
-├── val_scripts/                          # Validation and evaluation
-│   └── human_activity_recognition/
-│       ├── model_loading.py              # Shared model/label bank loading
-│       ├── eval_config.py                # Shared eval config (patch sizes, datasets)
-│       ├── evaluate_tsfm.py              # TSFM model evaluation
-│       ├── compare_models.py             # Model comparison utilities
-│       ├── benchmark_baselines.py        # Baseline model benchmarks
-│       ├── evaluation_metrics.py         # Accuracy and metrics
-│       ├── plot_utils.py                 # Training visualization
-│       └── visualization_3d.py           # Embedding visualization
-│
-└── tests/                                # Regression test suite (pytest)
-    ├── test_model_loading.py             # Model construction & loading
-    ├── test_encoder_forward.py           # Encoder forward pass & masks
-    ├── test_similarity_computation.py    # Similarity & metrics
-    ├── test_losses.py                    # MAE, contrastive, InfoNCE losses
-    ├── test_augmentations.py             # SO(3) rotation & augmentations
-    ├── test_memory_bank.py               # Memory bank operations
-    ├── test_label_groups.py              # Label group mapping
-    └── test_data_loading.py              # Dataset & collation
+├── benchmark_data/                 # Standardized evaluation data
+├── docs/baselines/                 # Evaluation protocol & results
+├── scripts/                        # Utility scripts
+├── tests/                          # Pytest regression suite
+├── data/                           # Raw + processed training data
+└── training_output/                # Checkpoints, plots, logs
 ```
-
-### Baseline Metric Protocol (Updated 2026-02-16)
-
-The baseline evaluation scripts under `val_scripts/human_activity_recognition/` now use:
-
-- Fixed-class macro F1 for closed-set metrics (class list is explicit, even when some classes are absent in a split).
-- Ambiguity-safe closed-set label mapping: exact label matches are preferred; group-based mapping is only used when it maps to a single target label.
-- Strict 1% supervision for MOMENT-style evaluation (no train+val label-budget inflation).
-- Full-dataset benchmark loading in `benchmark_baselines.py` (no default session truncation, no random 70/15/15 slicing in benchmark mode).
 
 ---
 
-## 🚀 Quick Start
-
-### 1. Setup Environment
+## Testing
 
 ```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-
-# Install PyTorch (adjust for your CUDA version)
-pip install torch torchvision
-
-# Install other dependencies
-pip install -r requirements.txt
-```
-
-**Dependencies** (see `requirements.txt`):
-- numpy, pandas, matplotlib, pyarrow
-- scikit-learn, umap-learn (for evaluation/visualization)
-- pydantic (configuration validation)
-- google-genai (for text embeddings in Stage 2)
-
-### 2. Download & Process Datasets
-
-```bash
-# Download and convert all datasets (~20 minutes, ~2GB)
-python datascripts/setup_all_datasets.py
-
-# Or process individually
-python datascripts/setup_all_datasets.py uci_har
-python datascripts/setup_all_datasets.py hhar
-python datascripts/setup_all_datasets.py mhealth
-python datascripts/setup_all_datasets.py pamap2
-python datascripts/setup_all_datasets.py wisdm
-python datascripts/setup_all_datasets.py unimib_shar
-python datascripts/setup_all_datasets.py motionsense
-```
-
-This downloads raw data, converts to standardized format, and splits into train/val/test.
-
-### 3. Run Pretraining
-
-```bash
-cd training_scripts/human_activity_recognition
-
-# Stage 1: MAE + Contrastive pretraining
-python pretrain.py
-
-# Or resume from checkpoint
-python pretrain.py --resume path/to/checkpoint.pt
-
-# Stage 2: Semantic alignment (after Stage 1)
-python semantic_alignment_train.py
-```
-
-Training outputs:
-```
-training_output/imu_pretraining/20250110_143052/
-├── config.yaml                 # Saved configuration
-├── plots/                      # PNG loss curves
-│   ├── overall_loss.png
-│   ├── loss_components.png
-│   ├── per_dataset_losses.png
-│   ├── learning_rate.png
-│   ├── dataset_*_detail.png
-│   └── metrics.json
-├── latest.pt                   # Latest checkpoint
-├── best.pt                     # Best validation loss
-└── checkpoint_epoch_10.pt      # Periodic checkpoints
-```
-
-### 4. Monitor Training
-
-Training automatically generates PNG plots every 10 epochs and at the end of training:
-
-```bash
-# Plots are saved to:
-training_output/imu_pretraining/{timestamp}/plots/
-```
-
-Generated plots:
-- `overall_loss.png` - Train/val loss curves
-- `loss_components.png` - MAE loss vs Contrastive loss
-- `per_dataset_losses.png` - Per-dataset loss curves (UCI HAR, MHEALTH, PAMAP2, WISDM)
-- `learning_rate.png` - Learning rate schedule
-- `dataset_*_detail.png` - Detailed per-dataset metrics
-- `metrics.json` - Raw metrics data
-
----
-
-## 📊 Datasets
-
-| Dataset | Channels | Rate | Activities | Description |
-|---------|----------|------|------------|-------------|
-| **UCI HAR** | 9 (acc+gyro+body_acc) | 50 Hz | 6 | Smartphone IMU activities |
-| **HHAR** | 6 (acc+gyro) | 50 Hz | 6 | Heterogeneous HAR (multiple devices) |
-| **MHEALTH** | 23 (3 IMUs+ECG) | 50 Hz | 12 | Multi-sensor body activities |
-| **PAMAP2** | 51 (3 IMUs+HR) | 100 Hz | 12 | Physical activity monitoring |
-| **WISDM** | 12 (phone+watch) | 20 Hz | 18 | Smartphone/watch activities |
-| **UniMiB SHAR** | 3 (acc) | 50 Hz | 17 | ADL and falls detection |
-| **DSADS** | 9 (acc+gyro+mag) | 25 Hz | 19 | Daily/sports activities |
-| **HAPT** | 6 (acc+gyro) | 50 Hz | 12 | Smartphone with postural transitions |
-| **KU-HAR** | 6 (acc+gyro) | 100 Hz | 17 | Smartphone, 89 subjects |
-| **RecGym** | 6 (acc+gyro) | 20 Hz | 11 | Smartwatch gym exercises |
-
-**Zero-shot test datasets** (excluded from training):
-- **MotionSense** (6 activities), **RealWorld** (8), **MobiAct** (13), **VTT-ConIoT** (16)
-
-All datasets are converted to a standardized format with:
-- Variable-length time series
-- Consistent channel naming
-- Activity labels (not used during pretraining)
-- Train/val/test splits
-
----
-
-## ⚙️ Configuration
-
-All hyperparameters are **hard-coded** in `pretrain.py` for easy modification:
-
-```python
-# Data
-DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar',
-            'dsads', 'hapt', 'kuhar', 'recgym']
-PATCH_SIZE_SEC = 1.5  # Dataset-specific (1.0-2.0 seconds)
-
-# Model
-D_MODEL = 384
-NUM_HEADS = 8
-NUM_TEMPORAL_LAYERS = 4
-USE_CROSS_CHANNEL = True  # Enable cross-channel attention
-
-# Training
-EPOCHS = 100
-BATCH_SIZE = 20
-LEARNING_RATE = 1e-4
-WARMUP_EPOCHS = 10
-
-# Loss
-MAE_WEIGHT = 1.0
-CONTRASTIVE_WEIGHT = 1.0
-TEMPERATURE = 0.2
-MASK_RATIO = 0.5  # 50% masking
-```
-
-To change hyperparameters, edit the constants at the top of `main()` in `pretrain.py`.
-
----
-
-## 🧪 Model Details
-
-### Encoder Architecture
-
-- **Input:** Patches of shape (batch, num_patches, 64, num_channels)
-- **CNN Feature Extraction:** 1D convolution [kernel=5] → d_model=384
-- **Positional Embeddings:** Sinusoidal temporal + SentenceBERT channel semantic
-- **Transformer Blocks (×4):**
-  - Temporal self-attention (across patches)
-  - Cross-channel self-attention (across sensors)
-  - Feed-forward network (384 → 1536 → 384)
-- **Output:** (batch, num_patches, num_channels, d_model)
-
-### Pretraining Objectives
-
-1. **Masked Autoencoding (MAE):**
-   - Randomly mask 50% of patches
-   - Reconstruct masked patches from encoded representations
-   - Normalized MSE loss (per-patch normalization)
-
-2. **Contrastive Learning (InfoNCE):**
-   - Apply augmentations (jitter, scale, time warp, channel shuffle)
-   - Maximize agreement between original and augmented views
-   - Patch-level contrastive loss across batch
-
-### Augmentations
-
-- **Weak:** jitter, scale, time_shift (preserve semantics)
-- **Strong:** time_warp, magnitude_warp, resample (more aggressive)
-- **Novel:** channel_shuffle (robustness to channel ordering)
-- **SO(3) rotation:** Random 3D rotation applied to sensor triads (acc_x/y/z, gyro_x/y/z). Same rotation matrix for all triads at the same body location. Handles sensor orientation variance across placements.
-
-**See [`datasets/imu_pretraining_dataset/README.md`](datasets/imu_pretraining_dataset/README.md) for augmentation details.**
-
----
-
-## 📈 Training Tips
-
-### Expected Performance
-
-- Initial loss: ~2-3
-- After convergence: ~0.5-1.0
-- Training time: 8-12 hours on single GPU (V100/A100)
-
-### Per-Dataset Metrics
-
-Monitor per-dataset losses to identify:
-- Which datasets are harder to learn
-- Dataset imbalance issues
-- Overfitting on specific datasets
-
-### Memory Usage
-
-- With mixed precision (FP16): ~8-12 GB GPU memory
-- Batch size 32: ~10 GB
-- Reduce batch size if OOM errors occur
-
-### Debugging
-
-If training diverges:
-1. Check data loading (run tests in `datasets/imu_pretraining_dataset/`)
-2. Verify augmentations aren't too aggressive
-3. Reduce learning rate or increase warmup
-4. Check for NaN gradients in TensorBoard
-
----
-
-## 🎓 Fine-Tuning (Future Work)
-
-After pretraining, the encoder can be fine-tuned for:
-
-1. **Activity Classification:** Add linear head, fine-tune on labeled data
-2. **Activity Detection:** Add segmentation head for temporal localization
-3. **Anomaly Detection:** Train classifier on normal data only
-4. **Transfer Learning:** Fine-tune on new datasets/activities
-
-The pretrained weights are in `best.pt` under `model_state_dict['encoder']`.
-
----
-
-## 🔗 Key Documents
-
-- **[model/README.md](model/README.md)** - Model API
-- **[datasets/imu_pretraining_dataset/README.md](datasets/imu_pretraining_dataset/README.md)** - Dataset details
-- **[training_scripts/human_activity_recognition/README.md](training_scripts/human_activity_recognition/README.md)** - Training details
-- **[DATA_FORMAT.md](DATA_FORMAT.md)** - Standardized data format specification
-
----
-
-## 🐛 Testing
-
-Run the regression test suite (111 tests):
-
-```bash
-# Run all tests
 pytest tests/ -v
-
-# Run specific test files
-pytest tests/test_losses.py -v
-pytest tests/test_encoder_forward.py -v
 ```
 
-All tests should pass before training or after any refactoring.
-
 ---
 
-## 📝 Recent Changes
+## Setup
 
-- ✅ **Baseline evaluation framework**: 5-metric unified comparison (LiMU-BERT, MOMENT, CrossHAR, LanHAR, TSFM)
-- ✅ **4x training speedup**: Batch fusion, channel bucketing, caching, torch.compile + bug fixes
-- ✅ Added Stage 2 semantic alignment training pipeline
-- ✅ Implemented text-IMU alignment with learnable label bank
-- ✅ Added memory bank for prototype learning
-- ✅ Added group-balanced sampling and patch size augmentation
-- ✅ Expanded to 10 training datasets (UCI HAR, HHAR, MHEALTH, PAMAP2, WISDM, UniMiB, DSADS, HAPT, KU-HAR, RecGym)
-- ✅ 4 zero-shot test datasets excluded from training (MotionSense, RealWorld, MobiAct, VTT-ConIoT)
-- ✅ Added embedding visualization tools (3D, 4D video)
-- ✅ Implemented evaluation metrics and model comparison utilities
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install torch torchvision
+pip install -r requirements.txt
 
----
-
-## 🤝 Contributing
-
-When working on this codebase:
-
-1. **Test before committing:** Run all tests to ensure nothing broke
-2. **Document changes:** Update relevant README files
-3. **Follow conventions:** Use the existing code style
-4. **Check for bugs:** Run the bug review before major changes
-
----
-
-## 📜 License
-
-[Add your license here]
-
----
-
-## 🏷️ Branch Info
-
-**Branch:** `master`
-**Purpose:** IMU activity recognition encoder pretraining + semantic alignment
-**Status:** Active development - two-stage training pipeline complete
+# Download and convert all datasets
+python datascripts/setup_all_datasets.py
+```
