@@ -77,12 +77,12 @@ STAGE1_BATCH_SIZE = 10  # Matches original LanHAR paper
 STAGE1_LR = 1e-5
 
 STAGE2_EPOCHS = 50   # Matches original LanHAR training_stage2.py default
-STAGE2_BATCH_SIZE = 128  # Original paper uses 256, reduced to fit shared GPU
+STAGE2_BATCH_SIZE = 256  # Matches original paper
 STAGE2_LR = 4e-5
 
 # Classifier hyperparameters (same as MOMENT/LiMU-BERT)
 CLASSIFIER_EPOCHS = 100
-CLASSIFIER_BATCH_SIZE = 128
+CLASSIFIER_BATCH_SIZE = 512
 CLASSIFIER_LR = 1e-3
 CLASSIFIER_SEED = 3431
 

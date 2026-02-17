@@ -11,10 +11,10 @@ from typing import Tuple
 
 import torch
 
-from tools.models.imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
-from tools.models.imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
+from model.encoder import IMUActivityRecognitionEncoder
+from model.semantic_alignment import SemanticAlignmentHead
 from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
-from tools.models.imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
+from model.token_text_encoder import LearnableLabelBank
 
 
 def load_model(

@@ -31,8 +31,8 @@ from typing import Optional, List
 # Add parent directories to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from tools.models.imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
-from tools.models.imu_activity_recognition_encoder.config import get_config as get_encoder_config
+from model.encoder import IMUActivityRecognitionEncoder
+from model.config import get_config as get_encoder_config
 from datasets.imu_pretraining_dataset.multi_dataset_loader import create_dataloaders
 from datasets.imu_pretraining_dataset.augmentations import get_weak_augmentation
 from training_scripts.human_activity_recognition.losses import (

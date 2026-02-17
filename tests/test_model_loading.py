@@ -12,11 +12,11 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.models.imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
-from tools.models.imu_activity_recognition_encoder.semantic_alignment import (
+from model.encoder import IMUActivityRecognitionEncoder
+from model.semantic_alignment import (
     SemanticAlignmentHead,
 )
-from tools.models.imu_activity_recognition_encoder.token_text_encoder import (
+from model.token_text_encoder import (
     LearnableLabelBank,
     LabelAttentionPooling,
     MultiPrototypeLabelPooling,

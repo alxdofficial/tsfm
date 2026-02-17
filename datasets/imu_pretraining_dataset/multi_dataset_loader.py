@@ -409,7 +409,7 @@ class IMUPretrainingDataset(Dataset):
 
         # If target_patch_size is set, preprocess patches here (parallelized across workers)
         if self.target_patch_size is not None:
-            from tools.models.imu_activity_recognition_encoder.preprocessing import preprocess_imu_data
+            from model.preprocessing import preprocess_imu_data
 
             # Patch size augmentation: randomly select from valid range during training
             actual_patch_size = patch_size_sec

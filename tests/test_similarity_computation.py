@@ -129,7 +129,7 @@ class TestComputeGroupAccuracy:
 
     def test_perfect_classification(self):
         """When similarity perfectly separates labels, accuracy should be 1.0."""
-        from tools.models.imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
+        from model.token_text_encoder import LearnableLabelBank
 
         # Use real label bank for encoding
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -155,7 +155,7 @@ class TestComputeGroupAccuracy:
 
     def test_accuracy_returns_f1(self):
         """Verify F1 scores are included in the output."""
-        from tools.models.imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
+        from model.token_text_encoder import LearnableLabelBank
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         label_bank = LearnableLabelBank(

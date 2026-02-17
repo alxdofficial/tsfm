@@ -10,7 +10,6 @@ from pathlib import Path
 # Add parent directories to path
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "tools" / "models"))
 
 import torch
 import torch.nn as nn
@@ -24,9 +23,9 @@ import math
 
 from datasets.imu_pretraining_dataset.multi_dataset_loader import IMUPretrainingDataset, worker_init_fn
 from torch.utils.data import DataLoader
-from imu_activity_recognition_encoder.encoder import IMUActivityRecognitionEncoder
-from imu_activity_recognition_encoder.semantic_alignment import SemanticAlignmentHead
-from imu_activity_recognition_encoder.token_text_encoder import (
+from model.encoder import IMUActivityRecognitionEncoder
+from model.semantic_alignment import SemanticAlignmentHead
+from model.token_text_encoder import (
     TokenTextEncoder, ChannelTextFusion, LearnableLabelBank
 )
 from training_scripts.human_activity_recognition.semantic_loss import SemanticAlignmentLoss

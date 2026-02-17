@@ -48,9 +48,9 @@ LIMUBERT_PRETRAIN_NAME = "pretrained_combined"
 LIMUBERT_VERSION = "20_120"
 
 # Training hyperparameters (match LiMU-BERT config/train.json)
-GRU_EPOCHS = 700  # Original: 700 (train.json) - GRU downstream classifier
+GRU_EPOCHS = 100  # Original repo provides train_100ep.json (same config, fewer epochs)
 LINEAR_PROBE_EPOCHS = 100  # Standard for linear probes (not in original paper)
-CLASSIFIER_BATCH_SIZE = 128
+CLASSIFIER_BATCH_SIZE = 512
 CLASSIFIER_LR = 1e-3
 CLASSIFIER_SEED = 3431
 
