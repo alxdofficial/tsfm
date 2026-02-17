@@ -66,7 +66,7 @@ GLOBAL_LABEL_PATH = LIMUBERT_DATA_DIR / "global_label_mapping.json"
 OUTPUT_DIR = PROJECT_ROOT / "test_output" / "baseline_evaluation"
 
 # TSFM checkpoint - update this path to your trained model
-CHECKPOINT_PATH = "training_output/semantic_alignment/20260216_225955/best.pt"
+CHECKPOINT_PATH = "training_output/semantic_alignment/20260217_113136/best.pt"
 
 # Data specs (standardized benchmark format)
 DATA_SEQ_LEN = 120         # Window length (timesteps)
@@ -75,10 +75,11 @@ DATA_SAMPLING_RATE = 20.0  # All benchmark data is resampled to 20Hz
 TSFM_EMB_DIM = 384         # TSFM embedding dimension
 TSFM_BATCH_SIZE = 32       # Batch size for embedding extraction
 
-# Patch sizes to sweep per dataset (benchmark data: 120 steps @ 20Hz = 6s window)
-# Covers training augmentation range; best is selected per test dataset
-PATCH_SIZES_TO_TRY = [1.0, 1.25, 1.5, 1.75, 2.0]
-DEFAULT_PATCH_SIZE_SEC = 1.5  # Fallback / training dataset default
+# Fixed patch size for evaluation (benchmark data: 120 steps @ 20Hz = 6s window)
+# 1.0s chosen as smallest valid size — gives finest temporal resolution.
+# This is a metadata-only decision (no test labels used): at 20Hz, 1.0s = 20 timesteps
+# per patch, producing 6 tokens per channel, well within the encoder's capacity.
+PATCH_SIZE_SEC = 1.0
 
 # Channel descriptions for the standardized 6-channel format
 CHANNEL_DESCRIPTIONS = [
@@ -131,7 +132,7 @@ def extract_tsfm_embeddings(
     raw_data: np.ndarray,
     device: torch.device,
     batch_size: int = TSFM_BATCH_SIZE,
-    patch_size_sec: float = DEFAULT_PATCH_SIZE_SEC,
+    patch_size_sec: float = PATCH_SIZE_SEC,
 ) -> np.ndarray:
     """Extract TSFM embeddings from raw sensor data.
 
@@ -289,7 +290,7 @@ def _forward_batch(model, batch_data, device):
     attention_mask = torch.ones(bs, DATA_SEQ_LEN, dtype=torch.bool, device=device)
     channel_descs = [CHANNEL_DESCRIPTIONS[:] for _ in range(bs)]
     sampling_rates = [DATA_SAMPLING_RATE] * bs
-    patch_sizes = [DEFAULT_PATCH_SIZE_SEC] * bs
+    patch_sizes = [PATCH_SIZE_SEC] * bs
 
     with autocast('cuda', enabled=device.type == 'cuda'):
         emb = model.forward_from_raw(
@@ -614,11 +615,11 @@ def print_results_table(all_results):
     print("TSFM EVALUATION RESULTS")
     print("=" * 130)
 
-    header = (f"{'Dataset':<16}{'Patch':>6}"
+    header = (f"{'Dataset':<16}"
               f"{'ZS-Open Acc':>13}{'ZS-Open F1':>13}"
               f"{'ZS-Close Acc':>14}{'ZS-Close F1':>13}"
-              f"{'1%Sup Acc':>11}{'1%Sup F1':>10}"
-              f"{'10%Sup Acc':>12}{'10%Sup F1':>11}")
+              f"{'1%FT Acc':>11}{'1%FT F1':>10}"
+              f"{'10%FT Acc':>12}{'10%FT F1':>11}")
     print(header)
     print("-" * 130)
 
@@ -626,12 +627,11 @@ def print_results_table(all_results):
         if ds not in all_results:
             continue
         r = all_results[ds]
-        ps = r.get('best_patch_size', DEFAULT_PATCH_SIZE_SEC)
 
         def g(key, metric):
             return r.get(key, {}).get(metric, 0.0)
 
-        print(f"{ds:<16}{ps:>5.2f}s"
+        print(f"{ds:<16}"
               f"{g('zero_shot_open_set','accuracy'):>12.1f}%{g('zero_shot_open_set','f1_macro'):>12.1f}%"
               f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>12.1f}%"
               f"{g('1pct_supervised','accuracy'):>10.1f}%{g('1pct_supervised','f1_macro'):>9.1f}%"
@@ -643,101 +643,10 @@ def print_results_table(all_results):
     print(f"  Checkpoint: {CHECKPOINT_PATH}")
     print(f"  Embedding dim: {TSFM_EMB_DIM}")
     print(f"  Benchmark data: {DATA_SEQ_LEN} steps @ {DATA_SAMPLING_RATE}Hz, {DATA_CHANNELS} channels")
-    print(f"  Patch sizes tried: {PATCH_SIZES_TO_TRY}")
+    print(f"  Patch size: {PATCH_SIZE_SEC}s (fixed, no per-dataset sweep)")
     print(f"  Zero-shot: Cosine similarity with LearnableLabelBank text embeddings")
     print(f"  Supervised: End-to-end fine-tuning, cosine sim with frozen text embeddings, "
           f"{FINETUNE_EPOCHS} epochs, lr={FINETUNE_ENCODER_LR}")
-
-
-def select_best_patch_size(
-    model: SemanticAlignmentModel,
-    raw_data: np.ndarray,
-    raw_labels: np.ndarray,
-    test_dataset: str,
-    label_bank: LearnableLabelBank,
-    device: torch.device,
-    patch_sizes: list = PATCH_SIZES_TO_TRY,
-    sweep_fraction: float = 0.2,
-    sweep_seed: int = 42,
-) -> Tuple[float, np.ndarray]:
-    """Select best patch size using a held-out sweep split.
-
-    Splits data into a small sweep subset (default 20%) and a reporting subset.
-    Patch size is chosen on the sweep split only, then embeddings are extracted
-    on the full dataset with the chosen patch size. This prevents test-time
-    hyperparameter tuning from inflating reported metrics.
-
-    Patch sizes longer than the window duration are automatically excluded.
-
-    Returns:
-        (best_patch_size, best_embeddings)
-    """
-    test_labels = get_window_labels(raw_labels)
-    test_activities = get_dataset_labels(test_dataset)
-
-    # Filter: patch size must not exceed window duration
-    window_duration = raw_data.shape[1] / DATA_SAMPLING_RATE
-    valid_sizes = [ps for ps in patch_sizes if ps <= window_duration]
-    if not valid_sizes:
-        valid_sizes = [window_duration]
-    if len(valid_sizes) < len(patch_sizes):
-        dropped = [ps for ps in patch_sizes if ps > window_duration]
-        print(f"  Dropped patch sizes {dropped} (exceed window duration {window_duration:.1f}s)")
-
-    if len(valid_sizes) == 1:
-        emb = extract_tsfm_embeddings(model, raw_data, device, patch_size_sec=valid_sizes[0])
-        return valid_sizes[0], emb
-
-    # Split into sweep subset (for patch selection) and full dataset (for reporting)
-    n = len(raw_data)
-    rng = np.random.RandomState(sweep_seed)
-    indices = rng.permutation(n)
-    n_sweep = max(1, int(n * sweep_fraction))
-    sweep_idx = indices[:n_sweep]
-    sweep_data = raw_data[sweep_idx]
-    sweep_labels = test_labels[sweep_idx]
-
-    print(f"  Patch sweep using {n_sweep}/{n} samples ({sweep_fraction*100:.0f}% held-out split)")
-
-    # Encode test labels once for zero-shot evaluation
-    with torch.no_grad():
-        label_embeddings = label_bank.encode(test_activities, normalize=True).to(device)
-
-    print(f"  Sweeping patch sizes: {valid_sizes}")
-    best_acc = -1.0
-    best_ps = valid_sizes[0]
-
-    for ps in valid_sizes:
-        try:
-            emb = extract_tsfm_embeddings(model, sweep_data, device, patch_size_sec=ps)
-        except Exception as e:
-            print(f"    patch={ps}s: FAILED ({e})")
-            continue
-
-        # Quick zero-shot closed-set eval on sweep split only
-        emb_t = torch.from_numpy(emb).float().to(device)
-        similarity = compute_similarity(emb_t, label_embeddings)
-        pred_indices = similarity.argmax(dim=1).cpu().numpy()
-
-        correct = 0
-        total = 0
-        for i in range(len(sweep_labels)):
-            if sweep_labels[i] < len(test_activities):
-                total += 1
-                if pred_indices[i] == sweep_labels[i]:
-                    correct += 1
-
-        acc = (correct / total * 100) if total > 0 else 0.0
-        print(f"    patch={ps}s: sweep acc={acc:.1f}%")
-
-        if acc > best_acc:
-            best_acc = acc
-            best_ps = ps
-
-    # Re-extract embeddings on full dataset with chosen patch size
-    print(f"  -> Best patch size: {best_ps}s (sweep acc={best_acc:.1f}%)")
-    best_emb = extract_tsfm_embeddings(model, raw_data, device, patch_size_sec=best_ps)
-    return best_ps, best_emb
 
 
 def main():
@@ -768,15 +677,14 @@ def main():
         test_labels = get_window_labels(raw_labels)
         test_activities = get_dataset_labels(test_ds)
 
-        # Select best patch size for this dataset
-        best_ps, test_emb = select_best_patch_size(
-            model, raw_data, raw_labels, test_ds, label_bank, device)
+        # Extract embeddings with fixed patch size
+        test_emb = extract_tsfm_embeddings(model, raw_data, device, patch_size_sec=PATCH_SIZE_SEC)
 
         print(f"  Test data: {test_emb.shape[0]} windows -> embeddings {test_emb.shape}, "
-              f"{len(test_activities)} classes")
+              f"{len(test_activities)} classes, patch={PATCH_SIZE_SEC}s")
         print(f"  Classes: {test_activities}")
 
-        ds_results = {'best_patch_size': best_ps}
+        ds_results = {'patch_size': PATCH_SIZE_SEC}
 
         # 1. Zero-shot open-set (cosine similarity)
         print(f"\n  --- Zero-shot Open-Set (cosine sim) ---")

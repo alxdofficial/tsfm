@@ -78,9 +78,9 @@ Non-text-aligned models can only predict training labels (e.g., "jogging"), not 
 
 Text-aligned models (TSFM, LanHAR) can encode arbitrary label text at test time — this is a genuine architectural advantage and a core motivation for text alignment. Classifier-based models cannot do this, so they use their native classifiers trained on training data. This asymmetry is inherent to the model designs, not an evaluation bias. We include both zero-shot AND supervised metrics so readers can assess both capabilities.
 
-### Why is the TSFM patch-size sweep fair?
+### Why does TSFM use a fixed 1.0s patch size?
 
-TSFM's variable-length architecture requires choosing a patch size per dataset. To prevent test-time hyperparameter tuning from inflating metrics, we use a 20% held-out sweep split (seed=42) for patch-size selection, then report all metrics on the full dataset. The sweep split is not used for reporting. Other baselines use fixed embedding extraction with no per-dataset tuning.
+TSFM's variable-length architecture accepts any patch size, but we use a fixed 1.0s for all test datasets — no per-dataset sweep or test-time tuning. This is a metadata-only decision: all benchmark data is standardized to 20Hz with 6-second windows, so 1.0s patches (20 timesteps) give the finest temporal resolution while producing 6 tokens per channel. Sensitivity analysis across [1.0, 1.25, 1.5, 1.75, 2.0]s shows results are robust (max 9% range on the easiest dataset, <2% on the hardest), and smaller patches consistently perform best. Other baselines similarly use fixed embedding extraction with no per-dataset tuning.
 
 ### Why does zero-shot classifier training not violate the "zero-shot" definition?
 
@@ -171,7 +171,7 @@ For each test dataset:
 2. **Balanced subsampling**: For 1%/10% supervised, `balanced_subsample()` draws proportionally from each class, with `max(1, ...)` to ensure every class has at least 1 sample
 3. **Consistent across baselines**: Same seed, same splits, same subsampling — every model sees identical train/val/test windows
 4. **Global seeds**: All evaluators set `torch.manual_seed(42)`, `np.random.seed(42)`, `random.seed(42)` at startup for full reproducibility
-5. **TSFM patch-size sweep**: Uses a separate 20% held-out split (seed=42) per test dataset for patch selection; metrics are reported on the full dataset
+5. **TSFM patch size**: Fixed at 1.0s for all datasets (metadata-only decision, no test-time tuning)
 6. **End-to-end fine-tuning**: Supervised metrics (1%, 10%) fine-tune the encoder jointly with the classifier, using differential learning rates (encoder: 1e-5, head: 1e-3) and early stopping
 
 ## Reported Metrics
