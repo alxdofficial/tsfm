@@ -27,6 +27,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import f1_score, accuracy_score
+from tqdm import tqdm
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -255,7 +256,7 @@ def prepare_train_test_split(data, labels, training_rate=0.8, vali_rate=0.1,
 def train_gru_classifier(
     train_data, train_labels, val_data, val_labels,
     num_classes, epochs=GRU_EPOCHS, batch_size=CLASSIFIER_BATCH_SIZE,
-    lr=CLASSIFIER_LR, device=None, verbose=False,
+    lr=CLASSIFIER_LR, device=None, verbose=False, desc="GRU",
 ):
     """Train a GRU classifier on embeddings."""
     if device is None:
@@ -279,7 +280,8 @@ def train_gru_classifier(
     best_val_acc = 0.0
     best_state = None
 
-    for epoch in range(epochs):
+    pbar = tqdm(range(epochs), desc=desc, leave=True)
+    for epoch in pbar:
         model.train()
         for batch_data, batch_labels in train_loader:
             batch_data = batch_data.to(device)
@@ -291,7 +293,7 @@ def train_gru_classifier(
             loss.backward()
             optimizer.step()
 
-        model.eval()
+        model.train(False)
         val_preds = []
         val_gt = []
         with torch.no_grad():
@@ -307,13 +309,11 @@ def train_gru_classifier(
             best_val_acc = val_acc
             best_state = copy.deepcopy(model.state_dict())
 
-        if verbose and (epoch + 1) % 20 == 0:
-            val_f1 = f1_score(val_gt, val_preds, average='macro', zero_division=0)
-            print(f"    Epoch {epoch+1}/{epochs}: val_acc={val_acc:.3f}, val_f1={val_f1:.3f}")
+        pbar.set_postfix(val_acc=f"{val_acc:.3f}", best=f"{best_val_acc:.3f}")
 
     if best_state is not None:
         model.load_state_dict(best_state)
-    model.eval()
+    model.train(False)
     return model
 
 
@@ -345,7 +345,7 @@ def train_linear_classifier(
     train_data, train_labels, val_data, val_labels,
     num_classes, input_dim=EMB_DIM,
     epochs=LINEAR_PROBE_EPOCHS, batch_size=CLASSIFIER_BATCH_SIZE,
-    lr=CLASSIFIER_LR, device=None, verbose=False,
+    lr=CLASSIFIER_LR, device=None, verbose=False, desc="Linear probe",
 ):
     """Train a linear classifier on mean-pooled embeddings."""
     if device is None:
@@ -369,7 +369,8 @@ def train_linear_classifier(
     best_val_acc = 0.0
     best_state = None
 
-    for epoch in range(epochs):
+    pbar = tqdm(range(epochs), desc=desc, leave=True)
+    for epoch in pbar:
         model.train()
         for batch_data, batch_labels in train_loader:
             batch_data = batch_data.to(device)
@@ -381,7 +382,7 @@ def train_linear_classifier(
             loss.backward()
             optimizer.step()
 
-        model.eval()
+        model.train(False)
         val_preds = []
         val_gt = []
         with torch.no_grad():
@@ -397,13 +398,11 @@ def train_linear_classifier(
             best_val_acc = val_acc
             best_state = copy.deepcopy(model.state_dict())
 
-        if verbose and (epoch + 1) % 20 == 0:
-            val_f1 = f1_score(val_gt, val_preds, average='macro', zero_division=0)
-            print(f"    Epoch {epoch+1}/{epochs}: val_acc={val_acc:.3f}, val_f1={val_f1:.3f}")
+        pbar.set_postfix(val_acc=f"{val_acc:.3f}", best=f"{best_val_acc:.3f}")
 
     if best_state is not None:
         model.load_state_dict(best_state)
-    model.eval()
+    model.train(False)
     return model
 
 
@@ -509,7 +508,8 @@ def evaluate_supervised_gru(
     print(f"  [{label_tag} supervised GRU] Training GRU classifier ({num_test_classes} classes)...")
     model = train_gru_classifier(
         train_data, train_labels, val_data, val_labels,
-        num_classes=num_test_classes, device=device, verbose=True
+        num_classes=num_test_classes, device=device, verbose=True,
+        desc=f"LiMU-BERT | {test_dataset} | GRU {label_tag}",
     )
 
     pred_indices = predict_gru(model, eval_data, device=device)
@@ -572,7 +572,8 @@ def evaluate_linear_probe(
     print(f"  [Linear probe] Training linear classifier ({num_test_classes} classes)...")
     model = train_linear_classifier(
         train_data, train_labels, val_data, val_labels,
-        num_classes=num_test_classes, device=device, verbose=True
+        num_classes=num_test_classes, device=device, verbose=True,
+        desc=f"LiMU-BERT | {test_dataset} | linear probe",
     )
 
     pred_indices = predict_linear(model, eval_data, device=device)

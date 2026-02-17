@@ -43,6 +43,7 @@ from sklearn.metrics import f1_score, accuracy_score
 import pandas as pd
 from scipy.signal import butter, sosfiltfilt
 from transformers import AutoTokenizer, AutoModel
+from tqdm import tqdm
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -779,7 +780,8 @@ def train_stage1(model, tokenizer, text_protos, labels, device,
     lam = 0.3
     triplet_loss_fn = nn.TripletMarginLoss(margin=1.0, p=2)
 
-    for epoch in range(epochs):
+    pbar = tqdm(range(epochs), desc="LanHAR | Stage 1: SciBERT fine-tuning", leave=True)
+    for epoch in pbar:
         # Rebuild label prototypes each epoch (detached, no_grad)
         label_protos = build_label_prototypes(
             model, tokenizer, text_protos, labels, device,
@@ -872,8 +874,7 @@ def train_stage1(model, tokenizer, text_protos, labels, device,
             n_batches += 1
 
         avg_loss = epoch_loss / max(1, n_batches)
-        if (epoch + 1) % 2 == 0 or epoch == 0:
-            print(f"    Epoch {epoch+1}/{epochs}: loss={avg_loss:.4f}")
+        pbar.set_postfix(loss=f"{avg_loss:.4f}")
 
 
 # =============================================================================
@@ -1032,7 +1033,8 @@ def train_stage2(model, tokenizer, train_data, train_labels, text_protos, label_
     best_state = None
 
     model.train()
-    for epoch in range(epochs):
+    pbar = tqdm(range(epochs), desc="LanHAR | Stage 2: sensor-text CLIP", leave=True)
+    for epoch in pbar:
         # Training
         model.train()
         total_loss = 0.0
@@ -1087,9 +1089,8 @@ def train_stage2(model, tokenizer, train_data, train_labels, text_protos, label_
             best_val_accuracy = val_accuracy
             best_state = copy.deepcopy(model.state_dict())
 
-        if (epoch + 1) % 5 == 0 or epoch == 0:
-            print(f"    Epoch {epoch+1}/{epochs}: train_loss={avg_train_loss:.4f}, "
-                  f"val_acc={val_accuracy:.4f}")
+        pbar.set_postfix(loss=f"{avg_train_loss:.4f}", val_acc=f"{val_accuracy:.4f}",
+                         best=f"{best_val_accuracy:.4f}")
 
     # Restore best model
     if best_state is not None:
@@ -1112,11 +1113,12 @@ def extract_lanhar_embeddings(
 
     Returns (N, 768) normalized embeddings.
     """
-    model.eval()
+    model.train(False)
     N = raw_data.shape[0]
     all_embeddings = []
 
-    for start in range(0, N, batch_size):
+    for start in tqdm(range(0, N, batch_size), desc="LanHAR | Extracting embeddings",
+                      total=(N + batch_size - 1) // batch_size, leave=True):
         end = min(start + batch_size, N)
         batch = torch.from_numpy(raw_data[start:end]).float().to(device)
 
@@ -1235,7 +1237,7 @@ def gravity_align_dataset(data: np.ndarray,
     N = data.shape[0]
     aligned = np.empty_like(data)
 
-    for i in range(N):
+    for i in tqdm(range(N), desc="LanHAR | Gravity alignment", leave=True):
         acc = data[i, :, :3]
         gyro = data[i, :, 3:]
         aligned_acc, aligned_gyro = gravity_align_window(acc, gyro, fs=fs)
@@ -1373,7 +1375,7 @@ def train_linear_classifier(
     train_data, train_labels, val_data, val_labels,
     num_classes, input_dim=EMB_DIM,
     epochs=CLASSIFIER_EPOCHS, batch_size=CLASSIFIER_BATCH_SIZE,
-    lr=CLASSIFIER_LR, device=None, verbose=False,
+    lr=CLASSIFIER_LR, device=None, verbose=False, desc="Linear classifier",
 ):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -1396,7 +1398,8 @@ def train_linear_classifier(
     best_val_acc = 0.0
     best_state = None
 
-    for epoch in range(epochs):
+    pbar = tqdm(range(epochs), desc=desc, leave=True)
+    for epoch in pbar:
         model.train()
         for batch_data, batch_labels in train_loader:
             batch_data = batch_data.to(device)
@@ -1407,7 +1410,7 @@ def train_linear_classifier(
             loss.backward()
             optimizer.step()
 
-        model.eval()
+        model.train(False)
         val_preds = []
         val_gt = []
         with torch.no_grad():
@@ -1423,13 +1426,11 @@ def train_linear_classifier(
             best_val_acc = val_acc
             best_state = copy.deepcopy(model.state_dict())
 
-        if verbose and (epoch + 1) % 20 == 0:
-            val_f1 = f1_score(val_gt, val_preds, average="macro", zero_division=0)
-            print(f"    Epoch {epoch+1}/{epochs}: val_acc={val_acc:.3f}, val_f1={val_f1:.3f}")
+        pbar.set_postfix(val_acc=f"{val_acc:.3f}", best=f"{best_val_acc:.3f}")
 
     if best_state is not None:
         model.load_state_dict(best_state)
-    model.eval()
+    model.train(False)
     return model
 
 
@@ -1586,6 +1587,7 @@ def score_supervised(
     clf = train_linear_classifier(
         train_data, train_labels_arr, val_data, val_labels_arr,
         num_classes=num_test_classes, device=device, verbose=True,
+        desc=f"LanHAR | {test_dataset} | linear {label_tag}",
     )
 
     pred_indices = predict_classifier(clf, test_data, device=device)
@@ -1647,6 +1649,7 @@ def score_linear_probe(
     clf = train_linear_classifier(
         train_data, train_labels_arr, val_data, val_labels_arr,
         num_classes=num_test_classes, device=device, verbose=True,
+        desc=f"LanHAR | {test_dataset} | linear probe",
     )
 
     pred_indices = predict_classifier(clf, test_data, device=device)
@@ -1759,7 +1762,7 @@ def main():
     all_train_sensor = []
     all_train_labels = []
 
-    for ds in TRAIN_DATASETS:
+    for ds in tqdm(TRAIN_DATASETS, desc="LanHAR | Loading training data", leave=True):
         raw_data, raw_labels = load_raw_data(ds)
         # Apply gravity alignment (matching LanHAR paper preprocessing)
         raw_data = gravity_align_dataset(raw_data)

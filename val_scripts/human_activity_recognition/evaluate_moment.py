@@ -29,6 +29,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import f1_score, accuracy_score
 from sklearn.svm import SVC
 from sklearn.model_selection import GridSearchCV, train_test_split
+from tqdm import tqdm
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -46,10 +47,10 @@ OUTPUT_DIR = PROJECT_ROOT / "test_output" / "baseline_evaluation"
 # MOMENT settings
 MOMENT_MODEL_NAME = "AutonLab/MOMENT-1-large"
 MOMENT_SEQ_LEN = 512       # MOMENT expects 512 timesteps
-MOMENT_EMB_DIM_PER_CHANNEL = 1024  # MOMENT-1-large per-channel embedding dim
-MOMENT_EMB_DIM = DATA_CHANNELS * MOMENT_EMB_DIM_PER_CHANNEL  # 6144 (concat per-channel)
 DATA_SEQ_LEN = 120         # Our data window length
 DATA_CHANNELS = 6          # 6-channel IMU
+MOMENT_EMB_DIM_PER_CHANNEL = 1024  # MOMENT-1-large per-channel embedding dim
+MOMENT_EMB_DIM = DATA_CHANNELS * MOMENT_EMB_DIM_PER_CHANNEL  # 6144 (concat per-channel)
 MOMENT_BATCH_SIZE = 128    # Batch size for embedding extraction (MOMENT-large fits ~128 on 24GB)
 
 # SVM hyperparameters (matching MOMENT paper's fit_svm protocol)
@@ -141,7 +142,8 @@ def extract_moment_embeddings(
     # Each channel is processed as an independent univariate series (B, 1, 512),
     # then per-channel 1024-dim embeddings are concatenated to (B, 6144).
     all_embeddings = []
-    for start in range(0, N, batch_size):
+    for start in tqdm(range(0, N, batch_size), desc="MOMENT | Extracting embeddings",
+                      total=(N + batch_size - 1) // batch_size, leave=True):
         end = min(start + batch_size, N)
         B = end - start
 
@@ -265,7 +267,8 @@ def train_svm_classifier(train_data, train_labels, verbose=False):
 
     if verbose:
         print(f"    Training SVM-RBF with GridSearchCV (n={train_size}, "
-              f"{nb_classes} classes, 5-fold CV)...")
+              f"{nb_classes} classes, 5-fold CV, 9 C values)..."
+              f"\n    (SVM has no epoch progress bar — watch for completion)")
 
     grid_search = GridSearchCV(
         svm,
@@ -299,7 +302,7 @@ def train_linear_classifier(
     train_data, train_labels, val_data, val_labels,
     num_classes, input_dim=MOMENT_EMB_DIM,
     epochs=LINEAR_EPOCHS, batch_size=LINEAR_BATCH_SIZE,
-    lr=LINEAR_LR, device=None, verbose=False,
+    lr=LINEAR_LR, device=None, verbose=False, desc="Linear probe",
 ):
     """Train a linear classifier on embeddings."""
     if device is None:
@@ -323,7 +326,8 @@ def train_linear_classifier(
     best_val_acc = 0.0
     best_state = None
 
-    for epoch in range(epochs):
+    pbar = tqdm(range(epochs), desc=desc, leave=True)
+    for epoch in pbar:
         model.train()
         for batch_data, batch_labels in train_loader:
             batch_data = batch_data.to(device)
@@ -334,7 +338,7 @@ def train_linear_classifier(
             loss.backward()
             optimizer.step()
 
-        model.eval()
+        model.train(False)
         val_preds = []
         val_gt = []
         with torch.no_grad():
@@ -350,13 +354,11 @@ def train_linear_classifier(
             best_val_acc = val_acc
             best_state = copy.deepcopy(model.state_dict())
 
-        if verbose and (epoch + 1) % 20 == 0:
-            val_f1 = f1_score(val_gt, val_preds, average='macro', zero_division=0)
-            print(f"    Epoch {epoch+1}/{epochs}: val_acc={val_acc:.3f}, val_f1={val_f1:.3f}")
+        pbar.set_postfix(val_acc=f"{val_acc:.3f}", best=f"{best_val_acc:.3f}")
 
     if best_state is not None:
         model.load_state_dict(best_state)
-    model.eval()
+    model.train(False)
     return model
 
 
@@ -475,7 +477,8 @@ def evaluate_linear_probe(
     print(f"  [Linear probe] Training linear classifier ({num_test_classes} classes)...")
     model = train_linear_classifier(
         train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_test_classes, device=device, verbose=True
+        num_classes=num_test_classes, device=device, verbose=True,
+        desc=f"MOMENT | {test_dataset} | linear probe",
     )
 
     pred_indices = predict_linear(model, eval_data, device=device)
