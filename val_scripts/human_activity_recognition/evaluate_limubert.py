@@ -215,10 +215,11 @@ def reshape_and_merge(embeddings: np.ndarray, labels_raw: np.ndarray,
             label_out.append(int(unique[0]))
 
     keep = np.array(keep)
+    parent_window_ids = keep // K  # which original window each sub-window belongs to
     data = data[keep]
     label_out = np.array(label_out, dtype=np.int64)
 
-    return data, label_out
+    return data, label_out, parent_window_ids
 
 
 def get_window_labels(labels_raw: np.ndarray, label_index: int = 0) -> np.ndarray:
@@ -231,6 +232,34 @@ def get_window_labels(labels_raw: np.ndarray, label_index: int = 0) -> np.ndarra
         dtype=np.int64
     )
     return window_labels
+
+
+def majority_vote_subwindows(sub_preds: np.ndarray, parent_ids: np.ndarray,
+                             n_windows: int) -> np.ndarray:
+    """Aggregate sub-window predictions to window-level via majority vote.
+
+    Args:
+        sub_preds: (M,) per-sub-window predictions (global label indices)
+        parent_ids: (M,) parent window index for each sub-window
+        n_windows: N, total number of original windows
+
+    Returns:
+        (N,) window-level predictions. Windows with no valid sub-windows
+        get the most common prediction as fallback.
+    """
+    window_preds = np.full(n_windows, -1, dtype=np.int64)
+    for w in range(n_windows):
+        mask = parent_ids == w
+        if mask.any():
+            votes = sub_preds[mask]
+            window_preds[w] = np.bincount(votes).argmax()
+
+    # Fallback for windows with no valid sub-windows (all sub-windows filtered out)
+    if (window_preds == -1).any():
+        fallback = np.bincount(sub_preds).argmax()
+        window_preds[window_preds == -1] = fallback
+
+    return window_preds
 
 
 def mean_pool_embeddings(embeddings: np.ndarray) -> np.ndarray:
@@ -648,7 +677,7 @@ def load_limubert_training_embeddings(global_labels, device):
     for ds in tqdm(TRAIN_DATASETS, desc="LiMU-BERT | Loading training embeddings", leave=True):
         emb, lab_raw = load_embeddings(ds)
         # reshape_and_merge returns sub-windows with local label indices
-        sub_windows, local_labels = reshape_and_merge(emb, lab_raw)  # (M, 20, 72), (M,)
+        sub_windows, local_labels, _ = reshape_and_merge(emb, lab_raw)  # (M, 20, 72), (M,)
         global_lab = map_local_to_global_labels(local_labels, ds, DATASET_CONFIG, global_labels)
         all_emb_list.append(sub_windows)
         all_lab_list.append(global_lab)
@@ -770,23 +799,28 @@ def main():
         ds_results = {}
 
         # Reshape test data into sub-windows for zero-shot GRU
-        test_sub_windows, test_sub_labels = reshape_and_merge(test_emb, test_lab)  # (M, 20, 72), (M,)
-        print(f"  Sub-windows for ZS: {test_sub_windows.shape[0]} from {test_emb.shape[0]} windows")
+        n_windows = test_emb.shape[0]
+        test_sub_windows, test_sub_labels, parent_ids = reshape_and_merge(test_emb, test_lab)  # (M, 20, 72), (M,), (M,)
+        # Get window-level labels for scoring (consistent with other models)
+        window_labels = get_window_labels(test_lab)
+        print(f"  Sub-windows for ZS: {test_sub_windows.shape[0]} from {n_windows} windows")
 
-        # 0. Zero-shot open-set (GRU on sub-windows)
+        # 0. Zero-shot open-set (GRU on sub-windows → majority vote → window-level)
         print(f"\n  --- Zero-Shot Open-Set (GRU) ---")
-        pred_open = predict_gru_global(zs_classifier, test_sub_windows, device)
+        sub_pred_open = predict_gru_global(zs_classifier, test_sub_windows, device)
+        pred_open = majority_vote_subwindows(sub_pred_open, parent_ids, n_windows)
         ds_results['zero_shot_open_set'] = score_with_groups(
-            pred_open, test_sub_labels, test_ds, global_labels, DATASET_CONFIG)
+            pred_open, window_labels, test_ds, global_labels, DATASET_CONFIG)
         zs_open = ds_results['zero_shot_open_set']
         print(f"  ZS Open-set: Acc={zs_open['accuracy']:.1f}%, F1={zs_open['f1_macro']:.1f}%")
 
-        # 1. Zero-shot closed-set (GRU with masked logits)
+        # 1. Zero-shot closed-set (GRU with masked logits → majority vote → window-level)
         print(f"\n  --- Zero-Shot Closed-Set (GRU) ---")
         mask = get_closed_set_mask(test_ds, global_labels, DATASET_CONFIG)
-        pred_closed = predict_gru_global(zs_classifier, test_sub_windows, device, logit_mask=mask)
+        sub_pred_closed = predict_gru_global(zs_classifier, test_sub_windows, device, logit_mask=mask)
+        pred_closed = majority_vote_subwindows(sub_pred_closed, parent_ids, n_windows)
         ds_results['zero_shot_closed_set'] = score_with_groups(
-            pred_closed, test_sub_labels, test_ds, global_labels, DATASET_CONFIG)
+            pred_closed, window_labels, test_ds, global_labels, DATASET_CONFIG)
         ds_results['zero_shot_closed_set']['n_allowed'] = int(mask.sum())
         ds_results['zero_shot_closed_set']['n_masked'] = int((~mask).sum())
         zs_close = ds_results['zero_shot_closed_set']
