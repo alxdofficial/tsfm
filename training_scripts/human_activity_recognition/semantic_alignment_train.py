@@ -394,9 +394,11 @@ class SemanticAlignmentModel(nn.Module):
         # Encode with frozen/unfrozen encoder (already batched — patches from DataLoader)
         if FREEZE_ENCODER:
             with torch.no_grad():
-                encoded_batch = self.encoder(patches, batched_channel_descs, channel_mask=channel_mask)
+                encoded_batch = self.encoder(patches, batched_channel_descs, channel_mask=channel_mask,
+                                              patch_attention_mask=patch_mask)
         else:
-            encoded_batch = self.encoder(patches, batched_channel_descs, channel_mask=channel_mask)
+            encoded_batch = self.encoder(patches, batched_channel_descs, channel_mask=channel_mask,
+                                          patch_attention_mask=patch_mask)
 
         # Batch-encode ALL channel descriptions at once (per-label cache handles dedup)
         # Flatten: B lists of max_channels strings → B*max_channels strings
@@ -1258,7 +1260,7 @@ def main():
         num_heads=TOKEN_TEXT_NUM_HEADS,
         num_queries=TOKEN_TEXT_NUM_QUERIES,
         num_prototypes=NUM_PROTOTYPES,
-        dropout=DROPOUT,
+        dropout=0.0,  # Zero dropout: contrastive text targets must be deterministic
         use_mean_pooling=USE_MEAN_POOLING,
         text_encoder=shared_text_encoder  # Share MiniLM with model
     )
@@ -1406,7 +1408,6 @@ def main():
     # Setup optimizer (trains semantic head only if encoder is frozen, otherwise all parameters)
     # IMPORTANT: Include criterion.parameters() for learnable temperature (logit_scale)
     # and label_bank.parameters() for learnable attention pooling (if not using mean pooling)
-    all_params = list(filter(lambda p: p.requires_grad, model.parameters())) + list(criterion.parameters())
 
     # Add label_bank parameters if using learnable attention pooling
     label_bank_params = list(label_bank.parameters())
@@ -1419,10 +1420,46 @@ def main():
             p.requires_grad = False
         print(f"✓ Label bank FROZEN for ablation ({sum(p.numel() for p in label_bank_params)} params frozen)")
     elif len(label_bank_params) > 0:
-        all_params += label_bank_params
         print(f"✓ Label bank parameters added to optimizer ({sum(p.numel() for p in label_bank_params)} params)")
 
-    optimizer = AdamW(all_params, lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+    # Collect all named parameters for decay/no-decay grouping
+    # Standard practice: exempt biases, norms, and learnable scalars/embeddings from weight decay
+    no_decay_keywords = {"bias", "norm", "LayerNorm", "GroupNorm", "logit_scale",
+                         "mask_token", "pad_token", "queries"}
+    decay_params = []
+    no_decay_params = []
+
+    # Model parameters (encoder + semantic head + channel fusion)
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        if any(kw in name for kw in no_decay_keywords):
+            no_decay_params.append(param)
+        else:
+            decay_params.append(param)
+
+    # Criterion parameters (logit_scale) — no decay
+    for name, param in criterion.named_parameters():
+        if param.requires_grad:
+            no_decay_params.append(param)
+
+    # Label bank parameters — no decay for queries/norms, decay for projections
+    if not USE_MEAN_POOLING and not FREEZE_LABEL_BANK and len(label_bank_params) > 0:
+        for name, param in label_bank.named_parameters():
+            if not param.requires_grad:
+                continue
+            if any(kw in name for kw in no_decay_keywords):
+                no_decay_params.append(param)
+            else:
+                decay_params.append(param)
+
+    print(f"✓ Parameter groups: {len(decay_params)} decay, {len(no_decay_params)} no-decay "
+          f"({sum(p.numel() for p in decay_params)} + {sum(p.numel() for p in no_decay_params)} params)")
+
+    optimizer = AdamW([
+        {'params': decay_params, 'weight_decay': WEIGHT_DECAY},
+        {'params': no_decay_params, 'weight_decay': 0.0},
+    ], lr=LEARNING_RATE)
 
     # Setup scheduler with proper warmup + cosine decay
     def warmup_cosine_schedule(epoch):

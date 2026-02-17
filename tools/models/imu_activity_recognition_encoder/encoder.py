@@ -279,7 +279,8 @@ class IMUActivityRecognitionEncoder(nn.Module):
 
         # Process through transformer
         # (batch, patches, channels, d_model) -> (batch, patches, channels, d_model)
-        encoded = self.transformer(features, temporal_mask, channel_mask)
+        encoded = self.transformer(features, temporal_mask, channel_mask,
+                                    patch_padding_mask=patch_attention_mask)
 
         return encoded
 

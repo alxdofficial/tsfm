@@ -54,7 +54,8 @@ class TemporalSelfAttention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask: Optional[torch.Tensor] = None
+        mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
         Apply temporal self-attention.
@@ -62,6 +63,8 @@ class TemporalSelfAttention(nn.Module):
         Args:
             x: Input tensor of shape (batch_size * num_channels, num_patches, d_model)
             mask: Optional attention mask of shape (num_patches, num_patches)
+            key_padding_mask: Optional patch validity mask of shape (batch_channels, num_patches)
+                             True = valid patch, False = padded patch
 
         Returns:
             Output tensor of same shape as input
@@ -92,8 +95,24 @@ class TemporalSelfAttention(nn.Module):
         if mask is not None:
             attn_scores = attn_scores.masked_fill(mask == 0, float('-inf'))
 
+        # Apply patch padding mask (same pattern as cross-channel attention)
+        if key_padding_mask is not None:
+            # Mask attention TO padded patches (column mask)
+            # (batch_channels, num_patches) -> (batch_channels, 1, 1, num_patches)
+            mask_to = key_padding_mask.unsqueeze(1).unsqueeze(2)
+            attn_scores = attn_scores.masked_fill(~mask_to, float('-inf'))
+
+            # Mask attention FROM padded patches (row mask)
+            # (batch_channels, num_patches) -> (batch_channels, 1, num_patches, 1)
+            mask_from = key_padding_mask.unsqueeze(1).unsqueeze(3)
+            attn_scores = attn_scores.masked_fill(~mask_from, float('-inf'))
+
         # Softmax to get attention weights
         attn_weights = torch.softmax(attn_scores, dim=-1)
+
+        # Replace NaNs with zeros (happens when entire row is -inf, e.g. padded patches)
+        attn_weights = torch.nan_to_num(attn_weights, nan=0.0)
+
         attn_weights = self.dropout(attn_weights)
 
         # Apply attention to values
@@ -325,7 +344,8 @@ class TemporalTransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask: Optional[torch.Tensor] = None
+        mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
         Forward pass through transformer block.
@@ -333,12 +353,14 @@ class TemporalTransformerBlock(nn.Module):
         Args:
             x: Input tensor of shape (batch_size * num_channels, num_patches, d_model)
             mask: Optional attention mask
+            key_padding_mask: Optional patch validity mask (batch_channels, num_patches)
+                             True = valid, False = padded
 
         Returns:
             Output tensor of same shape
         """
         # Self-attention with residual
-        attn_output = self.self_attn(x, mask)
+        attn_output = self.self_attn(x, mask, key_padding_mask=key_padding_mask)
         x = x + self.dropout(attn_output)
         x = self.norm1(x)
 
@@ -410,7 +432,8 @@ class DualBranchTransformerBlock(nn.Module):
         self,
         x: torch.Tensor,
         temporal_mask: Optional[torch.Tensor] = None,
-        channel_mask: Optional[torch.Tensor] = None
+        channel_mask: Optional[torch.Tensor] = None,
+        patch_padding_mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
         Forward pass through dual-branch transformer block.
@@ -420,6 +443,8 @@ class DualBranchTransformerBlock(nn.Module):
             temporal_mask: Optional mask for temporal attention (num_patches, num_patches)
             channel_mask: Optional mask for channel attention (batch_size, num_channels)
                          True = valid channel, False = padded
+            patch_padding_mask: Optional patch validity mask (batch_size, num_patches)
+                               True = valid patch, False = padded
 
         Returns:
             Output tensor of shape (batch_size, num_patches, num_channels, d_model)
@@ -431,8 +456,17 @@ class DualBranchTransformerBlock(nn.Module):
         x_temporal = x.permute(0, 2, 1, 3)  # (batch, channels, patches, d_model)
         x_temporal = x_temporal.reshape(batch_size * num_channels, num_patches, d_model)
 
+        # Expand patch padding mask to (B*C, P) for temporal attention
+        if patch_padding_mask is not None:
+            temporal_key_padding_mask = patch_padding_mask.unsqueeze(1).expand(
+                batch_size, num_channels, num_patches
+            ).reshape(batch_size * num_channels, num_patches)
+        else:
+            temporal_key_padding_mask = None
+
         # Apply temporal attention
-        temporal_output = self.temporal_attn(x_temporal, temporal_mask)
+        temporal_output = self.temporal_attn(x_temporal, temporal_mask,
+                                             key_padding_mask=temporal_key_padding_mask)
 
         # Reshape back: (batch*channels, patches, d_model) -> (batch, patches, channels, d_model)
         temporal_output = temporal_output.reshape(batch_size, num_channels, num_patches, d_model)
@@ -522,7 +556,8 @@ class ChannelIndependentTemporalTransformer(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask: Optional[torch.Tensor] = None
+        mask: Optional[torch.Tensor] = None,
+        patch_padding_mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
         Process input through channel-independent temporal transformer.
@@ -530,6 +565,8 @@ class ChannelIndependentTemporalTransformer(nn.Module):
         Args:
             x: Input tensor of shape (batch_size, num_patches, num_channels, d_model)
             mask: Optional attention mask of shape (num_patches, num_patches)
+            patch_padding_mask: Optional patch validity mask (batch_size, num_patches)
+                               True = valid patch, False = padded
 
         Returns:
             Output tensor of shape (batch_size, num_patches, num_channels, d_model)
@@ -546,9 +583,17 @@ class ChannelIndependentTemporalTransformer(nn.Module):
         x = x.permute(0, 2, 1, 3)  # (batch, channels, patches, d_model)
         x = x.reshape(batch_size * num_channels, num_patches, d_model)
 
+        # Expand patch padding mask to (B*C, P)
+        if patch_padding_mask is not None:
+            key_padding_mask = patch_padding_mask.unsqueeze(1).expand(
+                batch_size, num_channels, num_patches
+            ).reshape(batch_size * num_channels, num_patches)
+        else:
+            key_padding_mask = None
+
         # Apply transformer layers
         for layer in self.layers:
-            x = layer(x, mask)
+            x = layer(x, mask, key_padding_mask=key_padding_mask)
 
         # Reshape back to original format
         # (batch * channels, patches, d_model) -> (batch, patches, channels, d_model)
@@ -607,7 +652,8 @@ class DualBranchTransformer(nn.Module):
         self,
         x: torch.Tensor,
         temporal_mask: Optional[torch.Tensor] = None,
-        channel_mask: Optional[torch.Tensor] = None
+        channel_mask: Optional[torch.Tensor] = None,
+        patch_padding_mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
         Process input through dual-branch transformer.
@@ -617,13 +663,15 @@ class DualBranchTransformer(nn.Module):
             temporal_mask: Optional mask for temporal attention (num_patches, num_patches)
             channel_mask: Optional mask for channel attention (batch_size, num_channels)
                          True = valid channel, False = padded
+            patch_padding_mask: Optional patch validity mask (batch_size, num_patches)
+                               True = valid patch, False = padded
 
         Returns:
             Output tensor of shape (batch_size, num_patches, num_channels, d_model)
         """
         # Apply transformer layers
         for layer in self.layers:
-            x = layer(x, temporal_mask, channel_mask)
+            x = layer(x, temporal_mask, channel_mask, patch_padding_mask)
 
         return x
 
@@ -682,7 +730,8 @@ class IMUTransformer(nn.Module):
         self,
         x: torch.Tensor,
         temporal_mask: Optional[torch.Tensor] = None,
-        channel_mask: Optional[torch.Tensor] = None
+        channel_mask: Optional[torch.Tensor] = None,
+        patch_padding_mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
         Process input through transformer.
@@ -692,14 +741,16 @@ class IMUTransformer(nn.Module):
             temporal_mask: Optional mask for temporal attention
             channel_mask: Optional mask for channel attention (only used if use_cross_channel=True)
                          Shape: (batch_size, num_channels), True = valid, False = padded
+            patch_padding_mask: Optional patch validity mask (batch_size, num_patches)
+                               True = valid patch, False = padded
 
         Returns:
             Output tensor of shape (batch_size, num_patches, num_channels, d_model)
         """
         if self.use_cross_channel:
-            return self.transformer(x, temporal_mask, channel_mask)
+            return self.transformer(x, temporal_mask, channel_mask, patch_padding_mask)
         else:
-            return self.transformer(x, temporal_mask)
+            return self.transformer(x, temporal_mask, patch_padding_mask)
 
 
 def test_transformer():
