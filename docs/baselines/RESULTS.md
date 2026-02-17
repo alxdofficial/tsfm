@@ -139,6 +139,21 @@ Higher dimensions give more capacity for downstream tasks.
 
 ---
 
+## TSFM Patch Size Sensitivity
+
+*Zero-shot closed-set accuracy (%) at each candidate patch size, evaluated on the full test set. TSFM uses a fixed 1.0s patch size for all reported results — no per-dataset sweep or test labels used for selection. This table demonstrates that the choice is robust.*
+
+| Dataset | 1.0s | 1.25s | 1.5s | 1.75s | 2.0s | Range |
+|---------|---:|---:|---:|---:|---:|---:|
+| MotionSense | **51.5** | 48.5 | 46.1 | 44.0 | 42.5 | 9.0 |
+| RealWorld | **37.0** | 35.8 | 36.3 | 33.9 | 32.4 | 4.6 |
+| MobiAct | 48.1 | **49.2** | 47.5 | 45.7 | 44.1 | 5.1 |
+| VTT-ConIoT | 3.4 | 3.9 | 3.5 | 3.9 | **4.7** | 1.3 |
+
+**Bold** = best patch size per dataset. Smaller patches (1.0-1.25s) consistently perform best on easy/medium datasets. VTT-ConIoT is at noise level regardless of patch size (<5% for all). The fixed 1.0s choice is within 1.1% of the best possible patch for 3/4 datasets.
+
+---
+
 ## Reproducibility
 
 - Raw JSON results: `test_output/baseline_evaluation/*_evaluation.json`
