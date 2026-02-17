@@ -46,10 +46,11 @@ OUTPUT_DIR = PROJECT_ROOT / "test_output" / "baseline_evaluation"
 # MOMENT settings
 MOMENT_MODEL_NAME = "AutonLab/MOMENT-1-large"
 MOMENT_SEQ_LEN = 512       # MOMENT expects 512 timesteps
-MOMENT_EMB_DIM = 1024      # MOMENT-1-large embedding dimension
+MOMENT_EMB_DIM_PER_CHANNEL = 1024  # MOMENT-1-large per-channel embedding dim
+MOMENT_EMB_DIM = DATA_CHANNELS * MOMENT_EMB_DIM_PER_CHANNEL  # 6144 (concat per-channel)
 DATA_SEQ_LEN = 120         # Our data window length
 DATA_CHANNELS = 6          # 6-channel IMU
-MOMENT_BATCH_SIZE = 64     # Batch size for embedding extraction
+MOMENT_BATCH_SIZE = 128    # Batch size for embedding extraction (MOMENT-large fits ~128 on 24GB)
 
 # SVM hyperparameters (matching MOMENT paper's fit_svm protocol)
 SVM_C_VALUES = [0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000]
@@ -58,7 +59,7 @@ CLASSIFIER_SEED = 3431
 
 # Linear probe hyperparameters
 LINEAR_EPOCHS = 100
-LINEAR_BATCH_SIZE = 128
+LINEAR_BATCH_SIZE = 512
 LINEAR_LR = 1e-3
 
 # Data split parameters
@@ -114,8 +115,12 @@ def extract_moment_embeddings(
 ) -> np.ndarray:
     """Extract MOMENT embeddings from raw sensor data.
 
+    Following MOMENT's multivariate evaluation protocol: each channel is
+    processed independently as a univariate series, producing per-channel
+    1024-dim embeddings that are concatenated into (N, 6*1024) = (N, 6144).
+
     Returns:
-        embeddings: (N, 1024) fixed-size embeddings
+        embeddings: (N, 6144) per-channel concatenated embeddings
     """
     model.eval()
     N = raw_data.shape[0]
@@ -132,15 +137,31 @@ def extract_moment_embeddings(
     input_mask = np.zeros((N, MOMENT_SEQ_LEN), dtype=np.float32)
     input_mask[:, -DATA_SEQ_LEN:] = 1.0
 
+    # Per-channel embedding extraction (matches MOMENT multivariate protocol):
+    # Each channel is processed as an independent univariate series (B, 1, 512),
+    # then per-channel 1024-dim embeddings are concatenated to (B, 6144).
     all_embeddings = []
     for start in range(0, N, batch_size):
         end = min(start + batch_size, N)
-        batch_data = torch.from_numpy(padded[start:end]).float().to(device)
-        batch_mask = torch.from_numpy(input_mask[start:end]).float().to(device)
+        B = end - start
+
+        # Reshape (B, 6, 512) -> (B*6, 1, 512): each channel as separate sample
+        batch_multi = torch.from_numpy(padded[start:end]).float()  # (B, 6, 512)
+        batch_data = batch_multi.reshape(B * DATA_CHANNELS, 1, MOMENT_SEQ_LEN).to(device)
+
+        # Expand mask: (B, 512) -> (B*6, 512)
+        batch_mask_raw = torch.from_numpy(input_mask[start:end]).float()  # (B, 512)
+        batch_mask = batch_mask_raw.unsqueeze(1).expand(
+            B, DATA_CHANNELS, MOMENT_SEQ_LEN
+        ).reshape(B * DATA_CHANNELS, MOMENT_SEQ_LEN).to(device)
 
         with torch.no_grad():
             output = model(x_enc=batch_data, input_mask=batch_mask)
-            all_embeddings.append(output.embeddings.cpu().numpy())
+            emb = output.embeddings.cpu().numpy()  # (B*6, 1024)
+
+        # Reshape and concatenate channels: (B*6, 1024) -> (B, 6*1024)
+        emb = emb.reshape(B, DATA_CHANNELS * MOMENT_EMB_DIM_PER_CHANNEL)
+        all_embeddings.append(emb)
 
     return np.concatenate(all_embeddings, axis=0)
 
@@ -429,7 +450,7 @@ def evaluate_linear_probe(
 ) -> Dict[str, float]:
     """Linear probe: linear classifier on frozen embeddings, full train split.
 
-    MOMENT embeddings are already (N, 1024) so no pooling needed.
+    MOMENT embeddings are (N, 6144) per-channel concatenated, no pooling needed.
     """
     test_activities = get_dataset_labels(test_dataset)
     num_test_classes = len(test_activities)
@@ -548,7 +569,8 @@ def main():
         test_labels = get_window_labels(raw_labels)
         test_activities = get_dataset_labels(test_ds)
 
-        print(f"  Test data: {test_emb.shape[0]} windows -> embeddings {test_emb.shape}, "
+        print(f"  Test data: {test_emb.shape[0]} windows -> embeddings {test_emb.shape} "
+              f"({DATA_CHANNELS}ch x {MOMENT_EMB_DIM_PER_CHANNEL}d concat), "
               f"{len(test_activities)} classes")
         print(f"  Classes: {test_activities}")
 
