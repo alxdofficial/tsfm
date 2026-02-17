@@ -24,10 +24,10 @@ This project implements a **pretrained encoder** for IMU (Inertial Measurement U
 - ✅ **Variable channel support**: Handles 6-52 channels with automatic padding/masking
 - ✅ **Multi-dataset pretraining**: Trains on 10 datasets (UCI HAR, HHAR, MHEALTH, PAMAP2, WISDM, UniMiB, DSADS, HAPT, KU-HAR, RecGym)
 - ✅ **Semantic alignment**: Align IMU embeddings with natural language descriptions
-- ✅ **Multi-prototype learning**: K=3 prototypes per activity class capture intra-class variation
-- ✅ **SO(3) rotation augmentation**: Random 3D rotations for sensor orientation invariance
+- ✅ **Multi-prototype learning**: K prototypes per activity class (currently K=1, multi-prototype disabled for debugging)
+- ✅ **SO(3) rotation augmentation**: Random 3D rotations for sensor orientation invariance (currently disabled for debugging)
 - ✅ **Structured masking**: Span masking + channel dropout for robust Stage 1 pretraining
-- ✅ **Temperature-based sampling**: `p_i ~ n_i^0.5` balancing across datasets
+- ✅ **Group-balanced sampling**: Capped oversampling for class balance across datasets
 - ✅ **Physically-plausible augmentations**: Jitter, time warp, magnitude scaling, channel shuffling, rotation
 - ✅ **Mixed precision training**: FP16 with torch.compile for ~4x speedup
 - ✅ **Per-dataset tracking**: Monitor learning progress per dataset
@@ -75,13 +75,20 @@ tsfm/
 ├── requirements.txt                       # Python dependencies
 │
 ├── data/                                  # Datasets (after processing)
-│   ├── uci_har/                          # UCI HAR dataset
-│   ├── hhar/                             # HHAR dataset
-│   ├── mhealth/                          # MHEALTH dataset
-│   ├── pamap2/                           # PAMAP2 dataset
-│   ├── wisdm/                            # WISDM dataset
-│   ├── unimib_shar/                      # UniMiB SHAR dataset
-│   └── motionsense/                      # MotionSense dataset
+│   ├── uci_har/                          # Training datasets
+│   ├── hhar/
+│   ├── mhealth/
+│   ├── pamap2/
+│   ├── wisdm/
+│   ├── unimib_shar/
+│   ├── dsads/
+│   ├── hapt/
+│   ├── kuhar/
+│   ├── recgym/
+│   ├── motionsense/                      # Zero-shot test datasets
+│   ├── realworld/
+│   ├── mobiact/
+│   └── vtt_coniot/
 │
 ├── datascripts/                          # Dataset download & conversion
 │   ├── README.md                         # Dataset documentation
@@ -96,17 +103,13 @@ tsfm/
 │       ├── multi_dataset_loader.py       # Multi-dataset dataloader
 │       └── augmentations.py              # Physical augmentations
 │
-├── tools/                                # Model implementations
-│   └── models/
-│       └── imu_activity_recognition_encoder/
-│           ├── README.md                 # Model documentation
-│           ├── encoder.py                # Main encoder
-│           ├── transformer.py            # Dual-branch transformer
-│           ├── semantic_alignment.py     # Semantic alignment head
-│           ├── token_text_encoder.py     # Text encoding utilities
-│           ├── preprocessing.py          # Data preprocessing
-│           ├── positional_encoding.py    # Position embeddings
-│           └── config.py                 # Model configurations
+├── model/                                # Model implementations
+│   ├── encoder.py                        # Main encoder
+│   ├── transformer.py                    # Dual-branch transformer
+│   ├── semantic_alignment.py             # Semantic alignment head
+│   ├── token_text_encoder.py             # Text encoding utilities
+│   ├── preprocessing.py                  # Data preprocessing
+│   └── positional_encoding.py            # Position embeddings
 │
 ├── training_scripts/                     # Training scripts
 │   └── human_activity_recognition/
@@ -244,13 +247,19 @@ Generated plots:
 
 | Dataset | Channels | Rate | Activities | Description |
 |---------|----------|------|------------|-------------|
-| **UCI HAR** | 6 (acc+gyro) | 50 Hz | 6 | Smartphone IMU activities |
-| **HHAR** | 6 (acc+gyro) | 50-200 Hz | 6 | Heterogeneous HAR (multiple devices) |
+| **UCI HAR** | 9 (acc+gyro+body_acc) | 50 Hz | 6 | Smartphone IMU activities |
+| **HHAR** | 6 (acc+gyro) | 50 Hz | 6 | Heterogeneous HAR (multiple devices) |
 | **MHEALTH** | 23 (3 IMUs+ECG) | 50 Hz | 12 | Multi-sensor body activities |
-| **PAMAP2** | 40 (3 IMUs+HR) | 100 Hz | 18 | Physical activity monitoring |
-| **WISDM** | 6 (phone acc+gyro) | 20 Hz | 18 | Smartphone activities |
+| **PAMAP2** | 51 (3 IMUs+HR) | 100 Hz | 12 | Physical activity monitoring |
+| **WISDM** | 12 (phone+watch) | 20 Hz | 18 | Smartphone/watch activities |
 | **UniMiB SHAR** | 3 (acc) | 50 Hz | 17 | ADL and falls detection |
-| **MotionSense** | 12 (acc+gyro+attitude) | 50 Hz | 6 | iPhone motion data |
+| **DSADS** | 9 (acc+gyro+mag) | 25 Hz | 19 | Daily/sports activities |
+| **HAPT** | 6 (acc+gyro) | 50 Hz | 12 | Smartphone with postural transitions |
+| **KU-HAR** | 6 (acc+gyro) | 100 Hz | 17 | Smartphone, 89 subjects |
+| **RecGym** | 6 (acc+gyro) | 20 Hz | 11 | Smartwatch gym exercises |
+
+**Zero-shot test datasets** (excluded from training):
+- **MotionSense** (6 activities), **RealWorld** (8), **MobiAct** (13), **VTT-ConIoT** (16)
 
 All datasets are converted to a standardized format with:
 - Variable-length time series
@@ -266,8 +275,9 @@ All hyperparameters are **hard-coded** in `pretrain.py` for easy modification:
 
 ```python
 # Data
-DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar']
-PATCH_SIZE_SEC = 2.0  # 2-second patches (varies per dataset)
+DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar',
+            'dsads', 'hapt', 'kuhar', 'recgym']
+PATCH_SIZE_SEC = 1.5  # Dataset-specific (1.0-2.0 seconds)
 
 # Model
 D_MODEL = 384
@@ -374,7 +384,7 @@ The pretrained weights are in `best.pt` under `model_state_dict['encoder']`.
 
 ## 🔗 Key Documents
 
-- **[tools/models/imu_activity_recognition_encoder/README.md](tools/models/imu_activity_recognition_encoder/README.md)** - Model API
+- **[model/README.md](model/README.md)** - Model API
 - **[datasets/imu_pretraining_dataset/README.md](datasets/imu_pretraining_dataset/README.md)** - Dataset details
 - **[training_scripts/human_activity_recognition/README.md](training_scripts/human_activity_recognition/README.md)** - Training details
 - **[DATA_FORMAT.md](DATA_FORMAT.md)** - Standardized data format specification
@@ -400,9 +410,8 @@ All tests should pass before training or after any refactoring.
 
 ## 📝 Recent Changes
 
-- ✅ **4 accuracy improvements**: SO(3) rotation augmentation, multi-prototype learning (K=3), structured masking (span + channel dropout), temperature-based sampling (alpha=0.5)
-- ✅ **4x training speedup**: Batch fusion, channel bucketing, caching, torch.compile + 6 bug fixes
-- ✅ **8 bug fixes**: MAE normalization, memory bank boundary, scheduler resume, channel encoding fallback, and more
+- ✅ **Baseline evaluation framework**: 5-metric unified comparison (LiMU-BERT, MOMENT, CrossHAR, LanHAR, TSFM)
+- ✅ **4x training speedup**: Batch fusion, channel bucketing, caching, torch.compile + bug fixes
 - ✅ Added Stage 2 semantic alignment training pipeline
 - ✅ Implemented text-IMU alignment with learnable label bank
 - ✅ Added memory bank for prototype learning

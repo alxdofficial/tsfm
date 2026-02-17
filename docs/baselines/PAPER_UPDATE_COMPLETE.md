@@ -96,7 +96,7 @@ targets = (1 - soft_target_weight) * hard_targets + soft_target_weight * soft_ta
 **Additional details from code (memory_bank.py):**
 
 1. **Stores both IMU and text embeddings** (not just one modality)
-2. **Queue size:** 512 embeddings (configurable)
+2. **Queue size:** 256 embeddings (configurable)
 3. **Memory bank warmup:** Queue is pre-filled before training starts to avoid volatility from empty/low-quality initial embeddings
 4. **Queue negatives are hard negatives:** Text labels are NOT stored with queue items. Re-encoding 512+ labels per batch would be expensive.
 
@@ -215,7 +215,7 @@ loss = (loss_imu_to_text + loss_text_to_imu) / 2.0
 
 ## 3.2 Table 3: Per-Dataset Validation Accuracy
 
-**Replace with all 11 training datasets:**
+**Previous run (11 training datasets, before VTT-ConIoT moved to zero-shot). Current config uses 10 training + 4 zero-shot. Results below are from old checkpoint — will be updated after retraining.**
 
 | Dataset | Val Group-Acc (%) |
 |---------|-------------------|
@@ -232,7 +232,7 @@ loss = (loss_imu_to_text + loss_text_to_imu) / 2.0
 | RecGym | 98.31 |
 | **Overall** | **81.56** |
 
-**Caption:** "Per-dataset validation accuracy (group-level) for the 11-dataset model. Accuracy varies by dataset complexity, label vocabulary overlap with other datasets, and the number of unique activities per dataset."
+**Caption:** "Per-dataset validation accuracy (group-level) from previous 11-dataset run. Current config uses 10 training datasets (VTT-ConIoT moved to zero-shot). These numbers will be updated after retraining."
 
 ## 3.3 Table 4: Zero-Shot Performance
 
@@ -248,7 +248,7 @@ loss = (loss_imu_to_text + loss_text_to_imu) / 2.0
 | Training Config | Training Val Acc (%) | Zero-Shot Acc (%) |
 |-----------------|---------------------|-------------------|
 | 6 datasets | 57.60 | 29.75 |
-| 11 datasets | 81.56 | 49.41 |
+| 11 datasets (old) | 81.56 | 49.41 |
 | **Improvement** | **+23.96 pp** | **+19.66 pp** |
 
 ### Per-Dataset Zero-Shot Improvement:
@@ -343,7 +343,7 @@ Zero-shot evaluation uses `max_retrieval_pool=100` labels for the combined inven
 ### Why Our Model Wins
 
 The NLS-HAR paper identifies two root causes for poor NLS performance:
-1. **Sensor heterogeneity** — We address this with multi-dataset training (11 datasets)
+1. **Sensor heterogeneity** — We address this with multi-dataset training (10 datasets)
 2. **Lack of rich text descriptions** — We address this with **label augmentation** (synonyms + templates)
 
 Our soft targets also help by not treating semantically similar labels as hard negatives.
@@ -389,7 +389,7 @@ IMU2CLIP (EMNLP 2023, Meta) pioneered contrastive IMU-text alignment. The core a
 - [ ] Update Table 1: Add 5 new training datasets + 2 new zero-shot datasets
 - [ ] Update Table 1: Fix patch sizes (MHEALTH, WISDM, MotionSense)
 - [ ] Replace Table 2: Overall validation metrics
-- [ ] Replace Table 3: 11-dataset validation accuracy
+- [ ] Replace Table 3: 10-dataset validation accuracy (after retraining)
 - [ ] Update Table 4: 3 zero-shot datasets, new accuracy numbers
 - [ ] Add dataset scaling ablation table
 - [ ] Add expected vs novel activity breakdown

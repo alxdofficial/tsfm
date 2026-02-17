@@ -80,7 +80,7 @@ The following sections are currently placeholders and need to be written:
 | WISDM | 20 | 6 | 2.0 |
 | MotionSense (unseen) | 50 | 6 | 2.0 |
 
-**Replace with this updated table (11 training + 3 zero-shot):**
+**Replace with this updated table (10 training + 4 zero-shot):**
 
 | Dataset | Hz | #Ch | Patch (s) | Role |
 |---------|-----|-----|-----------|------|
@@ -93,13 +93,13 @@ The following sections are currently placeholders and need to be written:
 | DSADS | 25 | 45 | 2.0 | Train |
 | HAPT | 50 | 6 | 1.25 | Train |
 | KU-HAR | 100 | 6 | 1.5 | Train |
-| VTT-ConIoT | 52 | 6 | 2.0 | Train |
 | RecGym | 20 | 6 | 1.5 | Train |
 | MotionSense | 50 | 6 | 1.5 | Zero-shot |
 | RealWorld | 50 | 3 | 1.5 | Zero-shot |
 | MobiAct | 50 | 6 | 1.25 | Zero-shot |
+| VTT-ConIoT | 52 | 6 | 2.0 | Zero-shot |
 
-**Update caption:** "Dataset heterogeneity across 11 training datasets and 3 zero-shot evaluation datasets. We unify time resolution by resampling each patch to 64 timesteps and support variable channel counts (3-45 channels) via channel-independent tokenization with masked fusion and pooling."
+**Update caption:** "Dataset heterogeneity across 10 training datasets and 4 zero-shot evaluation datasets. We unify time resolution by resampling each patch to 64 timesteps and support variable channel counts (3-45 channels) via channel-independent tokenization with masked fusion and pooling."
 
 ---
 

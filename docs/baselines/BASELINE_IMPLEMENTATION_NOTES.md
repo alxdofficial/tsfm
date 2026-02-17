@@ -307,7 +307,7 @@ head, trained via contrastive learning with soft targets and memory bank.
 ### Pretrained Model
 - Checkpoint: `training_output/semantic_alignment/{run_id}/best.pt`
 - Trained on: 10 HAR datasets (87 activity labels)
-- **NOTE**: Current checkpoint was trained WITHOUT padding mask fix. Needs retraining.
+- **NOTE**: Training in progress. Results pending completion.
 
 ### Key Implementation Details
 

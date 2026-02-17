@@ -190,7 +190,7 @@ oscillation..."). This reduces quality but the model still functions.
 **Special**: Patch size sweep to find optimal temporal resolution per dataset
 **Zero-shot**: Yes (text-aligned via learnable label bank, 384-dim)
 **Time**: ~10 min per dataset (patch sweep adds overhead)
-**NOTE**: Current checkpoint needs retraining due to padding mask fix
+**NOTE**: Training in progress. Results pending completion.
 
 ---
 

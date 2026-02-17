@@ -344,11 +344,8 @@ When adding a new dataset, verify:
 
 ## References
 
-- **ARCHITECTURE.md**: Full system design (3-layer architecture, Option 2)
-- **tools/schemas.json**: Phase 1 EDA tool specifications
-- **tools/PHASE2_DESIGN.md**: Phase 2 model selection tool specifications
+- **docs/ARCHITECTURE.md**: Full system design
 - **datascripts/README.md**: Dataset pipeline and conversion scripts
-- **docs/option2_rationale.md**: Why this architecture was chosen
 
 ---
 
