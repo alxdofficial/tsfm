@@ -930,34 +930,24 @@ def collate_stage2(batch, tokenizer, max_len=512):
 
 
 def train_stage2(model, tokenizer, train_data, train_labels, text_protos, label_list,
-                 device, target_data=None, target_labels=None,
-                 per_sample_descs=None,
+                 device, per_sample_descs=None,
                  epochs=STAGE2_EPOCHS, lr=STAGE2_LR, batch_size=STAGE2_BATCH_SIZE):
     """Train sensor encoder with CLIP loss on sensor-text pairs.
 
-    Matches original LanHAR Stage 2 (training_stage2.py): combines source (training)
-    data with target (test) domain data. The original loads per-sample GPT-generated
-    text descriptions; we use per-class descriptions from text_protos as a substitute.
+    Uses only source (training) data — test data is never seen during training,
+    ensuring fair comparison with other baselines. The original LanHAR paper
+    combines source + target domains, but that gives the sensor encoder access
+    to test data distribution, which no other baseline has.
 
     Uses validation-based model selection by retrieval accuracy, matching
     the original LanHAR (auxiliary_repos/LanHAR/models/training_stage2.py:168-170).
     """
-    # Combine source + target data (matching original generate_step2)
     combined_descs = dict(per_sample_descs) if per_sample_descs else {}
-    if target_data is not None and target_labels is not None:
-        source_n = len(train_data)
-        combined_data = np.concatenate([train_data, target_data], axis=0)
-        combined_labels = np.concatenate([train_labels, target_labels], axis=0)
-        print(f"\n  Stage 2: Training sensor encoder ({epochs} epochs, lr={lr}, "
-              f"batch_size={batch_size})...")
-        print(f"    Source samples: {len(train_data)}, Target samples: {len(target_data)}, "
-              f"Combined: {len(combined_data)}")
-    else:
-        combined_data = train_data
-        combined_labels = train_labels
-        print(f"\n  Stage 2: Training sensor encoder ({epochs} epochs, lr={lr}, "
-              f"batch_size={batch_size})...")
-        print(f"    Training samples: {len(combined_data)}")
+    combined_data = train_data
+    combined_labels = train_labels
+    print(f"\n  Stage 2: Training sensor encoder ({epochs} epochs, lr={lr}, "
+          f"batch_size={batch_size})...")
+    print(f"    Training samples: {len(combined_data)} (source only, no test data)")
     print(f"    Per-sample descriptions: {len(combined_descs)}")
 
     device_type = "cuda" if device.type == "cuda" else "cpu"
@@ -1801,58 +1791,17 @@ def main():
           f"{len(np.unique(all_train_labels))} classes, "
           f"{desc_total} per-sample descriptions")
 
-    # Load target (test) domain data for Stage 2 (matching original LanHAR)
-    print("\nLoading target domain data for Stage 2...")
-    all_target_sensor = []
-    all_target_labels = []
-    target_per_sample_descs = {}
-    target_desc_total = 0
-
-    for ds in TEST_DATASETS:
-        raw_data, raw_labels = load_raw_data(ds)
-        raw_data = gravity_align_dataset(raw_data)
-        labels = get_window_labels(raw_labels)
-        ds_activities = get_dataset_labels(ds)
-
-        ds_descs = load_per_sample_descriptions(ds)
-
-        ds_count = 0
-        for i in range(len(labels)):
-            local_idx = labels[i]
-            if local_idx < len(ds_activities):
-                activity = ds_activities[local_idx]
-                global_idx = global_label_to_idx.get(activity, -1)
-                if global_idx >= 0:
-                    combined_idx = len(all_target_sensor)
-                    all_target_sensor.append(raw_data[i])
-                    all_target_labels.append(global_idx)
-                    if i in ds_descs:
-                        target_per_sample_descs[combined_idx] = ds_descs[i]
-                        target_desc_total += 1
-                    ds_count += 1
-        print(f"  {ds}: {ds_count} samples, {len(ds_descs)} per-sample descriptions")
-
-    all_target_sensor = np.array(all_target_sensor, dtype=np.float32)
-    all_target_labels = np.array(all_target_labels, dtype=np.int64)
-    print(f"Total target data: {len(all_target_sensor)} samples, "
-          f"{len(np.unique(all_target_labels))} classes, "
-          f"{target_desc_total} per-sample descriptions")
-
     # Stage 1: Fine-tune text encoder
     train_stage1(model, tokenizer, text_protos, GLOBAL_LABELS, device)
 
-    # Merge source + target per-sample descriptions with offset
-    combined_per_sample = dict(all_per_sample_descs)
-    source_n = len(all_train_sensor)
-    for idx, desc in target_per_sample_descs.items():
-        combined_per_sample[source_n + idx] = desc
-
-    # Stage 2: Train sensor encoder (source + target, matching original LanHAR)
+    # Stage 2: Train sensor encoder (source data only — no test data)
+    # Original LanHAR combines source + target domains, but for fair comparison
+    # with other baselines that never see test data during training, we use
+    # only the 10 training datasets here.
     train_stage2(
         model, tokenizer, all_train_sensor, all_train_labels,
         text_protos, GLOBAL_LABELS, device,
-        target_data=all_target_sensor, target_labels=all_target_labels,
-        per_sample_descs=combined_per_sample,
+        per_sample_descs=all_per_sample_descs,
     )
 
     # Build projected text prototypes for zero-shot (all 87 classes)

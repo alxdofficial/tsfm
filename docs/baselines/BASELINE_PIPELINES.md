@@ -106,7 +106,7 @@ checkpoint." The evaluation script contains a complete 2-stage training pipeline
                 ↓
 [Eval script — Stage 2: 50 epochs]
     Initialize TimeSeriesTransformer from RANDOM WEIGHTS
-    Load ALL sensor data (10 train + 4 test datasets combined)
+    Load sensor data from 10 TRAINING datasets only (no test data)
     Apply gravity alignment to all sensor data
     Train sensor encoder to align with frozen SciBERT via CLIP loss
     Per-sample LLM descriptions used 70% of the time (optional)
@@ -133,9 +133,9 @@ trains from scratch.
   - **Per-sample LLM descriptions** (optional): Original paper uses GPT-4. We use
     local Llama/Qwen via `generate_lanhar_descriptions.py`. If descriptions are
     not available, the model still works using per-class descriptions only.
-  - **Combined source+target training**: Stage 2 trains on both the 10 training
-    datasets AND the 4 test datasets together. This is by design in the original
-    paper (their `generate_step2` combines domains). The test labels are NOT used.
+  - **Source-only training**: Stage 2 trains on the 10 training datasets only.
+    The original paper combines source + target domains, but we exclude test data
+    to ensure fair comparison with other baselines that never see test data.
 **Zero-shot**: Yes (text-aligned after training)
 **Time**: ~90 min total (Stage 1: ~5 min, Stage 2: ~60 min, Downstream: ~25 min)
 
@@ -147,8 +147,9 @@ by aligning with SciBERT via contrastive learning. This is fundamentally differe
 from LiMU-BERT/CrossHAR (which produce reusable frozen encoders) or MOMENT (which
 is a general-purpose model). LanHAR is more like a recipe than a product.
 
-This is NOT unfair — it's how the method was designed and published. Each baseline
-uses its original paper's protocol.
+The original paper combines source + target data during training (domain adaptation),
+but we train on source only to keep the comparison fair with other baselines that
+never see test data.
 
 ### LLM descriptions: GPT-4 vs local LLM
 

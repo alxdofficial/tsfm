@@ -240,8 +240,7 @@ text encoder weights (from HuggingFace), and everything else is learned.
 - BERT is FROZEN (only projections and sensor encoder train)
 - Batch size: 256 (matches paper)
 - lr: 4e-5
-- Uses combined source (training data) + target (test data) — matching original paper's
-  `generate_step2` which combines both domains
+- Uses source (training) data ONLY — test data is never seen during training
 
 **Stale label embeddings fix**:
 During Stage 2, `txt_proj` is trainable, so text-space label embeddings change each epoch.
@@ -288,8 +287,12 @@ adding noise to the alignment objective.
   class through `txt_proj`. This simplification affects model selection quality but not
   the final embeddings used for evaluation.
 - **Validation split**: Original validates on target domain only (20/80 split). We
-  validate on a held-out portion of combined source+target (90/10 split) since we have
-  multiple test datasets and evaluate on each independently.
+  validate on a held-out portion of source data (90/10 split) since we have multiple
+  test datasets and evaluate on each independently.
+- **No target data in Stage 2**: Original combines source + target domains in Stage 2.
+  We use only source (training) data, ensuring the sensor encoder never sees test data
+  during training. This matches the constraint on all other baselines and prevents
+  LanHAR from having an unfair distributional advantage.
 
 ---
 
