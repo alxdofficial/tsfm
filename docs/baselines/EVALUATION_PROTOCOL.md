@@ -19,19 +19,30 @@ All data is standardized to `(N, 120, 6)` windows at 20Hz with 6 IMU channels (a
 
 ### Metric 1: Zero-Shot Open-Set
 
-- **What**: Classify against ALL 87 training labels using cosine similarity
-- **How**: `argmax(sensor_emb @ all_87_label_embs.T)` then group-match to test label
+- **What**: Classify against ALL 87 training labels, score via synonym groups
 - **Why**: Tests open-vocabulary generalization — can the model find the right activity among all possible labels?
-- **Applies to**: TSFM, LanHAR (text-aligned models only)
-- **N/A for**: LiMU-BERT, MOMENT, CrossHAR (not text-aligned)
+- **Applies to**: All 5 models
+- **Text-aligned (TSFM, LanHAR)**: `argmax(sensor_emb @ all_87_label_embs.T)` via cosine similarity with text embeddings, then group-match prediction to ground truth
+- **Classifier-based (LiMU-BERT, MOMENT, CrossHAR)**: Train each model's native classifier on all 10 training datasets (87 global classes), predict over all 87, then group-match prediction to ground truth
 
 ### Metric 2: Zero-Shot Closed-Set
 
-- **What**: Classify against only the test dataset's own labels
-- **How**: `argmax(sensor_emb @ test_label_embs.T)` with exact label matching
-- **Why**: Tests discriminative quality when the label space is known
-- **Applies to**: TSFM, LanHAR
-- **N/A for**: LiMU-BERT, MOMENT, CrossHAR
+- **What**: Classify against only labels relevant to the test dataset
+- **Why**: Tests discriminative quality when the label space is constrained
+- **Applies to**: All 5 models
+- **Text-aligned (TSFM, LanHAR)**: Encode only the test dataset's activity labels as text, `argmax(sensor_emb @ test_label_embs.T)`, exact label matching
+- **Classifier-based (LiMU-BERT, MOMENT, CrossHAR)**: Mask each model's native classifier logits/scores to training labels whose synonym group appears in the test dataset, `argmax(masked_logits)`, group-match scoring
+
+**Closed-set mask details**: For each test dataset, a mask over the 87 training labels allows only those whose group is represented in the test set:
+
+| Dataset | Test Groups | Allowed/87 | Notes |
+|---------|-------------|------------|-------|
+| MotionSense | 6 | 22 | All test labels mappable |
+| RealWorld | 8 | 30 | All test labels mappable |
+| MobiAct | 9 | 34 | vehicle_entry group has 0 training members |
+| VTT-ConIoT | 11 | 20 | 4 groups (carrying, climbing, kneeling, painting) have 0 training members |
+
+**Fairness note**: Text-aligned and classifier-based models use different prediction mechanisms for zero-shot metrics, so direct comparison should be interpreted carefully. Text-aligned models have the advantage of encoding arbitrary label text; classifier-based models are limited to predicting among training labels and use group scoring to bridge the gap.
 
 ### Metric 3: 1% Supervised
 
@@ -72,6 +83,21 @@ All baselines use the same linear probe architecture for Metric 5:
 - 100 epochs, Adam, lr=1e-3, batch_size=512
 - Best model selected by validation accuracy
 
+### Zero-Shot Classifiers (non-text-aligned baselines)
+
+Each non-text-aligned model uses its paper's native classifier architecture for zero-shot evaluation, trained on embeddings from all 10 training datasets with 87 global classes:
+
+| Baseline | ZS Classifier | Input Format | Training | Selection |
+|----------|--------------|--------------|----------|-----------|
+| **LiMU-BERT** | GRU | (M, 20, 72) sub-windows | 90/10 split, 100 epochs | Best val accuracy |
+| **MOMENT** | SVM-RBF | (N, 6144) flat | GridSearchCV, 5-fold CV | Best CV score |
+| **CrossHAR** | Transformer_ft | (N, 120, 72) sequences | 90/10 split, 100 epochs | Best val loss |
+
+- Same classifier used for both open-set (all 87 logits/scores) and closed-set (masked logits/scores)
+- LiMU-BERT: Sub-windows created via `reshape_and_merge` (120-step windows split into 6 x 20-step sub-windows, filtered to uniform-label windows)
+- MOMENT: SVM trained with GridSearchCV over C values, subsampled to 10K if needed
+- CrossHAR: Transformer_ft architecture matches the paper's downstream classifier (Linear(72->100) + TransformerEncoder + Linear(100, 87))
+
 ## Data Split Protocol
 
 For each test dataset:
@@ -79,6 +105,8 @@ For each test dataset:
 1. **Random window-level split**: 80% train / 10% val / 10% test (seed=3431)
 2. **Balanced subsampling**: For 1%/10% supervised, `balanced_subsample()` draws proportionally from each class, with `max(1, ...)` to ensure every class has at least 1 sample
 3. **Consistent across baselines**: Same seed, same splits, same subsampling
+4. **Global seeds**: All evaluators set `torch.manual_seed(42)`, `np.random.seed(42)`, `random.seed(42)` at startup for full reproducibility
+5. **TSFM patch-size sweep**: Uses a separate 20% held-out split (seed=42) per test dataset for patch selection; metrics are reported on the full dataset
 
 ## Reported Metrics
 
@@ -91,11 +119,13 @@ For each dataset x metric combination:
 
 ## Output Format
 
-Each evaluation script writes a JSON file to `test_output/baseline_evaluation/`:
+Each evaluation script writes a single JSON file per model to `test_output/baseline_evaluation/`:
 
 ```
-{dataset_name}_{model_name}_evaluation.json
+{model_name}_evaluation.json
 ```
+
+For example: `tsfm_evaluation.json`, `limubert_evaluation.json`, `moment_evaluation.json`, `crosshar_evaluation.json`, `lanhar_evaluation.json`. Each file contains results for all test datasets.
 
 The `scripts/generate_results_table.py` script reads all JSON outputs and produces a combined comparison table.
 

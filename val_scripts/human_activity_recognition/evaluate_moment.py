@@ -1,21 +1,24 @@
 """
-MOMENT baseline evaluation using the new evaluation framework.
+MOMENT baseline scoring using the unified framework.
 
-MOMENT is NOT text-aligned, so zero-shot evaluation is N/A.
 Evaluates with:
-  1. 1% supervised (SVM-RBF classifier - paper's protocol)
-  2. 10% supervised (SVM-RBF classifier)
-  3. Linear probe (linear classifier on frozen embeddings, full train split)
+  1. Zero-shot open-set (classifier on 87 training labels, group scoring)
+  2. Zero-shot closed-set (classifier with masked logits, group scoring)
+  3. 1% supervised (SVM-RBF classifier - paper's protocol)
+  4. 10% supervised (SVM-RBF classifier)
+  5. Linear probe (linear classifier on frozen embeddings, full train split)
 
 Following the MOMENT paper (Goswami et al., ICML 2024), we use an SVM
 classifier with RBF kernel and GridSearchCV over C values for supervised
-evaluation. Linear probe uses a simple nn.Linear for fair comparison.
+scoring. Linear probe uses a simple nn.Linear for fair comparison.
 
 Usage:
     python val_scripts/human_activity_recognition/evaluate_moment.py
 """
 
 import json
+import joblib
+import random
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -34,6 +37,11 @@ from tqdm import tqdm
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from val_scripts.human_activity_recognition.grouped_zero_shot import (
+    load_global_labels, map_local_to_global_labels,
+    get_closed_set_mask, score_with_groups,
+)
 
 # =============================================================================
 # Configuration
@@ -73,6 +81,7 @@ SUPERVISED_LABEL_RATE_10PCT = 0.10
 with open(DATASET_CONFIG_PATH) as f:
     DATASET_CONFIG = json.load(f)
 
+TRAIN_DATASETS = DATASET_CONFIG["train_datasets"]
 TEST_DATASETS = DATASET_CONFIG["zero_shot_datasets"]
 
 
@@ -294,6 +303,44 @@ def train_svm_classifier(train_data, train_labels, verbose=False):
     return grid_search.best_estimator_
 
 
+def predict_svm_global(svm_model, data, logit_mask=None):
+    """Predict global label indices using the SVM classifier.
+
+    Args:
+        svm_model: Trained SVC model (classes are global label indices)
+        data: (N, 6144) embedding vectors
+        logit_mask: Optional (87,) bool mask for closed-set. If provided,
+            uses decision_function scores masked to allowed classes.
+
+    Returns:
+        pred_global_indices: (N,) predicted global label indices
+    """
+    if logit_mask is None:
+        # Open-set: simple predict
+        return svm_model.predict(data).astype(np.int64)
+
+    # Closed-set: use decision_function to get per-class scores,
+    # mask disallowed classes, then argmax
+    scores = svm_model.decision_function(data)  # (N, n_svm_classes)
+    svm_classes = svm_model.classes_  # global label indices the SVM knows
+
+    # For binary classification, decision_function returns (N,) not (N,2)
+    if scores.ndim == 1:
+        scores = scores.reshape(-1, 1)
+
+    # Build mask over SVM's class columns (not all 87)
+    # svm_classes[j] is the global label index for column j
+    col_mask = np.array([logit_mask[c] for c in svm_classes], dtype=bool)
+
+    # Mask disallowed columns to -inf
+    scores[:, ~col_mask] = -np.inf
+
+    # Argmax over SVM columns, map back through svm_classes
+    best_col = np.argmax(scores, axis=1)
+    pred_global = svm_classes[best_col].astype(np.int64)
+    return pred_global
+
+
 # =============================================================================
 # Linear Classifier Training (for linear probe)
 # =============================================================================
@@ -439,8 +486,12 @@ def evaluate_supervised_svm(
         gt_names, pred_names, labels=test_activities,
         average='macro', zero_division=0,
     ) * 100
+    f1_w = f1_score(
+        gt_names, pred_names, labels=test_activities,
+        average='weighted', zero_division=0,
+    ) * 100
 
-    return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_names),
+    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_names),
             'n_train_samples': len(train_data), 'n_classes': num_test_classes}
 
 
@@ -499,9 +550,40 @@ def evaluate_linear_probe(
         gt_names, pred_names, labels=test_activities,
         average='macro', zero_division=0,
     ) * 100
+    f1_w = f1_score(
+        gt_names, pred_names, labels=test_activities,
+        average='weighted', zero_division=0,
+    ) * 100
 
-    return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_names),
+    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_names),
             'n_train_samples': len(train_data), 'n_classes': num_test_classes}
+
+
+# =============================================================================
+# Grouped Zero-Shot: Training Embedding Extraction
+# =============================================================================
+
+def load_moment_training_embeddings(model, global_labels, device):
+    """Extract MOMENT embeddings for all 10 training datasets.
+
+    Returns:
+        all_embeddings: (N_total, 6144) concatenated embeddings
+        all_labels: (N_total,) global label indices
+    """
+    all_emb_list = []
+    all_lab_list = []
+
+    for ds in TRAIN_DATASETS:
+        print(f"  Extracting MOMENT embeddings for {ds}...")
+        raw_data, raw_labels = load_raw_data(ds)
+        emb = extract_moment_embeddings(model, raw_data, device)  # (N, 6144)
+        labels = get_window_labels(raw_labels)
+        global_lab = map_local_to_global_labels(labels, ds, DATASET_CONFIG, global_labels)
+        all_emb_list.append(emb)
+        all_lab_list.append(global_lab)
+        print(f"    {ds}: {emb.shape[0]} samples")
+
+    return np.concatenate(all_emb_list, axis=0), np.concatenate(all_lab_list, axis=0)
 
 
 # =============================================================================
@@ -511,16 +593,18 @@ def evaluate_linear_probe(
 def print_results_table(all_results):
     """Print results table."""
     print()
-    print("=" * 100)
-    print("MOMENT EVALUATION RESULTS (New Framework)")
-    print("=" * 100)
+    print("=" * 150)
+    print("MOMENT EVALUATION RESULTS")
+    print("=" * 150)
 
     header = (f"{'Dataset':<16}"
+              f"{'ZS-Open Acc':>13}{'ZS-Open F1':>12}"
+              f"{'ZS-Close Acc':>14}{'ZS-Close F1':>13}"
               f"{'1%Sup Acc':>11}{'1%Sup F1':>10}"
               f"{'10%Sup Acc':>12}{'10%Sup F1':>11}"
               f"{'LP Acc':>9}{'LP F1':>8}")
     print(header)
-    print("-" * 100)
+    print("-" * 150)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
@@ -531,17 +615,20 @@ def print_results_table(all_results):
             return r.get(key, {}).get(metric, 0.0)
 
         print(f"{ds:<16}"
+              f"{g('zero_shot_open_set','accuracy'):>12.1f}%{g('zero_shot_open_set','f1_macro'):>11.1f}%"
+              f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>12.1f}%"
               f"{g('1pct_supervised','accuracy'):>10.1f}%{g('1pct_supervised','f1_macro'):>9.1f}%"
               f"{g('10pct_supervised','accuracy'):>11.1f}%{g('10pct_supervised','f1_macro'):>10.1f}%"
               f"{g('linear_probe','accuracy'):>8.1f}%{g('linear_probe','f1_macro'):>7.1f}%")
 
-    print("=" * 100)
+    print("=" * 150)
     print()
     print("Details:")
     print(f"  Model: {MOMENT_MODEL_NAME}")
+    print(f"  Zero-shot: SVM-RBF on 10 training datasets (87 classes), group-matched scoring")
+    print(f"  Open-set: SVM predict over all classes; Closed-set: decision scores masked to test-relevant groups")
     print(f"  Supervised: SVM-RBF with GridSearchCV (C={SVM_C_VALUES})")
     print(f"  Linear probe: Linear classifier, {LINEAR_EPOCHS} epochs, lr={LINEAR_LR}")
-    print(f"  Zero-shot: N/A (MOMENT is not text-aligned)")
 
 
 # =============================================================================
@@ -549,6 +636,10 @@ def print_results_table(all_results):
 # =============================================================================
 
 def main():
+    torch.manual_seed(42)
+    np.random.seed(42)
+    random.seed(42)
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
 
@@ -559,7 +650,26 @@ def main():
     moment_model = load_moment_model(device)
     print("Model loaded successfully")
 
-    # Run evaluation on each test dataset
+    # Load or train zero-shot SVM classifier
+    global_labels = load_global_labels()
+    zs_svm_path = OUTPUT_DIR / "moment_zs_svm.pkl"
+
+    if zs_svm_path.exists():
+        print(f"\nLoading cached zero-shot SVM from {zs_svm_path}...")
+        zs_svm = joblib.load(zs_svm_path)
+        print(f"  Loaded SVM with {len(zs_svm.classes_)} classes")
+    else:
+        print(f"\nExtracting training embeddings for zero-shot ({len(TRAIN_DATASETS)} datasets)...")
+        train_emb, train_lab = load_moment_training_embeddings(moment_model, global_labels, device)
+        print(f"Training data: {train_emb.shape[0]} samples, dim={train_emb.shape[1]}, "
+              f"{len(np.unique(train_lab))} classes")
+
+        print("\nTraining zero-shot SVM-RBF classifier...")
+        zs_svm = train_svm_classifier(train_emb, train_lab, verbose=True)
+        joblib.dump(zs_svm, zs_svm_path)
+        print(f"  Saved zero-shot SVM to {zs_svm_path}")
+
+    # Run scoring on each test dataset
     all_results = {}
 
     for test_ds in TEST_DATASETS:
@@ -579,7 +689,27 @@ def main():
 
         ds_results = {}
 
-        # 1. 1% supervised (SVM)
+        # 0. Zero-shot open-set (SVM on flat 6144-dim vectors)
+        print(f"\n  --- Zero-Shot Open-Set (SVM-RBF) ---")
+        pred_open = predict_svm_global(zs_svm, test_emb)
+        ds_results['zero_shot_open_set'] = score_with_groups(
+            pred_open, test_labels, test_ds, global_labels, DATASET_CONFIG)
+        zs_open = ds_results['zero_shot_open_set']
+        print(f"  ZS Open-set: Acc={zs_open['accuracy']:.1f}%, F1={zs_open['f1_macro']:.1f}%")
+
+        # 1. Zero-shot closed-set (SVM with masked decision scores)
+        print(f"\n  --- Zero-Shot Closed-Set (SVM-RBF) ---")
+        mask = get_closed_set_mask(test_ds, global_labels, DATASET_CONFIG)
+        pred_closed = predict_svm_global(zs_svm, test_emb, logit_mask=mask)
+        ds_results['zero_shot_closed_set'] = score_with_groups(
+            pred_closed, test_labels, test_ds, global_labels, DATASET_CONFIG)
+        ds_results['zero_shot_closed_set']['n_allowed'] = int(mask.sum())
+        ds_results['zero_shot_closed_set']['n_masked'] = int((~mask).sum())
+        zs_close = ds_results['zero_shot_closed_set']
+        print(f"  ZS Closed-set: Acc={zs_close['accuracy']:.1f}%, F1={zs_close['f1_macro']:.1f}% "
+              f"({zs_close['n_allowed']}/{len(global_labels)} labels allowed)")
+
+        # 3. 1% supervised (SVM)
         print(f"\n  --- 1% Supervised (SVM) ---")
         ds_results['1pct_supervised'] = evaluate_supervised_svm(
             test_emb, test_labels, test_ds,
@@ -588,7 +718,7 @@ def main():
               f"Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['1pct_supervised']['f1_macro']:.1f}%")
 
-        # 2. 10% supervised (SVM)
+        # 4. 10% supervised (SVM)
         print(f"\n  --- 10% Supervised (SVM) ---")
         ds_results['10pct_supervised'] = evaluate_supervised_svm(
             test_emb, test_labels, test_ds,
@@ -597,7 +727,7 @@ def main():
               f"Acc={ds_results['10pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['10pct_supervised']['f1_macro']:.1f}%")
 
-        # 3. Linear probe (full train split)
+        # 5. Linear probe (full train split)
         print(f"\n  --- Linear Probe ---")
         ds_results['linear_probe'] = evaluate_linear_probe(
             test_emb, test_labels, test_ds, device)

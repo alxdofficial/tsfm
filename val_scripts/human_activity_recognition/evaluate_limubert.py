@@ -1,21 +1,23 @@
 """
-LiMU-BERT evaluation using the new evaluation framework.
+LiMU-BERT scoring using the unified framework.
 
-LiMU-BERT is NOT text-aligned, so zero-shot evaluation is N/A.
 Evaluates with:
-  1. 1% supervised (GRU classifier on 1% of test data - paper's architecture)
-  2. 10% supervised (GRU classifier on 10% of test data)
-  3. Linear probe (linear classifier on frozen mean-pooled embeddings, full train split)
+  1. Zero-shot open-set (classifier on 87 training labels, group scoring)
+  2. Zero-shot closed-set (classifier with masked logits, group scoring)
+  3. 1% supervised (GRU classifier on 1% of test data - paper's architecture)
+  4. 10% supervised (GRU classifier on 10% of test data)
+  5. Linear probe (linear classifier on frozen mean-pooled embeddings, full train split)
 
 Uses LiMU-BERT's pretrained embeddings (N, 120, 72).
 GRU classifier uses sub-windows (M, 20, 72) matching LiMU-BERT's original format.
-Linear probe uses mean-pooled (N, 72) embeddings.
+Linear probe and zero-shot use mean-pooled (N, 72) embeddings.
 
 Usage:
     python val_scripts/human_activity_recognition/evaluate_limubert.py
 """
 
 import json
+import random
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -32,6 +34,11 @@ from tqdm import tqdm
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from val_scripts.human_activity_recognition.grouped_zero_shot import (
+    load_global_labels, map_local_to_global_labels,
+    get_closed_set_mask, score_with_groups,
+)
 
 # =============================================================================
 # Configuration
@@ -70,6 +77,7 @@ SUPERVISED_LABEL_RATE_10PCT = 0.10
 with open(DATASET_CONFIG_PATH) as f:
     DATASET_CONFIG = json.load(f)
 
+TRAIN_DATASETS = DATASET_CONFIG["train_datasets"]
 TEST_DATASETS = DATASET_CONFIG["zero_shot_datasets"]
 
 
@@ -322,7 +330,7 @@ def predict_gru(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=None):
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model.eval()
+    model.train(False)
     ds = TensorDataset(torch.from_numpy(data).float())
     loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
 
@@ -331,6 +339,40 @@ def predict_gru(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=None):
         for (batch_data,) in loader:
             batch_data = batch_data.to(device)
             logits = model(batch_data, training=False)
+            preds = logits.argmax(dim=1).cpu().numpy()
+            all_preds.extend(preds)
+
+    return np.array(all_preds)
+
+
+def predict_gru_global(model, data, device, logit_mask=None,
+                       batch_size=CLASSIFIER_BATCH_SIZE):
+    """Predict global label indices using GRU classifier.
+
+    Args:
+        model: Trained GRUClassifier with num_classes=87
+        data: (M, 20, 72) sub-window embeddings
+        device: torch device
+        logit_mask: Optional (87,) bool mask for closed-set scoring.
+            If provided, masked-out logits are set to -inf before argmax.
+
+    Returns:
+        pred_global_indices: (M,) predicted global label indices
+    """
+    model.train(False)
+    ds = TensorDataset(torch.from_numpy(data).float())
+    loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
+
+    if logit_mask is not None:
+        mask_tensor = torch.from_numpy(logit_mask).bool().to(device)
+
+    all_preds = []
+    with torch.no_grad():
+        for (batch_data,) in loader:
+            batch_data = batch_data.to(device)
+            logits = model(batch_data, training=False)
+            if logit_mask is not None:
+                logits[:, ~mask_tensor] = float('-inf')
             preds = logits.argmax(dim=1).cpu().numpy()
             all_preds.extend(preds)
 
@@ -530,8 +572,12 @@ def evaluate_supervised_gru(
         gt_names, pred_names, labels=test_activities,
         average='macro', zero_division=0,
     ) * 100
+    f1_w = f1_score(
+        gt_names, pred_names, labels=test_activities,
+        average='weighted', zero_division=0,
+    ) * 100
 
-    return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_names),
+    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_names),
             'n_train_samples': len(train_data), 'n_classes': num_test_classes}
 
 
@@ -594,9 +640,42 @@ def evaluate_linear_probe(
         gt_names, pred_names, labels=test_activities,
         average='macro', zero_division=0,
     ) * 100
+    f1_w = f1_score(
+        gt_names, pred_names, labels=test_activities,
+        average='weighted', zero_division=0,
+    ) * 100
 
-    return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_names),
+    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_names),
             'n_train_samples': len(train_data), 'n_classes': num_test_classes}
+
+
+# =============================================================================
+# Grouped Zero-Shot: Training Embedding Loading
+# =============================================================================
+
+def load_limubert_training_embeddings(global_labels, device):
+    """Load pre-extracted LiMU-BERT embeddings for all 10 training datasets.
+
+    Uses reshape_and_merge to produce sub-windows (M, 20, 72) matching
+    the GRU classifier's native input format. Labels are mapped to global
+    indices (0..86).
+
+    Returns:
+        all_embeddings: (M_total, 20, 72) concatenated sub-window embeddings
+        all_labels: (M_total,) global label indices
+    """
+    all_emb_list = []
+    all_lab_list = []
+
+    for ds in tqdm(TRAIN_DATASETS, desc="LiMU-BERT | Loading training embeddings", leave=True):
+        emb, lab_raw = load_embeddings(ds)
+        # reshape_and_merge returns sub-windows with local label indices
+        sub_windows, local_labels = reshape_and_merge(emb, lab_raw)  # (M, 20, 72), (M,)
+        global_lab = map_local_to_global_labels(local_labels, ds, DATASET_CONFIG, global_labels)
+        all_emb_list.append(sub_windows)
+        all_lab_list.append(global_lab)
+
+    return np.concatenate(all_emb_list, axis=0), np.concatenate(all_lab_list, axis=0)
 
 
 # =============================================================================
@@ -606,16 +685,18 @@ def evaluate_linear_probe(
 def print_results_table(all_results: Dict):
     """Print results table."""
     print()
-    print("=" * 100)
-    print("LIMU-BERT EVALUATION RESULTS (New Framework)")
-    print("=" * 100)
+    print("=" * 150)
+    print("LIMU-BERT EVALUATION RESULTS")
+    print("=" * 150)
 
     header = (f"{'Dataset':<16}"
+              f"{'ZS-Open Acc':>13}{'ZS-Open F1':>12}"
+              f"{'ZS-Close Acc':>14}{'ZS-Close F1':>13}"
               f"{'1%Sup Acc':>11}{'1%Sup F1':>10}"
               f"{'10%Sup Acc':>12}{'10%Sup F1':>11}"
               f"{'LP Acc':>9}{'LP F1':>8}")
     print(header)
-    print("-" * 100)
+    print("-" * 150)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
@@ -626,16 +707,19 @@ def print_results_table(all_results: Dict):
             return r.get(key, {}).get(metric, 0.0)
 
         print(f"{ds:<16}"
+              f"{g('zero_shot_open_set','accuracy'):>12.1f}%{g('zero_shot_open_set','f1_macro'):>11.1f}%"
+              f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>12.1f}%"
               f"{g('1pct_supervised','accuracy'):>10.1f}%{g('1pct_supervised','f1_macro'):>9.1f}%"
               f"{g('10pct_supervised','accuracy'):>11.1f}%{g('10pct_supervised','f1_macro'):>10.1f}%"
               f"{g('linear_probe','accuracy'):>8.1f}%{g('linear_probe','f1_macro'):>7.1f}%")
 
-    print("=" * 100)
+    print("=" * 150)
     print()
     print("Details:")
+    print(f"  Zero-shot: GRU classifier on 10 training datasets (87 classes), sub-window format, group-matched scoring")
+    print(f"  Open-set: all 87 logits; Closed-set: logits masked to test-relevant groups")
     print(f"  Supervised: GRU classifier (paper's architecture), {GRU_EPOCHS} epochs, lr={CLASSIFIER_LR}")
     print(f"  Linear probe: Linear classifier on mean-pooled embeddings, {LINEAR_PROBE_EPOCHS} epochs")
-    print(f"  Zero-shot: N/A (LiMU-BERT is not text-aligned)")
 
 
 # =============================================================================
@@ -643,10 +727,50 @@ def print_results_table(all_results: Dict):
 # =============================================================================
 
 def main():
+    torch.manual_seed(42)
+    np.random.seed(42)
+    random.seed(42)
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Load or train zero-shot GRU classifier
+    global_labels = load_global_labels()
+    zs_clf_path = OUTPUT_DIR / "limubert_zs_gru.pt"
+
+    if zs_clf_path.exists():
+        print(f"\nLoading cached zero-shot GRU from {zs_clf_path}...")
+        zs_classifier = GRUClassifier(input_dim=EMB_DIM, num_classes=len(global_labels)).to(device)
+        zs_classifier.load_state_dict(torch.load(str(zs_clf_path), map_location=device))
+        zs_classifier.train(False)
+        print(f"  Loaded GRU with {len(global_labels)} classes")
+    else:
+        print(f"\nLoading training embeddings for zero-shot ({len(TRAIN_DATASETS)} datasets)...")
+        train_emb, train_lab = load_limubert_training_embeddings(global_labels, device)
+        print(f"Training data: {train_emb.shape[0]} sub-windows, shape={train_emb.shape}, "
+              f"{len(np.unique(train_lab))} classes")
+
+        # 90/10 train/val split for zero-shot classifier
+        rng = np.random.RandomState(CLASSIFIER_SEED)
+        N = len(train_emb)
+        indices = np.arange(N)
+        rng.shuffle(indices)
+        val_n = int(N * 0.1)
+        val_idx = indices[:val_n]
+        train_idx = indices[val_n:]
+
+        print(f"\nTraining zero-shot GRU classifier "
+              f"({len(train_idx)} train, {len(val_idx)} val, 87 classes)...")
+        zs_classifier = train_gru_classifier(
+            train_emb[train_idx], train_lab[train_idx],
+            train_emb[val_idx], train_lab[val_idx],
+            num_classes=len(global_labels), device=device,
+            desc="LiMU-BERT | ZS GRU",
+        )
+        torch.save(zs_classifier.state_dict(), str(zs_clf_path))
+        print(f"  Saved zero-shot GRU to {zs_clf_path}")
 
     all_results = {}
 
@@ -663,7 +787,31 @@ def main():
 
         ds_results = {}
 
-        # 1. 1% supervised (GRU)
+        # Reshape test data into sub-windows for zero-shot GRU
+        test_sub_windows, test_sub_labels = reshape_and_merge(test_emb, test_lab)  # (M, 20, 72), (M,)
+        print(f"  Sub-windows for ZS: {test_sub_windows.shape[0]} from {test_emb.shape[0]} windows")
+
+        # 0. Zero-shot open-set (GRU on sub-windows)
+        print(f"\n  --- Zero-Shot Open-Set (GRU) ---")
+        pred_open = predict_gru_global(zs_classifier, test_sub_windows, device)
+        ds_results['zero_shot_open_set'] = score_with_groups(
+            pred_open, test_sub_labels, test_ds, global_labels, DATASET_CONFIG)
+        zs_open = ds_results['zero_shot_open_set']
+        print(f"  ZS Open-set: Acc={zs_open['accuracy']:.1f}%, F1={zs_open['f1_macro']:.1f}%")
+
+        # 1. Zero-shot closed-set (GRU with masked logits)
+        print(f"\n  --- Zero-Shot Closed-Set (GRU) ---")
+        mask = get_closed_set_mask(test_ds, global_labels, DATASET_CONFIG)
+        pred_closed = predict_gru_global(zs_classifier, test_sub_windows, device, logit_mask=mask)
+        ds_results['zero_shot_closed_set'] = score_with_groups(
+            pred_closed, test_sub_labels, test_ds, global_labels, DATASET_CONFIG)
+        ds_results['zero_shot_closed_set']['n_allowed'] = int(mask.sum())
+        ds_results['zero_shot_closed_set']['n_masked'] = int((~mask).sum())
+        zs_close = ds_results['zero_shot_closed_set']
+        print(f"  ZS Closed-set: Acc={zs_close['accuracy']:.1f}%, F1={zs_close['f1_macro']:.1f}% "
+              f"({zs_close['n_allowed']}/{len(global_labels)} labels allowed)")
+
+        # 3. 1% supervised (GRU)
         print(f"\n  --- 1% Supervised (GRU) ---")
         ds_results['1pct_supervised'] = evaluate_supervised_gru(
             test_emb, test_lab, test_ds, device,
@@ -672,7 +820,7 @@ def main():
               f"Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['1pct_supervised']['f1_macro']:.1f}%")
 
-        # 2. 10% supervised (GRU)
+        # 4. 10% supervised (GRU)
         print(f"\n  --- 10% Supervised (GRU) ---")
         ds_results['10pct_supervised'] = evaluate_supervised_gru(
             test_emb, test_lab, test_ds, device,
@@ -681,7 +829,7 @@ def main():
               f"Acc={ds_results['10pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['10pct_supervised']['f1_macro']:.1f}%")
 
-        # 3. Linear probe (mean-pooled + linear classifier, full train split)
+        # 5. Linear probe (mean-pooled + linear classifier, full train split)
         print(f"\n  --- Linear Probe ---")
         ds_results['linear_probe'] = evaluate_linear_probe(
             test_emb, test_lab, test_ds, device)

@@ -1,7 +1,7 @@
 """
-LanHAR baseline evaluation using the new evaluation framework.
+LanHAR baseline scoring using the unified framework.
 
-LanHAR IS text-aligned (CLIP-style), so zero-shot evaluation via cosine similarity
+LanHAR IS text-aligned (CLIP-style), so zero-shot via cosine similarity
 is available. Evaluates with:
   1. Zero-shot open-set (cosine sim with all 87 text prototypes, group-based matching)
   2. Zero-shot closed-set (cosine sim with test dataset text prototypes, exact match)
@@ -52,6 +52,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from datasets.imu_pretraining_dataset.label_groups import (
     LABEL_GROUPS,
     get_label_to_group_mapping,
+)
+from val_scripts.human_activity_recognition.grouped_zero_shot import (
+    map_local_to_global_labels,
 )
 
 # =============================================================================
@@ -1684,39 +1687,37 @@ def score_linear_probe(
 
 def print_results_table(all_results):
     print()
-    print("=" * 120)
+    print("=" * 150)
     print("LanHAR BASELINE RESULTS")
-    print("=" * 120)
+    print("=" * 150)
 
     header = (f"{'Dataset':<16}"
               f"{'ZS-Open Acc':>13}{'ZS-Open F1':>13}"
               f"{'ZS-Close Acc':>14}{'ZS-Close F1':>14}"
               f"{'1% Sup Acc':>12}{'1% Sup F1':>12}"
-              f"{'10% Sup Acc':>13}{'10% Sup F1':>13}")
+              f"{'10% Sup Acc':>13}{'10% Sup F1':>13}"
+              f"{'LP Acc':>9}{'LP F1':>8}")
     print(header)
-    print("-" * 120)
+    print("-" * 150)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
             continue
         r = all_results[ds]
-        os_acc = r.get("zero_shot_open_set", {}).get("accuracy", 0.0)
-        os_f1 = r.get("zero_shot_open_set", {}).get("f1_macro", 0.0)
-        cs_acc = r.get("zero_shot_closed_set", {}).get("accuracy", 0.0)
-        cs_f1 = r.get("zero_shot_closed_set", {}).get("f1_macro", 0.0)
-        s1_acc = r.get("1pct_supervised", {}).get("accuracy", 0.0)
-        s1_f1 = r.get("1pct_supervised", {}).get("f1_macro", 0.0)
-        s10_acc = r.get("10pct_supervised", {}).get("accuracy", 0.0)
-        s10_f1 = r.get("10pct_supervised", {}).get("f1_macro", 0.0)
+
+        def g(key, metric):
+            return r.get(key, {}).get(metric, 0.0)
+
         print(
             f"{ds:<16}"
-            f"{os_acc:>12.1f}%{os_f1:>12.1f}%"
-            f"{cs_acc:>13.1f}%{cs_f1:>13.1f}%"
-            f"{s1_acc:>11.1f}%{s1_f1:>11.1f}%"
-            f"{s10_acc:>12.1f}%{s10_f1:>12.1f}%"
+            f"{g('zero_shot_open_set','accuracy'):>12.1f}%{g('zero_shot_open_set','f1_macro'):>12.1f}%"
+            f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>13.1f}%"
+            f"{g('1pct_supervised','accuracy'):>11.1f}%{g('1pct_supervised','f1_macro'):>11.1f}%"
+            f"{g('10pct_supervised','accuracy'):>12.1f}%{g('10pct_supervised','f1_macro'):>12.1f}%"
+            f"{g('linear_probe','accuracy'):>8.1f}%{g('linear_probe','f1_macro'):>7.1f}%"
         )
 
-    print("=" * 120)
+    print("=" * 150)
     print()
     print("Details:")
     print(f"  Model: LanHAR (SciBERT + TimeSeriesTransformer)")
@@ -1728,6 +1729,7 @@ def print_results_table(all_results):
     print(f"  Sensor embedding dim: {EMB_DIM}")
     print(f"  Zero-shot: cosine similarity with projected text prototypes")
     print(f"  Classifier: Linear, {CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
+    print(f"  Linear probe: Linear classifier on full train split, {CLASSIFIER_EPOCHS} epochs")
 
 
 def main():
@@ -1794,18 +1796,29 @@ def main():
           f"{len(np.unique(all_train_labels))} classes, "
           f"{desc_total} per-sample descriptions")
 
-    # Stage 1: Fine-tune text encoder
-    train_stage1(model, tokenizer, text_protos, GLOBAL_LABELS, device)
+    # Check for cached trained model
+    cached_model_path = OUTPUT_DIR / "lanhar_model.pt"
+    if cached_model_path.exists():
+        print(f"\nLoading cached LanHAR model from {cached_model_path}")
+        model.load_state_dict(torch.load(cached_model_path, map_location=device, weights_only=True))
+        print("Cached model loaded — skipping Stage 1 & Stage 2 training")
+    else:
+        # Stage 1: Fine-tune text encoder
+        train_stage1(model, tokenizer, text_protos, GLOBAL_LABELS, device)
 
-    # Stage 2: Train sensor encoder (source data only — no test data)
-    # Original LanHAR combines source + target domains, but for fair comparison
-    # with other baselines that never see test data during training, we use
-    # only the 10 training datasets here.
-    train_stage2(
-        model, tokenizer, all_train_sensor, all_train_labels,
-        text_protos, GLOBAL_LABELS, device,
-        per_sample_descs=all_per_sample_descs,
-    )
+        # Stage 2: Train sensor encoder (source data only — no test data)
+        # Original LanHAR combines source + target domains, but for fair comparison
+        # with other baselines that never see test data during training, we use
+        # only the 10 training datasets here.
+        train_stage2(
+            model, tokenizer, all_train_sensor, all_train_labels,
+            text_protos, GLOBAL_LABELS, device,
+            per_sample_descs=all_per_sample_descs,
+        )
+
+        # Save trained model for future runs
+        torch.save(model.state_dict(), cached_model_path)
+        print(f"\nSaved trained LanHAR model to {cached_model_path}")
 
     # Build projected text prototypes for zero-shot (all 87 classes)
     print("\nBuilding zero-shot text prototypes...")

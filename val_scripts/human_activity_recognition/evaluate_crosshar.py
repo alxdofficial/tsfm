@@ -1,11 +1,12 @@
 """
-CrossHAR baseline evaluation using the new evaluation framework.
+CrossHAR baseline scoring using the unified framework.
 
-CrossHAR is NOT text-aligned, so zero-shot evaluation is N/A.
 Evaluates with:
-  1. 1% supervised (Transformer_ft classifier - paper's architecture)
-  2. 10% supervised (Transformer_ft classifier)
-  3. Linear probe (linear classifier on frozen mean-pooled embeddings, full train split)
+  1. Zero-shot open-set (classifier on 87 training labels, group scoring)
+  2. Zero-shot closed-set (classifier with masked logits, group scoring)
+  3. 1% supervised (Transformer_ft classifier - paper's architecture)
+  4. 10% supervised (Transformer_ft classifier)
+  5. Linear probe (linear classifier on frozen mean-pooled embeddings, full train split)
 
 Usage:
     python val_scripts/human_activity_recognition/evaluate_crosshar.py
@@ -13,6 +14,7 @@ Usage:
 
 import json
 import math
+import random
 import sys
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Tuple
@@ -29,6 +31,11 @@ from tqdm import tqdm
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from val_scripts.human_activity_recognition.grouped_zero_shot import (
+    load_global_labels, map_local_to_global_labels,
+    get_closed_set_mask, score_with_groups,
+)
 
 
 # =============================================================================
@@ -69,6 +76,7 @@ EMBED_BATCH_SIZE = 512
 with open(DATASET_CONFIG_PATH) as f:
     DATASET_CONFIG = json.load(f)
 
+TRAIN_DATASETS = DATASET_CONFIG["train_datasets"]
 TEST_DATASETS = DATASET_CONFIG["zero_shot_datasets"]
 
 
@@ -528,6 +536,40 @@ def predict_transformer_classifier(model, data, batch_size=CLASSIFIER_BATCH_SIZE
     return np.array(all_preds)
 
 
+def predict_transformer_global(model, data, device, logit_mask=None,
+                               batch_size=CLASSIFIER_BATCH_SIZE):
+    """Predict global label indices using Transformer_ft classifier.
+
+    Args:
+        model: Trained TransformerClassifier with num_classes=87
+        data: (N, 120, 72) sequence embeddings
+        device: torch device
+        logit_mask: Optional (87,) bool mask for closed-set scoring.
+            If provided, masked-out logits are set to -inf before argmax.
+
+    Returns:
+        pred_global_indices: (N,) predicted global label indices
+    """
+    model.train(False)
+    ds = TensorDataset(torch.from_numpy(data).float())
+    loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
+
+    if logit_mask is not None:
+        mask_tensor = torch.from_numpy(logit_mask).bool().to(device)
+
+    all_preds = []
+    with torch.no_grad():
+        for (batch_data,) in loader:
+            batch_data = batch_data.to(device)
+            logits = model(batch_data)
+            if logit_mask is not None:
+                logits[:, ~mask_tensor] = float('-inf')
+            preds = logits.argmax(dim=1).cpu().numpy()
+            all_preds.extend(preds)
+
+    return np.array(all_preds)
+
+
 # =============================================================================
 # Linear Classifier (for linear probe)
 # =============================================================================
@@ -629,7 +671,35 @@ def predict_linear(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=None):
 
 
 # =============================================================================
-# Evaluation Functions
+# Grouped Zero-Shot: Training Embedding Extraction
+# =============================================================================
+
+def load_crosshar_training_embeddings(model, global_labels, device):
+    """Extract CrossHAR embeddings for all 10 training datasets.
+
+    Returns full sequence embeddings for the Transformer_ft zero-shot classifier.
+
+    Returns:
+        all_embeddings: (N_total, 120, 72) concatenated sequence embeddings
+        all_labels: (N_total,) global label indices
+    """
+    all_emb_list = []
+    all_lab_list = []
+
+    for ds in tqdm(TRAIN_DATASETS, desc="CrossHAR | Loading training embeddings", leave=True):
+        raw_data, raw_labels = load_raw_data(ds)
+        emb = extract_crosshar_embeddings(model, raw_data, device)  # (N, 120, 72)
+        labels = get_window_labels(raw_labels)
+        global_lab = map_local_to_global_labels(labels, ds, DATASET_CONFIG, global_labels)
+        all_emb_list.append(emb)
+        all_lab_list.append(global_lab)
+        tqdm.write(f"    {ds}: {emb.shape[0]} samples")
+
+    return np.concatenate(all_emb_list, axis=0), np.concatenate(all_lab_list, axis=0)
+
+
+# =============================================================================
+# Scoring Functions
 # =============================================================================
 
 def score_supervised(
@@ -693,9 +763,11 @@ def score_supervised(
     acc = accuracy_score(gt_names, pred_names) * 100
     f1 = f1_score(gt_names, pred_names, labels=test_activities,
                   average='macro', zero_division=0) * 100
+    f1_w = f1_score(gt_names, pred_names, labels=test_activities,
+                    average='weighted', zero_division=0) * 100
 
     return {
-        'accuracy': acc, 'f1_macro': f1,
+        'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w,
         'n_samples': len(gt_names), 'n_train_samples': len(train_data),
         'n_classes': num_test_classes,
     }
@@ -760,9 +832,11 @@ def score_linear_probe(
     acc = accuracy_score(gt_names, pred_names) * 100
     f1 = f1_score(gt_names, pred_names, labels=test_activities,
                   average='macro', zero_division=0) * 100
+    f1_w = f1_score(gt_names, pred_names, labels=test_activities,
+                    average='weighted', zero_division=0) * 100
 
     return {
-        'accuracy': acc, 'f1_macro': f1,
+        'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w,
         'n_samples': len(gt_names), 'n_train_samples': len(train_data),
         'n_classes': num_test_classes,
     }
@@ -774,39 +848,43 @@ def score_linear_probe(
 
 def print_results_table(all_results):
     print()
-    print("=" * 100)
+    print("=" * 150)
     print("CROSSHAR BASELINE RESULTS")
-    print("=" * 100)
+    print("=" * 150)
 
     header = (f"{'Dataset':<16}"
+              f"{'ZS-Open Acc':>13}{'ZS-Open F1':>12}"
+              f"{'ZS-Close Acc':>14}{'ZS-Close F1':>13}"
               f"{'1% Sup Acc':>12}{'1% Sup F1':>12}"
               f"{'10% Sup Acc':>13}{'10% Sup F1':>13}"
               f"{'LP Acc':>10}{'LP F1':>10}")
     print(header)
-    print("-" * 100)
+    print("-" * 150)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
             continue
         r = all_results[ds]
-        s1_acc = r.get('1pct_supervised', {}).get('accuracy', 0.0)
-        s1_f1 = r.get('1pct_supervised', {}).get('f1_macro', 0.0)
-        s10_acc = r.get('10pct_supervised', {}).get('accuracy', 0.0)
-        s10_f1 = r.get('10pct_supervised', {}).get('f1_macro', 0.0)
-        lp_acc = r.get('linear_probe', {}).get('accuracy', 0.0)
-        lp_f1 = r.get('linear_probe', {}).get('f1_macro', 0.0)
-        print(f"{ds:<16}"
-              f"{s1_acc:>11.1f}%{s1_f1:>11.1f}%"
-              f"{s10_acc:>12.1f}%{s10_f1:>12.1f}%"
-              f"{lp_acc:>9.1f}%{lp_f1:>9.1f}%")
 
-    print("=" * 100)
+        def g(key, metric):
+            return r.get(key, {}).get(metric, 0.0)
+
+        print(f"{ds:<16}"
+              f"{g('zero_shot_open_set','accuracy'):>12.1f}%{g('zero_shot_open_set','f1_macro'):>11.1f}%"
+              f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>12.1f}%"
+              f"{g('1pct_supervised','accuracy'):>11.1f}%{g('1pct_supervised','f1_macro'):>11.1f}%"
+              f"{g('10pct_supervised','accuracy'):>12.1f}%{g('10pct_supervised','f1_macro'):>12.1f}%"
+              f"{g('linear_probe','accuracy'):>9.1f}%{g('linear_probe','f1_macro'):>9.1f}%")
+
+    print("=" * 150)
     print()
     print("Details:")
     print(f"  Model: CrossHAR (Masked Transformer + Contrastive)")
     print(f"  Hidden dim: {HIDDEN}, Layers: {N_LAYERS}, Heads: {N_HEADS}")
     print(f"  Embedding dim: {EMB_DIM} (full sequence, 120 timesteps)")
     print(f"  Checkpoint: {CROSSHAR_CHECKPOINT.relative_to(PROJECT_ROOT)}")
+    print(f"  Zero-shot: Transformer_ft on 10 training datasets (87 classes), group-matched scoring")
+    print(f"  Open-set: all 87 logits; Closed-set: logits masked to test-relevant groups")
     print(f"  Supervised classifier: Transformer_ft (hidden={FT_HIDDEN_SIZE}, "
           f"heads={FT_NUM_HEADS}, ff={FT_DIM_FEEDFORWARD}), "
           f"{CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
@@ -815,6 +893,10 @@ def print_results_table(all_results):
 
 
 def main():
+    torch.manual_seed(42)
+    np.random.seed(42)
+    random.seed(42)
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
 
@@ -829,6 +911,42 @@ def main():
 
     crosshar_model = load_crosshar_model(str(CROSSHAR_CHECKPOINT), device)
     print("Model loaded successfully")
+
+    # Load or train zero-shot Transformer_ft classifier
+    global_labels = load_global_labels()
+    zs_clf_path = OUTPUT_DIR / "crosshar_zs_transformer.pt"
+
+    if zs_clf_path.exists():
+        print(f"\nLoading cached zero-shot Transformer_ft from {zs_clf_path}...")
+        zs_classifier = TransformerClassifier(input_dim=EMB_DIM, num_classes=len(global_labels)).to(device)
+        zs_classifier.load_state_dict(torch.load(str(zs_clf_path), map_location=device))
+        zs_classifier.train(False)
+        print(f"  Loaded Transformer_ft with {len(global_labels)} classes")
+    else:
+        print(f"\nExtracting training embeddings for zero-shot ({len(TRAIN_DATASETS)} datasets)...")
+        train_emb, train_lab = load_crosshar_training_embeddings(crosshar_model, global_labels, device)
+        print(f"Training data: {train_emb.shape[0]} samples, shape={train_emb.shape}, "
+              f"{len(np.unique(train_lab))} classes")
+
+        # 90/10 train/val split for zero-shot classifier
+        rng = np.random.RandomState(CLASSIFIER_SEED)
+        N = len(train_emb)
+        indices = np.arange(N)
+        rng.shuffle(indices)
+        val_n = int(N * 0.1)
+        val_idx = indices[:val_n]
+        train_idx = indices[val_n:]
+
+        print(f"\nTraining zero-shot Transformer_ft classifier "
+              f"({len(train_idx)} train, {len(val_idx)} val, 87 classes)...")
+        zs_classifier = train_transformer_classifier(
+            train_emb[train_idx], train_lab[train_idx],
+            train_emb[val_idx], train_lab[val_idx],
+            num_classes=len(global_labels), device=device,
+            desc="CrossHAR | ZS Transformer_ft",
+        )
+        torch.save(zs_classifier.state_dict(), str(zs_clf_path))
+        print(f"  Saved zero-shot Transformer_ft to {zs_clf_path}")
 
     # Run scoring on each test dataset
     all_results = {}
@@ -848,6 +966,26 @@ def main():
         print(f"  Classes: {test_activities}")
 
         ds_results = {}
+
+        # Zero-shot open-set (Transformer_ft on full sequences)
+        print(f"\n  --- Zero-Shot Open-Set (Transformer_ft) ---")
+        pred_open = predict_transformer_global(zs_classifier, test_emb, device)
+        ds_results['zero_shot_open_set'] = score_with_groups(
+            pred_open, test_labels, test_ds, global_labels, DATASET_CONFIG)
+        zs_open = ds_results['zero_shot_open_set']
+        print(f"  ZS Open-set: Acc={zs_open['accuracy']:.1f}%, F1={zs_open['f1_macro']:.1f}%")
+
+        # Zero-shot closed-set (Transformer_ft with masked logits)
+        print(f"\n  --- Zero-Shot Closed-Set (Transformer_ft) ---")
+        mask = get_closed_set_mask(test_ds, global_labels, DATASET_CONFIG)
+        pred_closed = predict_transformer_global(zs_classifier, test_emb, device, logit_mask=mask)
+        ds_results['zero_shot_closed_set'] = score_with_groups(
+            pred_closed, test_labels, test_ds, global_labels, DATASET_CONFIG)
+        ds_results['zero_shot_closed_set']['n_allowed'] = int(mask.sum())
+        ds_results['zero_shot_closed_set']['n_masked'] = int((~mask).sum())
+        zs_close = ds_results['zero_shot_closed_set']
+        print(f"  ZS Closed-set: Acc={zs_close['accuracy']:.1f}%, F1={zs_close['f1_macro']:.1f}% "
+              f"({zs_close['n_allowed']}/{len(global_labels)} labels allowed)")
 
         # 1% supervised (Transformer_ft)
         print(f"\n  --- 1% Supervised (Transformer_ft) ---")

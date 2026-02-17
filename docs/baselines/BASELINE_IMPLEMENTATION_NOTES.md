@@ -313,8 +313,10 @@ head, trained via contrastive learning with soft targets and memory bank.
 
 **Patch size sweep**:
 TSFM supports variable patch sizes. Evaluation sweeps [1.0, 1.25, 1.5, 1.75, 2.0] seconds
-and selects the best by zero-shot closed-set accuracy on the first dataset, then uses that
-patch size for all subsequent evaluations.
+per test dataset independently. For each dataset, a 20% held-out sweep split (seed=42) is
+used to select the best patch size by zero-shot closed-set accuracy, then embeddings are
+re-extracted on the full dataset with the chosen patch size. This prevents test-time
+hyperparameter tuning from inflating reported metrics.
 
 **384-dim embeddings**:
 After the semantic alignment head (channel fusion + temporal pooling), embeddings are 384-dim

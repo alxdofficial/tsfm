@@ -4,19 +4,26 @@ Generated: 2026-02-17 | Framework: 5-metric unified evaluation | Seed: 3431
 
 ## Models
 
-| Model | Type | Pretrain Data | Embed Dim | Zero-Shot? | Classifier |
-|-------|------|---------------|-----------|------------|------------|
-| **TSFM (ours)** | Text-aligned foundation model | 10 HAR datasets (training in progress) | 384 | Yes | Linear |
-| **LiMU-BERT** | Self-supervised (masked reconstruction) | 10 HAR datasets (paper checkpoint) | 72 | No | GRU |
-| **MOMENT** | General time-series foundation model | Time Series Pile (no HAR data) | 6144 | No | SVM-RBF |
-| **CrossHAR** | Self-supervised (contrastive) | 10 HAR datasets (paper checkpoint) | 72 | No | Transformer_ft |
-| **LanHAR** | Text-aligned (trained from scratch) | 10 HAR datasets (fresh each run) | 768 | Yes | Linear |
+| Model | Type | Pretrain Data | Embed Dim | Zero-Shot Method | Classifier |
+|-------|------|---------------|-----------|------------------|------------|
+| **TSFM (ours)** | Text-aligned foundation model | 10 HAR datasets (training in progress) | 384 | Cosine sim with text embeddings | Linear |
+| **LiMU-BERT** | Self-supervised (masked reconstruction) | 10 HAR datasets (paper checkpoint) | 72 | Classifier + group scoring | GRU |
+| **MOMENT** | General time-series foundation model | Time Series Pile (no HAR data) | 6144 | Classifier + group scoring | SVM-RBF |
+| **CrossHAR** | Self-supervised (contrastive) | 10 HAR datasets (paper checkpoint) | 72 | Classifier + group scoring | Transformer_ft |
+| **LanHAR** | Text-aligned (trained from scratch) | 10 HAR datasets (fresh each run) | 768 | Cosine sim with text embeddings | Linear |
 
 ## Fairness Notes
 
 **Training data**: All HAR-pretrained models (TSFM, LiMU-BERT, CrossHAR, LanHAR) use 10 training
 datasets. The 4 test datasets (MotionSense, RealWorld, MobiAct, VTT-ConIoT) were never seen during
 any model's pretraining. MOMENT was pretrained on general time-series data with no HAR-specific data.
+
+**Zero-shot prediction mechanisms differ by model type**:
+- *Text-aligned models* (TSFM, LanHAR): Encode activity labels as text, predict via cosine similarity
+  with sensor embeddings. Open-set uses all 87 labels + group scoring; closed-set uses only test labels + exact match.
+- *Classifier-based models* (LiMU-BERT, MOMENT, CrossHAR): Train a linear classifier on training embeddings
+  (87 global labels), predict via classifier logits + group scoring. Open-set uses all 87 logits;
+  closed-set masks logits to training labels whose group appears in the test dataset.
 
 **Classifiers**: Each baseline uses its own paper's recommended downstream classifier for supervised
 metrics (1%, 10%). The linear probe metric uses the same `nn.Linear` architecture across all models.
@@ -43,10 +50,12 @@ Higher dimensions give more capacity but the linear probe uses the same architec
 | Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 | LP Acc | LP F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM (ours)** | — | — | — | — | — | — | — | — | — | — |
-| **LiMU-BERT** | N/A | N/A | N/A | N/A | 38.2 | 30.9 | 57.3 | 50.4 | 55.2 | 43.3 |
-| **MOMENT** | N/A | N/A | N/A | N/A | 58.4 | 54.7 | 74.5 | 71.8 | 82.7 | 81.3 |
-| **CrossHAR** | N/A | N/A | N/A | N/A | 51.6 | 46.7 | 66.5 | 60.9 | 65.8 | 55.8 |
+| **LiMU-BERT** | — | — | — | — | 38.2 | 30.9 | 57.3 | 50.4 | 55.2 | 43.3 |
+| **MOMENT** | — | — | — | — | 58.4 | 54.7 | 74.5 | 71.8 | 82.7 | 81.3 |
+| **CrossHAR** | — | — | — | — | 51.6 | 46.7 | 66.5 | 60.9 | 65.8 | 55.8 |
 | **LanHAR** | 12.7 | 6.1 | 22.9 | 16.1 | 30.9 | 27.1 | 41.7 | 34.7 | 47.6 | 34.0 |
+
+*Note: LiMU-BERT and CrossHAR zero-shot use native classifiers (GRU and Transformer_ft). MOMENT and LanHAR zero-shot results pending re-evaluation with caching.*
 
 ---
 
@@ -54,20 +63,28 @@ Higher dimensions give more capacity but the linear probe uses the same architec
 
 ### Zero-Shot Open-Set
 
-*Model predicts from all training labels; correct if predicted label maps to same group as ground truth.*
+*Model predicts from all 87 training labels; correct if predicted label maps to same group as ground truth.*
+
+*Text-aligned models use cosine similarity; classifier-based models use a trained linear classifier.*
 
 | Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | VTT-ConIoT Acc | VTT-ConIoT F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM (ours)** | — | — | — | — | — | — | — | — |
+| **LiMU-BERT** | — | — | — | — | — | — | — | — |
+| **MOMENT** | — | — | — | — | — | — | — | — |
+| **CrossHAR** | — | — | — | — | — | — | — | — |
 | **LanHAR** | 11.4 | 4.4 | 14.0 | 6.4 | 17.3 | 11.4 | 8.3 | 2.1 |
 
 ### Zero-Shot Closed-Set
 
-*Model predicts from only the test dataset's own labels.*
+*Text-aligned models predict from test labels only (exact match). Classifier-based models mask logits to test-relevant groups (group match).*
 
 | Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | VTT-ConIoT Acc | VTT-ConIoT F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM (ours)** | — | — | — | — | — | — | — | — |
+| **LiMU-BERT** | — | — | — | — | — | — | — | — |
+| **MOMENT** | — | — | — | — | — | — | — | — |
+| **CrossHAR** | — | — | — | — | — | — | — | — |
 | **LanHAR** | 17.5 | 11.6 | 37.1 | 30.7 | 30.0 | 19.1 | 6.9 | 3.2 |
 
 ### 1% Supervised
@@ -110,9 +127,15 @@ Higher dimensions give more capacity but the linear probe uses the same architec
 2. **Zero-shot is hard** — LanHAR's best closed-set average is 22.9%, far from supervised baselines,
    indicating this is a challenging setting.
 
-3. **VTT-ConIoT is the hardest dataset** — 16 industrial activities, all models score lowest here.
+3. **All models now have zero-shot metrics** — text-aligned models use cosine similarity,
+   classifier-based models use a trained linear classifier with group scoring. While the
+   prediction mechanisms differ, both measure cross-dataset transfer without test-time labels.
 
-4. **LanHAR underperforms expectations** — despite text alignment, it scores below non-text-aligned
+4. **VTT-ConIoT is the hardest dataset** — 16 industrial activities, all models score lowest here.
+   For classifier-based models, 8 of 16 test labels have no training synonyms, creating
+   a genuine coverage gap vs text-aligned models.
+
+5. **LanHAR underperforms expectations** — despite text alignment, it scores below non-text-aligned
    baselines on supervised metrics, suggesting from-scratch training doesn't learn representations
    as strong as pretrained encoders.
 

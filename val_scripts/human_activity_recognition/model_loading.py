@@ -95,16 +95,25 @@ def load_model(
         dropout=enc_cfg.get('dropout', 0.1),
     )
 
-    # Load state dict
+    # Load state dict (strict=False only to tolerate removed channel_encoding keys)
     missing_keys, unexpected_keys = model.load_state_dict(
         checkpoint['model_state_dict'], strict=False
     )
-    if unexpected_keys:
-        other_unexpected = [k for k in unexpected_keys if 'channel_encoding' not in k]
-        if other_unexpected and verbose:
-            print(f"  Warning: Unexpected keys: {other_unexpected[:5]}...")
-    if missing_keys and verbose:
-        print(f"  Warning: Missing keys: {missing_keys[:5]}...")
+    # Filter out known benign mismatches
+    benign_unexpected = [k for k in unexpected_keys if 'channel_encoding' in k]
+    critical_unexpected = [k for k in unexpected_keys if 'channel_encoding' not in k]
+    if critical_unexpected:
+        raise RuntimeError(
+            f"Checkpoint has {len(critical_unexpected)} unexpected keys "
+            f"(architecture mismatch): {critical_unexpected[:10]}"
+        )
+    if missing_keys:
+        raise RuntimeError(
+            f"Checkpoint is missing {len(missing_keys)} keys "
+            f"(architecture mismatch): {missing_keys[:10]}"
+        )
+    if benign_unexpected and verbose:
+        print(f"  Note: Ignored {len(benign_unexpected)} legacy channel_encoding keys")
 
     model.train(False)
     model = model.to(device)

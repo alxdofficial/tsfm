@@ -304,7 +304,7 @@ loss = (loss_imu_to_text + loss_text_to_imu) / 2.0
 
 **Open-Vocabulary Candidate Set:**
 - Paper says: "60+ unique labels"
-- Current: ~100 unique labels (101 training labels across 32 semantic groups + zero-shot labels)
+- Current: 137 unique labels across 44 semantic groups (+ zero-shot labels)
 
 **Retrieval Pool Size:**
 Zero-shot evaluation uses `max_retrieval_pool=100` labels for the combined inventory.

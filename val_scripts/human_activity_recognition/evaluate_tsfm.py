@@ -1,10 +1,10 @@
 """
-TSFM (our model) evaluation using the new evaluation framework.
+TSFM (our model) evaluation using the unified framework.
 
 Extracts embeddings from the trained TSFM semantic alignment model
 and evaluates with:
   1. Zero-shot open-set (cosine sim against all 87 training labels, group matching)
-  2. Zero-shot closed-set (cosine sim against test dataset labels only)
+  2. Zero-shot closed-set (cosine sim against test dataset labels only, exact match)
   3. 1% supervised (linear classifier on 1% of test data)
   4. 10% supervised (linear classifier on 10% of test data)
   5. Linear probe (linear classifier on frozen embeddings, full train split)
@@ -21,6 +21,7 @@ Usage:
 
 import copy
 import json
+import random
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -44,6 +45,9 @@ from datasets.imu_pretraining_dataset.label_groups import (
 )
 from val_scripts.human_activity_recognition.model_loading import load_model, load_label_bank
 from val_scripts.human_activity_recognition.evaluation_metrics import compute_similarity
+from val_scripts.human_activity_recognition.grouped_zero_shot import (
+    map_local_to_global_labels,
+)
 from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
 from model.token_text_encoder import LearnableLabelBank
 
@@ -403,8 +407,9 @@ def evaluate_zero_shot_open_set(
 
     acc = accuracy_score(gt_groups, pred_groups) * 100
     f1 = f1_score(gt_groups, pred_groups, average='macro', zero_division=0) * 100
+    f1_w = f1_score(gt_groups, pred_groups, average='weighted', zero_division=0) * 100
 
-    return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_groups),
+    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_groups),
             'n_classes_train': len(GLOBAL_LABELS)}
 
 
@@ -450,8 +455,12 @@ def evaluate_zero_shot_closed_set(
         gt_names, pred_names, labels=test_activities,
         average='macro', zero_division=0,
     ) * 100
+    f1_w = f1_score(
+        gt_names, pred_names, labels=test_activities,
+        average='weighted', zero_division=0,
+    ) * 100
 
-    return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_names),
+    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_names),
             'n_classes': num_test_classes}
 
 
@@ -514,8 +523,12 @@ def evaluate_supervised(
         gt_names, pred_names, labels=test_activities,
         average='macro', zero_division=0,
     ) * 100
+    f1_w = f1_score(
+        gt_names, pred_names, labels=test_activities,
+        average='weighted', zero_division=0,
+    ) * 100
 
-    return {'accuracy': acc, 'f1_macro': f1, 'n_samples': len(gt_names),
+    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_names),
             'n_train_samples': len(train_data), 'n_classes': num_test_classes}
 
 
@@ -543,9 +556,9 @@ def evaluate_linear_probe(
 def print_results_table(all_results):
     """Print results table."""
     print()
-    print("=" * 140)
-    print("TSFM EVALUATION RESULTS (New Framework)")
-    print("=" * 140)
+    print("=" * 150)
+    print("TSFM EVALUATION RESULTS")
+    print("=" * 150)
 
     header = (f"{'Dataset':<16}{'Patch':>6}"
               f"{'ZS-Open Acc':>13}{'ZS-Open F1':>13}"
@@ -554,7 +567,7 @@ def print_results_table(all_results):
               f"{'10%Sup Acc':>12}{'10%Sup F1':>11}"
               f"{'LP Acc':>9}{'LP F1':>8}")
     print(header)
-    print("-" * 140)
+    print("-" * 150)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
@@ -572,7 +585,7 @@ def print_results_table(all_results):
               f"{g('10pct_supervised','accuracy'):>11.1f}%{g('10pct_supervised','f1_macro'):>10.1f}%"
               f"{g('linear_probe','accuracy'):>8.1f}%{g('linear_probe','f1_macro'):>7.1f}%")
 
-    print("=" * 140)
+    print("=" * 150)
     print()
     print("Details:")
     print(f"  Checkpoint: {CHECKPOINT_PATH}")
@@ -591,12 +604,15 @@ def select_best_patch_size(
     label_bank: LearnableLabelBank,
     device: torch.device,
     patch_sizes: list = PATCH_SIZES_TO_TRY,
+    sweep_fraction: float = 0.2,
+    sweep_seed: int = 42,
 ) -> Tuple[float, np.ndarray]:
-    """Select best patch size using zero-shot closed-set accuracy.
+    """Select best patch size using a held-out sweep split.
 
-    Extracts embeddings at each candidate patch size, computes cosine
-    similarity with test label text embeddings, and picks the patch size
-    with highest closed-set accuracy. No classifier training needed.
+    Splits data into a small sweep subset (default 20%) and a reporting subset.
+    Patch size is chosen on the sweep split only, then embeddings are extracted
+    on the full dataset with the chosen patch size. This prevents test-time
+    hyperparameter tuning from inflating reported metrics.
 
     Patch sizes longer than the window duration are automatically excluded.
 
@@ -619,6 +635,17 @@ def select_best_patch_size(
         emb = extract_tsfm_embeddings(model, raw_data, device, patch_size_sec=valid_sizes[0])
         return valid_sizes[0], emb
 
+    # Split into sweep subset (for patch selection) and full dataset (for reporting)
+    n = len(raw_data)
+    rng = np.random.RandomState(sweep_seed)
+    indices = rng.permutation(n)
+    n_sweep = max(1, int(n * sweep_fraction))
+    sweep_idx = indices[:n_sweep]
+    sweep_data = raw_data[sweep_idx]
+    sweep_labels = test_labels[sweep_idx]
+
+    print(f"  Patch sweep using {n_sweep}/{n} samples ({sweep_fraction*100:.0f}% held-out split)")
+
     # Encode test labels once for zero-shot evaluation
     with torch.no_grad():
         label_embeddings = label_bank.encode(test_activities, normalize=True).to(device)
@@ -626,41 +653,45 @@ def select_best_patch_size(
     print(f"  Sweeping patch sizes: {valid_sizes}")
     best_acc = -1.0
     best_ps = valid_sizes[0]
-    best_emb = None
 
     for ps in valid_sizes:
         try:
-            emb = extract_tsfm_embeddings(model, raw_data, device, patch_size_sec=ps)
+            emb = extract_tsfm_embeddings(model, sweep_data, device, patch_size_sec=ps)
         except Exception as e:
             print(f"    patch={ps}s: FAILED ({e})")
             continue
 
-        # Quick zero-shot closed-set eval via cosine similarity
+        # Quick zero-shot closed-set eval on sweep split only
         emb_t = torch.from_numpy(emb).float().to(device)
         similarity = compute_similarity(emb_t, label_embeddings)
         pred_indices = similarity.argmax(dim=1).cpu().numpy()
 
         correct = 0
         total = 0
-        for i in range(len(test_labels)):
-            if test_labels[i] < len(test_activities):
+        for i in range(len(sweep_labels)):
+            if sweep_labels[i] < len(test_activities):
                 total += 1
-                if pred_indices[i] == test_labels[i]:
+                if pred_indices[i] == sweep_labels[i]:
                     correct += 1
 
         acc = (correct / total * 100) if total > 0 else 0.0
-        print(f"    patch={ps}s: ZS closed-set acc={acc:.1f}%")
+        print(f"    patch={ps}s: sweep acc={acc:.1f}%")
 
         if acc > best_acc:
             best_acc = acc
             best_ps = ps
-            best_emb = emb
 
-    print(f"  -> Best patch size: {best_ps}s (ZS closed-set acc={best_acc:.1f}%)")
+    # Re-extract embeddings on full dataset with chosen patch size
+    print(f"  -> Best patch size: {best_ps}s (sweep acc={best_acc:.1f}%)")
+    best_emb = extract_tsfm_embeddings(model, raw_data, device, patch_size_sec=best_ps)
     return best_ps, best_emb
 
 
 def main():
+    torch.manual_seed(42)
+    np.random.seed(42)
+    random.seed(42)
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
 
@@ -672,7 +703,7 @@ def main():
     label_bank = load_label_bank(checkpoint, device, hyperparams_path)
     print("Model and label bank loaded successfully")
 
-    # Run evaluation on each test dataset
+    # Run scoring on each test dataset
     all_results = {}
 
     for test_ds in TEST_DATASETS:

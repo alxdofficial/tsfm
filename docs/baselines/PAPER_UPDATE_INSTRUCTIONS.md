@@ -13,7 +13,7 @@ The following sections are currently placeholders and need to be written:
 **Action:** Write a ~150-word abstract covering:
 - Problem: HAR from IMUs with heterogeneous datasets
 - Approach: Language-aligned sensor representations with open-vocabulary retrieval
-- Key results: 49.41% zero-shot accuracy on 3 unseen datasets, trained on 11 datasets
+- Key results: 49.41% zero-shot accuracy on 3 unseen datasets, trained on 10 datasets
 - Contribution: Domain-specific foundation model for wearable sensing
 
 ### 1.2 Introduction (Section 1)
@@ -24,7 +24,7 @@ The following sections are currently placeholders and need to be written:
 - Existing approaches: closed-world classifiers, general TSFMs
 - Our approach: language-aligned IMU encoder with retrieval-based inference
 - Key innovation: soft targets for semantic overlap, memory bank, channel-independent architecture
-- Results: 11 datasets for training, 49.41% zero-shot on 3 unseen datasets
+- Results: 10 datasets for training, 49.41% zero-shot on 3 unseen datasets
 - Contributions: (1) multi-dataset training framework, (2) semantic alignment with soft targets, (3) open-vocabulary zero-shot evaluation protocol
 
 ### 1.3 Related Work (Section 2)
@@ -109,7 +109,7 @@ The following sections are currently placeholders and need to be written:
 > We train jointly on six public HAR datasets spanning diverse sampling rates, channel counts, and label vocabularies: UCI-HAR, HHAR, UniMiB-SHAR, MHEALTH, PAMAP2, and WISDM. We evaluate zero-shot transfer on MotionSense, which is never used during training.
 
 **Replace with:**
-> We train jointly on eleven public HAR datasets spanning diverse sampling rates (20-100 Hz), channel counts (3-45 channels), and label vocabularies: UCI-HAR, HHAR, UniMiB-SHAR, MHEALTH, PAMAP2, WISDM, DSADS, HAPT, KU-HAR, VTT-ConIoT, and RecGym. These datasets collectively cover 101 unique activity labels across 32 semantic groups. We evaluate zero-shot transfer on three held-out datasets: MotionSense, RealWorld, and MobiAct, which are never used during training. The zero-shot datasets include both expected activities (walking, running, sitting, etc.) and novel activities not seen in training (falling, vehicle entry).
+> We train jointly on ten public HAR datasets spanning diverse sampling rates (20-100 Hz), channel counts (3-48 channels), and label vocabularies: UCI-HAR, HHAR, UniMiB-SHAR, MHEALTH, PAMAP2, WISDM, DSADS, HAPT, KU-HAR, and RecGym. These datasets collectively cover 87 global activity labels across 34 semantic groups. We evaluate zero-shot transfer on four held-out datasets: MotionSense, RealWorld, MobiAct, and VTT-ConIoT, which are never used during training. The zero-shot datasets include both expected activities (walking, running, sitting, etc.) and novel activities not seen in training (falling, vehicle entry).
 
 ---
 
@@ -124,7 +124,7 @@ The following sections are currently placeholders and need to be written:
 **Action:** Keep or update based on latest 11-dataset training run. If you have validation metrics from the 11-dataset model, use those. The paper should report metrics from the final model configuration.
 
 ### 4.2 Table 3: Per-Dataset Validation Accuracy
-**Current shows 6 datasets. Replace with 11 datasets:**
+**Current shows 6 datasets. Replace with 10 datasets:**
 
 | Dataset | Val Group-Acc (%) |
 |---------|-------------------|
@@ -168,7 +168,7 @@ The following sections are currently placeholders and need to be written:
 | Training Datasets | Zero-Shot Acc (%) | Improvement |
 |-------------------|-------------------|-------------|
 | 6 datasets | 29.75 | baseline |
-| 11 datasets | 49.41 | +66% relative |
+| 10 datasets | 49.41 | +66% relative |
 
 **Per-dataset breakdown:**
 
@@ -194,7 +194,7 @@ The following sections are currently placeholders and need to be written:
 > This yields a candidate inventory on the order of 60+ unique labels
 
 **Replace with:**
-> This yields a candidate inventory of approximately 100 unique labels, combining 101 training labels across 32 semantic groups with labels from the unseen datasets.
+> This yields a candidate inventory of approximately 100 unique labels, combining 137 training labels across 44 semantic groups with labels from the unseen datasets.
 
 ---
 
@@ -256,7 +256,7 @@ The following sections are currently placeholders and need to be written:
 - Center: Contrastive loss with memory bank
 
 ### Add New Figures:
-1. **Zero-shot accuracy vs training datasets** - Line plot showing improvement from 6→11 datasets (file: `accuracy_vs_datasets.png`)
+1. **Zero-shot accuracy vs training datasets** - Line plot showing improvement from 6→10 datasets (file: `accuracy_vs_datasets.png`)
 2. **Confusion matrix** - For best model on zero-shot (file: `confusion_matrix_11_datasets_zeroshot.png`)
 3. **Per-group accuracy histogram** - Showing which activity groups transfer well (file: `histogram_11_datasets_zeroshot.png`)
 
@@ -273,7 +273,7 @@ The following sections are currently placeholders and need to be written:
 **To:** "all-MiniLM-L6-v2 (22.7M parameters, 384-dimensional embeddings)"
 
 ### Throughout
-**Change:** References to "6 datasets" → "11 datasets"
+**Change:** References to "6 datasets" → "10 datasets"
 **Change:** References to "MotionSense" as only zero-shot → "MotionSense, RealWorld, and MobiAct"
 
 ---
@@ -331,5 +331,5 @@ The following sections are currently placeholders and need to be written:
 - [ ] Write Conclusion
 - [ ] Add References
 - [ ] Create/update figures
-- [ ] Global find/replace: "6 datasets" → "11 datasets"
+- [ ] Global find/replace: "6 datasets" → "10 datasets"
 - [ ] Global find/replace: "MotionSense" alone → "MotionSense, RealWorld, and MobiAct"
