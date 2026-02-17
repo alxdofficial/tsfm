@@ -1,0 +1,166 @@
+{
+  "motionsense": {
+    "zero_shot_open_set": {
+      "accuracy": 13.965231788079471,
+      "f1_macro": 6.417452330850323,
+      "f1_weighted": 16.288871414959996,
+      "n_samples": 12080,
+      "n_classes_train": 87,
+      "n_classes_test": 6
+    },
+    "zero_shot_closed_set": {
+      "accuracy": 37.127483443708606,
+      "f1_macro": 30.652179317715728,
+      "f1_weighted": 26.682929515756026,
+      "n_samples": 12080,
+      "n_classes": 6
+    },
+    "1pct_supervised": {
+      "accuracy": 44.70198675496689,
+      "f1_macro": 42.00636213494167,
+      "f1_weighted": 42.28894060730802,
+      "n_samples": 1208,
+      "n_train_samples": 96,
+      "n_classes": 6
+    },
+    "10pct_supervised": {
+      "accuracy": 49.337748344370866,
+      "f1_macro": 46.59779162118511,
+      "f1_weighted": 47.286937665250264,
+      "n_samples": 1208,
+      "n_train_samples": 966,
+      "n_classes": 6
+    },
+    "linear_probe": {
+      "accuracy": 58.774834437086085,
+      "f1_macro": 48.04977850837127,
+      "f1_weighted": 54.836512441249994,
+      "n_samples": 1208,
+      "n_train_samples": 9664,
+      "n_classes": 6
+    }
+  },
+  "realworld": {
+    "zero_shot_open_set": {
+      "accuracy": 17.304149163534525,
+      "f1_macro": 11.354269021101073,
+      "f1_weighted": 20.754658355062947,
+      "n_samples": 27138,
+      "n_classes_train": 87,
+      "n_classes_test": 8
+    },
+    "zero_shot_closed_set": {
+      "accuracy": 30.039059621195374,
+      "f1_macro": 19.090447830746722,
+      "f1_weighted": 17.59089164191597,
+      "n_samples": 27138,
+      "n_classes": 8
+    },
+    "1pct_supervised": {
+      "accuracy": 43.499079189686924,
+      "f1_macro": 42.01391820932386,
+      "f1_weighted": 40.217435676316285,
+      "n_samples": 2715,
+      "n_train_samples": 216,
+      "n_classes": 8
+    },
+    "10pct_supervised": {
+      "accuracy": 52.67034990791897,
+      "f1_macro": 52.293756134381695,
+      "f1_weighted": 52.008927175152095,
+      "n_samples": 2715,
+      "n_train_samples": 2168,
+      "n_classes": 8
+    },
+    "linear_probe": {
+      "accuracy": 57.163904235727436,
+      "f1_macro": 55.86959368048866,
+      "f1_weighted": 55.49208909095874,
+      "n_samples": 2715,
+      "n_train_samples": 21710,
+      "n_classes": 8
+    }
+  },
+  "mobiact": {
+    "zero_shot_open_set": {
+      "accuracy": 11.39240506329114,
+      "f1_macro": 4.396065199920214,
+      "f1_weighted": 16.228730398977078,
+      "n_samples": 4345,
+      "n_classes_train": 87,
+      "n_classes_test": 13
+    },
+    "zero_shot_closed_set": {
+      "accuracy": 17.491369390103568,
+      "f1_macro": 11.606883693559851,
+      "f1_weighted": 19.966926325730945,
+      "n_samples": 4345,
+      "n_classes": 13
+    },
+    "1pct_supervised": {
+      "accuracy": 25.74712643678161,
+      "f1_macro": 17.655317894767094,
+      "f1_weighted": 27.235124784863263,
+      "n_samples": 435,
+      "n_train_samples": 26,
+      "n_classes": 13
+    },
+    "10pct_supervised": {
+      "accuracy": 48.275862068965516,
+      "f1_macro": 29.45143148891584,
+      "f1_weighted": 48.29650309199859,
+      "n_samples": 435,
+      "n_train_samples": 338,
+      "n_classes": 13
+    },
+    "linear_probe": {
+      "accuracy": 61.60919540229885,
+      "f1_macro": 21.92151385036484,
+      "f1_weighted": 49.54772940234547,
+      "n_samples": 435,
+      "n_train_samples": 3476,
+      "n_classes": 13
+    }
+  },
+  "vtt_coniot": {
+    "zero_shot_open_set": {
+      "accuracy": 8.26044703595724,
+      "f1_macro": 2.0990673671127125,
+      "f1_weighted": 3.527058539711999,
+      "n_samples": 2058,
+      "n_classes_train": 87,
+      "n_classes_test": 16
+    },
+    "zero_shot_closed_set": {
+      "accuracy": 6.899902818270165,
+      "f1_macro": 3.17987120667048,
+      "f1_weighted": 3.0902599012591945,
+      "n_samples": 2058,
+      "n_classes": 16
+    },
+    "1pct_supervised": {
+      "accuracy": 9.66183574879227,
+      "f1_macro": 6.883190113546705,
+      "f1_weighted": 7.091676738329175,
+      "n_samples": 207,
+      "n_train_samples": 16,
+      "n_classes": 16
+    },
+    "10pct_supervised": {
+      "accuracy": 16.425120772946862,
+      "f1_macro": 10.335090769204918,
+      "f1_weighted": 12.45155799725271,
+      "n_samples": 207,
+      "n_train_samples": 160,
+      "n_classes": 16
+    },
+    "linear_probe": {
+      "accuracy": 13.043478260869565,
+      "f1_macro": 10.174658112731477,
+      "f1_weighted": 10.037323406626498,
+      "n_samples": 207,
+      "n_train_samples": 1646,
+      "n_classes": 16
+    }
+  }
+}

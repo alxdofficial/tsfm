@@ -1,0 +1,94 @@
+{
+  "motionsense": {
+    "1pct_supervised": {
+      "accuracy": 80.38079470198676,
+      "f1_macro": 78.80932604577934,
+      "n_samples": 1208,
+      "n_train_samples": 96,
+      "n_classes": 6
+    },
+    "10pct_supervised": {
+      "accuracy": 88.57615894039735,
+      "f1_macro": 87.48926176678307,
+      "n_samples": 1208,
+      "n_train_samples": 966,
+      "n_classes": 6
+    },
+    "linear_probe": {
+      "accuracy": 85.9271523178808,
+      "f1_macro": 83.05447429069575,
+      "n_samples": 1208,
+      "n_train_samples": 9664,
+      "n_classes": 6
+    }
+  },
+  "realworld": {
+    "1pct_supervised": {
+      "accuracy": 68.76611418047882,
+      "f1_macro": 63.302438004761456,
+      "n_samples": 2715,
+      "n_train_samples": 216,
+      "n_classes": 8
+    },
+    "10pct_supervised": {
+      "accuracy": 80.25782688766114,
+      "f1_macro": 78.83851863314591,
+      "n_samples": 2715,
+      "n_train_samples": 2168,
+      "n_classes": 8
+    },
+    "linear_probe": {
+      "accuracy": 73.44383057090239,
+      "f1_macro": 66.26337376908236,
+      "n_samples": 2715,
+      "n_train_samples": 21710,
+      "n_classes": 8
+    }
+  },
+  "mobiact": {
+    "1pct_supervised": {
+      "accuracy": 42.758620689655174,
+      "f1_macro": 32.44672883020128,
+      "n_samples": 435,
+      "n_train_samples": 26,
+      "n_classes": 13
+    },
+    "10pct_supervised": {
+      "accuracy": 65.28735632183908,
+      "f1_macro": 48.627608590556356,
+      "n_samples": 435,
+      "n_train_samples": 338,
+      "n_classes": 13
+    },
+    "linear_probe": {
+      "accuracy": 68.04597701149426,
+      "f1_macro": 39.251895632876746,
+      "n_samples": 435,
+      "n_train_samples": 3476,
+      "n_classes": 13
+    }
+  },
+  "vtt_coniot": {
+    "1pct_supervised": {
+      "accuracy": 14.492753623188406,
+      "f1_macro": 12.399049177274984,
+      "n_samples": 207,
+      "n_train_samples": 16,
+      "n_classes": 16
+    },
+    "10pct_supervised": {
+      "accuracy": 31.88405797101449,
+      "f1_macro": 28.59387729655849,
+      "n_samples": 207,
+      "n_train_samples": 160,
+      "n_classes": 16
+    },
+    "linear_probe": {
+      "accuracy": 35.748792270531396,
+      "f1_macro": 34.81195891825281,
+      "n_samples": 207,
+      "n_train_samples": 1646,
+      "n_classes": 16
+    }
+  }
+}

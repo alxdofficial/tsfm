@@ -45,7 +45,7 @@ from datasets.imu_pretraining_dataset.label_groups import (
 from val_scripts.human_activity_recognition.model_loading import load_model, load_label_bank
 from val_scripts.human_activity_recognition.evaluation_metrics import compute_similarity
 from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
-from imu_activity_recognition_encoder.token_text_encoder import LearnableLabelBank
+from model.token_text_encoder import LearnableLabelBank
 
 # =============================================================================
 # Configuration
