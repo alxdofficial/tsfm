@@ -1,6 +1,6 @@
 # Evaluation Protocol
 
-Unified 4-metric evaluation framework for comparing TSFM against baselines on 4 zero-shot test datasets.
+Unified 4-metric evaluation framework for comparing TSFM against baselines on 3 main test datasets plus 1 severe out-of-domain dataset.
 
 ## Design Principles
 
@@ -14,14 +14,28 @@ This protocol is designed to ensure **fair, reproducible comparison** across fun
 
 ## Test Datasets
 
-All models are evaluated on 4 datasets that were **never seen during training**:
+All models are evaluated on 4 datasets that were **never seen during training**: 3 main test
+datasets with high label group coverage (85-100%), plus 1 severe out-of-domain dataset.
 
-| Dataset | Windows | Activities | Difficulty |
-|---------|---------|------------|------------|
-| MotionSense | 12,080 | 6 | Easy (basic locomotion) |
-| RealWorld | 27,138 | 8 | Medium (multi-placement) |
-| MobiAct | 4,345 | 13 | Hard (includes falls, novel activities) |
-| VTT-ConIoT | 2,058 | 16 | Hard (industrial IoT context) |
+### Main Test Datasets (85-100% label coverage)
+
+| Dataset | Windows | Activities | Group Coverage | Difficulty |
+|---------|---------|------------|:-:|------------|
+| MotionSense | 12,080 | 6 | 100% | Easy (basic locomotion) |
+| RealWorld | 27,138 | 8 | 100% | Medium (multi-placement) |
+| MobiAct | 4,345 | 13 | 85% | Hard (includes falls, novel activities) |
+
+### Severe Out-of-Domain Dataset (50% label coverage)
+
+| Dataset | Windows | Activities | Group Coverage | Difficulty |
+|---------|---------|------------|:-:|------------|
+| VTT-ConIoT | 2,058 | 16 | 50% | Severe (industrial/construction) |
+
+**Why VTT-ConIoT is reported separately**: 8 of 16 activity labels have no semantic equivalent
+in the 10 training datasets. All models are guaranteed to fail on these activities regardless
+of architecture quality. This 50% coverage floor makes VTT-ConIoT a test of severe domain
+shift rather than cross-dataset generalization. Main results average over the 3 main datasets;
+VTT-ConIoT is reported in a dedicated section.
 
 All data is standardized to `(N, 120, 6)` windows at 20Hz with 6 IMU channels (acc_xyz + gyro_xyz).
 

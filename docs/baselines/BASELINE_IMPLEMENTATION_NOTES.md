@@ -314,16 +314,15 @@ head, trained via contrastive learning with soft targets and memory bank.
 ### Pretrained Model
 - Checkpoint: `training_output/semantic_alignment/{run_id}/best.pt`
 - Trained on: 10 HAR datasets (87 activity labels)
-- **NOTE**: Training in progress. Results pending completion.
 
 ### Key Implementation Details
 
-**Patch size sweep**:
-TSFM supports variable patch sizes. Evaluation sweeps [1.0, 1.25, 1.5, 1.75, 2.0] seconds
-per test dataset independently. For each dataset, a 20% held-out sweep split (seed=42) is
-used to select the best patch size by zero-shot closed-set accuracy, then embeddings are
-re-extracted on the full dataset with the chosen patch size. This prevents test-time
-hyperparameter tuning from inflating reported metrics.
+**Fixed 1.0s patch size**:
+TSFM supports variable patch sizes, but we use a fixed 1.0s for all test datasets — no
+per-dataset sweep or test-time tuning. This is a metadata-only decision: at 20Hz, 1.0s patches
+(20 timesteps) give the finest temporal resolution while producing 6 tokens per channel.
+Sensitivity analysis shows results are robust (max 9% range across patch sizes on the easiest
+dataset, <2% on the hardest).
 
 **384-dim embeddings**:
 After the semantic alignment head (channel fusion + temporal pooling), embeddings are 384-dim
@@ -332,6 +331,12 @@ and L2-normalized.
 **Text embeddings from label bank**:
 Zero-shot evaluation uses the trained `LearnableLabelBank` to produce text embeddings for each
 activity label. These are L2-normalized for cosine similarity retrieval.
+
+**End-to-end fine-tuning**:
+For supervised metrics, the encoder + semantic alignment head are fine-tuned end-to-end.
+Classification is via cosine similarity with frozen text embeddings from the label bank
+(no separate classifier head). The label bank stays frozen during fine-tuning as the text
+anchor space.
 
 ---
 

@@ -80,12 +80,19 @@ python training_scripts/human_activity_recognition/semantic_alignment_train.py
 
 ### Zero-Shot Test (4 datasets, never seen during training)
 
+**Main test datasets** (85-100% label coverage — used for primary results):
+
 | Dataset | Activities | Difficulty | Group Coverage |
 |---------|:---:|-----------|:---:|
 | MotionSense | 6 | Easy (basic locomotion) | 100% |
 | RealWorld | 8 | Medium (multi-placement) | 100% |
 | MobiAct | 13 | Hard (falls, vehicle entry) | 85% |
-| VTT-ConIoT | 16 | Hard (industrial/construction) | 50% |
+
+**Severe out-of-domain** (reported separately — 50% of activities have no training equivalent):
+
+| Dataset | Activities | Difficulty | Group Coverage |
+|---------|:---:|-----------|:---:|
+| VTT-ConIoT | 16 | Severe (industrial/construction) | 50% |
 
 All data is standardized to `(N, 120, 6)` windows at 20Hz with 6 IMU channels (acc_xyz + gyro_xyz) for evaluation.
 
@@ -134,6 +141,7 @@ Results are saved to `test_output/baseline_evaluation/{model}_evaluation.json`.
 |----------|-------------|
 | **[docs/baselines/EVALUATION_PROTOCOL.md](docs/baselines/EVALUATION_PROTOCOL.md)** | Evaluation framework, fairness justifications, per-dataset label coverage |
 | **[docs/baselines/BASELINE_IMPLEMENTATION_NOTES.md](docs/baselines/BASELINE_IMPLEMENTATION_NOTES.md)** | Per-baseline implementation details and design decisions |
+| **[docs/baselines/BASELINES_SETUP.md](docs/baselines/BASELINES_SETUP.md)** | How to set up and reproduce baseline evaluations |
 | **[docs/baselines/RESULTS.md](docs/baselines/RESULTS.md)** | Current evaluation results table |
 | **[model/README.md](model/README.md)** | Model architecture API |
 | **[datasets/imu_pretraining_dataset/README.md](datasets/imu_pretraining_dataset/README.md)** | Dataset format and loading |

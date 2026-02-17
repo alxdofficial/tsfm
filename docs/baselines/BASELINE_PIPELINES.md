@@ -35,12 +35,12 @@ They have pretrained checkpoints, we freeze them, extract embeddings, and evalua
                 ↓
 [Eval script]   Load pre-extracted embeddings (N, 120, 72)
                 Split 80/10/10 → reshape to (M, 20, 72) sub-windows
-                Train GRU classifier on frozen embeddings
-                Report 1%, 10%, linear probe metrics
+                Train GRU classifier on frozen embeddings (zero-shot)
+                End-to-end fine-tune encoder + GRU (1%, 10% supervised)
 ```
 
-**What's pretrained**: Encoder (frozen, never touched during eval)
-**What trains during eval**: Only the downstream GRU/linear classifier
+**What's pretrained**: Encoder (loaded from checkpoint)
+**What trains during eval**: GRU classifier (zero-shot); encoder + GRU end-to-end (supervised)
 **Checkpoint**: `auxiliary_repos/LIMU-BERT-Public/saved/.../pretrained_combined.pt`
 **Embeddings**: `auxiliary_repos/LIMU-BERT-Public/embed/embed_pretrained_combined_{dataset}_20_120.npy`
 **Special**: Sub-windows split from full windows FIRST (prevents data leakage), then filtered
@@ -58,12 +58,12 @@ They have pretrained checkpoints, we freeze them, extract embeddings, and evalua
                 Left-pad to (N, 6, 512) with input mask
                 Process each channel independently as (N, 1, 512)
                 Concatenate per-channel embeddings → (N, 6144)
-                Train SVM-RBF classifier (GridSearchCV)
-                Report 1%, 10%, linear probe metrics
+                Train SVM-RBF classifier (GridSearchCV) (zero-shot)
+                End-to-end fine-tune encoder + linear head (1%, 10% supervised)
 ```
 
 **What's pretrained**: Entire model (downloaded from HuggingFace, never trained by us)
-**What trains during eval**: Only the downstream SVM/linear classifier
+**What trains during eval**: SVM classifier (zero-shot); encoder + linear head end-to-end (supervised)
 **Checkpoint**: `AutonLab/MOMENT-1-large` (auto-downloaded)
 **Special**: Left-padding to 512 timesteps; per-channel concatenation (6 × 1024 = 6144-dim)
 **Zero-shot**: Not possible (not text-aligned)
@@ -79,12 +79,12 @@ They have pretrained checkpoints, we freeze them, extract embeddings, and evalua
 [Eval script]   Load raw data (N, 120, 6)
                 Apply InstanceNorm per sample
                 Extract (N, 120, 72) sequence embeddings via frozen encoder
-                Train Transformer_ft classifier on frozen embeddings
-                Report 1%, 10%, linear probe metrics
+                Train Transformer_ft classifier on frozen embeddings (zero-shot)
+                End-to-end fine-tune encoder + Transformer_ft (1%, 10% supervised)
 ```
 
-**What's pretrained**: Encoder (frozen, never touched during eval)
-**What trains during eval**: Only the downstream Transformer_ft/linear classifier
+**What's pretrained**: Encoder (loaded from checkpoint)
+**What trains during eval**: Transformer_ft classifier (zero-shot); encoder + Transformer_ft end-to-end (supervised)
 **Checkpoint**: `auxiliary_repos/CrossHAR/saved/.../model_masked_6_1.pt`
 **Special**: InstanceNorm preprocessing (matches original paper's `IMUDataset`)
 **Zero-shot**: Not possible (not text-aligned)
@@ -116,8 +116,8 @@ checkpoint." The evaluation script contains a complete 2-stage training pipeline
     Extract sensor embeddings via trained encoder
     Compute text embeddings for each label via trained SciBERT
     Zero-shot: cosine similarity between sensor and text embeddings
-    Supervised: train linear classifier on sensor embeddings
-    Report all 5 metrics (zero-shot + supervised)
+    Supervised: end-to-end fine-tune sensor encoder via cosine sim
+    Report all 4 metrics (zero-shot + supervised)
 ```
 
 **What's pretrained**: Only SciBERT (generic, from HuggingFace). Everything else
@@ -125,7 +125,7 @@ trains from scratch.
 **What trains during eval**:
   - Stage 1: SciBERT fine-tuning (10 epochs)
   - Stage 2: Sensor encoder + projection heads (50 epochs from random init)
-  - Downstream: Linear classifier
+  - Supervised: End-to-end fine-tune sensor encoder via cosine sim
 **Checkpoint**: None — training happens every time eval runs
 **Special requirements**:
   - **Gravity alignment**: Lowpass filter → estimate gravity → Rodrigues rotation
@@ -177,20 +177,18 @@ oscillation..."). This reduces quality but the model still functions.
                 ↓
 [Eval script]   Load encoder + semantic head + label bank from checkpoint
                 For each test dataset:
-                    Sweep patch sizes [1.0, 1.25, 1.5, 1.75, 2.0] sec
-                    Extract (N, 384) L2-normalized embeddings
+                    Extract (N, 384) L2-normalized embeddings (fixed 1.0s patch size)
                 Zero-shot: cosine similarity with 87 label bank embeddings
-                Supervised: train linear classifier on sensor embeddings
-                Report all 5 metrics
+                Supervised: end-to-end fine-tune encoder via cosine sim
+                Report all 4 metrics
 ```
 
 **What's pretrained**: Encoder (Stage 1) + Semantic head + Label bank (Stage 2)
-**What trains during eval**: Only the downstream linear classifier
+**What trains during eval**: Encoder end-to-end via cosine sim (supervised); nothing (zero-shot)
 **Checkpoint**: `training_output/semantic_alignment/{run_id}/best.pt`
-**Special**: Patch size sweep to find optimal temporal resolution per dataset
+**Special**: Fixed 1.0s patch size for all datasets (no per-dataset sweep)
 **Zero-shot**: Yes (text-aligned via learnable label bank, 384-dim)
-**Time**: ~10 min per dataset (patch sweep adds overhead)
-**NOTE**: Training in progress. Results pending completion.
+**Time**: ~10 min per dataset
 
 ---
 
@@ -199,14 +197,14 @@ oscillation..."). This reduces quality but the model still functions.
 | | LiMU-BERT | MOMENT | CrossHAR | LanHAR | TSFM |
 |---|---|---|---|---|---|
 | **Pretrained checkpoint** | Yes | Yes (HF) | Yes | No | Yes |
-| **Trains during eval** | Classifier only | Classifier only | Classifier only | **Full model** | Classifier only |
+| **Trains during eval** | ZS: classifier; Sup: end-to-end | ZS: classifier; Sup: end-to-end | ZS: classifier; Sup: end-to-end | **Full model** + end-to-end | ZS: nothing; Sup: end-to-end |
 | **Training time in eval** | ~5 min | ~15 min | ~8 min | **~90 min** | ~10 min |
 | **Embedding dim** | 72 | 6144 | 72 | 768 | 384 |
 | **Text-aligned** | No | No | No | Yes | Yes |
-| **Zero-shot capable** | No | No | No | Yes | Yes |
-| **# metrics reported** | 3 | 3 | 3 | 5 | 5 |
-| **Special preprocessing** | Sub-window split | Left-pad 512 | InstanceNorm | Gravity align | Patch sweep |
-| **Classifier** | GRU | SVM-RBF | Transformer_ft | Linear | Linear |
+| **Zero-shot capable** | Yes (native classifier) | Yes (native classifier) | Yes (native classifier) | Yes (cosine sim) | Yes (cosine sim) |
+| **# metrics reported** | 4 | 4 | 4 | 4 | 4 |
+| **Special preprocessing** | Sub-window split | Left-pad 512 | InstanceNorm | Gravity align | Fixed 1.0s patch |
+| **ZS Classifier** | GRU | SVM-RBF | Transformer_ft | Cosine sim | Cosine sim |
 | **Needs GPU** | Minimal | Yes (large model) | Minimal | Yes (training) | Yes |
 
 ---
@@ -217,14 +215,14 @@ To be completely explicit about what happens when you run each eval script:
 
 | Script | What actually happens |
 |--------|---------------------|
-| `evaluate_limubert.py` | Loads .npy embeddings → trains GRU → reports metrics |
-| `evaluate_moment.py` | Loads MOMENT → extracts embeddings → trains SVM → reports metrics |
-| `evaluate_crosshar.py` | Loads encoder → extracts embeddings → trains Transformer_ft → reports metrics |
-| `evaluate_lanhar.py` | **Trains SciBERT (10ep) → trains sensor encoder (50ep)** → extracts embeddings → trains linear → reports metrics |
-| `evaluate_tsfm.py` | Loads encoder+head → extracts embeddings → trains linear → reports metrics |
+| `evaluate_limubert.py` | Loads encoder + embeddings → trains GRU (ZS) → fine-tunes encoder+GRU (supervised) |
+| `evaluate_moment.py` | Loads MOMENT → extracts embeddings → trains SVM (ZS) → fine-tunes encoder+linear (supervised) |
+| `evaluate_crosshar.py` | Loads encoder → extracts embeddings → trains Transformer_ft (ZS) → fine-tunes encoder+Transformer_ft (supervised) |
+| `evaluate_lanhar.py` | **Trains SciBERT (10ep) → trains sensor encoder (50ep)** → ZS via cosine sim → fine-tunes encoder (supervised) |
+| `evaluate_tsfm.py` | Loads encoder+head → ZS via cosine sim with label bank → fine-tunes encoder (supervised) |
 
-The key insight: for LiMU-BERT/MOMENT/CrossHAR/TSFM, "evaluation" means
-"load a frozen model, extract embeddings, train a small classifier."
+The key insight: for zero-shot, each model uses its native prediction mechanism (cosine sim or trained classifier).
+For supervised (1%, 10%), all models fine-tune their encoder end-to-end with their native classifier.
 For LanHAR, "evaluation" means "train the entire model from scratch, THEN
 evaluate it."
 
