@@ -1,12 +1,11 @@
 """
 Generate a combined Markdown results table from all baseline evaluation JSONs.
 
-New 5-metric framework:
-  - Zero-shot open-set (text-aligned models only: TSFM, LanHAR)
-  - Zero-shot closed-set (text-aligned models only: TSFM, LanHAR)
-  - 1% supervised (all models)
-  - 10% supervised (all models)
-  - Linear probe (all models)
+4-metric framework:
+  - Zero-shot open-set (all models)
+  - Zero-shot closed-set (all models)
+  - 1% supervised end-to-end fine-tuning (all models)
+  - 10% supervised end-to-end fine-tuning (all models)
 
 Reads from test_output/baseline_evaluation/*.json and writes:
   test_output/baseline_evaluation/results_table.md
@@ -35,7 +34,6 @@ METRIC_TABLES = [
     ("Zero-Shot Closed-Set", "zero_shot_closed_set"),
     ("1% Supervised", "1pct_supervised"),
     ("10% Supervised", "10pct_supervised"),
-    ("Linear Probe", "linear_probe"),
 ]
 
 
@@ -105,8 +103,8 @@ def generate_table(results):
     # Compact averages summary
     lines.append("\n## Average Across Datasets\n")
 
-    header = "| Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 | LP Acc | LP F1 |"
-    separator = "| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+    header = "| Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 |"
+    separator = "| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
     lines.append(header)
     lines.append(separator)
 

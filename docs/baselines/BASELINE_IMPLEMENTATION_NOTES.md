@@ -13,13 +13,13 @@ framework. To ensure fair comparison:
 1. **Same data**: All models evaluate on identical `(N, 120, 6)` windows at 20Hz
 2. **Same splits**: Identical random seeds produce identical train/val/test partitions
 3. **Same metrics**: All models report accuracy, F1 macro, and F1 weighted
-4. **Per-baseline classifiers**: Each model uses its own paper's downstream classifier
-   (not a one-size-fits-all), so representation quality is measured through each model's
+4. **Per-baseline fine-tuning**: Each model fine-tunes with its own paper's native classification
+   mechanism (not a one-size-fits-all), so transfer quality is measured through each model's
    intended evaluation path
 5. **No data leakage**: Test datasets (MotionSense, RealWorld, MobiAct, VTT-ConIoT) were
    never seen during any model's pre-training
-6. **Frozen embeddings**: For supervised/linear-probe metrics, embeddings are extracted once
-   from the frozen pretrained model — only the downstream classifier is trained
+6. **End-to-end fine-tuning**: For supervised metrics (1%, 10%), the encoder is fine-tuned
+   jointly with the classifier using differential learning rates (encoder: 1e-5, head: 1e-3)
 
 ### Intentional Protocol Adaptations
 
@@ -80,8 +80,10 @@ After reshaping `(N, 120, 72)` into `(N*6, 20, 72)` sub-windows, only sub-window
 - 100 epochs (using `train_100ep.json` config from original repo), batch_size=512
 - Original paper also provides 700-epoch config
 
-**Embedding format for linear probe**:
-Mean-pooled across the 120 time steps: `(N, 120, 72)` -> `(N, 72)`.
+**End-to-end fine-tuning**:
+For supervised metrics, the BERT encoder is fine-tuned jointly with a GRU classifier.
+Raw data is normalized (acc/9.8), passed through the encoder, reshaped into sub-windows,
+and classified. Majority vote across sub-windows determines window-level predictions.
 
 ### What We Do NOT Replicate
 - Original paper evaluates 4 separate per-dataset pretrained models. We use one combined model.
@@ -141,8 +143,11 @@ The MOMENT paper's `fit_svm` function uses:
 - `max_iter=10000000` (convergence guarantee)
 - If training set > 10,000 samples, stratified subsample to 10,000
 
-**Linear probe**:
-Standard linear classifier on 6144-dim concatenated embeddings, 100 epochs.
+**End-to-end fine-tuning**:
+For supervised metrics, MOMENT's encoder is fine-tuned jointly with a linear classification
+head (`Linear(6144, num_classes)`). SVM-RBF is not differentiable, so the paper's supervised
+fine-tuning protocol uses a linear head instead. The encoder's original weights are restored
+after each fine-tuning run to isolate evaluations.
 
 ### What We Do NOT Replicate
 - Original paper evaluates on UCR/UEA classification archive. We apply to HAR.
@@ -192,8 +197,10 @@ full `(120, 72)` sequence. The classifier embeds to 100-dim, adds positional enc
 - 100 epochs, Adam, lr=1e-3, batch_size=512
 - Model selection by best validation loss
 
-**Linear probe**:
-Mean-pooled embeddings: `(N, 120, 72)` -> `(N, 72)` -> Linear(72, num_classes).
+**End-to-end fine-tuning**:
+For supervised metrics, the encoder is fine-tuned jointly with a Transformer_ft classifier.
+Raw data is InstanceNorm-preprocessed in a differentiable way, passed through the encoder,
+then through the Transformer_ft head.
 
 ### What We Do NOT Replicate
 - Original paper trains on source datasets, evaluates on a held-out target dataset.
@@ -345,8 +352,8 @@ This ensures identical train/val/test partitions across all models for the same 
 |-----------|-----------|----------|-----------|
 | Embedding extraction (MOMENT) | 128 | N/A | Large model, near GPU limit |
 | Embedding extraction (CrossHAR) | 512 | N/A | Small model |
-| GRU training (LiMU-BERT) | 512 | 128 | Speed optimization, applied uniformly |
-| Transformer_ft (CrossHAR) | 512 | 128 | Speed optimization, applied uniformly |
+| Zero-shot GRU training (LiMU-BERT) | 512 | 128 | Speed optimization, applied uniformly |
+| Zero-shot Transformer_ft (CrossHAR) | 512 | 128 | Speed optimization, applied uniformly |
 | SVM (MOMENT) | N/A | N/A | CPU, sklearn |
 | Stage 2 (LanHAR) | 256 | 256 | Matches original paper |
-| Linear classifiers (all) | 512 | N/A | All small |
+| End-to-end fine-tuning (all) | 32 | N/A | Small for gradient stability with encoder |

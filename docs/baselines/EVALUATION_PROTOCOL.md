@@ -1,6 +1,6 @@
 # Evaluation Protocol
 
-Unified 5-metric evaluation framework for comparing TSFM against baselines on 4 zero-shot test datasets.
+Unified 4-metric evaluation framework for comparing TSFM against baselines on 4 zero-shot test datasets.
 
 ## Design Principles
 
@@ -9,7 +9,7 @@ This protocol is designed to ensure **fair, reproducible comparison** across fun
 1. **No test data during training**: All 5 models train on the same 10 datasets; all 4 test datasets are strictly held out. No model ever sees test data during any training stage.
 2. **Native architectures**: Each baseline uses its own paper's downstream classifier — we do not impose a uniform architecture that might favor or penalize any model.
 3. **Identical test data**: All models evaluate on the exact same windows, labels, and data splits (same seed, same preprocessing).
-4. **Multiple metrics**: 5 metrics spanning zero-shot to fully supervised capture different aspects of representation quality, avoiding cherry-picking a single favorable metric.
+4. **Multiple metrics**: 4 metrics spanning zero-shot to supervised fine-tuning capture different aspects of representation quality, avoiding cherry-picking a single favorable metric.
 5. **Reproducibility**: All evaluators set global seeds (42) and classifier seeds (3431) for deterministic results.
 
 ## Test Datasets
@@ -25,7 +25,7 @@ All models are evaluated on 4 datasets that were **never seen during training**:
 
 All data is standardized to `(N, 120, 6)` windows at 20Hz with 6 IMU channels (acc_xyz + gyro_xyz).
 
-## 5-Metric Framework
+## 4-Metric Framework
 
 ### Metric 1: Zero-Shot Open-Set
 
@@ -50,22 +50,19 @@ All data is standardized to `(N, 120, 6)` windows at 20Hz with 6 IMU channels (a
 | MobiAct | 9 | 34 | vehicle_entry group has 0 training members |
 | VTT-ConIoT | 11 | 20 | 4 groups (carrying, climbing, kneeling, painting) have 0 training members |
 
-### Metric 3: 1% Supervised
+### Metric 3: 1% Supervised (End-to-End Fine-Tuning)
 
-- **What**: Train a downstream classifier using 1% of labeled data from the test dataset
-- **How**: Split 80/10/10 (train/val/test), subsample 1% of train via balanced_subsample, train classifier, evaluate on test split
-- **Why**: Tests few-shot transfer — how useful are the frozen embeddings with minimal supervision?
+- **What**: Fine-tune the encoder end-to-end using 1% of labeled data from the test dataset
+- **How**: Split 80/10/10 (train/val/test), subsample 1% of train via balanced_subsample, fine-tune encoder + classifier, evaluate on test split
+- **Why**: Tests few-shot transfer — how well does the pretrained encoder adapt with minimal supervision?
+- **Text-aligned (TSFM, LanHAR)**: Fine-tune sensor encoder, classify via cosine similarity with frozen text embeddings (no separate classifier head)
+- **Non-text-aligned (LiMU-BERT, CrossHAR)**: Fine-tune encoder + native classifier head end-to-end
+- **MOMENT**: Fine-tune encoder + linear head (paper's supervised fine-tuning protocol)
 
-### Metric 4: 10% Supervised
+### Metric 4: 10% Supervised (End-to-End Fine-Tuning)
 
 - **What**: Same as 1% but with 10% labeled data
 - **Why**: Tests semi-supervised regime — practical for real deployments where some labels are available
-
-### Metric 5: Linear Probe
-
-- **What**: Train a linear classifier on the full training split of frozen embeddings
-- **How**: Split 80/10/10, train linear layer (100 epochs), evaluate on test split
-- **Why**: Standard representation quality benchmark used across the self-supervised learning literature
 
 ## Fairness Justifications
 
@@ -93,15 +90,15 @@ For classifier-based baselines, the zero-shot classifier is trained exclusively 
 
 ### Classifier and Training Overview
 
-| Baseline | Text-Aligned? | ZS Method | Supervised Classifier | Extra Training for ZS | Embedding Dim |
+| Baseline | Text-Aligned? | ZS Method | Supervised Method | Extra Training for ZS | Embedding Dim |
 |----------|:---:|-----------|----------------------|----------------------|:---:|
-| **TSFM** | Yes | Cosine sim (LearnableLabelBank) | Linear | None (cosine sim) | 384 |
-| **LanHAR** | Yes | Cosine sim (SciBERT prototypes) | Linear | None (cosine sim) | 768 |
-| **LiMU-BERT** | No | GRU classifier | GRU | Train GRU on 87-class training embeddings | 72 |
-| **MOMENT** | No | SVM-RBF classifier | SVM-RBF | Train SVM on 87-class training embeddings | 6144 |
-| **CrossHAR** | No | Transformer_ft classifier | Transformer_ft | Train Transformer on 87-class training embeddings | 72 |
+| **TSFM** | Yes | Cosine sim (LearnableLabelBank) | Fine-tune encoder, cosine sim | None (cosine sim) | 384 |
+| **LanHAR** | Yes | Cosine sim (SciBERT prototypes) | Fine-tune sensor encoder, cosine sim | None (cosine sim) | 768 |
+| **LiMU-BERT** | No | GRU classifier | Fine-tune encoder + GRU | Train GRU on 87-class training embeddings | 72 |
+| **MOMENT** | No | SVM-RBF classifier | Fine-tune encoder + linear head | Train SVM on 87-class training embeddings | 6144 |
+| **CrossHAR** | No | Transformer_ft classifier | Fine-tune encoder + Transformer_ft | Train Transformer on 87-class training embeddings | 72 |
 
-**Key**: Text-aligned models require no extra classifier training for zero-shot — they use cosine similarity with text prototypes directly. Classifier-based models require training a classifier on the 10 training datasets' embeddings (using only training data, never test data).
+**Key**: Text-aligned models require no extra classifier training for zero-shot — they use cosine similarity with text prototypes directly. Classifier-based models require training a classifier on the 10 training datasets' embeddings (using only training data, never test data). For supervised metrics, all models fine-tune their encoder end-to-end with their native classification mechanism.
 
 ### Label Group Mapping Coverage per Test Dataset
 
@@ -121,24 +118,35 @@ For classifier-based baselines, the zero-shot classifier is trained exclusively 
 
 **Difficulty ranking**: MotionSense (easiest) > RealWorld > MobiAct > VTT-ConIoT (hardest, 50% novel activities from construction domain)
 
-## Per-Baseline Classifiers
+## Per-Baseline Supervised Fine-Tuning
 
-Each baseline uses its original paper's downstream classifier:
+Each baseline fine-tunes its encoder end-to-end with its native classification mechanism:
 
-| Baseline | Supervised Classifier | Epochs | Architecture |
-|----------|----------------------|--------|-------------|
-| **TSFM** | Linear | 100 | Linear(384, num_classes) |
-| **LiMU-BERT** | GRU | 100 | 2-layer GRU(72->20->10) + Linear(10, num_classes) |
-| **MOMENT** | SVM-RBF | GridSearchCV | C in [1e-4..1e4], 5-fold CV, gamma=scale, 6144-dim input |
-| **CrossHAR** | Transformer_ft | 100 | Linear(72->100) + TransformerEncoder(1L,4H) + Linear(100, num_classes) |
-| **LanHAR** | Linear | 100 | Linear(768, num_classes) |
+| Baseline | Supervised Method | Epochs | Architecture |
+|----------|------------------|--------|-------------|
+| **TSFM** | Cosine sim fine-tune | 20 | Encoder + cosine sim with frozen text embeddings |
+| **LiMU-BERT** | Encoder + GRU fine-tune | 20 | Encoder + 2-layer GRU(72->20->10) + Linear(10, num_classes) |
+| **MOMENT** | Encoder + linear fine-tune | 20 | Encoder + Linear(6144, num_classes) |
+| **CrossHAR** | Encoder + Transformer_ft fine-tune | 20 | Encoder + Linear(72->100) + TransformerEncoder(1L,4H) + Linear(100, num_classes) |
+| **LanHAR** | Cosine sim fine-tune | 20 | Sensor encoder + cosine sim with frozen text prototypes |
 
-### Linear Probe Classifier (all baselines)
+### Fine-Tuning Hyperparameters (shared)
 
-All baselines use the same linear probe architecture for Metric 5:
-- `Linear(emb_dim, num_classes)` with dropout 0.3 during training
-- 100 epochs, Adam, lr=1e-3, batch_size=512
-- Best model selected by validation accuracy
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| Epochs | 20 | Small datasets, avoid overfitting |
+| Encoder LR | 1e-5 | Conservative for pretrained models |
+| Head LR | 1e-3 | Standard for randomly initialized heads |
+| Batch size | 32 | Fits in GPU memory for all models |
+| Early stopping | patience=5 | Monitor val accuracy |
+| Weight decay | 1e-5 | Light regularization |
+| Optimizer | AdamW | Standard |
+
+### Why MOMENT uses linear head instead of SVM for supervised fine-tuning
+
+SVM is not differentiable and cannot be trained end-to-end with the encoder. The MOMENT paper's
+supervised fine-tuning protocol uses a linear head, which we adopt here. SVM-RBF remains the
+zero-shot classifier (trained on frozen training embeddings).
 
 ### Zero-Shot Classifiers (non-text-aligned baselines)
 
@@ -164,6 +172,7 @@ For each test dataset:
 3. **Consistent across baselines**: Same seed, same splits, same subsampling — every model sees identical train/val/test windows
 4. **Global seeds**: All evaluators set `torch.manual_seed(42)`, `np.random.seed(42)`, `random.seed(42)` at startup for full reproducibility
 5. **TSFM patch-size sweep**: Uses a separate 20% held-out split (seed=42) per test dataset for patch selection; metrics are reported on the full dataset
+6. **End-to-end fine-tuning**: Supervised metrics (1%, 10%) fine-tune the encoder jointly with the classifier, using differential learning rates (encoder: 1e-5, head: 1e-3) and early stopping
 
 ## Reported Metrics
 

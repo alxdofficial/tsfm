@@ -4,13 +4,13 @@ MOMENT baseline scoring using the unified framework.
 Evaluates with:
   1. Zero-shot open-set (classifier on 87 training labels, group scoring)
   2. Zero-shot closed-set (classifier with masked logits, group scoring)
-  3. 1% supervised (SVM-RBF classifier - paper's protocol)
-  4. 10% supervised (SVM-RBF classifier)
-  5. Linear probe (linear classifier on frozen embeddings, full train split)
+  3. 1% supervised end-to-end fine-tuning with linear head (paper's supervised protocol)
+  4. 10% supervised end-to-end fine-tuning with linear head (paper's supervised protocol)
 
 Following the MOMENT paper (Goswami et al., ICML 2024), we use an SVM
-classifier with RBF kernel and GridSearchCV over C values for supervised
-scoring. Linear probe uses a simple nn.Linear for fair comparison.
+classifier with RBF kernel for zero-shot scoring. Supervised metrics use
+end-to-end fine-tuning of the MOMENT encoder with a linear classification
+head, using separate learning rates for the encoder and head.
 
 Usage:
     python val_scripts/human_activity_recognition/evaluate_moment.py
@@ -27,7 +27,6 @@ import copy
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import f1_score, accuracy_score
 from sklearn.svm import SVC
@@ -66,10 +65,13 @@ SVM_C_VALUES = [0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000]
 SVM_MAX_SAMPLES = 10000  # Subsample if training set exceeds this
 CLASSIFIER_SEED = 3431
 
-# Linear probe hyperparameters
-LINEAR_EPOCHS = 100
-LINEAR_BATCH_SIZE = 512
-LINEAR_LR = 1e-3
+# Fine-tuning hyperparameters (encoder + linear head, paper's supervised protocol)
+FINETUNE_EPOCHS = 20
+FINETUNE_BATCH_SIZE = 32
+FINETUNE_ENCODER_LR = 1e-5
+FINETUNE_HEAD_LR = 1e-3
+FINETUNE_WEIGHT_DECAY = 1e-5
+FINETUNE_PATIENCE = 5
 
 # Data split parameters
 TRAINING_RATE = 0.8
@@ -86,17 +88,15 @@ TEST_DATASETS = DATASET_CONFIG["zero_shot_datasets"]
 
 
 # =============================================================================
-# Linear Classifier (for linear probe)
+# Linear Classification Head (for end-to-end fine-tuning)
 # =============================================================================
 
-class LinearClassifier(nn.Module):
+class LinearHead(nn.Module):
     def __init__(self, input_dim: int, num_classes: int):
         super().__init__()
         self.linear = nn.Linear(input_dim, num_classes)
 
-    def forward(self, x, training=False):
-        if training:
-            x = F.dropout(x, p=0.3, training=True)
+    def forward(self, x):
         return self.linear(x)
 
 
@@ -342,56 +342,195 @@ def predict_svm_global(svm_model, data, logit_mask=None):
 
 
 # =============================================================================
-# Linear Classifier Training (for linear probe)
+# End-to-End Fine-Tuning Helpers
 # =============================================================================
 
-def train_linear_classifier(
-    train_data, train_labels, val_data, val_labels,
-    num_classes, input_dim=MOMENT_EMB_DIM,
-    epochs=LINEAR_EPOCHS, batch_size=LINEAR_BATCH_SIZE,
-    lr=LINEAR_LR, device=None, verbose=False, desc="Linear probe",
-):
-    """Train a linear classifier on embeddings."""
-    if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def _forward_moment_batch(model, batch_data, input_mask, device):
+    """Differentiable MOMENT forward pass for a batch.
 
-    model = LinearClassifier(input_dim=input_dim, num_classes=num_classes).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
+    Args:
+        model: MOMENT pipeline model
+        batch_data: (B, 6, 512) padded data tensor on device
+        input_mask: (B, 512) mask tensor on device
 
+    Returns:
+        (B, 6144) concatenated per-channel embeddings
+    """
+    B = batch_data.shape[0]
+    # Reshape (B, 6, 512) -> (B*6, 1, 512)
+    batch_flat = batch_data.reshape(B * DATA_CHANNELS, 1, MOMENT_SEQ_LEN)
+    # Expand mask: (B, 512) -> (B*6, 512)
+    mask_flat = input_mask.unsqueeze(1).expand(
+        B, DATA_CHANNELS, MOMENT_SEQ_LEN
+    ).reshape(B * DATA_CHANNELS, MOMENT_SEQ_LEN)
+    # Forward through MOMENT (no torch.no_grad — gradients flow!)
+    output = model(x_enc=batch_flat, input_mask=mask_flat)
+    emb = output.embeddings  # (B*6, 1024)
+    # Reshape to (B, 6*1024)
+    return emb.reshape(B, DATA_CHANNELS * MOMENT_EMB_DIM_PER_CHANNEL)
+
+
+# =============================================================================
+# Evaluation Functions
+# =============================================================================
+
+def evaluate_supervised_finetune(
+    moment_model,
+    raw_data: np.ndarray,
+    test_labels: np.ndarray,
+    test_dataset: str,
+    device: torch.device,
+    label_rate: float = 0.01,
+    label_tag: str = "1%",
+) -> Dict[str, float]:
+    """End-to-end fine-tuning: MOMENT encoder + linear head.
+
+    Fine-tunes the full MOMENT encoder with a linear classification head using
+    separate learning rates (encoder at FINETUNE_ENCODER_LR, head at
+    FINETUNE_HEAD_LR). Early stopping monitors validation accuracy.
+
+    Args:
+        moment_model: Pretrained MOMENT pipeline model
+        raw_data: (N, 120, 6) raw sensor windows
+        test_labels: (N,) integer class labels
+        test_dataset: Dataset name for label lookup
+        device: Cuda/CPU device
+        label_rate: Fraction of training portion to use (0.01 = 1%, 0.10 = 10%)
+        label_tag: Display tag for logging
+    """
+    test_activities = get_dataset_labels(test_dataset)
+    num_test_classes = len(test_activities)
+    N = raw_data.shape[0]
+
+    print(f"  [{label_tag} supervised fine-tune] Total samples: {N}, {num_test_classes} classes")
+
+    # ------------------------------------------------------------------
+    # 1. Preprocess all data once: left-pad to 512, build input mask
+    # ------------------------------------------------------------------
+    data_cf = raw_data.transpose(0, 2, 1)  # (N, 6, 120)
+    padded = np.zeros((N, DATA_CHANNELS, MOMENT_SEQ_LEN), dtype=np.float32)
+    padded[:, :, -DATA_SEQ_LEN:] = data_cf
+    input_mask = np.zeros((N, MOMENT_SEQ_LEN), dtype=np.float32)
+    input_mask[:, -DATA_SEQ_LEN:] = 1.0
+
+    # ------------------------------------------------------------------
+    # 2. Split into train / val / test
+    # ------------------------------------------------------------------
+    train_pad, train_labels_arr, val_pad, val_labels_arr, test_pad, test_labels_arr = \
+        prepare_train_test_split(
+            padded, test_labels,
+            training_rate=TRAINING_RATE,
+            vali_rate=VALI_RATE,
+            label_rate=label_rate,
+            seed=CLASSIFIER_SEED,
+            balance=True,
+        )
+    # We also need the corresponding mask splits.  prepare_train_test_split
+    # shuffles indices deterministically, so we replicate the shuffle to get
+    # aligned masks.
+    _, _, val_mask, _, test_mask, _ = prepare_train_test_split(
+        input_mask, test_labels,
+        training_rate=TRAINING_RATE,
+        vali_rate=VALI_RATE,
+        label_rate=label_rate,
+        seed=CLASSIFIER_SEED,
+        balance=True,
+    )
+    # For train, label_rate subsampling changes the set, so we derive
+    # train_mask from train_pad shape (mask is identical across samples
+    # since all windows have the same length).
+    train_mask = np.zeros((len(train_pad), MOMENT_SEQ_LEN), dtype=np.float32)
+    train_mask[:, -DATA_SEQ_LEN:] = 1.0
+
+    print(f"  [{label_tag} supervised fine-tune] Train: {len(train_pad)}, "
+          f"Val: {len(val_pad)}, Test: {len(test_pad)}")
+
+    if len(train_pad) == 0:
+        return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0,
+                'n_classes': num_test_classes}
+
+    # ------------------------------------------------------------------
+    # 3. Build data loaders
+    # ------------------------------------------------------------------
     train_ds = TensorDataset(
-        torch.from_numpy(train_data).float(),
-        torch.from_numpy(train_labels).long()
+        torch.from_numpy(train_pad).float(),
+        torch.from_numpy(train_mask).float(),
+        torch.from_numpy(train_labels_arr).long(),
     )
     val_ds = TensorDataset(
-        torch.from_numpy(val_data).float(),
-        torch.from_numpy(val_labels).long()
+        torch.from_numpy(val_pad).float(),
+        torch.from_numpy(val_mask).float(),
+        torch.from_numpy(val_labels_arr).long(),
     )
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
+    test_ds = TensorDataset(
+        torch.from_numpy(test_pad).float(),
+        torch.from_numpy(test_mask).float(),
+        torch.from_numpy(test_labels_arr).long(),
+    )
+    train_loader = DataLoader(train_ds, batch_size=FINETUNE_BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=FINETUNE_BATCH_SIZE, shuffle=False)
+    test_loader = DataLoader(test_ds, batch_size=FINETUNE_BATCH_SIZE, shuffle=False)
 
+    # ------------------------------------------------------------------
+    # 4. Save a copy of original encoder weights for restoration later
+    # ------------------------------------------------------------------
+    original_state = copy.deepcopy(moment_model.state_dict())
+
+    # ------------------------------------------------------------------
+    # 5. Set up linear head and optimizer with two param groups
+    # ------------------------------------------------------------------
+    head = LinearHead(input_dim=MOMENT_EMB_DIM, num_classes=num_test_classes).to(device)
+    criterion = nn.CrossEntropyLoss()
+
+    optimizer = torch.optim.AdamW(
+        [
+            {"params": moment_model.parameters(), "lr": FINETUNE_ENCODER_LR},
+            {"params": head.parameters(), "lr": FINETUNE_HEAD_LR},
+        ],
+        weight_decay=FINETUNE_WEIGHT_DECAY,
+    )
+
+    # ------------------------------------------------------------------
+    # 6. Training loop with early stopping
+    # ------------------------------------------------------------------
     best_val_acc = 0.0
-    best_state = None
+    best_encoder_state = None
+    best_head_state = None
+    patience_counter = 0
 
-    pbar = tqdm(range(epochs), desc=desc, leave=True)
+    print(f"  [{label_tag} supervised fine-tune] Fine-tuning MOMENT encoder + head "
+          f"({num_test_classes} classes, {FINETUNE_EPOCHS} epochs, "
+          f"patience={FINETUNE_PATIENCE})...")
+
+    pbar = tqdm(range(FINETUNE_EPOCHS),
+                desc=f"MOMENT | {test_dataset} | {label_tag} fine-tune", leave=True)
     for epoch in pbar:
-        model.train()
-        for batch_data, batch_labels in train_loader:
-            batch_data = batch_data.to(device)
+        # --- Train ---
+        moment_model.train()
+        head.train()
+        for batch_pad, batch_mask, batch_labels in train_loader:
+            batch_pad = batch_pad.to(device)
+            batch_mask = batch_mask.to(device)
             batch_labels = batch_labels.to(device)
+
             optimizer.zero_grad()
-            logits = model(batch_data, training=True)
+            emb = _forward_moment_batch(moment_model, batch_pad, batch_mask, device)
+            logits = head(emb)
             loss = criterion(logits, batch_labels)
             loss.backward()
             optimizer.step()
 
-        model.train(False)
+        # --- Validate ---
+        moment_model.eval()
+        head.eval()
         val_preds = []
         val_gt = []
         with torch.no_grad():
-            for batch_data, batch_labels in val_loader:
-                batch_data = batch_data.to(device)
-                logits = model(batch_data, training=False)
+            for batch_pad, batch_mask, batch_labels in val_loader:
+                batch_pad = batch_pad.to(device)
+                batch_mask = batch_mask.to(device)
+                emb = _forward_moment_batch(moment_model, batch_pad, batch_mask, device)
+                logits = head(emb)
                 preds = logits.argmax(dim=1).cpu().numpy()
                 val_preds.extend(preds)
                 val_gt.extend(batch_labels.numpy())
@@ -399,81 +538,63 @@ def train_linear_classifier(
         val_acc = accuracy_score(val_gt, val_preds)
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            best_state = copy.deepcopy(model.state_dict())
+            best_encoder_state = copy.deepcopy(moment_model.state_dict())
+            best_head_state = copy.deepcopy(head.state_dict())
+            patience_counter = 0
+        else:
+            patience_counter += 1
 
-        pbar.set_postfix(val_acc=f"{val_acc:.3f}", best=f"{best_val_acc:.3f}")
+        pbar.set_postfix(val_acc=f"{val_acc:.3f}", best=f"{best_val_acc:.3f}",
+                         pat=f"{patience_counter}/{FINETUNE_PATIENCE}")
 
-    if best_state is not None:
-        model.load_state_dict(best_state)
-    model.train(False)
-    return model
+        if patience_counter >= FINETUNE_PATIENCE:
+            print(f"    Early stopping at epoch {epoch + 1}")
+            break
 
+    # ------------------------------------------------------------------
+    # 7. Test using best checkpoint
+    # ------------------------------------------------------------------
+    if best_encoder_state is not None:
+        moment_model.load_state_dict(best_encoder_state)
+    if best_head_state is not None:
+        head.load_state_dict(best_head_state)
 
-def predict_linear(model, data, batch_size=LINEAR_BATCH_SIZE, device=None):
-    """Get predictions from a trained linear classifier."""
-    if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    model.eval()
-    ds = TensorDataset(torch.from_numpy(data).float())
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
-
+    moment_model.eval()
+    head.eval()
     all_preds = []
+    all_gt = []
     with torch.no_grad():
-        for (batch_data,) in loader:
-            batch_data = batch_data.to(device)
-            logits = model(batch_data, training=False)
+        for batch_pad, batch_mask, batch_labels in test_loader:
+            batch_pad = batch_pad.to(device)
+            batch_mask = batch_mask.to(device)
+            emb = _forward_moment_batch(moment_model, batch_pad, batch_mask, device)
+            logits = head(emb)
             preds = logits.argmax(dim=1).cpu().numpy()
             all_preds.extend(preds)
+            all_gt.extend(batch_labels.numpy())
 
-    return np.array(all_preds)
+    # ------------------------------------------------------------------
+    # 8. Restore original encoder weights (so fine-tuning is isolated per run)
+    # ------------------------------------------------------------------
+    moment_model.load_state_dict(original_state)
+    moment_model.eval()
 
+    # Clean up GPU memory
+    del head, optimizer, criterion
+    del train_ds, val_ds, test_ds, train_loader, val_loader, test_loader
+    del best_encoder_state, best_head_state
+    torch.cuda.empty_cache()
 
-# =============================================================================
-# Evaluation Functions
-# =============================================================================
-
-def evaluate_supervised_svm(
-    test_embeddings: np.ndarray,
-    test_labels: np.ndarray,
-    test_dataset: str,
-    label_rate: float = 0.01,
-    label_tag: str = "1%",
-) -> Dict[str, float]:
-    """Supervised with SVM-RBF (paper's protocol).
-
-    Args:
-        label_rate: Fraction of training portion to use (0.01 = 1%, 0.10 = 10%)
-        label_tag: Display tag for logging
-    """
-    test_activities = get_dataset_labels(test_dataset)
-    num_test_classes = len(test_activities)
-
-    print(f"  [{label_tag} supervised SVM] Total samples: {len(test_embeddings)}, {num_test_classes} classes")
-
-    train_data, train_labels_arr, val_data, val_labels_arr, eval_data, eval_labels_arr = \
-        prepare_train_test_split(
-            test_embeddings, test_labels,
-            training_rate=TRAINING_RATE,
-            vali_rate=VALI_RATE,
-            label_rate=label_rate,
-            seed=CLASSIFIER_SEED,
-            balance=True
-        )
-
-    print(f"  [{label_tag} supervised SVM] Train: {len(train_data)}, Val: {len(val_data)}, Test: {len(eval_data)}")
-
-    if len(train_data) == 0:
-        return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0, 'n_classes': num_test_classes}
-
-    print(f"  [{label_tag} supervised SVM] Training SVM-RBF ({num_test_classes} classes)...")
-    model = train_svm_classifier(train_data, train_labels_arr, verbose=True)
-    pred_indices = model.predict(eval_data)
+    # ------------------------------------------------------------------
+    # 9. Compute metrics
+    # ------------------------------------------------------------------
+    pred_indices = np.array(all_preds)
+    gt_arr = np.array(all_gt)
 
     gt_names = []
     pred_names = []
-    for i in range(len(eval_labels_arr)):
-        local_idx = eval_labels_arr[i]
+    for i in range(len(gt_arr)):
+        local_idx = gt_arr[i]
         if local_idx < len(test_activities):
             gt_names.append(test_activities[local_idx])
         else:
@@ -491,72 +612,9 @@ def evaluate_supervised_svm(
         average='weighted', zero_division=0,
     ) * 100
 
-    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_names),
-            'n_train_samples': len(train_data), 'n_classes': num_test_classes}
-
-
-def evaluate_linear_probe(
-    test_embeddings: np.ndarray,
-    test_labels: np.ndarray,
-    test_dataset: str,
-    device: torch.device,
-) -> Dict[str, float]:
-    """Linear probe: linear classifier on frozen embeddings, full train split.
-
-    MOMENT embeddings are (N, 6144) per-channel concatenated, no pooling needed.
-    """
-    test_activities = get_dataset_labels(test_dataset)
-    num_test_classes = len(test_activities)
-
-    print(f"  [Linear probe] Total samples: {len(test_embeddings)}, {num_test_classes} classes")
-
-    train_data, train_labels_arr, val_data, val_labels_arr, eval_data, eval_labels_arr = \
-        prepare_train_test_split(
-            test_embeddings, test_labels,
-            training_rate=TRAINING_RATE,
-            vali_rate=VALI_RATE,
-            label_rate=1.0,
-            seed=CLASSIFIER_SEED,
-            balance=False
-        )
-
-    print(f"  [Linear probe] Train: {len(train_data)}, Val: {len(val_data)}, Test: {len(eval_data)}")
-
-    if len(train_data) == 0:
-        return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0, 'n_classes': num_test_classes}
-
-    print(f"  [Linear probe] Training linear classifier ({num_test_classes} classes)...")
-    model = train_linear_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_test_classes, device=device, verbose=True,
-        desc=f"MOMENT | {test_dataset} | linear probe",
-    )
-
-    pred_indices = predict_linear(model, eval_data, device=device)
-
-    gt_names = []
-    pred_names = []
-    for i in range(len(eval_labels_arr)):
-        local_idx = eval_labels_arr[i]
-        if local_idx < len(test_activities):
-            gt_names.append(test_activities[local_idx])
-        else:
-            continue
-        pred_idx = pred_indices[i]
-        pred_names.append(test_activities[pred_idx] if pred_idx < len(test_activities) else "unknown")
-
-    acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(
-        gt_names, pred_names, labels=test_activities,
-        average='macro', zero_division=0,
-    ) * 100
-    f1_w = f1_score(
-        gt_names, pred_names, labels=test_activities,
-        average='weighted', zero_division=0,
-    ) * 100
-
-    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_names),
-            'n_train_samples': len(train_data), 'n_classes': num_test_classes}
+    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w,
+            'n_samples': len(gt_names), 'n_train_samples': len(train_pad),
+            'n_classes': num_test_classes}
 
 
 # =============================================================================
@@ -593,18 +651,17 @@ def load_moment_training_embeddings(model, global_labels, device):
 def print_results_table(all_results):
     """Print results table."""
     print()
-    print("=" * 150)
+    print("=" * 130)
     print("MOMENT EVALUATION RESULTS")
-    print("=" * 150)
+    print("=" * 130)
 
     header = (f"{'Dataset':<16}"
               f"{'ZS-Open Acc':>13}{'ZS-Open F1':>12}"
               f"{'ZS-Close Acc':>14}{'ZS-Close F1':>13}"
-              f"{'1%Sup Acc':>11}{'1%Sup F1':>10}"
-              f"{'10%Sup Acc':>12}{'10%Sup F1':>11}"
-              f"{'LP Acc':>9}{'LP F1':>8}")
+              f"{'1%FT Acc':>11}{'1%FT F1':>10}"
+              f"{'10%FT Acc':>12}{'10%FT F1':>11}")
     print(header)
-    print("-" * 150)
+    print("-" * 130)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
@@ -618,17 +675,16 @@ def print_results_table(all_results):
               f"{g('zero_shot_open_set','accuracy'):>12.1f}%{g('zero_shot_open_set','f1_macro'):>11.1f}%"
               f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>12.1f}%"
               f"{g('1pct_supervised','accuracy'):>10.1f}%{g('1pct_supervised','f1_macro'):>9.1f}%"
-              f"{g('10pct_supervised','accuracy'):>11.1f}%{g('10pct_supervised','f1_macro'):>10.1f}%"
-              f"{g('linear_probe','accuracy'):>8.1f}%{g('linear_probe','f1_macro'):>7.1f}%")
+              f"{g('10pct_supervised','accuracy'):>11.1f}%{g('10pct_supervised','f1_macro'):>10.1f}%")
 
-    print("=" * 150)
+    print("=" * 130)
     print()
     print("Details:")
     print(f"  Model: {MOMENT_MODEL_NAME}")
     print(f"  Zero-shot: SVM-RBF on 10 training datasets (87 classes), group-matched scoring")
     print(f"  Open-set: SVM predict over all classes; Closed-set: decision scores masked to test-relevant groups")
-    print(f"  Supervised: SVM-RBF with GridSearchCV (C={SVM_C_VALUES})")
-    print(f"  Linear probe: Linear classifier, {LINEAR_EPOCHS} epochs, lr={LINEAR_LR}")
+    print(f"  Supervised: End-to-end fine-tuning (encoder lr={FINETUNE_ENCODER_LR}, "
+          f"head lr={FINETUNE_HEAD_LR}, {FINETUNE_EPOCHS} epochs, patience={FINETUNE_PATIENCE})")
 
 
 # =============================================================================
@@ -709,31 +765,23 @@ def main():
         print(f"  ZS Closed-set: Acc={zs_close['accuracy']:.1f}%, F1={zs_close['f1_macro']:.1f}% "
               f"({zs_close['n_allowed']}/{len(global_labels)} labels allowed)")
 
-        # 3. 1% supervised (SVM)
-        print(f"\n  --- 1% Supervised (SVM) ---")
-        ds_results['1pct_supervised'] = evaluate_supervised_svm(
-            test_emb, test_labels, test_ds,
+        # 3. 1% supervised fine-tuning (encoder + linear head)
+        print(f"\n  --- 1% Supervised Fine-Tune ---")
+        ds_results['1pct_supervised'] = evaluate_supervised_finetune(
+            moment_model, raw_data, test_labels, test_ds, device,
             label_rate=SUPERVISED_LABEL_RATE_1PCT, label_tag="1%")
         print(f"  1% supervised: "
               f"Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['1pct_supervised']['f1_macro']:.1f}%")
 
-        # 4. 10% supervised (SVM)
-        print(f"\n  --- 10% Supervised (SVM) ---")
-        ds_results['10pct_supervised'] = evaluate_supervised_svm(
-            test_emb, test_labels, test_ds,
+        # 4. 10% supervised fine-tuning (encoder + linear head)
+        print(f"\n  --- 10% Supervised Fine-Tune ---")
+        ds_results['10pct_supervised'] = evaluate_supervised_finetune(
+            moment_model, raw_data, test_labels, test_ds, device,
             label_rate=SUPERVISED_LABEL_RATE_10PCT, label_tag="10%")
         print(f"  10% supervised: "
               f"Acc={ds_results['10pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['10pct_supervised']['f1_macro']:.1f}%")
-
-        # 5. Linear probe (full train split)
-        print(f"\n  --- Linear Probe ---")
-        ds_results['linear_probe'] = evaluate_linear_probe(
-            test_emb, test_labels, test_ds, device)
-        print(f"  Linear probe: "
-              f"Acc={ds_results['linear_probe']['accuracy']:.1f}%, "
-              f"F1={ds_results['linear_probe']['f1_macro']:.1f}%")
 
         all_results[test_ds] = ds_results
 

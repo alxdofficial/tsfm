@@ -4,13 +4,14 @@ LiMU-BERT scoring using the unified framework.
 Evaluates with:
   1. Zero-shot open-set (classifier on 87 training labels, group scoring)
   2. Zero-shot closed-set (classifier with masked logits, group scoring)
-  3. 1% supervised (GRU classifier on 1% of test data - paper's architecture)
-  4. 10% supervised (GRU classifier on 10% of test data)
-  5. Linear probe (linear classifier on frozen mean-pooled embeddings, full train split)
+  3. 1% supervised end-to-end fine-tuning (encoder + GRU)
+  4. 10% supervised end-to-end fine-tuning (encoder + GRU)
 
-Uses LiMU-BERT's pretrained embeddings (N, 120, 72).
+Uses LiMU-BERT's pretrained embeddings (N, 120, 72) for zero-shot.
+End-to-end fine-tuning loads the pretrained encoder and raw sensor data,
+fine-tuning encoder + GRU jointly with differential learning rates.
 GRU classifier uses sub-windows (M, 20, 72) matching LiMU-BERT's original format.
-Linear probe and zero-shot use mean-pooled (N, 72) embeddings.
+Zero-shot uses mean-pooled (N, 72) embeddings.
 
 Usage:
     python val_scripts/human_activity_recognition/evaluate_limubert.py
@@ -35,6 +36,9 @@ from tqdm import tqdm
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+LIMUBERT_REPO = PROJECT_ROOT / "auxiliary_repos" / "LIMU-BERT-Public"
+sys.path.insert(0, str(LIMUBERT_REPO))
+
 from val_scripts.human_activity_recognition.grouped_zero_shot import (
     load_global_labels, map_local_to_global_labels,
     get_closed_set_mask, score_with_groups,
@@ -57,10 +61,17 @@ LIMUBERT_VERSION = "20_120"
 
 # Training hyperparameters (match LiMU-BERT config/train.json)
 GRU_EPOCHS = 100  # Original repo provides train_100ep.json (same config, fewer epochs)
-LINEAR_PROBE_EPOCHS = 100  # Standard for linear probes (not in original paper)
 CLASSIFIER_BATCH_SIZE = 512
 CLASSIFIER_LR = 1e-3
 CLASSIFIER_SEED = 3431
+
+# Fine-tuning hyperparameters (encoder + GRU, end-to-end)
+FINETUNE_EPOCHS = 20
+FINETUNE_BATCH_SIZE = 32
+FINETUNE_ENCODER_LR = 1e-5
+FINETUNE_HEAD_LR = 1e-3
+FINETUNE_WEIGHT_DECAY = 1e-5
+FINETUNE_PATIENCE = 5
 
 # Embedding parameters
 EMB_DIM = 72       # LiMU-BERT hidden dimension
@@ -111,22 +122,23 @@ class GRUClassifier(nn.Module):
 
 
 # =============================================================================
-# Linear Classifier (for linear probe)
+# Model Loading
 # =============================================================================
 
-class LinearClassifier(nn.Module):
-    """Linear classifier for measuring representation quality.
+def load_limubert_model(device):
+    """Load pretrained LiMU-BERT model for end-to-end fine-tuning."""
+    from models import LIMUBertModel4Pretrain
+    from config import PretrainModelConfig
 
-    Architecture: Dropout(0.3) -> Linear(input_dim, num_classes)
-    """
-    def __init__(self, input_dim: int, num_classes: int):
-        super().__init__()
-        self.linear = nn.Linear(input_dim, num_classes)
-
-    def forward(self, x, training=False):
-        if training:
-            x = F.dropout(x, p=0.3, training=True)
-        return self.linear(x)
+    cfg = PretrainModelConfig(
+        hidden=72, hidden_ff=144, feature_num=6,
+        n_layers=4, n_heads=4, seq_len=120, emb_norm=True
+    )
+    model = LIMUBertModel4Pretrain(cfg, output_embed=True)
+    checkpoint_path = LIMUBERT_REPO / "saved" / "pretrain_base_recgym_20_120" / "pretrained_combined.pt"
+    model.load_state_dict(torch.load(str(checkpoint_path), map_location=device))
+    model.to(device)
+    return model
 
 
 # =============================================================================
@@ -141,6 +153,24 @@ def load_embeddings(dataset_name: str) -> Tuple[np.ndarray, np.ndarray]:
     embeddings = np.load(str(embed_path)).astype(np.float32)
     labels = np.load(str(label_path)).astype(np.float32)
     return embeddings, labels
+
+
+def load_raw_data(dataset_name: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Load raw sensor data and labels for a dataset."""
+    ds_dir = PROJECT_ROOT / "benchmark_data" / "processed" / "limubert" / dataset_name
+    data = np.load(str(ds_dir / "data_20_120.npy")).astype(np.float32)
+    labels = np.load(str(ds_dir / "label_20_120.npy")).astype(np.float32)
+    return data, labels
+
+
+def normalize_for_limubert(data: np.ndarray) -> np.ndarray:
+    """Normalize raw data for LiMU-BERT: acc channels / 9.8.
+
+    Matches LiMU-BERT's Preprocess4Normalization.
+    """
+    normed = data.copy()
+    normed[:, :, :3] = normed[:, :, :3] / 9.8  # acc channels
+    return normed
 
 
 def get_dataset_labels(dataset_name: str) -> List[str]:
@@ -380,95 +410,6 @@ def predict_gru_global(model, data, device, logit_mask=None,
 
 
 # =============================================================================
-# Linear Classifier Training (for linear probe)
-# =============================================================================
-
-def train_linear_classifier(
-    train_data, train_labels, val_data, val_labels,
-    num_classes, input_dim=EMB_DIM,
-    epochs=LINEAR_PROBE_EPOCHS, batch_size=CLASSIFIER_BATCH_SIZE,
-    lr=CLASSIFIER_LR, device=None, verbose=False, desc="Linear probe",
-):
-    """Train a linear classifier on mean-pooled embeddings."""
-    if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    model = LinearClassifier(input_dim=input_dim, num_classes=num_classes).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
-
-    train_ds = TensorDataset(
-        torch.from_numpy(train_data).float(),
-        torch.from_numpy(train_labels).long()
-    )
-    val_ds = TensorDataset(
-        torch.from_numpy(val_data).float(),
-        torch.from_numpy(val_labels).long()
-    )
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
-
-    best_val_acc = 0.0
-    best_state = None
-
-    pbar = tqdm(range(epochs), desc=desc, leave=True)
-    for epoch in pbar:
-        model.train()
-        for batch_data, batch_labels in train_loader:
-            batch_data = batch_data.to(device)
-            batch_labels = batch_labels.to(device)
-
-            optimizer.zero_grad()
-            logits = model(batch_data, training=True)
-            loss = criterion(logits, batch_labels)
-            loss.backward()
-            optimizer.step()
-
-        model.train(False)
-        val_preds = []
-        val_gt = []
-        with torch.no_grad():
-            for batch_data, batch_labels in val_loader:
-                batch_data = batch_data.to(device)
-                logits = model(batch_data, training=False)
-                preds = logits.argmax(dim=1).cpu().numpy()
-                val_preds.extend(preds)
-                val_gt.extend(batch_labels.numpy())
-
-        val_acc = accuracy_score(val_gt, val_preds)
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            best_state = copy.deepcopy(model.state_dict())
-
-        pbar.set_postfix(val_acc=f"{val_acc:.3f}", best=f"{best_val_acc:.3f}")
-
-    if best_state is not None:
-        model.load_state_dict(best_state)
-    model.train(False)
-    return model
-
-
-def predict_linear(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=None):
-    """Get predictions from a trained linear classifier."""
-    if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    model.eval()
-    ds = TensorDataset(torch.from_numpy(data).float())
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
-
-    all_preds = []
-    with torch.no_grad():
-        for (batch_data,) in loader:
-            batch_data = batch_data.to(device)
-            logits = model(batch_data, training=False)
-            preds = logits.argmax(dim=1).cpu().numpy()
-            all_preds.extend(preds)
-
-    return np.array(all_preds)
-
-
-# =============================================================================
 # Evaluation Functions
 # =============================================================================
 
@@ -499,154 +440,191 @@ def split_full_windows(embeddings, labels_raw, training_rate=TRAINING_RATE,
     return train_emb, train_lab, val_emb, val_lab, test_emb, test_lab
 
 
-def evaluate_supervised_gru(
-    test_embeddings: np.ndarray,
+def evaluate_supervised_finetune(
+    bert_model,
+    raw_data: np.ndarray,
     test_labels_raw: np.ndarray,
     test_dataset: str,
     device: torch.device,
     label_rate: float = 0.01,
     label_tag: str = "1%",
 ) -> Dict[str, float]:
-    """Supervised with GRU classifier (paper's architecture).
+    """End-to-end fine-tuning: encoder + GRU classifier.
 
-    Uses sub-window format (M, 20, 72) matching LiMU-BERT's original setup.
-    Splits full windows FIRST, then reshapes each partition into sub-windows
-    independently, matching the original LiMU-BERT partition_and_reshape() flow.
+    Loads the pretrained LiMU-BERT encoder and fine-tunes it jointly with a
+    GRU classifier head. Uses raw sensor data (N, 120, 6), normalizes, then
+    forward pass: encoder -> sub-window reshape -> GRU -> logits.
+
+    Splits full windows FIRST (prevents data leakage), then subsamples
+    training windows by label_rate.
 
     Args:
+        bert_model: Pretrained LiMU-BERT model (will be deep-copied)
+        raw_data: (N, 120, 6) raw sensor data
+        test_labels_raw: (N, 120, 2) raw labels
+        test_dataset: Dataset name
+        device: torch device
         label_rate: Fraction of training portion to use (0.01 = 1%, 0.10 = 10%)
         label_tag: Display tag for logging
     """
     test_activities = get_dataset_labels(test_dataset)
     num_test_classes = len(test_activities)
 
-    # Compute global label offset BEFORE splitting (matching original LiMU-BERT)
-    global_label_offset = int(np.min(test_labels_raw[:, :, 0]))
+    # Get window-level labels
+    window_labels = get_window_labels(test_labels_raw)
 
-    # Split full windows FIRST (prevents data leakage)
-    train_emb, train_lab_raw, val_emb, val_lab_raw, test_emb, test_lab_raw = \
-        split_full_windows(test_embeddings, test_labels_raw)
+    # Normalize raw data for LiMU-BERT
+    normed_data = normalize_for_limubert(raw_data)
 
-    # Reshape each partition into sub-windows independently, using global offset
-    train_data, train_labels = reshape_and_merge(train_emb, train_lab_raw, label_offset=global_label_offset)
-    val_data, val_labels = reshape_and_merge(val_emb, val_lab_raw, label_offset=global_label_offset)
-    eval_data, eval_labels = reshape_and_merge(test_emb, test_lab_raw, label_offset=global_label_offset)
+    # Split at window level
+    train_data, train_labels, val_data, val_labels, test_data_split, test_labels_split = \
+        prepare_train_test_split(normed_data, window_labels,
+                                 training_rate=TRAINING_RATE, vali_rate=VALI_RATE,
+                                 label_rate=label_rate, seed=CLASSIFIER_SEED, balance=True)
 
-    print(f"  [{label_tag} supervised GRU] Total sub-windows: "
-          f"train={len(train_data)}, val={len(val_data)}, test={len(eval_data)}, "
-          f"{num_test_classes} classes")
-
-    # Apply label_rate subsampling to train set only
-    if label_rate < 1.0:
-        rng = np.random.RandomState(CLASSIFIER_SEED + 1)
-        train_data, train_labels = balanced_subsample(
-            train_data, train_labels, label_rate, rng)
-
-    print(f"  [{label_tag} supervised GRU] Train: {len(train_data)}, Val: {len(val_data)}, Test: {len(eval_data)}")
+    print(f"  [{label_tag} fine-tune] Windows: train={len(train_data)}, "
+          f"val={len(val_data)}, test={len(test_data_split)}, {num_test_classes} classes")
 
     if len(train_data) == 0:
-        return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0, 'n_classes': num_test_classes}
+        return {'accuracy': 0.0, 'f1_macro': 0.0, 'f1_weighted': 0.0,
+                'n_samples': 0, 'n_classes': num_test_classes}
 
-    print(f"  [{label_tag} supervised GRU] Training GRU classifier ({num_test_classes} classes)...")
-    model = train_gru_classifier(
-        train_data, train_labels, val_data, val_labels,
-        num_classes=num_test_classes, device=device, verbose=True,
-        desc=f"LiMU-BERT | {test_dataset} | GRU {label_tag}",
-    )
+    # Deep-copy encoder
+    ft_encoder = copy.deepcopy(bert_model)
+    for p in ft_encoder.parameters():
+        p.requires_grad_(True)
+    ft_encoder.train()
 
-    pred_indices = predict_gru(model, eval_data, device=device)
+    # Create GRU classifier
+    gru_classifier = GRUClassifier(input_dim=EMB_DIM, num_classes=num_test_classes).to(device)
 
+    optimizer = torch.optim.AdamW([
+        {'params': ft_encoder.parameters(), 'lr': FINETUNE_ENCODER_LR},
+        {'params': gru_classifier.parameters(), 'lr': FINETUNE_HEAD_LR},
+    ], weight_decay=FINETUNE_WEIGHT_DECAY)
+    criterion = nn.CrossEntropyLoss()
+
+    # DataLoaders (full windows)
+    train_ds = TensorDataset(torch.from_numpy(train_data).float(), torch.from_numpy(train_labels).long())
+    val_ds = TensorDataset(torch.from_numpy(val_data).float(), torch.from_numpy(val_labels).long())
+    test_ds_loader = TensorDataset(torch.from_numpy(test_data_split).float(), torch.from_numpy(test_labels_split).long())
+    train_loader = DataLoader(train_ds, batch_size=FINETUNE_BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=FINETUNE_BATCH_SIZE, shuffle=False)
+    test_loader = DataLoader(test_ds_loader, batch_size=FINETUNE_BATCH_SIZE, shuffle=False)
+
+    K = SEQ_LEN // MERGE_LEN  # 6 sub-windows per window
+
+    best_val_acc = -1.0
+    best_enc_state = None
+    best_gru_state = None
+    patience_counter = 0
+
+    pbar = tqdm(range(FINETUNE_EPOCHS), desc=f"LiMU-BERT | {test_dataset} | FT {label_tag}", leave=True)
+    for epoch in pbar:
+        ft_encoder.train()
+        gru_classifier.train()
+        epoch_loss = 0.0
+        n_batches = 0
+
+        for batch_data, batch_labels in train_loader:
+            batch_data = batch_data.to(device)   # (B, 120, 6)
+            batch_labels = batch_labels.to(device)  # (B,)
+            B = batch_data.shape[0]
+
+            optimizer.zero_grad()
+            h = ft_encoder(batch_data)  # (B, 120, 72)
+            # Reshape to sub-windows: (B, 120, 72) -> (B*K, 20, 72)
+            h_sub = h.reshape(B * K, MERGE_LEN, EMB_DIM)
+            # Expand labels: each window's label applies to all K sub-windows
+            labels_sub = batch_labels.unsqueeze(1).expand(B, K).reshape(B * K)
+
+            logits = gru_classifier(h_sub, training=True)  # (B*K, num_classes)
+            loss = criterion(logits, labels_sub)
+            loss.backward()
+            optimizer.step()
+
+            epoch_loss += loss.item()
+            n_batches += 1
+
+        # Validation
+        ft_encoder.train(False)
+        gru_classifier.train(False)
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for batch_data, batch_labels in val_loader:
+                batch_data = batch_data.to(device)
+                batch_labels = batch_labels.to(device)
+                B = batch_data.shape[0]
+                h = ft_encoder(batch_data)
+                h_sub = h.reshape(B * K, MERGE_LEN, EMB_DIM)
+                logits = gru_classifier(h_sub)  # (B*K, num_classes)
+                preds = logits.argmax(dim=1).reshape(B, K)
+                # Majority vote across K sub-windows per window
+                window_preds = torch.mode(preds, dim=1).values
+                correct += (window_preds == batch_labels).sum().item()
+                total += B
+        val_acc = correct / max(total, 1)
+
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_enc_state = copy.deepcopy(ft_encoder.state_dict())
+            best_gru_state = copy.deepcopy(gru_classifier.state_dict())
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
+        avg_loss = epoch_loss / max(1, n_batches)
+        pbar.set_postfix(loss=f"{avg_loss:.4f}", val_acc=f"{val_acc:.3f}", best=f"{best_val_acc:.3f}")
+
+        if patience_counter >= FINETUNE_PATIENCE:
+            print(f"    Early stopping at epoch {epoch + 1}")
+            break
+
+    if best_enc_state is not None:
+        ft_encoder.load_state_dict(best_enc_state)
+        gru_classifier.load_state_dict(best_gru_state)
+
+    # Test evaluation
+    ft_encoder.train(False)
+    gru_classifier.train(False)
+    all_preds = []
+    all_gt = []
+    with torch.no_grad():
+        for batch_data, batch_labels in test_loader:
+            batch_data = batch_data.to(device)
+            B = batch_data.shape[0]
+            h = ft_encoder(batch_data)
+            h_sub = h.reshape(B * K, MERGE_LEN, EMB_DIM)
+            logits = gru_classifier(h_sub)
+            preds = logits.argmax(dim=1).reshape(B, K)
+            window_preds = torch.mode(preds, dim=1).values.cpu().numpy()
+            all_preds.extend(window_preds)
+            all_gt.extend(batch_labels.numpy())
+
+    # Score
     gt_names = []
     pred_names = []
-    for i in range(len(eval_labels)):
-        local_idx = eval_labels[i]
+    for i in range(len(all_gt)):
+        local_idx = all_gt[i]
         if local_idx < len(test_activities):
             gt_names.append(test_activities[local_idx])
         else:
             continue
-        pred_idx = pred_indices[i]
+        pred_idx = all_preds[i]
         pred_names.append(test_activities[pred_idx] if pred_idx < len(test_activities) else "unknown")
 
     acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(
-        gt_names, pred_names, labels=test_activities,
-        average='macro', zero_division=0,
-    ) * 100
-    f1_w = f1_score(
-        gt_names, pred_names, labels=test_activities,
-        average='weighted', zero_division=0,
-    ) * 100
+    f1 = f1_score(gt_names, pred_names, labels=test_activities, average='macro', zero_division=0) * 100
+    f1_w = f1_score(gt_names, pred_names, labels=test_activities, average='weighted', zero_division=0) * 100
 
-    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_names),
-            'n_train_samples': len(train_data), 'n_classes': num_test_classes}
+    del best_enc_state, best_gru_state
+    del ft_encoder, gru_classifier
+    torch.cuda.empty_cache()
 
-
-def evaluate_linear_probe(
-    test_embeddings: np.ndarray,
-    test_labels_raw: np.ndarray,
-    test_dataset: str,
-    device: torch.device,
-) -> Dict[str, float]:
-    """Linear probe: linear classifier on frozen mean-pooled embeddings, full train split.
-
-    Measures representation quality. Uses mean-pooled (N, 72) embeddings with
-    80% train / 10% val / 10% test split, no subsampling.
-    """
-    test_activities = get_dataset_labels(test_dataset)
-    num_test_classes = len(test_activities)
-
-    test_pooled = mean_pool_embeddings(test_embeddings)
-    test_window_labels = get_window_labels(test_labels_raw)
-
-    print(f"  [Linear probe] Total samples: {len(test_pooled)}, {num_test_classes} classes")
-
-    train_data, train_labels, val_data, val_labels, eval_data, eval_labels = \
-        prepare_train_test_split(
-            test_pooled, test_window_labels,
-            training_rate=TRAINING_RATE,
-            vali_rate=VALI_RATE,
-            label_rate=1.0,
-            seed=CLASSIFIER_SEED,
-            balance=False
-        )
-
-    print(f"  [Linear probe] Train: {len(train_data)}, Val: {len(val_data)}, Test: {len(eval_data)}")
-
-    if len(train_data) == 0:
-        return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0, 'n_classes': num_test_classes}
-
-    print(f"  [Linear probe] Training linear classifier ({num_test_classes} classes)...")
-    model = train_linear_classifier(
-        train_data, train_labels, val_data, val_labels,
-        num_classes=num_test_classes, device=device, verbose=True,
-        desc=f"LiMU-BERT | {test_dataset} | linear probe",
-    )
-
-    pred_indices = predict_linear(model, eval_data, device=device)
-
-    gt_names = []
-    pred_names = []
-    for i in range(len(eval_labels)):
-        local_idx = eval_labels[i]
-        if local_idx < len(test_activities):
-            gt_names.append(test_activities[local_idx])
-        else:
-            continue
-        pred_idx = pred_indices[i]
-        pred_names.append(test_activities[pred_idx] if pred_idx < len(test_activities) else "unknown")
-
-    acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(
-        gt_names, pred_names, labels=test_activities,
-        average='macro', zero_division=0,
-    ) * 100
-    f1_w = f1_score(
-        gt_names, pred_names, labels=test_activities,
-        average='weighted', zero_division=0,
-    ) * 100
-
-    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_names),
-            'n_train_samples': len(train_data), 'n_classes': num_test_classes}
+    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w,
+            'n_samples': len(gt_names), 'n_train_samples': len(train_data),
+            'n_classes': num_test_classes}
 
 
 # =============================================================================
@@ -685,18 +663,17 @@ def load_limubert_training_embeddings(global_labels, device):
 def print_results_table(all_results: Dict):
     """Print results table."""
     print()
-    print("=" * 150)
+    print("=" * 130)
     print("LIMU-BERT EVALUATION RESULTS")
-    print("=" * 150)
+    print("=" * 130)
 
     header = (f"{'Dataset':<16}"
               f"{'ZS-Open Acc':>13}{'ZS-Open F1':>12}"
               f"{'ZS-Close Acc':>14}{'ZS-Close F1':>13}"
-              f"{'1%Sup Acc':>11}{'1%Sup F1':>10}"
-              f"{'10%Sup Acc':>12}{'10%Sup F1':>11}"
-              f"{'LP Acc':>9}{'LP F1':>8}")
+              f"{'1%FT Acc':>11}{'1%FT F1':>10}"
+              f"{'10%FT Acc':>12}{'10%FT F1':>11}")
     print(header)
-    print("-" * 150)
+    print("-" * 130)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
@@ -710,16 +687,15 @@ def print_results_table(all_results: Dict):
               f"{g('zero_shot_open_set','accuracy'):>12.1f}%{g('zero_shot_open_set','f1_macro'):>11.1f}%"
               f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>12.1f}%"
               f"{g('1pct_supervised','accuracy'):>10.1f}%{g('1pct_supervised','f1_macro'):>9.1f}%"
-              f"{g('10pct_supervised','accuracy'):>11.1f}%{g('10pct_supervised','f1_macro'):>10.1f}%"
-              f"{g('linear_probe','accuracy'):>8.1f}%{g('linear_probe','f1_macro'):>7.1f}%")
+              f"{g('10pct_supervised','accuracy'):>11.1f}%{g('10pct_supervised','f1_macro'):>10.1f}%")
 
-    print("=" * 150)
+    print("=" * 130)
     print()
     print("Details:")
     print(f"  Zero-shot: GRU classifier on 10 training datasets (87 classes), sub-window format, group-matched scoring")
     print(f"  Open-set: all 87 logits; Closed-set: logits masked to test-relevant groups")
-    print(f"  Supervised: GRU classifier (paper's architecture), {GRU_EPOCHS} epochs, lr={CLASSIFIER_LR}")
-    print(f"  Linear probe: Linear classifier on mean-pooled embeddings, {LINEAR_PROBE_EPOCHS} epochs")
+    print(f"  Supervised: End-to-end fine-tuning (encoder + GRU), {FINETUNE_EPOCHS} epochs, "
+          f"encoder_lr={FINETUNE_ENCODER_LR}, head_lr={FINETUNE_HEAD_LR}, patience={FINETUNE_PATIENCE}")
 
 
 # =============================================================================
@@ -735,6 +711,10 @@ def main():
     print(f"Device: {device}")
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    print("\nLoading LiMU-BERT model...")
+    limubert_model = load_limubert_model(device)
+    print("Model loaded successfully")
 
     # Load or train zero-shot GRU classifier
     global_labels = load_global_labels()
@@ -779,7 +759,9 @@ def main():
         print(f"Evaluating LiMU-BERT on {test_ds}")
         print(f"{'='*60}")
 
+        # Load both embeddings (for zero-shot) and raw data (for fine-tuning)
         test_emb, test_lab = load_embeddings(test_ds)
+        raw_data, raw_labels = load_raw_data(test_ds)
         test_activities = get_dataset_labels(test_ds)
         print(f"  Test data: {test_emb.shape[0]} windows, "
               f"{len(test_activities)} classes")
@@ -811,31 +793,23 @@ def main():
         print(f"  ZS Closed-set: Acc={zs_close['accuracy']:.1f}%, F1={zs_close['f1_macro']:.1f}% "
               f"({zs_close['n_allowed']}/{len(global_labels)} labels allowed)")
 
-        # 3. 1% supervised (GRU)
-        print(f"\n  --- 1% Supervised (GRU) ---")
-        ds_results['1pct_supervised'] = evaluate_supervised_gru(
-            test_emb, test_lab, test_ds, device,
+        # 3. 1% supervised (end-to-end fine-tuning)
+        print(f"\n  --- 1% Supervised (Fine-Tune) ---")
+        ds_results['1pct_supervised'] = evaluate_supervised_finetune(
+            limubert_model, raw_data, raw_labels, test_ds, device,
             label_rate=SUPERVISED_LABEL_RATE_1PCT, label_tag="1%")
-        print(f"  1% supervised: "
+        print(f"  1% fine-tune: "
               f"Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['1pct_supervised']['f1_macro']:.1f}%")
 
-        # 4. 10% supervised (GRU)
-        print(f"\n  --- 10% Supervised (GRU) ---")
-        ds_results['10pct_supervised'] = evaluate_supervised_gru(
-            test_emb, test_lab, test_ds, device,
+        # 4. 10% supervised (end-to-end fine-tuning)
+        print(f"\n  --- 10% Supervised (Fine-Tune) ---")
+        ds_results['10pct_supervised'] = evaluate_supervised_finetune(
+            limubert_model, raw_data, raw_labels, test_ds, device,
             label_rate=SUPERVISED_LABEL_RATE_10PCT, label_tag="10%")
-        print(f"  10% supervised: "
+        print(f"  10% fine-tune: "
               f"Acc={ds_results['10pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['10pct_supervised']['f1_macro']:.1f}%")
-
-        # 5. Linear probe (mean-pooled + linear classifier, full train split)
-        print(f"\n  --- Linear Probe ---")
-        ds_results['linear_probe'] = evaluate_linear_probe(
-            test_emb, test_lab, test_ds, device)
-        print(f"  Linear probe: "
-              f"Acc={ds_results['linear_probe']['accuracy']:.1f}%, "
-              f"F1={ds_results['linear_probe']['f1_macro']:.1f}%")
 
         all_results[test_ds] = ds_results
 

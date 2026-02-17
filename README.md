@@ -93,7 +93,7 @@ All data is standardized to `(N, 120, 6)` windows at 20Hz with 6 IMU channels (a
 
 ## Baseline Evaluation
 
-We compare TSFM against 4 baselines using a unified 5-metric evaluation framework:
+We compare TSFM against 4 baselines using a unified 4-metric evaluation framework:
 
 | Baseline | Type | Zero-Shot Method | Embedding Dim |
 |----------|------|------------------|:---:|
@@ -103,13 +103,12 @@ We compare TSFM against 4 baselines using a unified 5-metric evaluation framewor
 | **MOMENT** | Encoder-only | SVM-RBF classifier | 6144 |
 | **CrossHAR** | Encoder-only | Transformer_ft classifier | 72 |
 
-### 5-Metric Evaluation
+### 4-Metric Evaluation
 
 1. **Zero-Shot Open-Set**: Classify against all 87 training labels
 2. **Zero-Shot Closed-Set**: Classify against test dataset labels only
-3. **1% Supervised**: Linear classifier on 1% labeled test data
-4. **10% Supervised**: Linear classifier on 10% labeled test data
-5. **Linear Probe**: Linear classifier on full train split
+3. **1% Supervised**: End-to-end fine-tuning on 1% labeled test data
+4. **10% Supervised**: End-to-end fine-tuning on 10% labeled test data
 
 ### Running Evaluations
 

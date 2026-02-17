@@ -5,9 +5,8 @@ LanHAR IS text-aligned (CLIP-style), so zero-shot via cosine similarity
 is available. Evaluates with:
   1. Zero-shot open-set (cosine sim with all 87 text prototypes, group-based matching)
   2. Zero-shot closed-set (cosine sim with test dataset text prototypes, exact match)
-  3. 1% supervised (linear classifier on 1% labeled test data)
-  4. 10% supervised (linear classifier on 10% labeled test data)
-  5. Linear probe (linear classifier on full train split of test data)
+  3. 1% supervised (end-to-end fine-tuning, cosine sim with frozen text prototypes)
+  4. 10% supervised (end-to-end fine-tuning, cosine sim with frozen text prototypes)
 
 LanHAR uses a CLIP-style approach:
   - SciBERT text encoder for activity descriptions
@@ -19,6 +18,10 @@ Two training stages:
   Stage 2: Train sensor encoder with CLIP loss on sensor-text pairs
 
 After training, projected+normalized 768-dim sensor/text embeddings are used for scoring.
+
+Supervised fine-tuning: deep-copies the model, fine-tunes sensor_encoder + sen_proj
+end-to-end with cross-entropy on cosine similarity logits against frozen text
+prototypes. No separate classifier head — uses the model's native text-alignment.
 
 Usage:
     python val_scripts/human_activity_recognition/evaluate_lanhar.py
@@ -84,10 +87,14 @@ STAGE2_EPOCHS = 50   # Matches original LanHAR training_stage2.py default
 STAGE2_BATCH_SIZE = 256  # Matches original paper
 STAGE2_LR = 4e-5
 
-# Classifier hyperparameters (same as MOMENT/LiMU-BERT)
-CLASSIFIER_EPOCHS = 100
-CLASSIFIER_BATCH_SIZE = 512
-CLASSIFIER_LR = 1e-3
+# Fine-tuning hyperparameters (end-to-end, cosine sim with frozen text prototypes)
+FINETUNE_EPOCHS = 20
+FINETUNE_BATCH_SIZE = 32
+FINETUNE_ENCODER_LR = 1e-5
+FINETUNE_WEIGHT_DECAY = 1e-5
+FINETUNE_PATIENCE = 5
+FINETUNE_TEMPERATURE = 0.07
+
 CLASSIFIER_SEED = 3431
 
 # Data split parameters
@@ -1359,101 +1366,6 @@ def prepare_train_test_split(data, labels, training_rate=0.8, vali_rate=0.1,
     return train_data, train_labels, vali_data, vali_labels, test_data, test_labels
 
 
-# =============================================================================
-# Classifier
-# =============================================================================
-
-class LinearClassifier(nn.Module):
-    def __init__(self, input_dim: int, num_classes: int):
-        super().__init__()
-        self.linear = nn.Linear(input_dim, num_classes)
-
-    def forward(self, x, training=False):
-        if training:
-            x = F.dropout(x, p=0.3, training=True)
-        return self.linear(x)
-
-
-def train_linear_classifier(
-    train_data, train_labels, val_data, val_labels,
-    num_classes, input_dim=EMB_DIM,
-    epochs=CLASSIFIER_EPOCHS, batch_size=CLASSIFIER_BATCH_SIZE,
-    lr=CLASSIFIER_LR, device=None, verbose=False, desc="Linear classifier",
-):
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    model = LinearClassifier(input_dim=input_dim, num_classes=num_classes).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
-
-    train_ds = TensorDataset(
-        torch.from_numpy(train_data).float(),
-        torch.from_numpy(train_labels).long(),
-    )
-    val_ds = TensorDataset(
-        torch.from_numpy(val_data).float(),
-        torch.from_numpy(val_labels).long(),
-    )
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
-
-    best_val_acc = 0.0
-    best_state = None
-
-    pbar = tqdm(range(epochs), desc=desc, leave=True)
-    for epoch in pbar:
-        model.train()
-        for batch_data, batch_labels in train_loader:
-            batch_data = batch_data.to(device)
-            batch_labels = batch_labels.to(device)
-            optimizer.zero_grad()
-            logits = model(batch_data, training=True)
-            loss = criterion(logits, batch_labels)
-            loss.backward()
-            optimizer.step()
-
-        model.train(False)
-        val_preds = []
-        val_gt = []
-        with torch.no_grad():
-            for batch_data, batch_labels in val_loader:
-                batch_data = batch_data.to(device)
-                logits = model(batch_data, training=False)
-                preds = logits.argmax(dim=1).cpu().numpy()
-                val_preds.extend(preds)
-                val_gt.extend(batch_labels.numpy())
-
-        val_acc = accuracy_score(val_gt, val_preds)
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            best_state = copy.deepcopy(model.state_dict())
-
-        pbar.set_postfix(val_acc=f"{val_acc:.3f}", best=f"{best_val_acc:.3f}")
-
-    if best_state is not None:
-        model.load_state_dict(best_state)
-    model.train(False)
-    return model
-
-
-def predict_classifier(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=None):
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    model.eval()
-    ds = TensorDataset(torch.from_numpy(data).float())
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
-
-    all_preds = []
-    with torch.no_grad():
-        for (batch_data,) in loader:
-            batch_data = batch_data.to(device)
-            logits = model(batch_data, training=False)
-            preds = logits.argmax(dim=1).cpu().numpy()
-            all_preds.extend(preds)
-
-    return np.array(all_preds)
 
 
 # =============================================================================
@@ -1555,55 +1467,181 @@ def score_zero_shot_closed_set(
             "n_samples": len(gt_names), "n_classes": num_test_classes}
 
 
-def score_supervised(
-    test_embeddings: np.ndarray,
+def score_supervised_finetune(
+    lanhar_model: LanHARModel,
+    tokenizer,
+    text_protos: Dict,
+    raw_data: np.ndarray,
     test_labels: np.ndarray,
     test_dataset: str,
     device: torch.device,
     label_rate: float = 0.01,
     label_tag: str = "1%",
 ) -> Dict[str, float]:
-    """Supervised with linear classifier (paper's approach).
+    """Supervised evaluation via end-to-end fine-tuning with cosine similarity.
 
-    Splits test dataset into 80/10/10 train/val/test, subsamples train by label_rate.
+    Deep-copies the model, fine-tunes sensor_encoder + sen_proj end-to-end.
+    Classification is via cosine similarity against frozen text prototypes.
+    BERT, txt_proj, and logit_scale stay frozen.
+
+    Args:
+        lanhar_model: Trained LanHARModel (will be deep-copied, not modified)
+        tokenizer: SciBERT tokenizer
+        text_protos: text prototype dict for building prototypes
+        raw_data: (N, 120, 6) gravity-aligned sensor data
+        test_labels: (N,) integer class indices
+        test_dataset: dataset name
+        device: torch device
+        label_rate: Fraction of training portion to use
+        label_tag: Display tag for logging
     """
     test_activities = get_dataset_labels(test_dataset)
     num_test_classes = len(test_activities)
 
-    print(f"  [{label_tag} supervised] Total samples: {len(test_embeddings)}, "
+    print(f"  [{label_tag} supervised FT] Total samples: {len(raw_data)}, "
           f"{num_test_classes} classes")
 
+    # Split raw data into 80/10/10
     train_data, train_labels_arr, val_data, val_labels_arr, test_data, test_labels_arr = \
         prepare_train_test_split(
-            test_embeddings, test_labels,
+            raw_data, test_labels,
             training_rate=TRAINING_RATE, vali_rate=VALI_RATE,
             label_rate=label_rate, seed=CLASSIFIER_SEED, balance=True,
         )
 
-    print(f"  [{label_tag} supervised] Train: {len(train_data)}, Val: {len(val_data)}, "
+    print(f"  [{label_tag} supervised FT] Train: {len(train_data)}, Val: {len(val_data)}, "
           f"Test: {len(test_data)}")
 
     if len(train_data) == 0:
         return {"accuracy": 0.0, "f1_macro": 0.0, "f1_weighted": 0.0,
                 "n_samples": 0, "n_classes": num_test_classes}
 
-    clf = train_linear_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_test_classes, device=device, verbose=True,
-        desc=f"LanHAR | {test_dataset} | linear {label_tag}",
-    )
+    # Build frozen text prototypes for this dataset's labels
+    test_text_protos = {lbl: text_protos[lbl] for lbl in test_activities if lbl in text_protos}
+    text_label_embs = build_zero_shot_prototypes(
+        lanhar_model, tokenizer, test_text_protos, test_activities, device,
+    )  # (C, 768), normalized, detached
 
-    pred_indices = predict_classifier(clf, test_data, device=device)
+    # Deep-copy model for fine-tuning
+    ft_model = copy.deepcopy(lanhar_model)
+
+    # Freeze BERT + txt_proj + logit_scale; train sensor_encoder + sen_proj
+    for p in ft_model.bert.parameters():
+        p.requires_grad = False
+    for p in ft_model.txt_proj.parameters():
+        p.requires_grad = False
+    ft_model.logit_scale.requires_grad = False
+
+    # Only train sensor_encoder + sen_proj
+    trainable_params = (
+        list(ft_model.sensor_encoder.parameters())
+        + list(ft_model.sen_proj.parameters())
+    )
+    optimizer = torch.optim.AdamW(
+        trainable_params, lr=FINETUNE_ENCODER_LR, weight_decay=FINETUNE_WEIGHT_DECAY,
+    )
+    criterion = nn.CrossEntropyLoss()
+
+    # Data loaders
+    train_ds = TensorDataset(
+        torch.from_numpy(train_data).float(),
+        torch.from_numpy(train_labels_arr).long(),
+    )
+    val_ds = TensorDataset(
+        torch.from_numpy(val_data).float(),
+        torch.from_numpy(val_labels_arr).long(),
+    )
+    test_ds = TensorDataset(
+        torch.from_numpy(test_data).float(),
+        torch.from_numpy(test_labels_arr).long(),
+    )
+    train_loader = DataLoader(train_ds, batch_size=FINETUNE_BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=FINETUNE_BATCH_SIZE, shuffle=False)
+    test_loader = DataLoader(test_ds, batch_size=FINETUNE_BATCH_SIZE, shuffle=False)
+
+    # Use exp(logit_scale) for cosine sim scaling (frozen)
+    logit_scale_val = ft_model.logit_scale.exp().clamp(max=100.0).item()
+
+    # Fine-tune loop
+    best_val_acc = -1.0
+    best_state = None
+    patience_counter = 0
+
+    pbar = tqdm(range(FINETUNE_EPOCHS), desc=f"LanHAR | {test_dataset} | FT {label_tag}", leave=True)
+    for epoch in pbar:
+        ft_model.train()
+        epoch_loss = 0.0
+        n_batches = 0
+
+        for batch_data, batch_labels in train_loader:
+            batch_data = batch_data.to(device)
+            batch_labels = batch_labels.to(device)
+
+            optimizer.zero_grad()
+            sensor_emb = ft_model.get_sensor_embedding(batch_data)  # (B, 768) normalized
+            logits = sensor_emb @ text_label_embs.T * logit_scale_val  # (B, C)
+            loss = criterion(logits, batch_labels)
+            loss.backward()
+            optimizer.step()
+
+            epoch_loss += loss.item()
+            n_batches += 1
+
+        # Validation
+        ft_model.train(False)
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for batch_data, batch_labels in val_loader:
+                batch_data = batch_data.to(device)
+                batch_labels = batch_labels.to(device)
+                sensor_emb = ft_model.get_sensor_embedding(batch_data)
+                logits = sensor_emb @ text_label_embs.T * logit_scale_val
+                preds = logits.argmax(dim=1)
+                correct += (preds == batch_labels).sum().item()
+                total += batch_labels.shape[0]
+        val_acc = correct / max(total, 1)
+
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_state = copy.deepcopy(ft_model.state_dict())
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
+        avg_loss = epoch_loss / max(1, n_batches)
+        pbar.set_postfix(loss=f"{avg_loss:.4f}", val_acc=f"{val_acc:.3f}", best=f"{best_val_acc:.3f}")
+
+        if patience_counter >= FINETUNE_PATIENCE:
+            print(f"    Early stopping at epoch {epoch + 1} (patience={FINETUNE_PATIENCE})")
+            break
+
+    # Restore best model
+    if best_state is not None:
+        ft_model.load_state_dict(best_state)
+
+    # Evaluate on test split
+    ft_model.train(False)
+    all_preds = []
+    all_gt = []
+    with torch.no_grad():
+        for batch_data, batch_labels in test_loader:
+            batch_data = batch_data.to(device)
+            sensor_emb = ft_model.get_sensor_embedding(batch_data)
+            logits = sensor_emb @ text_label_embs.T * logit_scale_val
+            preds = logits.argmax(dim=1).cpu().numpy()
+            all_preds.extend(preds)
+            all_gt.extend(batch_labels.numpy())
 
     gt_names = []
     pred_names = []
-    for i in range(len(test_labels_arr)):
-        local_idx = test_labels_arr[i]
+    for i in range(len(all_gt)):
+        local_idx = all_gt[i]
         if local_idx < len(test_activities):
             gt_names.append(test_activities[local_idx])
         else:
             continue
-        pred_idx = pred_indices[i]
+        pred_idx = all_preds[i]
         pred_names.append(
             test_activities[pred_idx] if pred_idx < len(test_activities) else "unknown"
         )
@@ -1614,67 +1652,9 @@ def score_supervised(
     f1_w = f1_score(gt_names, pred_names, labels=test_activities,
                     average="weighted", zero_division=0) * 100
 
-    return {"accuracy": acc, "f1_macro": f1, "f1_weighted": f1_w,
-            "n_samples": len(gt_names),
-            "n_train_samples": len(train_data), "n_classes": num_test_classes}
-
-
-def score_linear_probe(
-    test_embeddings: np.ndarray,
-    test_labels: np.ndarray,
-    test_dataset: str,
-    device: torch.device,
-) -> Dict[str, float]:
-    """Linear probe on frozen embeddings (full train split).
-
-    Trains nn.Linear on 80/10/10 split with no label subsampling.
-    """
-    test_activities = get_dataset_labels(test_dataset)
-    num_test_classes = len(test_activities)
-
-    print(f"  [Linear probe] Embeddings: {test_embeddings.shape}, "
-          f"{num_test_classes} classes")
-
-    train_data, train_labels_arr, val_data, val_labels_arr, test_data, test_labels_arr = \
-        prepare_train_test_split(
-            test_embeddings, test_labels,
-            training_rate=TRAINING_RATE, vali_rate=VALI_RATE,
-            label_rate=1.0, seed=CLASSIFIER_SEED, balance=False,
-        )
-
-    print(f"  [Linear probe] Train: {len(train_data)}, Val: {len(val_data)}, "
-          f"Test: {len(test_data)}")
-
-    if len(train_data) == 0:
-        return {"accuracy": 0.0, "f1_macro": 0.0, "f1_weighted": 0.0,
-                "n_samples": 0, "n_classes": num_test_classes}
-
-    clf = train_linear_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_test_classes, device=device, verbose=True,
-        desc=f"LanHAR | {test_dataset} | linear probe",
-    )
-
-    pred_indices = predict_classifier(clf, test_data, device=device)
-
-    gt_names = []
-    pred_names = []
-    for i in range(len(test_labels_arr)):
-        local_idx = test_labels_arr[i]
-        if local_idx < len(test_activities):
-            gt_names.append(test_activities[local_idx])
-        else:
-            continue
-        pred_idx = pred_indices[i]
-        pred_names.append(
-            test_activities[pred_idx] if pred_idx < len(test_activities) else "unknown"
-        )
-
-    acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(gt_names, pred_names, labels=test_activities,
-                  average="macro", zero_division=0) * 100
-    f1_w = f1_score(gt_names, pred_names, labels=test_activities,
-                    average="weighted", zero_division=0) * 100
+    del best_state
+    del ft_model
+    torch.cuda.empty_cache()
 
     return {"accuracy": acc, "f1_macro": f1, "f1_weighted": f1_w,
             "n_samples": len(gt_names),
@@ -1695,10 +1675,9 @@ def print_results_table(all_results):
               f"{'ZS-Open Acc':>13}{'ZS-Open F1':>13}"
               f"{'ZS-Close Acc':>14}{'ZS-Close F1':>14}"
               f"{'1% Sup Acc':>12}{'1% Sup F1':>12}"
-              f"{'10% Sup Acc':>13}{'10% Sup F1':>13}"
-              f"{'LP Acc':>9}{'LP F1':>8}")
+              f"{'10% Sup Acc':>13}{'10% Sup F1':>13}")
     print(header)
-    print("-" * 150)
+    print("-" * 130)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
@@ -1714,10 +1693,9 @@ def print_results_table(all_results):
             f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>13.1f}%"
             f"{g('1pct_supervised','accuracy'):>11.1f}%{g('1pct_supervised','f1_macro'):>11.1f}%"
             f"{g('10pct_supervised','accuracy'):>12.1f}%{g('10pct_supervised','f1_macro'):>12.1f}%"
-            f"{g('linear_probe','accuracy'):>8.1f}%{g('linear_probe','f1_macro'):>7.1f}%"
         )
 
-    print("=" * 150)
+    print("=" * 130)
     print()
     print("Details:")
     print(f"  Model: LanHAR (SciBERT + TimeSeriesTransformer)")
@@ -1728,8 +1706,8 @@ def print_results_table(all_results):
           f"batch_size={STAGE2_BATCH_SIZE}, accuracy-based selection")
     print(f"  Sensor embedding dim: {EMB_DIM}")
     print(f"  Zero-shot: cosine similarity with projected text prototypes")
-    print(f"  Classifier: Linear, {CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
-    print(f"  Linear probe: Linear classifier on full train split, {CLASSIFIER_EPOCHS} epochs")
+    print(f"  Supervised: End-to-end fine-tuning, cosine sim with frozen text prototypes, "
+          f"{FINETUNE_EPOCHS} epochs, lr={FINETUNE_ENCODER_LR}")
 
 
 def main():
@@ -1864,31 +1842,23 @@ def main():
         print(f"  Closed-set: Acc={ds_results['zero_shot_closed_set']['accuracy']:.1f}%, "
               f"F1={ds_results['zero_shot_closed_set']['f1_macro']:.1f}%")
 
-        # 1% supervised (Linear)
-        print(f"\n  --- 1% Supervised (Linear) ---")
-        ds_results["1pct_supervised"] = score_supervised(
-            test_emb, test_labels, test_ds, device,
+        # 1% supervised (end-to-end fine-tuning)
+        print(f"\n  --- 1% Supervised (End-to-End Fine-Tuning) ---")
+        ds_results["1pct_supervised"] = score_supervised_finetune(
+            model, tokenizer, text_protos, raw_data, test_labels, test_ds, device,
             label_rate=SUPERVISED_LABEL_RATE_1PCT, label_tag="1%",
         )
         print(f"  1% supervised: Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['1pct_supervised']['f1_macro']:.1f}%")
 
-        # 10% supervised (Linear)
-        print(f"\n  --- 10% Supervised (Linear) ---")
-        ds_results["10pct_supervised"] = score_supervised(
-            test_emb, test_labels, test_ds, device,
+        # 10% supervised (end-to-end fine-tuning)
+        print(f"\n  --- 10% Supervised (End-to-End Fine-Tuning) ---")
+        ds_results["10pct_supervised"] = score_supervised_finetune(
+            model, tokenizer, text_protos, raw_data, test_labels, test_ds, device,
             label_rate=SUPERVISED_LABEL_RATE_10PCT, label_tag="10%",
         )
         print(f"  10% supervised: Acc={ds_results['10pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['10pct_supervised']['f1_macro']:.1f}%")
-
-        # Linear probe (full train split)
-        print(f"\n  --- Linear Probe ---")
-        ds_results["linear_probe"] = score_linear_probe(
-            test_emb, test_labels, test_ds, device,
-        )
-        print(f"  Linear probe: Acc={ds_results['linear_probe']['accuracy']:.1f}%, "
-              f"F1={ds_results['linear_probe']['f1_macro']:.1f}%")
 
         all_results[test_ds] = ds_results
 

@@ -4,9 +4,8 @@ CrossHAR baseline scoring using the unified framework.
 Evaluates with:
   1. Zero-shot open-set (classifier on 87 training labels, group scoring)
   2. Zero-shot closed-set (classifier with masked logits, group scoring)
-  3. 1% supervised (Transformer_ft classifier - paper's architecture)
-  4. 10% supervised (Transformer_ft classifier)
-  5. Linear probe (linear classifier on frozen mean-pooled embeddings, full train split)
+  3. 1% supervised (end-to-end fine-tuning of encoder + Transformer_ft classifier)
+  4. 10% supervised (end-to-end fine-tuning of encoder + Transformer_ft classifier)
 
 Usage:
     python val_scripts/human_activity_recognition/evaluate_crosshar.py
@@ -59,11 +58,19 @@ N_HEADS = 4
 SEQ_LEN = 120
 EMB_DIM = 72  # CrossHAR hidden dimension (input to Transformer_ft classifier)
 
-# Scoring hyperparameters
+# Scoring hyperparameters (zero-shot classifier training)
 CLASSIFIER_EPOCHS = 100
 CLASSIFIER_BATCH_SIZE = 512
 CLASSIFIER_LR = 1e-3
 CLASSIFIER_SEED = 3431
+
+# End-to-end fine-tuning hyperparameters (supervised metrics)
+FINETUNE_EPOCHS = 20
+FINETUNE_BATCH_SIZE = 32
+FINETUNE_ENCODER_LR = 1e-5
+FINETUNE_HEAD_LR = 1e-3
+FINETUNE_WEIGHT_DECAY = 1e-5
+FINETUNE_PATIENCE = 5
 
 TRAINING_RATE = 0.8
 VALI_RATE = 0.1
@@ -571,106 +578,6 @@ def predict_transformer_global(model, data, device, logit_mask=None,
 
 
 # =============================================================================
-# Linear Classifier (for linear probe)
-# =============================================================================
-
-class LinearClassifier(nn.Module):
-    def __init__(self, input_dim: int, num_classes: int):
-        super().__init__()
-        self.linear = nn.Linear(input_dim, num_classes)
-
-    def forward(self, x, training=False):
-        if training:
-            x = F.dropout(x, p=0.3, training=True)
-        return self.linear(x)
-
-
-def mean_pool_embeddings(embeddings: np.ndarray) -> np.ndarray:
-    """Mean-pool (N, 120, 72) sequence embeddings to (N, 72)."""
-    return embeddings.mean(axis=1)
-
-
-def train_linear_classifier(
-    train_data, train_labels, val_data, val_labels,
-    num_classes, input_dim=EMB_DIM,
-    epochs=CLASSIFIER_EPOCHS, batch_size=CLASSIFIER_BATCH_SIZE,
-    lr=CLASSIFIER_LR, device=None, verbose=False, desc="Linear probe",
-):
-    """Train a linear classifier on mean-pooled embeddings."""
-    if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    model = LinearClassifier(input_dim=input_dim, num_classes=num_classes).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
-
-    train_ds = TensorDataset(
-        torch.from_numpy(train_data).float(),
-        torch.from_numpy(train_labels).long()
-    )
-    val_ds = TensorDataset(
-        torch.from_numpy(val_data).float(),
-        torch.from_numpy(val_labels).long()
-    )
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
-
-    best_val_acc = 0.0
-    best_state = None
-
-    pbar = tqdm(range(epochs), desc=desc, leave=True)
-    for epoch in pbar:
-        model.train()
-        for batch_data, batch_labels in train_loader:
-            batch_data = batch_data.to(device)
-            batch_labels = batch_labels.to(device)
-            optimizer.zero_grad()
-            logits = model(batch_data, training=True)
-            loss = criterion(logits, batch_labels)
-            loss.backward()
-            optimizer.step()
-
-        model.train(False)
-        val_preds = []
-        val_gt = []
-        with torch.no_grad():
-            for batch_data, batch_labels in val_loader:
-                batch_data = batch_data.to(device)
-                logits = model(batch_data, training=False)
-                preds = logits.argmax(dim=1).cpu().numpy()
-                val_preds.extend(preds)
-                val_gt.extend(batch_labels.numpy())
-
-        val_acc = accuracy_score(val_gt, val_preds)
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            best_state = copy.deepcopy(model.state_dict())
-
-        pbar.set_postfix(val_acc=f"{val_acc:.3f}", best=f"{best_val_acc:.3f}")
-
-    if best_state is not None:
-        model.load_state_dict(best_state)
-    model.train(False)
-    return model
-
-
-def predict_linear(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=None):
-    if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model.eval()
-    ds = TensorDataset(torch.from_numpy(data).float())
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
-    all_preds = []
-    with torch.no_grad():
-        for (batch_data,) in loader:
-            batch_data = batch_data.to(device)
-            logits = model(batch_data, training=False)
-            preds = logits.argmax(dim=1).cpu().numpy()
-            all_preds.extend(preds)
-    return np.array(all_preds)
-
-
-# =============================================================================
 # Grouped Zero-Shot: Training Embedding Extraction
 # =============================================================================
 
@@ -702,27 +609,31 @@ def load_crosshar_training_embeddings(model, global_labels, device):
 # Scoring Functions
 # =============================================================================
 
-def score_supervised(
-    test_embeddings: np.ndarray,
+def score_supervised_finetune(
+    encoder_model,
+    raw_data: np.ndarray,
     test_labels: np.ndarray,
     test_dataset: str,
     device: torch.device,
     label_rate: float = 0.01,
     label_tag: str = "1%",
 ) -> Dict[str, float]:
-    """Supervised fine-tuning with Transformer_ft classifier (paper's architecture).
+    """End-to-end fine-tuning: encoder + Transformer_ft classifier.
 
-    Splits test dataset into 80/10/10 train/val/test, subsamples train by label_rate.
+    Deep-copies the pretrained encoder, re-enables gradients, and fine-tunes
+    both encoder and a fresh Transformer_ft classification head on raw data.
+    Splits raw data into 80/10/10 train/val/test, subsamples train by label_rate.
     """
     test_activities = get_dataset_labels(test_dataset)
     num_test_classes = len(test_activities)
 
-    print(f"  [{label_tag} supervised] Total samples: {len(test_embeddings)}, "
+    print(f"  [{label_tag} finetune] Total samples: {len(raw_data)}, "
           f"{num_test_classes} classes")
 
+    # Split RAW data (not embeddings)
     train_data, train_labels_arr, val_data, val_labels_arr, test_data, test_labels_arr = \
         prepare_train_test_split(
-            test_embeddings, test_labels,
+            raw_data, test_labels,
             training_rate=TRAINING_RATE,
             vali_rate=VALI_RATE,
             label_rate=label_rate,
@@ -730,26 +641,142 @@ def score_supervised(
             balance=True,
         )
 
-    print(f"  [{label_tag} supervised] Train: {len(train_data)}, Val: {len(val_data)}, "
+    print(f"  [{label_tag} finetune] Train: {len(train_data)}, Val: {len(val_data)}, "
           f"Test: {len(test_data)}")
 
     if len(train_data) == 0:
         return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0, 'n_classes': num_test_classes}
 
-    print(f"  [{label_tag} supervised] Training Transformer_ft classifier "
+    print(f"  [{label_tag} finetune] End-to-end fine-tuning encoder + Transformer_ft "
           f"({num_test_classes} classes)...")
-    clf = train_transformer_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_test_classes, device=device, verbose=True,
-        desc=f"CrossHAR | {test_dataset} | Transformer_ft {label_tag}",
-    )
 
-    pred_indices = predict_transformer_classifier(clf, test_data, device=device)
+    # Deep-copy encoder, re-enable gradients (original has requires_grad=False)
+    ft_encoder = copy.deepcopy(encoder_model)
+    for p in ft_encoder.parameters():
+        p.requires_grad_(True)
+    ft_encoder.train()
+
+    # Create fresh classifier head
+    classifier = TransformerClassifier(input_dim=EMB_DIM, num_classes=num_test_classes).to(device)
+
+    # InstanceNorm module for differentiable forward pass
+    inst_norm = nn.InstanceNorm1d(FEATURE_NUM).to(device)
+
+    # Two param groups with different learning rates
+    optimizer = torch.optim.AdamW([
+        {'params': ft_encoder.parameters(), 'lr': FINETUNE_ENCODER_LR},
+        {'params': classifier.parameters(), 'lr': FINETUNE_HEAD_LR},
+    ], weight_decay=FINETUNE_WEIGHT_DECAY)
+    criterion = nn.CrossEntropyLoss()
+
+    # Build data loaders from raw numpy arrays
+    train_ds = TensorDataset(
+        torch.from_numpy(train_data).float(),
+        torch.from_numpy(train_labels_arr).long(),
+    )
+    val_ds = TensorDataset(
+        torch.from_numpy(val_data).float(),
+        torch.from_numpy(val_labels_arr).long(),
+    )
+    test_ds = TensorDataset(
+        torch.from_numpy(test_data).float(),
+        torch.from_numpy(test_labels_arr).long(),
+    )
+    train_loader = DataLoader(train_ds, batch_size=FINETUNE_BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=FINETUNE_BATCH_SIZE, shuffle=False)
+    test_loader = DataLoader(test_ds, batch_size=FINETUNE_BATCH_SIZE, shuffle=False)
+
+    best_val_acc = 0.0
+    best_encoder_state = None
+    best_classifier_state = None
+    patience_counter = 0
+
+    pbar = tqdm(range(FINETUNE_EPOCHS),
+                desc=f"CrossHAR | {test_dataset} | finetune {label_tag}", leave=True)
+    for epoch in pbar:
+        # --- Training ---
+        ft_encoder.train()
+        classifier.train()
+        for batch_data, batch_labels in train_loader:
+            batch_data = batch_data.to(device)    # (B, 120, 6)
+            batch_labels = batch_labels.to(device)
+
+            # Apply InstanceNorm: (B, 120, 6) -> (B, 6, 120) -> norm -> (B, 120, 6)
+            normed = inst_norm(batch_data.transpose(1, 2)).transpose(1, 2)
+
+            # Forward through encoder -> (B, 120, 72)
+            h = ft_encoder(normed)
+            # Forward through classifier -> (B, num_classes)
+            logits = classifier(h)
+
+            loss = criterion(logits, batch_labels)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+        # --- Validation ---
+        ft_encoder.train(False)
+        classifier.train(False)
+        val_loss = 0.0
+        val_preds = []
+        val_gt = []
+        with torch.no_grad():
+            for batch_data, batch_labels in val_loader:
+                batch_data = batch_data.to(device)
+                batch_labels = batch_labels.to(device)
+                normed = inst_norm(batch_data.transpose(1, 2)).transpose(1, 2)
+                h = ft_encoder(normed)
+                logits = classifier(h)
+                val_loss += criterion(logits, batch_labels).item()
+                preds = logits.argmax(dim=1).cpu().numpy()
+                val_preds.extend(preds)
+                val_gt.extend(batch_labels.cpu().numpy())
+
+        val_loss /= max(len(val_loader), 1)
+        val_acc = accuracy_score(val_gt, val_preds)
+
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_encoder_state = copy.deepcopy(ft_encoder.state_dict())
+            best_classifier_state = copy.deepcopy(classifier.state_dict())
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
+        pbar.set_postfix(val_acc=f"{val_acc:.3f}", val_loss=f"{val_loss:.4f}",
+                         patience=f"{patience_counter}/{FINETUNE_PATIENCE}")
+
+        if patience_counter >= FINETUNE_PATIENCE:
+            print(f"  [{label_tag} finetune] Early stopping at epoch {epoch + 1}")
+            break
+
+    # Restore best weights
+    if best_encoder_state is not None:
+        ft_encoder.load_state_dict(best_encoder_state)
+        classifier.load_state_dict(best_classifier_state)
+    ft_encoder.train(False)
+    classifier.train(False)
+
+    # --- Evaluate on test split ---
+    all_preds = []
+    all_gt = []
+    with torch.no_grad():
+        for batch_data, batch_labels in test_loader:
+            batch_data = batch_data.to(device)
+            normed = inst_norm(batch_data.transpose(1, 2)).transpose(1, 2)
+            h = ft_encoder(normed)
+            logits = classifier(h)
+            preds = logits.argmax(dim=1).cpu().numpy()
+            all_preds.extend(preds)
+            all_gt.extend(batch_labels.numpy())
+
+    pred_indices = np.array(all_preds)
+    gt_indices = np.array(all_gt)
 
     gt_names = []
     pred_names = []
-    for i in range(len(test_labels_arr)):
-        local_idx = test_labels_arr[i]
+    for i in range(len(gt_indices)):
+        local_idx = gt_indices[i]
         if local_idx < len(test_activities):
             gt_names.append(test_activities[local_idx])
         else:
@@ -766,74 +793,13 @@ def score_supervised(
     f1_w = f1_score(gt_names, pred_names, labels=test_activities,
                     average='weighted', zero_division=0) * 100
 
-    return {
-        'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w,
-        'n_samples': len(gt_names), 'n_train_samples': len(train_data),
-        'n_classes': num_test_classes,
-    }
-
-
-def score_linear_probe(
-    test_embeddings: np.ndarray,
-    test_labels: np.ndarray,
-    test_dataset: str,
-    device: torch.device,
-) -> Dict[str, float]:
-    """Linear probe on frozen mean-pooled embeddings (full train split).
-
-    Mean-pools (N, 120, 72) -> (N, 72), then trains nn.Linear on 80/10/10 split.
-    """
-    test_activities = get_dataset_labels(test_dataset)
-    num_test_classes = len(test_activities)
-
-    # Mean-pool sequence embeddings
-    pooled = mean_pool_embeddings(test_embeddings)  # (N, 72)
-
-    print(f"  [Linear probe] Pooled embeddings: {pooled.shape}, {num_test_classes} classes")
-
-    train_data, train_labels_arr, val_data, val_labels_arr, test_data, test_labels_arr = \
-        prepare_train_test_split(
-            pooled, test_labels,
-            training_rate=TRAINING_RATE,
-            vali_rate=VALI_RATE,
-            label_rate=1.0,
-            seed=CLASSIFIER_SEED,
-            balance=False,
-        )
-
-    print(f"  [Linear probe] Train: {len(train_data)}, Val: {len(val_data)}, "
-          f"Test: {len(test_data)}")
-
-    if len(train_data) == 0:
-        return {'accuracy': 0.0, 'f1_macro': 0.0, 'n_samples': 0, 'n_classes': num_test_classes}
-
-    clf = train_linear_classifier(
-        train_data, train_labels_arr, val_data, val_labels_arr,
-        num_classes=num_test_classes, device=device, verbose=True,
-        desc=f"CrossHAR | {test_dataset} | linear probe",
-    )
-
-    pred_indices = predict_linear(clf, test_data, device=device)
-
-    gt_names = []
-    pred_names = []
-    for i in range(len(test_labels_arr)):
-        local_idx = test_labels_arr[i]
-        if local_idx < len(test_activities):
-            gt_names.append(test_activities[local_idx])
-        else:
-            continue
-        pred_idx = pred_indices[i]
-        if pred_idx < len(test_activities):
-            pred_names.append(test_activities[pred_idx])
-        else:
-            pred_names.append("unknown")
-
-    acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(gt_names, pred_names, labels=test_activities,
-                  average='macro', zero_division=0) * 100
-    f1_w = f1_score(gt_names, pred_names, labels=test_activities,
-                    average='weighted', zero_division=0) * 100
+    # Clean up to free GPU memory
+    del best_encoder_state, best_classifier_state
+    del ft_encoder, classifier, optimizer, inst_norm
+    del train_loader, val_loader, test_loader
+    del train_ds, val_ds, test_ds
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     return {
         'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w,
@@ -848,18 +814,17 @@ def score_linear_probe(
 
 def print_results_table(all_results):
     print()
-    print("=" * 150)
+    print("=" * 130)
     print("CROSSHAR BASELINE RESULTS")
-    print("=" * 150)
+    print("=" * 130)
 
     header = (f"{'Dataset':<16}"
               f"{'ZS-Open Acc':>13}{'ZS-Open F1':>12}"
               f"{'ZS-Close Acc':>14}{'ZS-Close F1':>13}"
-              f"{'1% Sup Acc':>12}{'1% Sup F1':>12}"
-              f"{'10% Sup Acc':>13}{'10% Sup F1':>13}"
-              f"{'LP Acc':>10}{'LP F1':>10}")
+              f"{'1% FT Acc':>12}{'1% FT F1':>12}"
+              f"{'10% FT Acc':>13}{'10% FT F1':>13}")
     print(header)
-    print("-" * 150)
+    print("-" * 130)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
@@ -873,10 +838,9 @@ def print_results_table(all_results):
               f"{g('zero_shot_open_set','accuracy'):>12.1f}%{g('zero_shot_open_set','f1_macro'):>11.1f}%"
               f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>12.1f}%"
               f"{g('1pct_supervised','accuracy'):>11.1f}%{g('1pct_supervised','f1_macro'):>11.1f}%"
-              f"{g('10pct_supervised','accuracy'):>12.1f}%{g('10pct_supervised','f1_macro'):>12.1f}%"
-              f"{g('linear_probe','accuracy'):>9.1f}%{g('linear_probe','f1_macro'):>9.1f}%")
+              f"{g('10pct_supervised','accuracy'):>12.1f}%{g('10pct_supervised','f1_macro'):>12.1f}%")
 
-    print("=" * 150)
+    print("=" * 130)
     print()
     print("Details:")
     print(f"  Model: CrossHAR (Masked Transformer + Contrastive)")
@@ -885,11 +849,9 @@ def print_results_table(all_results):
     print(f"  Checkpoint: {CROSSHAR_CHECKPOINT.relative_to(PROJECT_ROOT)}")
     print(f"  Zero-shot: Transformer_ft on 10 training datasets (87 classes), group-matched scoring")
     print(f"  Open-set: all 87 logits; Closed-set: logits masked to test-relevant groups")
-    print(f"  Supervised classifier: Transformer_ft (hidden={FT_HIDDEN_SIZE}, "
-          f"heads={FT_NUM_HEADS}, ff={FT_DIM_FEEDFORWARD}), "
-          f"{CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
-    print(f"  Linear probe: nn.Linear({EMB_DIM}, num_classes), "
-          f"{CLASSIFIER_EPOCHS} epochs, lr={CLASSIFIER_LR}")
+    print(f"  Supervised: end-to-end fine-tuning (encoder lr={FINETUNE_ENCODER_LR}, "
+          f"head lr={FINETUNE_HEAD_LR}), "
+          f"{FINETUNE_EPOCHS} epochs, patience={FINETUNE_PATIENCE}")
 
 
 def main():
@@ -987,28 +949,21 @@ def main():
         print(f"  ZS Closed-set: Acc={zs_close['accuracy']:.1f}%, F1={zs_close['f1_macro']:.1f}% "
               f"({zs_close['n_allowed']}/{len(global_labels)} labels allowed)")
 
-        # 1% supervised (Transformer_ft)
-        print(f"\n  --- 1% Supervised (Transformer_ft) ---")
-        ds_results['1pct_supervised'] = score_supervised(
-            test_emb, test_labels, test_ds, device,
+        # 1% supervised (end-to-end fine-tuning)
+        print(f"\n  --- 1% Supervised (End-to-End Fine-Tuning) ---")
+        ds_results['1pct_supervised'] = score_supervised_finetune(
+            crosshar_model, raw_data, test_labels, test_ds, device,
             label_rate=SUPERVISED_LABEL_RATE_1PCT, label_tag="1%")
-        print(f"  1% supervised: Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
+        print(f"  1% finetune: Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['1pct_supervised']['f1_macro']:.1f}%")
 
-        # 10% supervised (Transformer_ft)
-        print(f"\n  --- 10% Supervised (Transformer_ft) ---")
-        ds_results['10pct_supervised'] = score_supervised(
-            test_emb, test_labels, test_ds, device,
+        # 10% supervised (end-to-end fine-tuning)
+        print(f"\n  --- 10% Supervised (End-to-End Fine-Tuning) ---")
+        ds_results['10pct_supervised'] = score_supervised_finetune(
+            crosshar_model, raw_data, test_labels, test_ds, device,
             label_rate=SUPERVISED_LABEL_RATE_10PCT, label_tag="10%")
-        print(f"  10% supervised: Acc={ds_results['10pct_supervised']['accuracy']:.1f}%, "
+        print(f"  10% finetune: Acc={ds_results['10pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['10pct_supervised']['f1_macro']:.1f}%")
-
-        # Linear probe (mean-pooled -> nn.Linear)
-        print(f"\n  --- Linear Probe ---")
-        ds_results['linear_probe'] = score_linear_probe(
-            test_emb, test_labels, test_ds, device)
-        print(f"  Linear probe: Acc={ds_results['linear_probe']['accuracy']:.1f}%, "
-              f"F1={ds_results['linear_probe']['f1_macro']:.1f}%")
 
         all_results[test_ds] = ds_results
 
