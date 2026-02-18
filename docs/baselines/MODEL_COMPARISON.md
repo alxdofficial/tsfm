@@ -25,7 +25,7 @@ novelties contribute to TSFM's performance advantages and where tradeoffs exist.
 | **Attention type** | Temporal + cross-channel (alternating) | Temporal only | Temporal only (per-channel) | Temporal only | Temporal only |
 | **Cross-channel modeling** | Explicit cross-channel self-attention at every layer | None | None (channels processed independently) | None | None |
 | **Tokenization** | Variable-length patches (e.g., 20 timesteps at 20Hz), interpolated to 64 fixed steps | Per-timestep (each of 120 timesteps = 1 token) | 8-timestep non-overlapping patches | Per-timestep (120 tokens) | Per-timestep (120 tokens) |
-| **Variable sampling rate** | Yes (patches interpolated to fixed 64 steps) | No (fixed 20 Hz) | No (fixed input, left-padded to 512) | No (fixed 20 Hz) | No (fixed 50 Hz) |
+| **Variable sampling rate** | Yes — native rates per dataset; seconds-based patches interpolated to fixed 64 steps | No — requires 20 Hz; learned positional embedding fixed at 120 positions | No — rate-agnostic (no concept of physical time); uses 20 Hz benchmark data | No — requires 20 Hz; same positional embedding as LiMU-BERT | No — paper uses 50 Hz; uses 20 Hz in our benchmark (trains from scratch) |
 | **Variable channel count** | Yes (channel-bucketed batching) | No (fixed 6) | Yes (per-channel independent) | No (fixed 6) | No (fixed 6) |
 | **Text alignment** | Yes (contrastive with SentenceBERT) | No | No | No | Yes (contrastive with SciBERT) |
 | **Zero-shot mechanism** | Cosine sim with learnable text label embeddings | Requires trained GRU classifier | Requires trained SVM classifier | Requires trained Transformer_ft | Cosine sim with text prototypes |
@@ -33,6 +33,36 @@ novelties contribute to TSFM's performance advantages and where tradeoffs exist.
 | **Positional encoding** | Sinusoidal temporal + semantic channel encoding | Learned (nn.Embedding) | T5 relative attention bias + sinusoidal | Learned (nn.Embedding) | Sinusoidal |
 | **Normalization** | Per-patch per-channel z-score | acc/9.8, gyro raw | RevIN (per-channel instance norm) | InstanceNorm1d | Gravity alignment + raw |
 | **Supervised fine-tuning** | End-to-end, cosine sim with frozen text embeddings (no classifier head) | End-to-end encoder + GRU | End-to-end encoder + linear head | End-to-end encoder + Transformer_ft | End-to-end, cosine sim with frozen text prototypes |
+
+---
+
+## Sampling Rate Handling
+
+**Principle**: Each model should train and evaluate at each dataset's native sampling rate whenever
+its architecture supports it. Only resample when the model requires a fixed rate.
+
+Our 14 datasets span 20–100 Hz native rates (WISDM/RecGym at 20 Hz, DSADS at 25 Hz, most at 50 Hz,
+PAMAP2/KU-HAR at 100 Hz). How each model handles this:
+
+| Model | Can Use Native Rates? | What It Gets | Why |
+|-------|:---------------------:|:------------:|-----|
+| **TSFM** | Yes | Native per dataset | `create_patches(sampling_rate_hz=...)` converts seconds to timesteps dynamically; `F.interpolate` maps to fixed 64 steps. Channel descriptions encoded by SentenceBERT provide semantic awareness. |
+| **LiMU-BERT** | No | 20 Hz (resampled) | `nn.Embedding(120, 72)` positional encoding is trained for exactly 120 positions at 20 Hz. Paper explicitly chose 20 Hz. |
+| **CrossHAR** | No | 20 Hz (resampled) | Same positional embedding constraint as LiMU-BERT. Code only accepts `dataset_version='20_120'`. |
+| **MOMENT** | No | 20 Hz (resampled) | Rate-agnostic — paper: *"We did not explicitly model temporal resolution."* Treats input as raw numbers with no frequency awareness. Cannot benefit from native rates. |
+| **LanHAR** | No | 20 Hz (resampled) | Paper designed for 50 Hz. Trains from scratch in our pipeline, so adapts to 20 Hz. Uses shared benchmark data. |
+
+**Implications for TSFM**: By operating at native rates, TSFM preserves the full spectral content
+of each dataset. A 50 Hz dataset has a 25 Hz Nyquist limit; downsampling to 20 Hz (10 Hz Nyquist)
+discards all frequency content between 10–25 Hz. For most HAR activities (1–10 Hz), this loss is
+minimal, but higher-frequency vibrations (e.g., machine interaction in VTT-ConIoT) may be affected.
+TSFM avoids this information loss entirely.
+
+**Implications for baselines**: LiMU-BERT and CrossHAR's 20 Hz requirement means datasets like
+PAMAP2 (100 Hz native) lose 80% of their temporal resolution through 5x downsampling. MOMENT's
+rate-agnosticism means it treats a 20 Hz and 100 Hz input identically — the same 8-timestep patch
+covers 0.4 seconds at 20 Hz but only 0.08 seconds at 100 Hz, yet the model has no way to
+distinguish them.
 
 ---
 

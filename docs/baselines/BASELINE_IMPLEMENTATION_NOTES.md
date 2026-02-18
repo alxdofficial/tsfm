@@ -10,7 +10,9 @@ and how we ensure fairness across the comparison.
 Our benchmark compares 5 models on the same 4 test datasets using a unified evaluation
 framework. To ensure fair comparison:
 
-1. **Same data**: All models evaluate on identical `(N, 120, 6)` windows at 20Hz
+1. **Same data**: All models evaluate on the same windows. Baselines that require fixed sampling
+   rates (LiMU-BERT, CrossHAR, MOMENT, LanHAR) receive data resampled to 20Hz as `(N, 120, 6)`.
+   TSFM receives data at each dataset's **native sampling rate** (see Sampling Rate Policy below)
 2. **Same splits**: Identical random seeds produce identical train/val/test partitions
 3. **Same metrics**: All models report accuracy, F1 macro, and F1 weighted
 4. **Per-baseline fine-tuning**: Each model fine-tunes with its own paper's native classification
@@ -39,6 +41,19 @@ Key differences from original papers:
 
 These are deliberate design choices for a fair unified comparison, not oversights.
 
+### Sampling Rate Policy
+
+**Principle**: Models should train and evaluate at each dataset's native sampling rate whenever
+their architecture supports it. Resampling is only applied when a model requires a fixed rate.
+
+| Model | Supports Native Rates? | Rate Used | Why |
+|-------|:----------------------:|:---------:|-----|
+| **TSFM** | Yes | Native per dataset | Seconds-based patch tokenization + interpolation. Sampling rate and channel descriptions are passed to the model and actively used in every forward pass. |
+| **LiMU-BERT** | No | 20 Hz | Learned positional embedding fixed at 120 positions; paper designed for 20 Hz. |
+| **CrossHAR** | No | 20 Hz | Inherits LiMU-BERT data format; same positional embedding constraint. |
+| **MOMENT** | No (rate-agnostic) | 20 Hz | No concept of sampling rate — processes raw number sequences. Cannot benefit from native rates. |
+| **LanHAR** | No | 20 Hz | Paper designed for 50 Hz, but trains from scratch in our pipeline. Uses shared 20 Hz benchmark data. |
+
 ---
 
 ## 1. LiMU-BERT
@@ -51,6 +66,10 @@ These are deliberate design choices for a fair unified comparison, not oversight
 Self-supervised BERT-style masked reconstruction pretraining for IMU data.
 Produces 72-dim embeddings per timestep. NOT text-aligned — zero-shot uses a
 GRU classifier trained on training data.
+
+**Sampling rate**: Fixed 20 Hz. All datasets resampled via temporal bin-and-mean averaging.
+The paper explicitly chose 20 Hz to reduce model complexity. Learned positional embeddings
+(`nn.Embedding(120, 72)`) are fixed at 120 positions, so the model cannot accept other rates.
 
 ### Pretrained Model
 - Checkpoint: `auxiliary_repos/LIMU-BERT-Public/saved/pretrain_base_recgym_20_120/pretrained_combined.pt`
@@ -125,6 +144,10 @@ General-purpose time series foundation model pretrained on diverse time series d
 Produces 6144-dim embeddings (6 channels x 1024-dim per channel, concatenated).
 NOT text-aligned — zero-shot uses an SVM-RBF classifier trained on training data.
 
+**Sampling rate**: Rate-agnostic — has no concept of physical time or sampling frequency. The
+paper states: *"We did not explicitly model temporal resolution."* All input is treated as raw
+number sequences padded to 512 timesteps. Uses 20 Hz benchmark data for consistency.
+
 ### Pretrained Model
 - Downloaded from HuggingFace: `AutonLab/MOMENT-1-large`
 - No training by us — used as-is in embedding mode
@@ -191,6 +214,10 @@ Hierarchical self-supervised pretraining: masked reconstruction + contrastive le
 Produces 72-dim per-timestep embeddings. NOT text-aligned — zero-shot uses a Transformer_ft
 classifier trained on training data.
 
+**Sampling rate**: Fixed 20 Hz. Inherits LiMU-BERT data format (`data_20_120.npy`). Same
+learned positional embedding constraint (`nn.Embedding(120, 72)`). Code only accepts
+`dataset_version='20_120'`.
+
 ### Pretrained Model
 - Checkpoint: `auxiliary_repos/CrossHAR/saved/pretrain_base_combined_train_20_120/model_masked_6_1.pt`
 - Pretrained on: All 10 training datasets combined (masked pretraining)
@@ -249,6 +276,11 @@ its paper's protocol, since the encoder can adapt to the target dataset.
 ### What It Is
 CLIP-style sensor-text alignment with 2-stage training. Uses SciBERT for text encoding.
 Text-aligned model with zero-shot capability. **Trains from scratch during evaluation.**
+
+**Sampling rate**: Paper uses 50 Hz; our benchmark uses 20 Hz. Since LanHAR trains its sensor
+encoder from scratch (no pretrained weights), it learns temporal patterns at whatever rate it
+receives. Gravity alignment and Butterworth filter preprocessing correctly adapts via the `fs`
+parameter. Uses shared 20 Hz benchmark data.
 
 ### Why It Trains From Scratch
 LanHAR's sensor encoder is not a general pretrained model — it's specifically trained to align
@@ -342,6 +374,14 @@ adding noise to the alignment objective.
 ### What It Is
 Our text-aligned IMU foundation model. Dual-branch Transformer encoder with semantic alignment
 head, trained via contrastive learning with soft targets and memory bank.
+
+**Sampling rate**: Native per dataset. The `MultiDatasetLoader` reads each dataset's native
+sampling rate from its manifest (e.g., 50 Hz for UCI HAR, 100 Hz for PAMAP2, 20 Hz for WISDM)
+and passes it to `create_patches()`, which specifies patch size in seconds and converts to
+timesteps dynamically. Each patch is interpolated to a fixed 64-step representation, decoupling
+the model from any specific rate. Channel descriptions (e.g., "Accelerometer X-axis") from the
+manifest are encoded by frozen SentenceBERT and fused into sensor features via
+`ChannelSemanticEncoding`, giving the model semantic awareness of what each channel represents.
 
 ### Pretrained Model
 - Checkpoint: `training_output/semantic_alignment/{run_id}/best.pt`

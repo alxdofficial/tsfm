@@ -37,7 +37,66 @@ of architecture quality. This 50% coverage floor makes VTT-ConIoT a test of seve
 shift rather than cross-dataset generalization. Main results average over the 3 main datasets;
 VTT-ConIoT is reported in a dedicated section.
 
-All data is standardized to `(N, 120, 6)` windows at 20Hz with 6 IMU channels (acc_xyz + gyro_xyz).
+Evaluation data format depends on each model's sampling rate capability (see **Sampling Rate Policy** below).
+
+## Sampling Rate Policy
+
+**Principle**: Each model should train and evaluate at each dataset's **native sampling rate** whenever
+its architecture supports it. We only resample when the model architecturally requires a fixed rate.
+
+### Native Sampling Rates
+
+| Dataset | Native Hz | Role |
+|---------|:---------:|------|
+| UCI HAR | 50 | Train |
+| HHAR | 50 | Train |
+| PAMAP2 | 100 | Train |
+| WISDM | 20 | Train |
+| DSADS | 25 | Train |
+| KU-HAR | 100 | Train |
+| UniMiB SHAR | 50 | Train |
+| HAPT | 50 | Train |
+| MHEALTH | 50 | Train |
+| RecGym | 20 | Train |
+| MotionSense | 50 | Test |
+| RealWorld HAR | 50 | Test |
+| MobiAct | 50 | Test |
+| VTT-ConIoT | 50 | Test |
+
+### Per-Model Sampling Rate Handling
+
+| Model | Supports Native Rates? | Training Rate | Evaluation Rate | Rationale |
+|-------|:----------------------:|:-------------:|:---------------:|-----------|
+| **TSFM** | Yes | Native per dataset | Native per dataset | Seconds-based patch tokenization + interpolation to fixed 64 steps decouples the model from any specific sampling rate. |
+| **LiMU-BERT** | No | 20 Hz (resampled) | 20 Hz (resampled) | Learned positional embedding fixed at 120 positions; paper explicitly designed for 20 Hz. |
+| **CrossHAR** | No | 20 Hz (resampled) | 20 Hz (resampled) | Inherits LiMU-BERT data format; learned positional embedding fixed at 120 positions. |
+| **MOMENT** | No (rate-agnostic) | 20 Hz (resampled) | 20 Hz (resampled) | Processes any sequence of up to 512 numbers with no notion of physical time. Paper: *"We did not explicitly model temporal resolution."* Has no mechanism to adapt to or benefit from different rates, so resampled data is used for consistency with the benchmark format. |
+| **LanHAR** | No | 20 Hz (resampled) | 20 Hz (resampled) | Paper designed for 50 Hz, but our benchmark standardizes non-TSFM data at 20 Hz (LiMU-BERT format). Butterworth filter frequencies are absolute Hz and work correctly at 20 Hz. Sensor encoder trains from scratch, so it learns patterns at whatever rate it receives. |
+
+**Why LiMU-BERT/CrossHAR require 20 Hz**: Both use `nn.Embedding(120, hidden)` learned positional
+embeddings that encode temporal relationships assuming 120 steps = 6 seconds at 20 Hz. Feeding data
+at a different rate would change the physical duration each position represents, invalidating the
+learned temporal patterns.
+
+**Why MOMENT uses 20 Hz despite being rate-agnostic**: MOMENT treats all input as raw number sequences
+with no frequency awareness. It would process 50 Hz and 20 Hz data identically (same 8-timestep patches,
+same left-padding to 512). Since it cannot benefit from native rates and the benchmark data pipeline
+already produces 20 Hz windows for LiMU-BERT/CrossHAR, we use the same 20 Hz data for simplicity.
+
+**Why LanHAR uses 20 Hz instead of its paper's 50 Hz**: The LanHAR paper uses 50 Hz with 120-sample
+windows (2.4 seconds per window). Our benchmark uses 20 Hz with 120-sample windows (6.0 seconds per
+window). Since LanHAR trains its sensor encoder from scratch within our evaluation pipeline (no
+pretrained weights from the paper), the encoder learns temporal patterns at the rate it receives.
+The gravity alignment and Butterworth filter preprocessing correctly adapts to 20 Hz via the `fs`
+parameter. Using 20 Hz allows LanHAR to share the same benchmark data files as LiMU-BERT and CrossHAR.
+
+**Why TSFM uses native rates**: TSFM's `create_patches()` takes `sampling_rate_hz` as an explicit
+parameter and specifies patch sizes in seconds (e.g., `patch_size_sec=1.0`). A 1-second patch at
+50 Hz has 50 timesteps; at 100 Hz it has 100 timesteps. Both are interpolated to a fixed 64-step
+representation via `F.interpolate`, producing rate-invariant patch tokens. This means TSFM sees
+the full spectral content of each dataset at its native resolution — no information is lost to
+downsampling. During training, the `MultiDatasetLoader` reads each dataset's native rate from
+its manifest and passes it to the preprocessing pipeline.
 
 ## 4-Metric Framework
 
@@ -113,6 +172,9 @@ deviation from the original paper's evaluation protocol and our fairness rationa
 | **MOMENT** | Linear head for supervised | Only SVM-RBF on frozen embeddings (no encoder fine-tuning for classification) | End-to-end fine-tuning with linear head from MOMENT codebase | Slight advantage (encoder adapts) |
 | **LanHAR** | No target data in Stage 2 | Sensor encoder trains on source + target data combined | Source data only | Slight disadvantage (no target distribution) |
 | **LanHAR** | Supervised fine-tuning | Not in paper (zero-shot only) | Cosine sim fine-tuning with frozen text prototypes | N/A (extension) |
+| **LiMU-BERT, CrossHAR, LanHAR** | Resampled to 20 Hz | LiMU-BERT/CrossHAR: 20 Hz (same). LanHAR: 50 Hz. | All three use 20 Hz benchmark data | Neutral for LiMU-BERT/CrossHAR; LanHAR trains from scratch so adapts to any rate |
+| **MOMENT** | Resampled to 20 Hz | Rate-agnostic (no frequency awareness) | 20 Hz benchmark data | Neutral (model has no concept of sampling rate) |
+| **TSFM** | Native sampling rates | Native per dataset | Native per dataset | Slight advantage (preserves full spectral content) |
 | **All** | Unified batch sizes | Each paper uses its own (typically 128) | 512 for classifiers, 32 for fine-tuning | Neutral |
 
 **Why these deviations exist**: A cross-baseline benchmark requires standardized evaluation units,
