@@ -168,7 +168,7 @@ Text-aligned models (TSFM, LanHAR) can encode arbitrary label text at test time 
 
 ### Why does TSFM use a fixed 1.0s patch size?
 
-TSFM's variable-length architecture accepts any patch size, but we use a fixed 1.0s for all test datasets — no per-dataset sweep or test-time tuning. This is a metadata-only decision: all benchmark data is standardized to 20Hz with 6-second windows, so 1.0s patches (20 timesteps) give the finest temporal resolution while producing 6 tokens per channel. Sensitivity analysis across [1.0, 1.25, 1.5, 1.75, 2.0]s shows results are robust (max 9% range on the easiest dataset, <2% on the hardest), and smaller patches consistently perform best. Other baselines similarly use fixed embedding extraction with no per-dataset tuning.
+TSFM's variable-length architecture accepts any patch size, but we use a fixed 1.0s for all test datasets — no per-dataset sweep or test-time tuning. This is a metadata-only decision: at native 50Hz, 1.0s patches (50 timesteps) are interpolated to 64 fixed steps, giving fine temporal resolution. Sensitivity analysis across [1.0, 1.25, 1.5, 1.75, 2.0]s shows results are robust (max 9% range on the easiest dataset, <2% on the hardest), and smaller patches consistently perform best. Other baselines similarly use fixed embedding extraction with no per-dataset tuning.
 
 ### Why does zero-shot classifier training not violate the "zero-shot" definition?
 

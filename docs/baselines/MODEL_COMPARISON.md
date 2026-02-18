@@ -24,7 +24,7 @@ novelties contribute to TSFM's performance advantages and where tradeoffs exist.
 | **Encoder depth** | 4 dual-branch layers | 1 shared layer (looped 4x) | 24 layers | 1 shared layer | 3 layers |
 | **Attention type** | Temporal + cross-channel (alternating) | Temporal only | Temporal only (per-channel) | Temporal only | Temporal only |
 | **Cross-channel modeling** | Explicit cross-channel self-attention at every layer | None | None (channels processed independently) | None | None |
-| **Tokenization** | Variable-length patches (e.g., 20 timesteps at 20Hz), interpolated to 64 fixed steps | Per-timestep (each of 120 timesteps = 1 token) | 8-timestep non-overlapping patches | Per-timestep (120 tokens) | Per-timestep (120 tokens) |
+| **Tokenization** | Variable-length patches (e.g., 50 timesteps at 50Hz), interpolated to 64 fixed steps | Per-timestep (each of 120 timesteps = 1 token) | 8-timestep non-overlapping patches | Per-timestep (120 tokens) | Per-timestep (120 tokens) |
 | **Variable sampling rate** | Yes — native rates per dataset; seconds-based patches interpolated to fixed 64 steps | No — requires 20 Hz; learned positional embedding fixed at 120 positions | No — rate-agnostic (no concept of physical time); uses 20 Hz benchmark data | No — requires 20 Hz; same positional embedding as LiMU-BERT | No — paper uses 50 Hz; uses 20 Hz in our benchmark (trains from scratch) |
 | **Variable channel count** | Yes (channel-bucketed batching) | No (fixed 6) | Yes (per-channel independent) | No (fixed 6) | No (fixed 6) |
 | **Text alignment** | Yes (contrastive with SentenceBERT) | No | No | No | Yes (contrastive with SciBERT) |
@@ -168,7 +168,7 @@ fused = sensor_tokens + sigmoid(gate) * channel_embeddings
 
 ### 5. Variable-Length Patch Tokenization with Interpolation
 
-**What TSFM does**: Raw IMU signals are segmented into patches of configurable duration (e.g., 1.0s = 20 timesteps at 20Hz), then each patch is interpolated to a fixed 64-timestep representation using `F.interpolate`. This decouples temporal resolution from sampling rate.
+**What TSFM does**: Raw IMU signals are segmented into patches of configurable duration (e.g., 1.0s = 50 timesteps at 50Hz, or 100 timesteps at 100Hz), then each patch is interpolated to a fixed 64-timestep representation using `F.interpolate`. This decouples temporal resolution from sampling rate.
 
 **What baselines do**:
 - LiMU-BERT/CrossHAR/LanHAR: Per-timestep tokenization — each of 120 timesteps becomes one token. Fixed to 20Hz (or 50Hz for LanHAR).
@@ -213,7 +213,7 @@ Each stage uses cross-attention followed by self-attention among the queries, th
 
 LiMU-BERT's core weakness is its extreme compactness (~62K parameters with parameter sharing). While this makes it deployable on mobile devices, it severely limits representational capacity. The 72-dim embedding simply cannot capture the same complexity as TSFM's 384-dim embeddings computed through 4 unique dual-branch layers. LiMU-BERT's lack of text alignment means it cannot do genuine zero-shot — it requires a separately trained classifier that can only predict labels seen during training.
 
-### vs. MOMENT (TSFM wins zero-shot; MOMENT wins 1% supervised; TSFM wins 10%)
+### vs. MOMENT (TSFM wins across all metrics)
 
 | TSFM Advantage | MOMENT Advantage |
 |---------------|-----------------|
@@ -231,7 +231,7 @@ LiMU-BERT's core weakness is its extreme compactness (~62K parameters with param
 | N/A | RevIN normalization destroys absolute gravity signal (useful for posture) |
 | N/A | 8-timestep patches not optimized for IMU frequencies |
 
-MOMENT's advantage at 1% supervised comes from its sheer capacity (341M parameters, 6144-dim embeddings) — with very few labeled samples, the high-dimensional embedding gives the linear head more features to work with. But TSFM catches up and surpasses MOMENT at 10% supervised, suggesting that TSFM's HAR-specific inductive biases (cross-channel attention, IMU-aware tokenization) become more valuable once there's enough data to leverage them. In zero-shot, TSFM's text alignment is a decisive advantage — MOMENT's SVM-based "zero-shot" is fundamentally a supervised classifier trained on training data.
+With native sampling rates and rich channel descriptions, TSFM now leads MOMENT across all metrics including 1% supervised (72.7% vs 71.5% avg accuracy). MOMENT's 6144-dim embeddings and 341M parameters provide strong supervised capacity, but TSFM's metadata-aware architecture (native rates, channel semantics) provides enough additional signal to close and overtake the gap. In zero-shot, TSFM's text alignment is a decisive advantage — MOMENT's SVM-based "zero-shot" is fundamentally a supervised classifier trained on training data.
 
 ### vs. CrossHAR (TSFM wins across all metrics)
 
@@ -243,7 +243,7 @@ MOMENT's advantage at 1% supervised comes from its sheer capacity (341M paramete
 | Soft contrastive targets | Standard NT-Xent with hard negatives only |
 | Multi-query attention pooling | Mean pooling over time |
 
-CrossHAR's hierarchical pretraining (reconstruction → contrastive) is a sound design, and its channel permutation augmentation helps with cross-device generalization. But the model is simply too small (57K parameters, 1 layer) to compete with TSFM's richer architecture. CrossHAR is notably competitive at 10% supervised (80.6% vs TSFM's 83.2%), likely because its contrastive pretraining objective produces good features for the augmented Transformer_ft classifier to exploit.
+CrossHAR's hierarchical pretraining (reconstruction → contrastive) is a sound design, and its channel permutation augmentation helps with cross-device generalization. But the model is simply too small (57K parameters, 1 layer) to compete with TSFM's richer architecture. CrossHAR is notably competitive at 10% supervised (80.6% vs TSFM's 85.6%), likely because its contrastive pretraining objective produces good features for the augmented Transformer_ft classifier to exploit.
 
 ### vs. LanHAR (TSFM wins across all metrics)
 
@@ -269,7 +269,7 @@ LanHAR is the most architecturally similar baseline to TSFM — both are CLIP-st
 
 TSFM is pretrained exclusively on 10 HAR datasets. Unlike MOMENT (pretrained on 13 diverse time-series domains), TSFM may not generalize well to non-HAR time-series tasks (e.g., ECG classification, weather forecasting, anomaly detection). This is a deliberate design choice — HAR-specific inductive biases (cross-channel attention, IMU-aware tokenization) trade generality for HAR performance.
 
-**Impact**: TSFM's VTT-ConIoT results (25.6% at 10% supervised) are substantially worse than MOMENT's (38.6%), suggesting that when the target domain is far from training data, MOMENT's broader pretraining provides more useful temporal pattern knowledge.
+**Impact**: TSFM's VTT-ConIoT results (36.7% at 10% supervised) are close to but still below MOMENT's (38.6%), suggesting that when the target domain is far from training data, MOMENT's broader pretraining provides useful temporal pattern knowledge — though native rates and channel semantics substantially closed the gap (from 25.6% at 20Hz to 36.7% at native rate).
 
 ### 2. Larger Than LiMU-BERT/CrossHAR, Not Edge-Deployable
 
@@ -281,7 +281,7 @@ Zero-shot inference requires running SentenceBERT to encode label text. This add
 
 ### 4. 384-Dim Embedding May Limit Supervised Ceiling
 
-TSFM's 384-dim embeddings are smaller than MOMENT's 6144-dim. At 1% supervised, MOMENT's higher-dimensional embedding gives a downstream linear head more features to work with, contributing to MOMENT's advantage (71.5% vs 68.2% average accuracy). The 384-dim choice was made to match SentenceBERT's output dimension for direct cosine similarity — a design choice that optimizes for zero-shot at the potential cost of supervised capacity.
+TSFM's 384-dim embeddings are smaller than MOMENT's 6144-dim. Despite this, TSFM's metadata-aware architecture (native rates, channel semantics) compensates, and TSFM now leads MOMENT at 1% supervised (72.7% vs 71.5% avg accuracy). The 384-dim choice was made to match SentenceBERT's output dimension for direct cosine similarity — a design choice that optimizes for zero-shot while remaining competitive in supervised settings.
 
 ### 5. Soft Targets Require Diverse Training Labels
 

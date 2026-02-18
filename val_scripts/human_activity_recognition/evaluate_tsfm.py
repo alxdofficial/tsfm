@@ -16,8 +16,8 @@ end-to-end with cross-entropy on cosine similarity logits against frozen text
 label embeddings. No separate classifier head — uses the model's native
 text-alignment mechanism.
 
-Uses the same benchmark data format as all baselines:
-  (N, 120, 6) windows at 20Hz with 6 IMU channels (acc_xyz + gyro_xyz)
+Uses native sampling rates and dataset-specific channel descriptions from
+manifests, giving TSFM the same rich metadata it uses during training.
 
 Usage:
     python val_scripts/human_activity_recognition/evaluate_tsfm.py
@@ -60,7 +60,9 @@ from model.token_text_encoder import LearnableLabelBank
 # =============================================================================
 
 BENCHMARK_DIR = PROJECT_ROOT / "benchmark_data"
+DATA_DIR = PROJECT_ROOT / "data"
 LIMUBERT_DATA_DIR = BENCHMARK_DIR / "processed" / "limubert"
+TSFM_EVAL_DIR = BENCHMARK_DIR / "processed" / "tsfm_eval"
 DATASET_CONFIG_PATH = BENCHMARK_DIR / "dataset_config.json"
 GLOBAL_LABEL_PATH = LIMUBERT_DATA_DIR / "global_label_mapping.json"
 OUTPUT_DIR = PROJECT_ROOT / "test_output" / "baseline_evaluation"
@@ -68,21 +70,20 @@ OUTPUT_DIR = PROJECT_ROOT / "test_output" / "baseline_evaluation"
 # TSFM checkpoint - update this path to your trained model
 CHECKPOINT_PATH = "training_output/semantic_alignment/20260217_113136/best.pt"
 
-# Data specs (standardized benchmark format)
-DATA_SEQ_LEN = 120         # Window length (timesteps)
+# Data specs
 DATA_CHANNELS = 6          # 6-channel IMU (3 accel + 3 gyro)
-DATA_SAMPLING_RATE = 20.0  # All benchmark data is resampled to 20Hz
 TSFM_EMB_DIM = 384         # TSFM embedding dimension
 TSFM_BATCH_SIZE = 32       # Batch size for embedding extraction
 
-# Fixed patch size for evaluation (benchmark data: 120 steps @ 20Hz = 6s window)
+# Fixed patch size for evaluation
 # 1.0s chosen as smallest valid size — gives finest temporal resolution.
-# This is a metadata-only decision (no test labels used): at 20Hz, 1.0s = 20 timesteps
-# per patch, producing 6 tokens per channel, well within the encoder's capacity.
 PATCH_SIZE_SEC = 1.0
 
-# Channel descriptions for the standardized 6-channel format
-CHANNEL_DESCRIPTIONS = [
+# Core channel names (used for manifest lookup)
+CORE_CHANNELS = ["acc_x", "acc_y", "acc_z", "gyro_x", "gyro_y", "gyro_z"]
+
+# Fallback channel descriptions (used only when manifest is unavailable)
+FALLBACK_CHANNEL_DESCRIPTIONS = [
     "Accelerometer X-axis",
     "Accelerometer Y-axis",
     "Accelerometer Z-axis",
@@ -118,6 +119,25 @@ TRAIN_DATASETS = DATASET_CONFIG["train_datasets"]
 TEST_DATASETS = DATASET_CONFIG["zero_shot_datasets"]
 
 
+def get_dataset_metadata(dataset_name: str) -> dict:
+    """Get native sampling rate and channel descriptions from manifest."""
+    manifest_path = DATA_DIR / dataset_name / "manifest.json"
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+
+    sampling_rate = manifest['channels'][0]['sampling_rate_hz']
+
+    ch_map = {ch['name']: ch['description'] for ch in manifest['channels']}
+    channel_descriptions = [
+        ch_map.get(ch, f"Channel: {ch}")
+        for ch in CORE_CHANNELS
+    ]
+
+    return {
+        'sampling_rate_hz': sampling_rate,
+        'channel_descriptions': channel_descriptions,
+        'dataset_description': manifest.get('description', ''),
+    }
 
 
 # =============================================================================
@@ -131,6 +151,8 @@ def extract_tsfm_embeddings(
     model: SemanticAlignmentModel,
     raw_data: np.ndarray,
     device: torch.device,
+    sampling_rate: float,
+    channel_descriptions: List[str],
     batch_size: int = TSFM_BATCH_SIZE,
     patch_size_sec: float = PATCH_SIZE_SEC,
 ) -> np.ndarray:
@@ -138,8 +160,10 @@ def extract_tsfm_embeddings(
 
     Args:
         model: Loaded TSFM SemanticAlignmentModel
-        raw_data: (N, 120, 6) raw sensor data at 20Hz
+        raw_data: (N, seq_len, 6) raw sensor data at native rate
         device: torch device
+        sampling_rate: native sampling rate in Hz
+        channel_descriptions: per-channel descriptions from manifest
         batch_size: batch size for inference
         patch_size_sec: patch duration in seconds
 
@@ -148,6 +172,7 @@ def extract_tsfm_embeddings(
     """
     model.eval()
     N = raw_data.shape[0]
+    seq_len = raw_data.shape[1]
 
     all_embeddings = []
     for start in tqdm(range(0, N, batch_size), desc="TSFM | Extracting embeddings",
@@ -156,15 +181,11 @@ def extract_tsfm_embeddings(
         batch_data = torch.from_numpy(raw_data[start:end]).float().to(device)
         bs = batch_data.shape[0]
 
-        # Channel mask: all 6 channels valid
         channel_mask = torch.ones(bs, DATA_CHANNELS, dtype=torch.bool, device=device)
+        attention_mask = torch.ones(bs, seq_len, dtype=torch.bool, device=device)
 
-        # Attention mask: all 120 timesteps valid
-        attention_mask = torch.ones(bs, DATA_SEQ_LEN, dtype=torch.bool, device=device)
-
-        # Per-sample metadata
-        channel_descs = [CHANNEL_DESCRIPTIONS[:] for _ in range(bs)]
-        sampling_rates = [DATA_SAMPLING_RATE] * bs
+        channel_descs = [channel_descriptions[:] for _ in range(bs)]
+        sampling_rates = [sampling_rate] * bs
         patch_sizes = [patch_size_sec] * bs
 
         with torch.no_grad():
@@ -183,15 +204,24 @@ def extract_tsfm_embeddings(
 # Data Loading (identical to baselines)
 # =============================================================================
 
-def load_raw_data(dataset_name: str) -> Tuple[np.ndarray, np.ndarray]:
-    """Load raw sensor data and labels for a dataset."""
-    ds_dir = LIMUBERT_DATA_DIR / dataset_name
-    data_path = ds_dir / "data_20_120.npy"
-    label_path = ds_dir / "label_20_120.npy"
+def load_raw_data(dataset_name: str, use_native_rate: bool = True) -> Tuple[np.ndarray, np.ndarray, float]:
+    """Load raw sensor data and labels for a dataset.
 
-    data = np.load(str(data_path)).astype(np.float32)
-    labels = np.load(str(label_path)).astype(np.float32)
-    return data, labels
+    Returns: (data, labels, sampling_rate_hz)
+    """
+    if use_native_rate:
+        tsfm_eval_dir = TSFM_EVAL_DIR / dataset_name
+        meta_path = tsfm_eval_dir / "metadata.json"
+        with open(meta_path) as f:
+            meta = json.load(f)
+        data = np.load(str(tsfm_eval_dir / "data_native.npy")).astype(np.float32)
+        labels = np.load(str(tsfm_eval_dir / "label_native.npy")).astype(np.float32)
+        return data, labels, float(meta['sampling_rate_hz'])
+    else:
+        ds_dir = LIMUBERT_DATA_DIR / dataset_name
+        data = np.load(str(ds_dir / "data_20_120.npy")).astype(np.float32)
+        labels = np.load(str(ds_dir / "label_20_120.npy")).astype(np.float32)
+        return data, labels, 20.0
 
 
 def get_window_labels(labels_raw: np.ndarray, label_index: int = 0) -> np.ndarray:
@@ -274,22 +304,25 @@ def prepare_train_test_split(data, labels, training_rate=0.8, vali_rate=0.1,
 # End-to-End Fine-Tuning (cosine sim with frozen text embeddings)
 # =============================================================================
 
-def _forward_batch(model, batch_data, device):
+def _forward_batch(model, batch_data, device, sampling_rate, channel_descriptions, seq_len):
     """Run TSFM forward pass on a batch of raw data, returning embeddings.
 
     Args:
         model: SemanticAlignmentModel
-        batch_data: (B, 120, 6) tensor on device
+        batch_data: (B, seq_len, 6) tensor on device
         device: torch device
+        sampling_rate: native sampling rate in Hz
+        channel_descriptions: per-channel descriptions from manifest
+        seq_len: sequence length (timesteps per window)
 
     Returns:
         (B, 384) L2-normalized embeddings
     """
     bs = batch_data.shape[0]
     channel_mask = torch.ones(bs, DATA_CHANNELS, dtype=torch.bool, device=device)
-    attention_mask = torch.ones(bs, DATA_SEQ_LEN, dtype=torch.bool, device=device)
-    channel_descs = [CHANNEL_DESCRIPTIONS[:] for _ in range(bs)]
-    sampling_rates = [DATA_SAMPLING_RATE] * bs
+    attention_mask = torch.ones(bs, seq_len, dtype=torch.bool, device=device)
+    channel_descs = [channel_descriptions[:] for _ in range(bs)]
+    sampling_rates = [sampling_rate] * bs
     patch_sizes = [PATCH_SIZE_SEC] * bs
 
     with autocast('cuda', enabled=device.type == 'cuda'):
@@ -301,7 +334,8 @@ def _forward_batch(model, batch_data, device):
     return emb
 
 
-def compute_cosine_accuracy(model, data_loader, text_embs, device):
+def compute_cosine_accuracy(model, data_loader, text_embs, device,
+                            sampling_rate, channel_descriptions, seq_len):
     """Compute cosine-similarity accuracy on a data loader.
 
     Args:
@@ -309,6 +343,9 @@ def compute_cosine_accuracy(model, data_loader, text_embs, device):
         data_loader: yields (batch_data, batch_labels)
         text_embs: (C, 384) frozen text label embeddings
         device: torch device
+        sampling_rate: native sampling rate in Hz
+        channel_descriptions: per-channel descriptions from manifest
+        seq_len: sequence length (timesteps per window)
 
     Returns:
         accuracy (float, 0-1)
@@ -320,7 +357,7 @@ def compute_cosine_accuracy(model, data_loader, text_embs, device):
         for batch_data, batch_labels in data_loader:
             batch_data = batch_data.to(device)
             batch_labels = batch_labels.to(device)
-            emb = _forward_batch(model, batch_data, device)
+            emb = _forward_batch(model, batch_data, device, sampling_rate, channel_descriptions, seq_len)
             logits = emb @ text_embs.T / FINETUNE_TEMPERATURE
             preds = logits.argmax(dim=1)
             correct += (preds == batch_labels).sum().item()
@@ -442,6 +479,8 @@ def evaluate_supervised_finetune(
     test_labels: np.ndarray,
     test_dataset: str,
     device: torch.device,
+    sampling_rate: float,
+    channel_descriptions: List[str],
     label_rate: float = 0.01,
     label_tag: str = "1%",
 ) -> Dict[str, float]:
@@ -454,10 +493,12 @@ def evaluate_supervised_finetune(
     Args:
         model: Pretrained SemanticAlignmentModel (will be deep-copied, not modified)
         label_bank: Trained LearnableLabelBank for text embeddings
-        raw_data: (N, 120, 6) raw sensor data
+        raw_data: (N, seq_len, 6) raw sensor data at native rate
         test_labels: (N,) integer class indices
         test_dataset: dataset name for looking up activity labels
         device: torch device
+        sampling_rate: native sampling rate in Hz
+        channel_descriptions: per-channel descriptions from manifest
         label_rate: Fraction of training portion to use (0.01 = 1%, 0.10 = 10%)
         label_tag: Display tag for logging
     """
@@ -530,7 +571,8 @@ def evaluate_supervised_finetune(
             batch_labels = batch_labels.to(device)
 
             optimizer.zero_grad()
-            emb = _forward_batch(ft_model, batch_data, device)  # (B, 384)
+            seq_len = batch_data.shape[1]
+            emb = _forward_batch(ft_model, batch_data, device, sampling_rate, channel_descriptions, seq_len)  # (B, 384)
             logits = emb @ text_embs.T / FINETUNE_TEMPERATURE  # (B, C)
             loss = criterion(logits, batch_labels)
             loss.backward()
@@ -540,7 +582,9 @@ def evaluate_supervised_finetune(
             n_batches += 1
 
         # Validation
-        val_acc = compute_cosine_accuracy(ft_model, val_loader, text_embs, device)
+        seq_len = raw_data.shape[1]
+        val_acc = compute_cosine_accuracy(ft_model, val_loader, text_embs, device,
+                                          sampling_rate, channel_descriptions, seq_len)
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
@@ -567,7 +611,8 @@ def evaluate_supervised_finetune(
     with torch.no_grad():
         for batch_data, batch_labels in test_loader:
             batch_data = batch_data.to(device)
-            emb = _forward_batch(ft_model, batch_data, device)
+            seq_len = batch_data.shape[1]
+            emb = _forward_batch(ft_model, batch_data, device, sampling_rate, channel_descriptions, seq_len)
             logits = emb @ text_embs.T / FINETUNE_TEMPERATURE
             preds = logits.argmax(dim=1).cpu().numpy()
             all_preds.extend(preds)
@@ -642,7 +687,7 @@ def print_results_table(all_results):
     print("Details:")
     print(f"  Checkpoint: {CHECKPOINT_PATH}")
     print(f"  Embedding dim: {TSFM_EMB_DIM}")
-    print(f"  Benchmark data: {DATA_SEQ_LEN} steps @ {DATA_SAMPLING_RATE}Hz, {DATA_CHANNELS} channels")
+    print(f"  Native sampling rates, dataset-specific channel descriptions from manifests")
     print(f"  Patch size: {PATCH_SIZE_SEC}s (fixed, no per-dataset sweep)")
     print(f"  Zero-shot: Cosine similarity with LearnableLabelBank text embeddings")
     print(f"  Supervised: End-to-end fine-tuning, cosine sim with frozen text embeddings, "
@@ -673,18 +718,29 @@ def main():
         print(f"Testing TSFM on {test_ds}")
         print(f"{'='*60}")
 
-        raw_data, raw_labels = load_raw_data(test_ds)
+        # Load per-dataset metadata from manifest
+        meta = get_dataset_metadata(test_ds)
+        raw_data, raw_labels, sr = load_raw_data(test_ds)
         test_labels = get_window_labels(raw_labels)
         test_activities = get_dataset_labels(test_ds)
+        ch_descs = meta['channel_descriptions']
 
-        # Extract embeddings with fixed patch size
-        test_emb = extract_tsfm_embeddings(model, raw_data, device, patch_size_sec=PATCH_SIZE_SEC)
+        print(f"  Sampling rate: {sr}Hz, Seq len: {raw_data.shape[1]}, Patch: {PATCH_SIZE_SEC}s")
+        print(f"  Channel descriptions: {ch_descs}")
+
+        # Extract embeddings with native rate and manifest channel descriptions
+        test_emb = extract_tsfm_embeddings(
+            model, raw_data, device,
+            sampling_rate=sr,
+            channel_descriptions=ch_descs,
+            patch_size_sec=PATCH_SIZE_SEC,
+        )
 
         print(f"  Test data: {test_emb.shape[0]} windows -> embeddings {test_emb.shape}, "
-              f"{len(test_activities)} classes, patch={PATCH_SIZE_SEC}s")
+              f"{len(test_activities)} classes")
         print(f"  Classes: {test_activities}")
 
-        ds_results = {'patch_size': PATCH_SIZE_SEC}
+        ds_results = {'patch_size': PATCH_SIZE_SEC, 'sampling_rate_hz': sr}
 
         # 1. Zero-shot open-set (cosine similarity)
         print(f"\n  --- Zero-shot Open-Set (cosine sim) ---")
@@ -704,6 +760,7 @@ def main():
         print(f"\n  --- 1% Supervised (End-to-End Fine-Tuning) ---")
         ds_results['1pct_supervised'] = evaluate_supervised_finetune(
             model, label_bank, raw_data, test_labels, test_ds, device,
+            sampling_rate=sr, channel_descriptions=ch_descs,
             label_rate=SUPERVISED_LABEL_RATE_1PCT, label_tag="1%")
         print(f"  1% supervised: "
               f"Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
@@ -713,6 +770,7 @@ def main():
         print(f"\n  --- 10% Supervised (End-to-End Fine-Tuning) ---")
         ds_results['10pct_supervised'] = evaluate_supervised_finetune(
             model, label_bank, raw_data, test_labels, test_ds, device,
+            sampling_rate=sr, channel_descriptions=ch_descs,
             label_rate=SUPERVISED_LABEL_RATE_10PCT, label_tag="10%")
         print(f"  10% supervised: "
               f"Acc={ds_results['10pct_supervised']['accuracy']:.1f}%, "

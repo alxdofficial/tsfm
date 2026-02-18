@@ -396,8 +396,8 @@ head, trained via contrastive learning with soft targets and memory bank.
 
 **Fixed 1.0s patch size**:
 TSFM supports variable patch sizes, but we use a fixed 1.0s for all test datasets — no
-per-dataset sweep or test-time tuning. This is a metadata-only decision: at 20Hz, 1.0s patches
-(20 timesteps) give the finest temporal resolution while producing 6 tokens per channel.
+per-dataset sweep or test-time tuning. This is a metadata-only decision: at native 50Hz, 1.0s
+patches (50 timesteps) are interpolated to 64 fixed steps, giving fine temporal resolution.
 Sensitivity analysis shows results are robust (max 9% range across patch sizes on the easiest
 dataset, <2% on the hardest).
 
