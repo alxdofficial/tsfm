@@ -36,7 +36,13 @@ novelties contribute to TSFM's performance advantages and where tradeoffs exist.
 
 ---
 
-## Sampling Rate Handling
+## Per-Dataset Metadata Awareness
+
+TSFM is the only model that uses per-dataset metadata — sampling rate, patch size, and channel
+descriptions — as active inputs during training and evaluation. All baselines operate on
+fixed-format tensors with no dataset-level context.
+
+### Sampling Rate Handling
 
 **Principle**: Each model should train and evaluate at each dataset's native sampling rate whenever
 its architecture supports it. Only resample when the model requires a fixed rate.
@@ -46,7 +52,7 @@ PAMAP2/KU-HAR at 100 Hz). How each model handles this:
 
 | Model | Can Use Native Rates? | What It Gets | Why |
 |-------|:---------------------:|:------------:|-----|
-| **TSFM** | Yes | Native per dataset | `create_patches(sampling_rate_hz=...)` converts seconds to timesteps dynamically; `F.interpolate` maps to fixed 64 steps. Channel descriptions encoded by SentenceBERT provide semantic awareness. |
+| **TSFM** | Yes | Native per dataset | `create_patches(sampling_rate_hz=...)` converts seconds to timesteps dynamically; `F.interpolate` maps to fixed 64 steps. |
 | **LiMU-BERT** | No | 20 Hz (resampled) | `nn.Embedding(120, 72)` positional encoding is trained for exactly 120 positions at 20 Hz. Paper explicitly chose 20 Hz. |
 | **CrossHAR** | No | 20 Hz (resampled) | Same positional embedding constraint as LiMU-BERT. Code only accepts `dataset_version='20_120'`. |
 | **MOMENT** | No | 20 Hz (resampled) | Rate-agnostic — paper: *"We did not explicitly model temporal resolution."* Treats input as raw numbers with no frequency awareness. Cannot benefit from native rates. |
@@ -63,6 +69,44 @@ PAMAP2 (100 Hz native) lose 80% of their temporal resolution through 5x downsamp
 rate-agnosticism means it treats a 20 Hz and 100 Hz input identically — the same 8-timestep patch
 covers 0.4 seconds at 20 Hz but only 0.08 seconds at 100 Hz, yet the model has no way to
 distinguish them.
+
+### Patch Size Awareness
+
+TSFM specifies patch sizes in **seconds** (not timesteps), which interacts with the native sampling
+rate to produce varying numbers of timesteps per patch. Combined with **patch size augmentation**
+during training — randomly sampling from a configurable `(min_sec, max_sec, step_sec)` range per
+dataset — this forces the model to learn representations that are robust to temporal resolution
+changes. All baselines use fixed tokenization (per-timestep or fixed-size patches) with no
+augmentation of temporal granularity.
+
+| Model | Tokenization | Temporal Granularity | Augmentation |
+|-------|-------------|---------------------|-------------|
+| **TSFM** | Seconds-based patches → interpolate to 64 steps | Adapts to sampling rate | Patch size augmentation during training |
+| **LiMU-BERT** | Per-timestep (120 tokens) | Fixed (50ms at 20 Hz) | None |
+| **CrossHAR** | Per-timestep (120 tokens) | Fixed (50ms at 20 Hz) | Channel permutation only |
+| **MOMENT** | 8-timestep patches (64 tokens) | Fixed (0.4s at 20 Hz) | None |
+| **LanHAR** | Per-timestep (120 tokens) | Fixed (50ms at 20 Hz) | None |
+
+### Channel Description Awareness
+
+TSFM uses text descriptions of each sensor channel (e.g., "Accelerometer X-axis", "Chest
+acceleration X-axis from wearable sensor") as semantic input. These descriptions are read from
+each dataset's manifest, encoded by frozen SentenceBERT, and fused into sensor features via
+`ChannelSemanticEncoding`. This tells the model *what each channel measures*, not just *what
+position it occupies in the input vector*.
+
+| Model | Channel Identity | Mechanism |
+|-------|-----------------|-----------|
+| **TSFM** | Semantic text encoding per channel | SentenceBERT encodes descriptions → learnable projection → added to features |
+| **LiMU-BERT** | Implicit (position in 6-dim vector) | Linear projection of concatenated channels |
+| **CrossHAR** | Implicit (position in 6-dim vector) | Linear projection of concatenated channels |
+| **MOMENT** | None (channels processed independently) | Per-channel univariate processing, no identity signal |
+| **LanHAR** | Implicit (position in 6-dim vector) | Linear projection of concatenated channels |
+
+**Why this matters**: When TSFM encounters a dataset with channels labeled "wrist accelerometer X"
+vs "hip accelerometer X", the channel text fusion provides semantic context about sensor placement
+and type. This helps the model interpret signals correctly across datasets with different sensor
+configurations — a capability that no baseline has.
 
 ---
 

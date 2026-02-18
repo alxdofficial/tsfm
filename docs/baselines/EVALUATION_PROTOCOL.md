@@ -98,6 +98,21 @@ the full spectral content of each dataset at its native resolution — no inform
 downsampling. During training, the `MultiDatasetLoader` reads each dataset's native rate from
 its manifest and passes it to the preprocessing pipeline.
 
+### TSFM's Per-Dataset Metadata
+
+TSFM uses three per-dataset metadata signals that no baseline uses:
+
+| Metadata | Source | How It's Used |
+|----------|--------|---------------|
+| **Sampling rate** | Dataset manifest (`sampling_rate_hz`) | Converts seconds-based patch size to timesteps: `patch_timesteps = int(sampling_rate_hz * patch_size_sec)`. Ensures patches represent consistent physical durations across datasets with different rates. |
+| **Patch size** | Per-dataset config (seconds) | Specifies temporal duration of each patch. Supports **patch size augmentation** during training: randomly samples from a configurable `(min_sec, max_sec, step_sec)` range per dataset, forcing the model to learn resolution-robust representations. Fixed at 1.0s during evaluation. |
+| **Channel descriptions** | Dataset manifest (text strings, e.g., "Accelerometer X-axis") | Encoded by frozen SentenceBERT into dense vectors, then fused into sensor features via `ChannelSemanticEncoding`. Provides the model with semantic awareness of what each channel measures, supporting generalization across sensor configurations and placements. |
+
+All three are passed through the training pipeline on every batch: `MultiDatasetLoader` reads them
+from the manifest → training loop extracts them from metadata → `encoder.preprocess()` uses sampling
+rate and patch size → `model.forward()` uses channel descriptions. Baselines have no equivalent —
+they operate on fixed-format tensors with no dataset-level metadata.
+
 ## 4-Metric Framework
 
 ### Metric 1: Zero-Shot Open-Set

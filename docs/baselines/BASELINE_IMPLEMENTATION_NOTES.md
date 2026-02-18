@@ -375,13 +375,18 @@ adding noise to the alignment objective.
 Our text-aligned IMU foundation model. Dual-branch Transformer encoder with semantic alignment
 head, trained via contrastive learning with soft targets and memory bank.
 
-**Sampling rate**: Native per dataset. The `MultiDatasetLoader` reads each dataset's native
-sampling rate from its manifest (e.g., 50 Hz for UCI HAR, 100 Hz for PAMAP2, 20 Hz for WISDM)
-and passes it to `create_patches()`, which specifies patch size in seconds and converts to
-timesteps dynamically. Each patch is interpolated to a fixed 64-step representation, decoupling
-the model from any specific rate. Channel descriptions (e.g., "Accelerometer X-axis") from the
-manifest are encoded by frozen SentenceBERT and fused into sensor features via
-`ChannelSemanticEncoding`, giving the model semantic awareness of what each channel represents.
+**Per-dataset metadata** (unique to TSFM — no baseline uses any of these):
+- **Sampling rate**: Native per dataset (e.g., 50 Hz for UCI HAR, 100 Hz for PAMAP2, 20 Hz for
+  WISDM). Read from dataset manifest and passed to `create_patches()`, which converts seconds-based
+  patch size to timesteps dynamically. Each patch is interpolated to a fixed 64-step representation,
+  decoupling the model from any specific rate.
+- **Patch size**: Specified in seconds per dataset. During training, supports **patch size
+  augmentation** — randomly samples from a `(min_sec, max_sec, step_sec)` range, forcing the
+  model to learn resolution-robust representations. Fixed at 1.0s during evaluation.
+- **Channel descriptions**: Text strings from dataset manifest (e.g., "Accelerometer X-axis",
+  "Chest acceleration X-axis from wearable sensor"). Encoded by frozen SentenceBERT and fused
+  into sensor features via `ChannelSemanticEncoding`, giving the model semantic awareness of
+  what each channel measures.
 
 ### Pretrained Model
 - Checkpoint: `training_output/semantic_alignment/{run_id}/best.pt`
