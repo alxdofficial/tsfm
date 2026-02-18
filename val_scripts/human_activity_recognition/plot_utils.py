@@ -7,7 +7,7 @@ Replaces TensorBoard with local PNG plots saved to disk.
 import json
 import threading
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend (thread-safe with OO API)
@@ -730,3 +730,673 @@ class EmbeddingVisualizer:
                 correct += 1
 
         return correct / len(imu_embeddings)
+
+    def _get_group_colors(self, labels: List[str]) -> Tuple[Dict[str, str], Dict[str, str]]:
+        """Return coarse group colorings for all labels.
+
+        Maps each fine-grained label to one of ~16 coarse activity groups defined in
+        LABEL_GROUPS_SIMPLE, then assigns a fixed hex color to each group. Both IMU and
+        text markers for the same group always share the same color, and the assignment
+        is stable across calls (fixed palette, alphabetically sorted groups).
+
+        Args:
+            labels: List of activity label strings present in the current batch
+                (e.g. ['walking', 'running', 'sitting', ...]). Used to determine
+                which groups are actually present so the palette isn't wasted on
+                absent groups.
+
+        Returns:
+            label_to_group: Dict mapping each label string to its coarse group name.
+                Labels not in any LABEL_GROUPS_SIMPLE entry map to themselves.
+            group_to_color: Dict mapping each coarse group name to a hex color string
+                drawn from a fixed 20-color palette.
+        """
+        from datasets.imu_pretraining_dataset.label_groups import get_label_to_group_mapping
+        label_to_group = get_label_to_group_mapping(use_simple=True)
+        # Find groups actually present in the data
+        groups_present = sorted(set(label_to_group.get(l, l) for l in labels))
+        # 20 distinguishable colors — enough for ~16 groups
+        palette = [
+            '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+            '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+            '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5',
+            '#c49c94', '#f7b6d2', '#c7c7c7', '#dbdb8d', '#9edae5',
+        ]
+        group_to_color = {g: palette[i % len(palette)] for i, g in enumerate(groups_present)}
+        return label_to_group, group_to_color
+
+    def _filter_embeddings(
+        self,
+        imu_embeddings: np.ndarray,
+        text_embeddings: np.ndarray,
+        labels: List[str],
+    ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+        """Convert embeddings to numpy and remove rows with NaN or Inf values.
+
+        Handles three input cases transparently:
+          - PyTorch tensors: moved to CPU and converted via .numpy()
+          - Multi-prototype text embeddings (N, K, D): averaged over prototype dim K
+          - Pre-converted numpy arrays: passed through unchanged
+
+        A sample is dropped if *either* its IMU or text embedding contains any
+        NaN or Inf entry. This keeps the IMU and text arrays the same length so
+        they remain paired for cosine similarity computation.
+
+        Args:
+            imu_embeddings: IMU embeddings, shape (N, D) or torch.Tensor.
+            text_embeddings: Text embeddings, shape (N, D), (N, K, D), or
+                torch.Tensor of either shape.
+            labels: List of N activity label strings corresponding to each row.
+
+        Returns:
+            Tuple (imu_embeddings, text_embeddings, labels) with invalid rows
+            removed. Arrays are always plain numpy float arrays on return.
+
+        Raises:
+            ValueError: If no valid embeddings remain after filtering (all rows
+                contained NaN or Inf).
+        """
+        # Convert to numpy if tensors
+        if hasattr(imu_embeddings, 'cpu'):
+            imu_embeddings = imu_embeddings.cpu().numpy()
+        if hasattr(text_embeddings, 'cpu'):
+            text_embeddings = text_embeddings.cpu().numpy()
+
+        # Handle multi-prototype text embeddings: (N, K, D) -> (N, D) via mean
+        if text_embeddings.ndim == 3:
+            text_embeddings = text_embeddings.mean(axis=1)
+
+        # Filter out invalid embeddings (NaN/Inf)
+        imu_valid = ~(np.isnan(imu_embeddings).any(axis=1) | np.isinf(imu_embeddings).any(axis=1))
+        text_valid = ~(np.isnan(text_embeddings).any(axis=1) | np.isinf(text_embeddings).any(axis=1))
+        valid_mask = imu_valid & text_valid
+
+        if not valid_mask.all():
+            n_invalid = (~valid_mask).sum()
+            print(f"  WARNING: Filtering {n_invalid} invalid embeddings (NaN/Inf)")
+            imu_embeddings = imu_embeddings[valid_mask]
+            text_embeddings = text_embeddings[valid_mask]
+            labels = [labels[i] for i in range(len(labels)) if valid_mask[i]]
+
+            if len(imu_embeddings) == 0:
+                raise ValueError("All embeddings invalid!")
+
+        return imu_embeddings, text_embeddings, labels
+
+    def plot_interactive_3d(
+        self,
+        imu_embeddings: np.ndarray,
+        text_embeddings: np.ndarray,
+        labels: List[str],
+        epoch: int,
+        metrics: Optional[Dict[str, float]] = None,
+        umap_metric: str = 'cosine'
+    ):
+        """Interactive 3D UMAP visualization saved as a self-contained HTML file.
+
+        Fits UMAP in 3D on the joint set of IMU and text embeddings (cosine distance
+        by default). Produces one Plotly Scatter3d trace per (activity group, modality)
+        pair so clicking a legend entry toggles the entire group. IMU samples are
+        shown as small semi-transparent dots; text embeddings are deduplicated by label
+        and shown as labelled diamonds.
+
+        Built-in Plotly interactivity:
+          - Rotate / zoom / pan the 3D scene
+          - Hover markers for label and group details
+          - Click legend entries to show / hide individual groups
+
+        Args:
+            imu_embeddings: IMU embeddings, shape (N, D).
+            text_embeddings: Text embeddings, shape (N, D).
+            labels: Activity label for each of the N samples.
+            epoch: Training epoch number (shown in title and embedded in filename).
+            metrics: Optional scalar metrics to display in the figure title,
+                e.g. {'pos_sim': 0.82, 'sim_gap': 0.41}.
+            umap_metric: Distance metric passed to umap.UMAP (default 'cosine').
+
+        Outputs:
+            ``embedding_3d_epoch_{epoch:03d}.html`` — written to ``self.output_dir``.
+            The file is fully self-contained (plotly.js bundled) so it opens
+            correctly without a server.
+        """
+        try:
+            import umap
+            import plotly.graph_objects as go
+        except ImportError:
+            print("Warning: umap-learn or plotly not installed. Skipping 3D visualization.")
+            return
+
+        try:
+            imu_embeddings, text_embeddings, labels = self._filter_embeddings(
+                imu_embeddings, text_embeddings, labels
+            )
+        except ValueError:
+            print("  ERROR: All embeddings invalid! Skipping 3D visualization.")
+            return
+
+        label_to_group, group_to_color = self._get_group_colors(labels)
+
+        # Assign group for each sample
+        groups = [label_to_group.get(l, l) for l in labels]
+
+        # Joint UMAP 3D projection
+        all_embeddings = np.vstack([imu_embeddings, text_embeddings])
+        print(f"  Computing 3D UMAP projection (n_neighbors={self.n_neighbors}, min_dist={self.min_dist})...")
+        reducer = umap.UMAP(
+            n_neighbors=self.n_neighbors,
+            min_dist=self.min_dist,
+            n_components=3,
+            metric=umap_metric,
+            random_state=42,
+        )
+        embedding_3d = reducer.fit_transform(all_embeddings)
+        imu_3d = embedding_3d[:len(imu_embeddings)]
+        text_3d = embedding_3d[len(imu_embeddings):]
+
+        # Build Plotly figure — one trace per (group, modality) for legend filtering
+        fig = go.Figure()
+        groups_sorted = sorted(group_to_color.keys())
+
+        for group_name in groups_sorted:
+            color = group_to_color[group_name]
+
+            # IMU points for this group
+            mask = np.array([g == group_name for g in groups])
+            if mask.any():
+                idx = np.where(mask)[0]
+                hover = [f"Label: {labels[i]}<br>Group: {group_name}<br>Idx: {i}" for i in idx]
+                fig.add_trace(go.Scatter3d(
+                    x=imu_3d[mask, 0], y=imu_3d[mask, 1], z=imu_3d[mask, 2],
+                    mode='markers',
+                    marker=dict(size=3, color=color, opacity=0.5),
+                    name=f'{group_name} (IMU)',
+                    legendgroup=group_name,
+                    hovertext=hover,
+                    hoverinfo='text',
+                ))
+
+            # Text points for this group (deduplicate identical labels)
+            text_mask = mask
+            if text_mask.any():
+                idx = np.where(text_mask)[0]
+                # Deduplicate: keep first occurrence of each label within this group
+                seen_labels = set()
+                dedup_idx = []
+                for i in idx:
+                    if labels[i] not in seen_labels:
+                        seen_labels.add(labels[i])
+                        dedup_idx.append(i)
+                dedup_idx = np.array(dedup_idx)
+                hover = [f"Label: {labels[i]}<br>Group: {group_name}" for i in dedup_idx]
+                text_labels = [labels[i] for i in dedup_idx]
+                fig.add_trace(go.Scatter3d(
+                    x=text_3d[dedup_idx, 0], y=text_3d[dedup_idx, 1], z=text_3d[dedup_idx, 2],
+                    mode='markers+text',
+                    marker=dict(size=8, color=color, opacity=1.0, symbol='diamond'),
+                    text=text_labels,
+                    textposition='top center',
+                    textfont=dict(size=9, color=color),
+                    name=f'{group_name} (Text)',
+                    legendgroup=group_name,
+                    hovertext=hover,
+                    hoverinfo='text',
+                ))
+
+        # Layout
+        title_parts = [f'IMU-Text Embedding Alignment — 3D UMAP (Epoch {epoch})']
+        if metrics:
+            metric_strs = [f'{k}: {v:.3f}' for k, v in metrics.items()]
+            title_parts.append(' | '.join(metric_strs))
+        fig.update_layout(
+            title='<br>'.join(title_parts),
+            scene=dict(
+                xaxis_title='UMAP 1',
+                yaxis_title='UMAP 2',
+                zaxis_title='UMAP 3',
+                bgcolor='rgb(20, 20, 30)',
+            ),
+            paper_bgcolor='rgb(20, 20, 30)',
+            font=dict(color='white'),
+            legend=dict(
+                bgcolor='rgba(40,40,50,0.8)',
+                font=dict(size=10),
+                itemsizing='constant',
+            ),
+            margin=dict(l=0, r=0, t=60, b=0),
+        )
+
+        output_path = self.output_dir / f'embedding_3d_epoch_{epoch:03d}.html'
+        fig.write_html(str(output_path), include_plotlyjs=True)
+        print(f"  ✓ Saved interactive 3D visualization: {output_path.name}")
+
+    def plot_density_contours(
+        self,
+        imu_embeddings: np.ndarray,
+        text_embeddings: np.ndarray,
+        labels: List[str],
+        epoch: int,
+        metrics: Optional[Dict[str, float]] = None,
+        umap_metric: str = 'cosine'
+    ):
+        """2D UMAP with per-group KDE density contours and annotated text markers.
+
+        Fits a joint 2D UMAP on all IMU and text embeddings, then draws filled
+        gaussian_kde contours for each activity group. Groups with ≥20 IMU points
+        get three nested filled contour bands (30 / 60 / 90 % of peak density);
+        groups with fewer points fall back to a plain scatter. Text embeddings are
+        deduplicated by label and shown as star markers with label annotations;
+        ``adjustText`` is used for non-overlapping placement when available.
+
+        Args:
+            imu_embeddings: IMU embeddings, shape (N, D).
+            text_embeddings: Text embeddings, shape (N, D).
+            labels: Activity label for each of the N samples.
+            epoch: Training epoch number (shown in metrics box, title, filename).
+            metrics: Optional dict with keys 'pos_sim' and/or 'sim_gap' to include
+                in the annotation box (alongside NN accuracy and silhouette score).
+            umap_metric: Distance metric passed to umap.UMAP (default 'cosine').
+
+        Outputs:
+            ``embedding_density_epoch_{epoch:03d}.png`` — 200 DPI PNG written to
+            ``self.output_dir``.
+        """
+        try:
+            import umap
+            from scipy.stats import gaussian_kde
+            from sklearn.metrics import silhouette_score
+        except ImportError:
+            print("Warning: umap-learn, scipy, or scikit-learn not installed. Skipping density contour plot.")
+            return
+
+        try:
+            imu_embeddings, text_embeddings, labels = self._filter_embeddings(
+                imu_embeddings, text_embeddings, labels
+            )
+        except ValueError:
+            print("  ERROR: All embeddings invalid! Skipping density contour plot.")
+            return
+
+        label_to_group, group_to_color = self._get_group_colors(labels)
+        groups = [label_to_group.get(l, l) for l in labels]
+        groups_arr = np.array(groups)
+
+        # Joint UMAP 2D projection
+        all_embeddings = np.vstack([imu_embeddings, text_embeddings])
+        print(f"  Computing 2D UMAP for density contours (n_neighbors={self.n_neighbors}, min_dist={self.min_dist})...")
+        reducer = umap.UMAP(
+            n_neighbors=self.n_neighbors,
+            min_dist=self.min_dist,
+            n_components=2,
+            metric=umap_metric,
+            random_state=42,
+        )
+        embedding_2d = reducer.fit_transform(all_embeddings)
+        imu_2d = embedding_2d[:len(imu_embeddings)]
+        text_2d = embedding_2d[len(imu_embeddings):]
+
+        # Compute metrics
+        label_indices = np.array([sorted(set(labels)).index(l) for l in labels])
+        nn_accuracy = self._compute_nn_accuracy(imu_embeddings, text_embeddings, labels)
+        try:
+            silhouette = silhouette_score(imu_2d, label_indices, metric='euclidean')
+        except Exception:
+            silhouette = 0.0
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=(16, 12))
+
+        groups_sorted = sorted(group_to_color.keys())
+        contour_handles = []  # For legend
+
+        for group_name in groups_sorted:
+            color = group_to_color[group_name]
+            mask = groups_arr == group_name
+            pts = imu_2d[mask]
+
+            if len(pts) >= 20:
+                # KDE contours
+                try:
+                    kde = gaussian_kde(pts.T)
+                    # Evaluate on a grid
+                    x_min, x_max = pts[:, 0].min() - 1, pts[:, 0].max() + 1
+                    y_min, y_max = pts[:, 1].min() - 1, pts[:, 1].max() + 1
+                    xx, yy = np.mgrid[x_min:x_max:100j, y_min:y_max:100j]
+                    positions = np.vstack([xx.ravel(), yy.ravel()])
+                    zz = kde(positions).reshape(xx.shape)
+
+                    # Contour levels at 30%, 60%, 90% of peak density
+                    peak = zz.max()
+                    levels = [peak * 0.30, peak * 0.60, peak * 0.90, peak * 1.01]
+                    alphas = [0.15, 0.25, 0.35]
+
+                    from matplotlib.colors import to_rgba
+                    for i in range(len(levels) - 1):
+                        rgba = to_rgba(color, alpha=alphas[i])
+                        ax.contourf(xx, yy, zz, levels=[levels[i], levels[i + 1]],
+                                    colors=[rgba])
+
+                    # Outline at the outermost level
+                    ax.contour(xx, yy, zz, levels=[levels[0]], colors=[color],
+                               linewidths=0.8, alpha=0.6)
+
+                    # Legend proxy
+                    import matplotlib.patches as mpatches
+                    contour_handles.append(mpatches.Patch(color=color, alpha=0.4, label=group_name))
+                except Exception:
+                    # KDE failed (e.g., singular matrix) — fall back to scatter
+                    ax.scatter(pts[:, 0], pts[:, 1], c=color, s=10, alpha=0.4, edgecolors='none')
+                    import matplotlib.patches as mpatches
+                    contour_handles.append(mpatches.Patch(color=color, alpha=0.4, label=group_name))
+            elif len(pts) > 0:
+                # Too few points for KDE — scatter
+                ax.scatter(pts[:, 0], pts[:, 1], c=color, s=10, alpha=0.4, edgecolors='none')
+                import matplotlib.patches as mpatches
+                contour_handles.append(mpatches.Patch(color=color, alpha=0.4, label=group_name))
+
+        # Plot text embedding positions — deduplicate labels
+        seen_text = {}  # label -> (x, y, group)
+        for i, label in enumerate(labels):
+            if label not in seen_text:
+                seen_text[label] = (text_2d[i, 0], text_2d[i, 1], label_to_group.get(label, label))
+
+        text_xs, text_ys, text_colors, text_names = [], [], [], []
+        for label, (x, y, grp) in seen_text.items():
+            text_xs.append(x)
+            text_ys.append(y)
+            text_colors.append(group_to_color.get(grp, '#888888'))
+            text_names.append(label)
+
+        ax.scatter(text_xs, text_ys, c=text_colors, marker='*', s=120,
+                   edgecolors='black', linewidths=0.5, zorder=5)
+
+        # Annotate text labels
+        texts = []
+        for x, y, name in zip(text_xs, text_ys, text_names):
+            t = ax.annotate(
+                name, (x, y), fontsize=7, alpha=0.85,
+                xytext=(4, 4), textcoords='offset points',
+            )
+            texts.append(t)
+
+        # Try adjustText for non-overlapping labels (graceful fallback)
+        try:
+            from adjustText import adjust_text
+            adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle='-', color='gray', alpha=0.4))
+        except ImportError:
+            pass  # Basic offset is fine
+
+        # Metrics box
+        if metrics is None:
+            metrics = {}
+        metrics_text = f'Epoch: {epoch}\n'
+        metrics_text += f'NN Accuracy: {nn_accuracy:.2%}\n'
+        metrics_text += f'Silhouette: {silhouette:.3f}\n'
+        if 'pos_sim' in metrics:
+            metrics_text += f"Pos Sim: {metrics['pos_sim']:.3f}\n"
+        if 'sim_gap' in metrics:
+            metrics_text += f"Sim Gap: {metrics['sim_gap']:.3f}"
+        ax.text(
+            0.98, 0.98, metrics_text,
+            transform=ax.transAxes, fontsize=11,
+            verticalalignment='top', horizontalalignment='right',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
+        )
+
+        # Compact legend
+        if contour_handles:
+            ax.legend(handles=contour_handles, fontsize=9, loc='upper left',
+                      framealpha=0.9, ncol=2 if len(contour_handles) > 8 else 1)
+
+        ax.set_xlabel('UMAP 1', fontsize=12)
+        ax.set_ylabel('UMAP 2', fontsize=12)
+        ax.set_title(
+            f'IMU Density Contours + Text Labels (Epoch {epoch})\n'
+            f'Stars: Text Embeddings | Contours: IMU Density per Group',
+            fontsize=14, fontweight='bold',
+        )
+        ax.grid(True, alpha=0.2)
+
+        plt.tight_layout()
+        output_path = self.output_dir / f'embedding_density_epoch_{epoch:03d}.png'
+        plt.savefig(output_path, dpi=200, bbox_inches='tight')
+        plt.close(fig)
+        print(f"  ✓ Saved density contour visualization: {output_path.name}")
+
+    def plot_paper_figure(
+        self,
+        imu_embeddings: np.ndarray,
+        text_embeddings: np.ndarray,
+        labels: List[str],
+        epoch: int,
+        metrics: Optional[Dict[str, float]] = None,
+        umap_metric: str = 'cosine',
+        n_neighbors: int = 10,
+        min_dist: float = 0.05,
+        exclude_groups: Tuple[str, ...] = ('postural_transition',),
+    ):
+        """Publication-quality 2D embedding figure using per-label prototype centroids.
+
+        Projects per-label IMU centroids and per-label text centroids (2 × n_labels
+        points total) rather than all individual samples. Averaging removes
+        within-label noise, giving tight well-separated clusters; UMAP also produces
+        cleaner layouts at this scale (~174 points vs. ~11 k). Text diamonds land
+        inside or very close to their corresponding IMU cluster; thin lines connect
+        each matched pair to directly visualise cross-modal alignment.
+
+        Visual design:
+          - Large circles (s=160, white edge) for IMU centroids drawn first.
+          - Smaller diamonds (s=40, black edge) for text centroids on top — their
+            edges always peek out from behind the overlapping diamond.
+          - Bold group-name label at the centroid of each IMU group.
+          - Fine per-label annotations on text centroids, placed by adjustText.
+          - NN accuracy in the metrics box is computed on ALL individual sample
+            embeddings (not centroids) so it reflects honest retrieval performance.
+          - No convex-hull or fill shapes (too noisy at this scale).
+          - Axis limits are set tightly around the data (8 % padding) so no blank
+            UMAP space is wasted in the printed figure.
+
+        Args:
+            imu_embeddings: IMU embeddings, shape (N, D).
+            text_embeddings: Text embeddings, shape (N, D).
+            labels: Activity label for each of the N samples.
+            epoch: Training epoch number (shown in metrics box, title, filename).
+            metrics: Optional dict with keys 'pos_sim' and/or 'sim_gap'.
+            umap_metric: Distance metric passed to umap.UMAP (default 'cosine').
+            n_neighbors: UMAP n_neighbors. Default 10 is appropriate for ~174
+                prototype points; would be too small for thousands of samples.
+            min_dist: UMAP min_dist. Default 0.05 gives tight cluster packing at
+                prototype scale.
+            exclude_groups: Coarse group names (LABEL_GROUPS_SIMPLE keys) to drop
+                before projecting. Defaults to ``('postural_transition',)`` which
+                tends to be a distant outlier that wastes axis space.
+
+        Outputs:
+            ``embedding_paper_epoch_{epoch:03d}.png`` — 300 DPI PNG written to
+            ``self.output_dir``. Does **not** overwrite
+            ``embedding_alignment_epoch_*.png`` (the sample-level plots).
+        """
+        try:
+            import umap
+        except ImportError:
+            print("Warning: umap-learn not installed. Skipping paper figure.")
+            return
+
+        try:
+            imu_embeddings, text_embeddings, labels = self._filter_embeddings(
+                imu_embeddings, text_embeddings, labels
+            )
+        except ValueError:
+            print("  ERROR: All embeddings invalid! Skipping paper figure.")
+            return
+
+        label_to_group, group_to_color = self._get_group_colors(labels)
+
+        # Drop samples whose coarse group is in exclude_groups
+        if exclude_groups:
+            keep = [label_to_group.get(l, l) not in exclude_groups for l in labels]
+            n_dropped = len(labels) - sum(keep)
+            if n_dropped:
+                print(f"  Excluding {n_dropped} samples from groups: {exclude_groups}")
+            imu_embeddings = imu_embeddings[keep]
+            text_embeddings = text_embeddings[keep]
+            labels = [l for l, k in zip(labels, keep) if k]
+            # Recompute group colors with remaining labels (may remove a group entirely)
+            label_to_group, group_to_color = self._get_group_colors(labels)
+
+        labels_arr = np.array(labels)
+        unique_labels = sorted(set(labels))
+
+        # Build per-label centroids (average across all samples with that label)
+        imu_centroids = np.zeros((len(unique_labels), imu_embeddings.shape[1]))
+        text_centroids = np.zeros((len(unique_labels), text_embeddings.shape[1]))
+        for i, lbl in enumerate(unique_labels):
+            mask = labels_arr == lbl
+            imu_centroids[i] = imu_embeddings[mask].mean(axis=0)
+            text_centroids[i] = text_embeddings[mask].mean(axis=0)
+
+        # Re-normalise after averaging (cosine metric expects unit vectors)
+        imu_centroids /= np.maximum(np.linalg.norm(imu_centroids, axis=1, keepdims=True), 1e-8)
+        text_centroids /= np.maximum(np.linalg.norm(text_centroids, axis=1, keepdims=True), 1e-8)
+
+        centroid_groups = np.array([label_to_group.get(l, l) for l in unique_labels])
+
+        nn_accuracy = self._compute_nn_accuracy(imu_embeddings, text_embeddings, labels)
+
+        # Joint UMAP on 87+87=174 prototype points
+        # Small N → well-spaced, no compression → clean cluster separation
+        all_centroids = np.vstack([imu_centroids, text_centroids])
+        n = len(imu_centroids)
+        actual_neighbors = min(n_neighbors, len(all_centroids) - 1)
+        print(f"  Computing paper UMAP on {len(all_centroids)} label centroids "
+              f"(n_neighbors={actual_neighbors}, min_dist={min_dist})...")
+        reducer = umap.UMAP(
+            n_neighbors=actual_neighbors,
+            min_dist=min_dist,
+            n_components=2,
+            metric=umap_metric,
+            random_state=42,
+        )
+        proj = reducer.fit_transform(all_centroids)
+        imu_proj = proj[:n]   # (87, 2)
+        text_proj = proj[n:]  # (87, 2)
+
+        groups_sorted = sorted(group_to_color.keys())
+        fig, ax = plt.subplots(figsize=(12, 9))
+        ax.set_facecolor('#fafafa')
+
+        # Layer 1: thin lines connecting each IMU centroid to its paired text centroid
+        for i in range(n):
+            color = group_to_color.get(centroid_groups[i], '#888888')
+            ax.plot(
+                [imu_proj[i, 0], text_proj[i, 0]],
+                [imu_proj[i, 1], text_proj[i, 1]],
+                color=color, linewidth=0.6, alpha=0.35, zorder=2,
+            )
+
+        # Layer 3: IMU centroids (large circles — drawn first so diamonds sit on top
+        #           but circles are bigger so their edges always peek out)
+        for group_name in groups_sorted:
+            color = group_to_color[group_name]
+            mask = centroid_groups == group_name
+            pts = imu_proj[mask]
+            if len(pts) == 0:
+                continue
+            ax.scatter(pts[:, 0], pts[:, 1], c=color, marker='o', s=160,
+                       alpha=0.85, edgecolors='white', linewidths=1.0, zorder=3)
+
+        # Layer 4: text centroids (smaller diamonds on top)
+        for group_name in groups_sorted:
+            color = group_to_color[group_name]
+            mask = centroid_groups == group_name
+            pts = text_proj[mask]
+            if len(pts) == 0:
+                continue
+            ax.scatter(pts[:, 0], pts[:, 1], c=color, marker='D', s=40,
+                       alpha=0.95, edgecolors='black', linewidths=0.5, zorder=4)
+
+        # Layer 5: label name annotations on text centroids
+        annot_texts = []
+        for i, lbl in enumerate(unique_labels):
+            t = ax.annotate(
+                lbl.replace('_', ' '), (text_proj[i, 0], text_proj[i, 1]),
+                fontsize=5.5, alpha=0.8,
+                xytext=(3, 3), textcoords='offset points', zorder=5,
+            )
+            annot_texts.append(t)
+
+        try:
+            from adjustText import adjust_text
+            adjust_text(annot_texts, ax=ax,
+                        arrowprops=dict(arrowstyle='-', color='gray', alpha=0.3, lw=0.5),
+                        only_move={'points': 'y', 'text': 'xy'})
+        except ImportError:
+            pass
+
+        # Layer 6: bold group name at IMU group centroid
+        for group_name in groups_sorted:
+            mask = centroid_groups == group_name
+            pts = imu_proj[mask]
+            if len(pts) == 0:
+                continue
+            cx, cy = pts[:, 0].mean(), pts[:, 1].mean()
+            ax.text(cx, cy, group_name.replace('_', '\n'),
+                    fontsize=7.5, fontweight='bold',
+                    ha='center', va='center', zorder=6,
+                    bbox=dict(boxstyle='round,pad=0.25', facecolor='white',
+                              alpha=0.80, edgecolor='none'))
+
+        # Metrics box
+        if metrics is None:
+            metrics = {}
+        metrics_lines = [f'Epoch: {epoch}', f'NN Acc: {nn_accuracy:.1%}']
+        if 'pos_sim' in metrics:
+            metrics_lines.append(f"Pos Sim: {metrics['pos_sim']:.3f}")
+        if 'sim_gap' in metrics:
+            metrics_lines.append(f"Sim Gap: {metrics['sim_gap']:.3f}")
+        ax.text(0.02, 0.02, '\n'.join(metrics_lines),
+                transform=ax.transAxes, fontsize=9, va='bottom', ha='left',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.85, edgecolor='#cccccc'))
+
+        # Legend
+        from matplotlib.patches import Patch
+        from matplotlib.lines import Line2D
+        group_handles = [
+            Patch(facecolor=group_to_color[g], alpha=0.65, label=g.replace('_', ' '))
+            for g in groups_sorted if np.any(centroid_groups == g)
+        ]
+        modality_handles = [
+            Line2D([0], [0], marker='o', color='#555', ms=9, lw=0,
+                   markeredgecolor='white', markeredgewidth=0.8, label='IMU centroid'),
+            Line2D([0], [0], marker='D', color='#555', ms=5, lw=0,
+                   markeredgecolor='black', markeredgewidth=0.5, label='Text centroid'),
+        ]
+        # Place legend outside the axes (right side) so it never overlaps data points.
+        ax.legend(handles=modality_handles + group_handles,
+                  fontsize=8, loc='upper left', bbox_to_anchor=(1.01, 1.0),
+                  framealpha=0.9, ncol=1,
+                  title='Activity Group', title_fontsize=9, borderpad=0.6)
+
+        ax.set_xlabel('UMAP 1', fontsize=12)
+        ax.set_ylabel('UMAP 2', fontsize=12)
+        ax.set_title(
+            f'IMU–Text Embedding Alignment (Epoch {epoch})\n'
+            f'Circles: IMU centroids  |  Diamonds: Text centroids  |  Lines: Matched pairs',
+            fontsize=13, fontweight='bold',
+        )
+        ax.grid(False)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+        # Tight axis limits — clip to data extent so blank UMAP space is removed.
+        # Compute bounds from the actual projected points (not annotations).
+        all_pts = np.vstack([imu_proj, text_proj])
+        xpad = (all_pts[:, 0].max() - all_pts[:, 0].min()) * 0.08
+        ypad = (all_pts[:, 1].max() - all_pts[:, 1].min()) * 0.08
+        ax.set_xlim(all_pts[:, 0].min() - xpad, all_pts[:, 0].max() + xpad)
+        ax.set_ylim(all_pts[:, 1].min() - ypad, all_pts[:, 1].max() + ypad)
+
+        plt.tight_layout()
+        output_path = self.output_dir / f'embedding_paper_epoch_{epoch:03d}.png'
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        print(f"  ✓ Saved paper figure: {output_path.name}")

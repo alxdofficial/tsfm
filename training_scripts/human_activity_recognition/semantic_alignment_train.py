@@ -1050,15 +1050,33 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
                 n_neighbors=UMAP_N_NEIGHBORS,
                 min_dist=UMAP_MIN_DIST
             )
+            vis_metrics = {
+                'pos_sim': avg_metrics['positive_similarity'],
+                'sim_gap': avg_metrics['similarity_gap'],
+            }
+            # Existing 2D static plot
             visualizer.plot_embedding_alignment_2d(
                 imu_embeddings=all_imu_cat,
                 text_embeddings=all_text_cat,
                 labels=all_labels,
                 epoch=epoch,
-                metrics={
-                    'pos_sim': avg_metrics['positive_similarity'],
-                    'sim_gap': avg_metrics['similarity_gap']
-                }
+                metrics=vis_metrics,
+            )
+            # Interactive 3D HTML
+            visualizer.plot_interactive_3d(
+                imu_embeddings=all_imu_cat,
+                text_embeddings=all_text_cat,
+                labels=all_labels,
+                epoch=epoch,
+                metrics=vis_metrics,
+            )
+            # Density contour static plot
+            visualizer.plot_density_contours(
+                imu_embeddings=all_imu_cat,
+                text_embeddings=all_text_cat,
+                labels=all_labels,
+                epoch=epoch,
+                metrics=vis_metrics,
             )
 
     return avg_metrics
