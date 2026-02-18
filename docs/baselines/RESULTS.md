@@ -97,9 +97,9 @@ of severe domain shift rather than cross-dataset generalization.
 
 | Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | **39.8** | **12.7** | **51.1** | **33.4** | **72.7** | **61.0** | **85.6** | **80.0** |
+| **TSFM (ours)** | **47.6** | **20.0** | **49.2** | **31.0** | **73.0** | 61.1 | **84.2** | **78.3** |
 | **LiMU-BERT** | 21.2 | 6.7 | 33.2 | 23.6 | 25.6 | 15.9 | 62.6 | 52.1 |
-| **MOMENT** | 25.7 | 7.0 | 41.2 | 28.5 | 71.5 | 64.8 | 81.3 | 76.1 |
+| **MOMENT** | 25.7 | 7.0 | 41.2 | 28.5 | 71.5 | **64.8** | 81.3 | 76.1 |
 | **CrossHAR** | 17.0 | 5.5 | 35.4 | 28.9 | 62.5 | 56.3 | 80.6 | 75.0 |
 | **LanHAR** | 14.2 | 7.4 | 28.2 | 20.4 | 41.3 | 31.5 | 56.1 | 51.9 |
 
@@ -115,11 +115,11 @@ of severe domain shift rather than cross-dataset generalization.
 
 | Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | **37.5** | **9.5** | **44.0** | **18.8** | **37.8** | 9.8 |
-| **LiMU-BERT** | 6.1 | 2.0 | 28.4 | 10.3 | 29.1 | 7.7 |
+| **TSFM (ours)** | **51.5** | **29.0** | **63.1** | **17.8** | 28.1 | **13.1** |
+| **LiMU-BERT** | 6.1 | 2.0 | 28.4 | 10.3 | **29.1** | 7.7 |
 | **MOMENT** | 28.7 | 7.0 | 33.8 | 8.0 | 14.6 | 6.0 |
 | **CrossHAR** | 13.5 | 4.2 | 16.2 | 5.4 | 21.5 | 7.0 |
-| **LanHAR** | 11.4 | 4.4 | 14.0 | 6.4 | 17.3 | **11.4** |
+| **LanHAR** | 11.4 | 4.4 | 14.0 | 6.4 | 17.3 | 11.4 |
 
 ### Zero-Shot Closed-Set
 
@@ -127,7 +127,7 @@ of severe domain shift rather than cross-dataset generalization.
 
 | Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | **56.1** | 20.0 | **57.1** | **53.4** | 40.0 | 26.8 |
+| **TSFM (ours)** | **57.9** | 21.8 | **64.7** | **56.8** | 25.1 | 14.4 |
 | **LiMU-BERT** | 29.3 | 13.1 | 39.9 | 37.8 | 30.5 | 19.9 |
 | **MOMENT** | 40.9 | **24.6** | 51.6 | 39.3 | 31.1 | 21.6 |
 | **CrossHAR** | 23.3 | 17.7 | 42.8 | 39.5 | **40.3** | **29.5** |
@@ -139,9 +139,9 @@ of severe domain shift rather than cross-dataset generalization.
 
 | Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | 55.4 | 22.1 | 87.0 | 85.5 | **75.8** | **75.5** |
+| **TSFM (ours)** | **57.7** | 23.9 | **88.1** | 87.1 | **73.3** | **72.3** |
 | **LiMU-BERT** | 8.3 | 1.2 | 22.6 | 6.1 | 45.9 | 40.3 |
-| **MOMENT** | **54.9** | **36.8** | **87.4** | **87.5** | 72.1 | 70.2 |
+| **MOMENT** | 54.9 | **36.8** | 87.4 | **87.5** | 72.1 | 70.2 |
 | **CrossHAR** | 42.8 | 30.7 | 78.6 | 77.6 | 66.0 | 60.7 |
 | **LanHAR** | 34.5 | 15.2 | 40.3 | 36.6 | 49.2 | 42.6 |
 
@@ -151,7 +151,7 @@ of severe domain shift rather than cross-dataset generalization.
 
 | Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | **77.0** | **60.0** | **94.6** | **94.0** | **85.1** | **86.0** |
+| **TSFM (ours)** | **74.9** | **57.4** | **93.3** | **92.6** | **84.4** | **85.0** |
 | **LiMU-BERT** | 61.8 | 35.2 | 69.4 | 68.5 | 56.5 | 52.8 |
 | **MOMENT** | 71.3 | 55.4 | 92.1 | 92.1 | 80.6 | 80.8 |
 | **CrossHAR** | 69.7 | 54.7 | 91.6 | 91.0 | 80.5 | 79.2 |
@@ -161,14 +161,17 @@ of severe domain shift rather than cross-dataset generalization.
 
 ## Key Observations
 
-1. **TSFM leads across all metrics** — 51.1% closed-set avg accuracy on 3 main datasets, ahead of
+1. **TSFM leads in most metrics** — 49.2% closed-set avg accuracy on 3 main datasets, ahead of
    MOMENT (41.2%), CrossHAR (35.4%), LiMU-BERT (33.2%), and LanHAR (28.2%). TSFM also leads at
-   1% supervised (72.7% vs MOMENT's 71.5%) and 10% supervised (85.6% vs MOMENT's 81.3%).
+   1% supervised (73.0% vs MOMENT's 71.5%) and 10% supervised (84.2% vs MOMENT's 81.3%).
+   MOMENT leads on 1% F1 (64.8 vs 61.1), driven by stronger MobiAct performance.
 
-2. **Native sampling rates and rich channel descriptions contribute meaningfully** — Compared to
-   TSFM's previous 20Hz evaluation, native 50Hz data with manifest-derived channel descriptions
-   improved zero-shot closed-set by +5.6% avg, 1% supervised by +4.5% avg, and 10% supervised by
-   +2.4% avg. The largest gains are in zero-shot and low-data regimes where metadata matters most.
+2. **Correct channel-text conditioning produces large zero-shot gains on 2 of 3 datasets** — With
+   dataset description prepended to channel descriptions (matching training format), MotionSense
+   ZS-Open jumps +24.5% and MobiAct +19.7%. However, RealWorld zero-shot drops (-9.9% open,
+   -11.9% close), likely because RealWorld's multi-placement heterogeneity conflicts with its
+   single-placement dataset description. Net effect: ZS-Open avg improves +11.4% vs 20Hz baseline.
+   See [Ablation](#ablation-native-rate--rich-channel-descriptions) for per-dataset deltas.
 
 3. **CrossHAR is a strong third** — 80.6% at 10% supervised, competitive with MOMENT on
    MotionSense (91.6%) and RealWorld (80.5%), despite a much smaller embedding (72-dim).
@@ -199,15 +202,17 @@ coverage (85-100%) of the 3 main test datasets.
 
 | Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | 2.1 | 0.9 | 4.5 | **3.4** | 13.0 | 11.7 | 36.7 | 34.6 |
+| **TSFM (ours)** | 2.0 | 0.4 | 6.3 | **3.8** | 13.5 | 9.4 | 30.4 | 29.5 |
 | **LiMU-BERT** | 3.4 | 0.9 | **7.1** | 2.1 | 7.7 | 4.2 | 19.3 | 8.4 |
 | **MOMENT** | 1.6 | 0.4 | 5.2 | 2.0 | **21.3** | **18.6** | **38.6** | **37.2** |
 | **CrossHAR** | 0.7 | 0.4 | 5.0 | 2.7 | 17.9 | 16.5 | 29.5 | 24.3 |
 | **LanHAR** | **8.3** | **2.1** | 6.9 | 3.2 | 6.3 | 2.6 | 13.0 | 10.9 |
 
 **Observations**: All models score near random on zero-shot (<8% accuracy). With 10% supervised
-data, MOMENT leads (38.6%), with TSFM close behind (36.7%) — a significant improvement from its
-previous 20Hz result (25.6%). CrossHAR is at 29.5%. LiMU-BERT and LanHAR struggle most (<19%).
+data, MOMENT leads (38.6%), followed by TSFM (30.4%) and CrossHAR (29.5%). TSFM's VTT-ConIoT
+10% result dropped from 36.7% (previous eval) to 30.4% with the channel description conditioning
+fix — the industrial dataset description may add noise for these unusual activities.
+LiMU-BERT and LanHAR struggle most (<19%).
 
 ---
 
@@ -239,40 +244,41 @@ provides a natural ablation study showing the value of TSFM's metadata-aware arc
 
 | Configuration | ZS-Open Acc | ZS-Close Acc | 1% Acc | 10% Acc |
 | :--- | ---: | ---: | ---: | ---: |
-| **TSFM (native 50Hz + rich channels)** | **39.8** | **51.1** | **72.7** | **85.6** |
+| **TSFM (native 50Hz + rich channels)** | **47.6** | **49.2** | **73.0** | **84.2** |
 | **TSFM (20Hz + generic channels)** | 36.2 | 45.5 | 68.2 | 83.2 |
-| **Delta** | +3.6 | +5.6 | +4.5 | +2.4 |
+| **Delta** | +11.4 | +3.7 | +4.8 | +1.0 |
 
 ### Per-Dataset Deltas (native 50Hz vs 20Hz resampled)
 
 | Dataset | ZS-Open Acc | ZS-Close Acc | 1% Acc | 10% Acc |
 | :--- | ---: | ---: | ---: | ---: |
-| MotionSense | +5.4 | +5.6 | +1.7 | +1.3 |
-| RealWorld | -0.2 | +3.0 | +2.0 | +1.4 |
-| MobiAct | +5.7 | +8.0 | +9.9 | +4.4 |
-| VTT-ConIoT | +0.5 | +1.1 | +1.0 | +11.1 |
+| MotionSense | +24.5 | +13.2 | +2.8 | 0.0 |
+| RealWorld | -9.9 | -11.9 | -0.5 | +0.7 |
+| MobiAct | +19.7 | +9.8 | +12.2 | +2.3 |
+| VTT-ConIoT | +0.4 | +2.9 | +1.5 | +4.8 |
 
 **Key takeaways**:
-- **Largest gains in zero-shot and low-data regimes**: The native rate + rich channel descriptions
-  improve zero-shot closed-set by up to +8.0% (MobiAct) and 1% supervised by up to +9.9% (MobiAct).
-  This is expected — when the model has fewer labeled examples to learn from, the metadata provides
-  stronger signal for correct interpretation.
-- **MobiAct benefits most**: The waist-mounted smartphone description helps the model disambiguate
-  MobiAct's fall activities from locomotion activities, where sensor placement context is critical.
-- **VTT-ConIoT 10% supervised jumps +11.1%**: The industrial dataset benefits substantially from
-  native rate + metadata at 10% supervised, suggesting the higher spectral content (50Hz vs 20Hz)
-  helps distinguish activities involving machinery/tools.
-- **RealWorld ZS-Open is flat (-0.2%)**: The waist-mounted acc-only configuration of RealWorld
-  provides limited additional signal from richer descriptions, and 50Hz vs 20Hz has little impact
-  for basic locomotion activities.
-- **Gains are smaller at 10% supervised**: When sufficient labeled data is available, the model
-  can learn dataset-specific patterns without relying on metadata. The metadata advantage is
-  greatest when data is scarce.
+- **Massive zero-shot gains on MotionSense and MobiAct**: ZS-Open improves +24.5% on MotionSense
+  and +19.7% on MobiAct. The correct channel-text conditioning (prepending dataset description to
+  match the training format) lets the model leverage sensor placement and device context for
+  disambiguation.
+- **RealWorld zero-shot drops significantly**: ZS-Open -9.9%, ZS-Close -11.9%. RealWorld's
+  dataset description likely conflicts with its heterogeneous multi-placement setup — the model
+  over-commits to the described placement while the actual data comes from varied body locations.
+  This is an honest negative result that highlights a limitation of dataset-level descriptions.
+- **Supervised results are mixed**: MobiAct 1% jumps +12.2% (the placement context helps with
+  few-shot learning of fall activities), but MotionSense 10% is flat (0.0%) and RealWorld 1% is
+  slightly negative (-0.5%). With sufficient labeled data, the model can learn dataset-specific
+  patterns without metadata, so the channel description effect washes out.
+- **Net effect is strongly positive for zero-shot**: The ZS-Open average improves +11.4% across
+  3 datasets, despite RealWorld's drop. This validates that TSFM's channel-text conditioning is
+  a genuinely useful capability for zero-shot transfer.
 
-This ablation demonstrates that TSFM's dynamic handling of sampling rates and channel semantics
-is a genuinely useful architectural novelty — not just a theoretical capability but one that
-produces measurable improvements, especially in the zero-shot and few-shot transfer settings
-that matter most for a foundation model.
+This ablation demonstrates that TSFM's channel-text conditioning and native sampling rate handling
+are genuinely useful architectural novelties, producing large zero-shot gains on datasets where
+the metadata provides disambiguating context. The RealWorld regression shows that dataset-level
+descriptions can hurt when they oversimplify heterogeneous data — a direction for future work
+in per-sample or per-subject metadata conditioning.
 
 ---
 

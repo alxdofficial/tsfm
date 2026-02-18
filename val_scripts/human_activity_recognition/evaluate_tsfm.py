@@ -34,7 +34,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
-from torch.amp import autocast
+from torch.amp import autocast, GradScaler
 from sklearn.metrics import f1_score, accuracy_score
 from tqdm import tqdm
 
@@ -127,16 +127,23 @@ def get_dataset_metadata(dataset_name: str) -> dict:
 
     sampling_rate = manifest['channels'][0]['sampling_rate_hz']
 
+    dataset_desc = manifest.get('description', '')
+
     ch_map = {ch['name']: ch['description'] for ch in manifest['channels']}
-    channel_descriptions = [
-        ch_map.get(ch, f"Channel: {ch}")
-        for ch in CORE_CHANNELS
-    ]
+    channel_descriptions = []
+    for ch in CORE_CHANNELS:
+        ch_desc = ch_map.get(ch, f"Channel: {ch}")
+        # Prepend dataset description to match training format
+        # (multi_dataset_loader.py:368 does f"{dataset_desc} {ch_desc}")
+        if dataset_desc:
+            channel_descriptions.append(f"{dataset_desc} {ch_desc}")
+        else:
+            channel_descriptions.append(ch_desc)
 
     return {
         'sampling_rate_hz': sampling_rate,
         'channel_descriptions': channel_descriptions,
-        'dataset_description': manifest.get('description', ''),
+        'dataset_description': dataset_desc,
     }
 
 
@@ -537,6 +544,7 @@ def evaluate_supervised_finetune(
         ft_model.parameters(), lr=FINETUNE_ENCODER_LR, weight_decay=FINETUNE_WEIGHT_DECAY,
     )
     criterion = nn.CrossEntropyLoss()
+    scaler = GradScaler(enabled=(device.type == 'cuda'))
 
     # Data loaders
     train_ds = TensorDataset(
@@ -575,8 +583,9 @@ def evaluate_supervised_finetune(
             emb = _forward_batch(ft_model, batch_data, device, sampling_rate, channel_descriptions, seq_len)  # (B, 384)
             logits = emb @ text_embs.T / FINETUNE_TEMPERATURE  # (B, C)
             loss = criterion(logits, batch_labels)
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
             epoch_loss += loss.item()
             n_batches += 1
