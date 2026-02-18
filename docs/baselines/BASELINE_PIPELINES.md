@@ -220,7 +220,7 @@ To be completely explicit about what happens when you run each eval script:
 | `evaluate_limubert.py` | Loads encoder + embeddings → trains GRU (ZS) → fine-tunes encoder+GRU (supervised) |
 | `evaluate_moment.py` | Loads MOMENT → extracts embeddings → trains SVM (ZS) → fine-tunes encoder+linear (supervised) |
 | `evaluate_crosshar.py` | Loads encoder → extracts embeddings → trains Transformer_ft (ZS) → fine-tunes encoder+Transformer_ft (supervised) |
-| `evaluate_lanhar.py` | **Trains SciBERT (10ep) → trains sensor encoder (50ep)** → ZS via cosine sim → fine-tunes encoder (supervised) |
+| `evaluate_lanhar.py` | **Trains SciBERT (10ep) → trains sensor encoder (50ep)** → ZS via cosine sim → fine-tunes entire model end-to-end (supervised) |
 | `evaluate_tsfm.py` | Loads encoder+head → ZS via cosine sim with label bank → fine-tunes encoder (supervised) |
 
 The key insight: for zero-shot, each model uses its native prediction mechanism (cosine sim or trained classifier).

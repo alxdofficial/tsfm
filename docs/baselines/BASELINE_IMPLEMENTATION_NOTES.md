@@ -361,8 +361,8 @@ adding noise to the alignment objective.
   relative to its paper's reported numbers.
 - **Supervised fine-tuning** *(our addition — paper is zero-shot only)*: The original LanHAR
   paper has no supervised fine-tuning protocol. We add 1%/10% supervised evaluation by
-  fine-tuning the sensor encoder + sen_proj via cosine similarity with frozen text prototypes.
-  This uses LanHAR's native cosine-sim mechanism rather than adding an external classifier.
+  fine-tuning the entire model end-to-end (BERT + sensor encoder + projections) via cosine
+  similarity with frozen text prototypes. All baselines fine-tune end-to-end for consistency.
 
 ---
 

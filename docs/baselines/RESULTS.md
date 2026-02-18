@@ -60,7 +60,7 @@ The table below documents every significant deviation and its fairness rationale
 | **CrossHAR** | End-to-end supervised fine-tuning | Freezes encoder; trains only classifier head on static pre-extracted embeddings | Fine-tunes encoder + classifier jointly | All baselines use end-to-end fine-tuning for supervised metrics, giving each encoder a chance to adapt; this slightly *advantages* CrossHAR vs its paper |
 | **MOMENT** | Linear head for supervised | Paper's classification evaluation uses only SVM-RBF on frozen embeddings (no fine-tuning) | Linear head (from MOMENT codebase's `ClassificationHead`) fine-tuned end-to-end | SVM is not differentiable; linear head enables end-to-end fine-tuning consistent with other baselines |
 | **LanHAR** | No target data in Stage 2 | Sensor encoder trains on source + target data combined | Source data only (test data never seen) | No other baseline sees test data during training; exclusion prevents unfair distributional advantage but slightly *disadvantages* LanHAR vs its paper |
-| **LanHAR** | Supervised fine-tuning added | Paper is zero-shot only (no supervised protocol) | Fine-tune sensor encoder via cosine sim with frozen text prototypes | Extension for benchmark completeness; uses LanHAR's native cosine-sim mechanism |
+| **LanHAR** | Supervised fine-tuning added | Paper is zero-shot only (no supervised protocol) | Fine-tune entire model end-to-end (BERT + sensor encoder + projections) via cosine sim with frozen text prototypes | Extension for benchmark completeness; all baselines fine-tune end-to-end for consistency |
 | **All** | Unified batch sizes | Each paper uses its own batch size (typically 128) | 512 for classifiers, 32 for fine-tuning | Speed optimization; applied uniformly across all baselines |
 
 See [BASELINE_IMPLEMENTATION_NOTES.md](BASELINE_IMPLEMENTATION_NOTES.md) for full per-model implementation details.
@@ -101,7 +101,7 @@ of severe domain shift rather than cross-dataset generalization.
 | **LiMU-BERT** | 21.2 | 6.7 | 33.2 | 23.6 | 25.6 | 15.9 | 62.6 | 52.1 |
 | **MOMENT** | 25.7 | 7.0 | 41.2 | 28.5 | 71.5 | **64.8** | 81.3 | 76.1 |
 | **CrossHAR** | 17.0 | 5.5 | 35.4 | 28.9 | 62.5 | 56.3 | 80.6 | 75.0 |
-| **LanHAR** | 14.2 | 7.4 | 28.2 | 20.4 | 41.3 | 31.5 | 56.1 | 51.9 |
+| **LanHAR** | 14.2 | 7.4 | 28.2 | 20.4 | 42.0 | 32.9 | 56.6 | 52.3 |
 
 ---
 
@@ -143,7 +143,7 @@ of severe domain shift rather than cross-dataset generalization.
 | **LiMU-BERT** | 8.3 | 1.2 | 22.6 | 6.1 | 45.9 | 40.3 |
 | **MOMENT** | 54.9 | **36.8** | 87.4 | **87.5** | 72.1 | 70.2 |
 | **CrossHAR** | 42.8 | 30.7 | 78.6 | 77.6 | 66.0 | 60.7 |
-| **LanHAR** | 34.5 | 15.2 | 40.3 | 36.6 | 49.2 | 42.6 |
+| **LanHAR** | 33.6 | 14.6 | 41.9 | 38.1 | 50.6 | 45.9 |
 
 ### 10% Supervised (End-to-End Fine-Tuning)
 
@@ -155,7 +155,7 @@ of severe domain shift rather than cross-dataset generalization.
 | **LiMU-BERT** | 61.8 | 35.2 | 69.4 | 68.5 | 56.5 | 52.8 |
 | **MOMENT** | 71.3 | 55.4 | 92.1 | 92.1 | 80.6 | 80.8 |
 | **CrossHAR** | 69.7 | 54.7 | 91.6 | 91.0 | 80.5 | 79.2 |
-| **LanHAR** | 35.9 | 24.3 | 75.8 | 76.1 | 56.5 | 55.4 |
+| **LanHAR** | 38.2 | 25.9 | 75.0 | 75.2 | 56.6 | 55.7 |
 
 ---
 
@@ -206,7 +206,7 @@ coverage (85-100%) of the 3 main test datasets.
 | **LiMU-BERT** | 3.4 | 0.9 | **7.1** | 2.1 | 7.7 | 4.2 | 19.3 | 8.4 |
 | **MOMENT** | 1.6 | 0.4 | 5.2 | 2.0 | **21.3** | **18.6** | **38.6** | **37.2** |
 | **CrossHAR** | 0.7 | 0.4 | 5.0 | 2.7 | 17.9 | 16.5 | 29.5 | 24.3 |
-| **LanHAR** | **8.3** | **2.1** | 6.9 | 3.2 | 6.3 | 2.6 | 13.0 | 10.9 |
+| **LanHAR** | **8.3** | **2.1** | 6.9 | 3.2 | 5.3 | 2.7 | 16.9 | 10.8 |
 
 **Observations**: All models score near random on zero-shot (<8% accuracy). With 10% supervised
 data, MOMENT leads (38.6%), followed by TSFM (30.4%) and CrossHAR (29.5%). TSFM's VTT-ConIoT

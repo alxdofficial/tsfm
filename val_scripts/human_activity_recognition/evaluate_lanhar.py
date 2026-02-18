@@ -1480,9 +1480,10 @@ def score_supervised_finetune(
 ) -> Dict[str, float]:
     """Supervised evaluation via end-to-end fine-tuning with cosine similarity.
 
-    Deep-copies the model, fine-tunes sensor_encoder + sen_proj end-to-end.
-    Classification is via cosine similarity against frozen text prototypes.
-    BERT, txt_proj, and logit_scale stay frozen.
+    Deep-copies the model, fine-tunes all parameters (BERT + sensor_encoder +
+    projections) end-to-end at 1e-5, matching how all other baselines are
+    fine-tuned. Classification is via cosine similarity against frozen text
+    prototypes.
 
     Args:
         lanhar_model: Trained LanHARModel (will be deep-copied, not modified)
@@ -1525,20 +1526,12 @@ def score_supervised_finetune(
     # Deep-copy model for fine-tuning
     ft_model = copy.deepcopy(lanhar_model)
 
-    # Freeze BERT + txt_proj + logit_scale; train sensor_encoder + sen_proj
-    for p in ft_model.bert.parameters():
-        p.requires_grad = False
-    for p in ft_model.txt_proj.parameters():
-        p.requires_grad = False
-    ft_model.logit_scale.requires_grad = False
-
-    # Only train sensor_encoder + sen_proj
-    trainable_params = (
-        list(ft_model.sensor_encoder.parameters())
-        + list(ft_model.sen_proj.parameters())
-    )
+    # Fine-tune entire model end-to-end (matching how all other baselines
+    # are fine-tuned). The original LanHAR paper is zero-shot only and has
+    # no supervised protocol, so this benchmark extension treats LanHAR the
+    # same as every other model: full encoder at 1e-5.
     optimizer = torch.optim.AdamW(
-        trainable_params, lr=FINETUNE_ENCODER_LR, weight_decay=FINETUNE_WEIGHT_DECAY,
+        ft_model.parameters(), lr=FINETUNE_ENCODER_LR, weight_decay=FINETUNE_WEIGHT_DECAY,
     )
     criterion = nn.CrossEntropyLoss()
 

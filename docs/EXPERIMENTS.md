@@ -2,6 +2,12 @@
 
 This document describes the experimental design, goals, and results for the IMU-to-text semantic alignment model.
 
+> Note
+> This file is experiment documentation and historical context.
+> For current runnable behavior and exact active constants, use:
+> `training_scripts/human_activity_recognition/semantic_alignment_train.py`
+> and `val_scripts/human_activity_recognition/evaluate_tsfm.py`.
+
 ---
 
 ## 1. Experiment Goals
@@ -234,7 +240,8 @@ final_embedding_space.png   # t-SNE visualization
 ### 7.3 Evaluation Scripts
 
 Baseline evaluations are in `val_scripts/human_activity_recognition/evaluate_*.py`.
-Each script uses `PATCH_SIZE_PER_DATASET` to match training exactly.
+TSFM evaluation currently uses a fixed patch-size constant (`PATCH_SIZE_SEC`) defined in
+`evaluate_tsfm.py`.
 
 ---
 
@@ -274,4 +281,5 @@ Each script uses `PATCH_SIZE_PER_DATASET` to match training exactly.
 | Checkpoint | Date | Configuration | Notes |
 |------------|------|---------------|-------|
 | `20260107_102025` | 2026-01-07 | 6-dataset baseline (learnable attention) | Old, superseded |
-| `20260216_225955` | 2026-02-16 | 10-dataset model, NUM_PROTOTYPES=1 | Current (training in progress) |
+| `20260216_225955` | 2026-02-16 | 10-dataset model, NUM_PROTOTYPES=1 | Historical reference |
+| `20260217_113136` | 2026-02-17 | 10-dataset semantic-alignment run | Recent reference run |

@@ -143,7 +143,7 @@ they operate on fixed-format tensors with no dataset-level metadata.
 - **What**: Fine-tune the encoder end-to-end using 1% of labeled data from the test dataset
 - **How**: Split 80/10/10 (train/val/test), subsample 1% of train via balanced_subsample, fine-tune encoder + classifier, evaluate on test split
 - **Why**: Tests few-shot transfer — how well does the pretrained encoder adapt with minimal supervision?
-- **Text-aligned (TSFM, LanHAR)**: Fine-tune sensor encoder, classify via cosine similarity with frozen text embeddings (no separate classifier head)
+- **Text-aligned (TSFM, LanHAR)**: Fine-tune entire model end-to-end, classify via cosine similarity with frozen text embeddings (no separate classifier head)
 - **Non-text-aligned (LiMU-BERT, CrossHAR)**: Fine-tune encoder + native classifier head end-to-end
 - **MOMENT**: Fine-tune encoder + linear head (paper's supervised fine-tuning protocol)
 
@@ -186,7 +186,7 @@ deviation from the original paper's evaluation protocol and our fairness rationa
 | **CrossHAR** | End-to-end fine-tuning | Freezes encoder; trains only Transformer_ft on static embeddings | Fine-tunes encoder + Transformer_ft end-to-end | Slight advantage (encoder adapts to target) |
 | **MOMENT** | Linear head for supervised | Only SVM-RBF on frozen embeddings (no encoder fine-tuning for classification) | End-to-end fine-tuning with linear head from MOMENT codebase | Slight advantage (encoder adapts) |
 | **LanHAR** | No target data in Stage 2 | Sensor encoder trains on source + target data combined | Source data only | Slight disadvantage (no target distribution) |
-| **LanHAR** | Supervised fine-tuning | Not in paper (zero-shot only) | Cosine sim fine-tuning with frozen text prototypes | N/A (extension) |
+| **LanHAR** | Supervised fine-tuning | Not in paper (zero-shot only) | End-to-end fine-tuning (BERT + sensor encoder + projections) via cosine sim with frozen text prototypes | N/A (extension); all baselines fine-tune end-to-end |
 | **LiMU-BERT, CrossHAR, LanHAR** | Resampled to 20 Hz | LiMU-BERT/CrossHAR: 20 Hz (same). LanHAR: 50 Hz. | All three use 20 Hz benchmark data | Neutral for LiMU-BERT/CrossHAR; LanHAR trains from scratch so adapts to any rate |
 | **MOMENT** | Resampled to 20 Hz | Rate-agnostic (no frequency awareness) | 20 Hz benchmark data | Neutral (model has no concept of sampling rate) |
 | **TSFM** | Native sampling rates | Native per dataset | Native per dataset | Slight advantage (preserves full spectral content) |
@@ -205,7 +205,7 @@ exact paper reproduction, and document every deviation transparently.
 | Baseline | Text-Aligned? | ZS Method | Supervised Method | Extra Training for ZS | Embedding Dim |
 |----------|:---:|-----------|----------------------|----------------------|:---:|
 | **TSFM** | Yes | Cosine sim (LearnableLabelBank) | Fine-tune encoder, cosine sim | None (cosine sim) | 384 |
-| **LanHAR** | Yes | Cosine sim (SciBERT prototypes) | Fine-tune sensor encoder, cosine sim | None (cosine sim) | 768 |
+| **LanHAR** | Yes | Cosine sim (SciBERT prototypes) | Fine-tune entire model end-to-end, cosine sim | None (cosine sim) | 768 |
 | **LiMU-BERT** | No | GRU classifier | Fine-tune encoder + GRU | Train GRU on 87-class training embeddings | 72 |
 | **MOMENT** | No | SVM-RBF classifier | Fine-tune encoder + linear head | Train SVM on 87-class training embeddings | 6144 |
 | **CrossHAR** | No | Transformer_ft classifier | Fine-tune encoder + Transformer_ft | Train Transformer on 87-class training embeddings | 72 |
@@ -240,7 +240,7 @@ Each baseline fine-tunes its encoder end-to-end with its native classification m
 | **LiMU-BERT** | Encoder + GRU fine-tune | 20 | Encoder + 2-layer GRU(72->20->10) + Linear(10, num_classes) |
 | **MOMENT** | Encoder + linear fine-tune | 20 | Encoder + Linear(6144, num_classes) |
 | **CrossHAR** | Encoder + Transformer_ft fine-tune | 20 | Encoder + Linear(72->100) + TransformerEncoder(1L,4H) + Linear(100, num_classes) |
-| **LanHAR** | Cosine sim fine-tune | 20 | Sensor encoder + cosine sim with frozen text prototypes |
+| **LanHAR** | Cosine sim fine-tune | 20 | BERT + sensor encoder + projections end-to-end, cosine sim with frozen text prototypes |
 
 ### Fine-Tuning Hyperparameters (shared)
 

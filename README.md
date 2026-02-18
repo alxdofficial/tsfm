@@ -139,6 +139,7 @@ Results are saved to `test_output/baseline_evaluation/{model}_evaluation.json`.
 
 | Document | Description |
 |----------|-------------|
+| **[docs/README.md](docs/README.md)** | Documentation index + single-source-of-truth map |
 | **[docs/baselines/EVALUATION_PROTOCOL.md](docs/baselines/EVALUATION_PROTOCOL.md)** | Evaluation framework, fairness justifications, per-dataset label coverage |
 | **[docs/baselines/BASELINE_IMPLEMENTATION_NOTES.md](docs/baselines/BASELINE_IMPLEMENTATION_NOTES.md)** | Per-baseline implementation details and design decisions |
 | **[docs/baselines/BASELINES_SETUP.md](docs/baselines/BASELINES_SETUP.md)** | How to set up and reproduce baseline evaluations |
