@@ -830,34 +830,44 @@ class EmbeddingVisualizer:
         labels: List[str],
         epoch: int,
         metrics: Optional[Dict[str, float]] = None,
-        umap_metric: str = 'cosine'
+        umap_metric: str = 'cosine',
+        n_neighbors: int = 10,
+        min_dist: float = 0.05,
+        exclude_groups: Tuple[str, ...] = ('postural_transition',),
     ):
-        """Interactive 3D UMAP visualization saved as a self-contained HTML file.
+        """Interactive 3D UMAP visualisation of per-label centroids, saved as HTML.
 
-        Fits UMAP in 3D on the joint set of IMU and text embeddings (cosine distance
-        by default). Produces one Plotly Scatter3d trace per (activity group, modality)
-        pair so clicking a legend entry toggles the entire group. IMU samples are
-        shown as small semi-transparent dots; text embeddings are deduplicated by label
-        and shown as labelled diamonds.
+        Mirrors the design of ``plot_paper_figure`` in 3D:
+          - Per-label IMU and text centroids (not all samples) for clean separation.
+          - Thin lines connect each IMU centroid to its paired text centroid.
+          - Large spheres for IMU centroids, smaller diamonds for text centroids.
+          - Bold group-name label floats at the mean of each IMU group centroid.
+          - One legend entry per coarse activity group; clicking toggles all traces
+            for that group (lines + IMU spheres + text diamonds + label).
+          - Light background for readability.
+          - ``postural_transition`` excluded by default (distant outlier).
 
         Built-in Plotly interactivity:
           - Rotate / zoom / pan the 3D scene
-          - Hover markers for label and group details
+          - Hover markers for per-label details
           - Click legend entries to show / hide individual groups
 
         Args:
             imu_embeddings: IMU embeddings, shape (N, D).
             text_embeddings: Text embeddings, shape (N, D).
             labels: Activity label for each of the N samples.
-            epoch: Training epoch number (shown in title and embedded in filename).
-            metrics: Optional scalar metrics to display in the figure title,
+            epoch: Training epoch number (shown in title and filename).
+            metrics: Optional scalar metrics shown in a corner annotation,
                 e.g. {'pos_sim': 0.82, 'sim_gap': 0.41}.
             umap_metric: Distance metric passed to umap.UMAP (default 'cosine').
+            n_neighbors: UMAP n_neighbors (default 10, suited for ~156 centroids).
+            min_dist: UMAP min_dist (default 0.05, tight packing at centroid scale).
+            exclude_groups: Coarse groups to drop before projecting. Defaults to
+                ``('postural_transition',)`` to avoid a distant outlier cluster.
 
         Outputs:
-            ``embedding_3d_epoch_{epoch:03d}.html`` — written to ``self.output_dir``.
-            The file is fully self-contained (plotly.js bundled) so it opens
-            correctly without a server.
+            ``embedding_3d_epoch_{epoch:03d}.html`` — self-contained HTML (plotly.js
+            bundled) written to ``self.output_dir``.
         """
         try:
             import umap
@@ -876,93 +886,169 @@ class EmbeddingVisualizer:
 
         label_to_group, group_to_color = self._get_group_colors(labels)
 
-        # Assign group for each sample
-        groups = [label_to_group.get(l, l) for l in labels]
+        # Drop excluded groups
+        if exclude_groups:
+            keep = [label_to_group.get(l, l) not in exclude_groups for l in labels]
+            n_dropped = len(labels) - sum(keep)
+            if n_dropped:
+                print(f"  Excluding {n_dropped} samples from groups: {exclude_groups}")
+            imu_embeddings = imu_embeddings[keep]
+            text_embeddings = text_embeddings[keep]
+            labels = [l for l, k in zip(labels, keep) if k]
+            label_to_group, group_to_color = self._get_group_colors(labels)
 
-        # Joint UMAP 3D projection
-        all_embeddings = np.vstack([imu_embeddings, text_embeddings])
-        print(f"  Computing 3D UMAP projection (n_neighbors={self.n_neighbors}, min_dist={self.min_dist})...")
+        labels_arr = np.array(labels)
+        unique_labels = sorted(set(labels))
+
+        # Build per-label centroids and re-normalise
+        imu_centroids = np.zeros((len(unique_labels), imu_embeddings.shape[1]))
+        text_centroids = np.zeros((len(unique_labels), text_embeddings.shape[1]))
+        for i, lbl in enumerate(unique_labels):
+            mask = labels_arr == lbl
+            imu_centroids[i] = imu_embeddings[mask].mean(axis=0)
+            text_centroids[i] = text_embeddings[mask].mean(axis=0)
+        imu_centroids /= np.maximum(np.linalg.norm(imu_centroids, axis=1, keepdims=True), 1e-8)
+        text_centroids /= np.maximum(np.linalg.norm(text_centroids, axis=1, keepdims=True), 1e-8)
+
+        centroid_groups = np.array([label_to_group.get(l, l) for l in unique_labels])
+        nn_accuracy = self._compute_nn_accuracy(imu_embeddings, text_embeddings, labels)
+
+        # 3D UMAP on centroids
+        n = len(imu_centroids)
+        all_centroids = np.vstack([imu_centroids, text_centroids])
+        actual_neighbors = min(n_neighbors, len(all_centroids) - 1)
+        print(f"  Computing 3D UMAP on {len(all_centroids)} label centroids "
+              f"(n_neighbors={actual_neighbors}, min_dist={min_dist})...")
         reducer = umap.UMAP(
-            n_neighbors=self.n_neighbors,
-            min_dist=self.min_dist,
+            n_neighbors=actual_neighbors,
+            min_dist=min_dist,
             n_components=3,
             metric=umap_metric,
             random_state=42,
         )
-        embedding_3d = reducer.fit_transform(all_embeddings)
-        imu_3d = embedding_3d[:len(imu_embeddings)]
-        text_3d = embedding_3d[len(imu_embeddings):]
+        proj = reducer.fit_transform(all_centroids)
+        imu_proj = proj[:n]
+        text_proj = proj[n:]
 
-        # Build Plotly figure — one trace per (group, modality) for legend filtering
         fig = go.Figure()
         groups_sorted = sorted(group_to_color.keys())
 
         for group_name in groups_sorted:
             color = group_to_color[group_name]
+            gmask = centroid_groups == group_name
+            if not gmask.any():
+                continue
 
-            # IMU points for this group
-            mask = np.array([g == group_name for g in groups])
-            if mask.any():
-                idx = np.where(mask)[0]
-                hover = [f"Label: {labels[i]}<br>Group: {group_name}<br>Idx: {i}" for i in idx]
-                fig.add_trace(go.Scatter3d(
-                    x=imu_3d[mask, 0], y=imu_3d[mask, 1], z=imu_3d[mask, 2],
-                    mode='markers',
-                    marker=dict(size=3, color=color, opacity=0.5),
-                    name=f'{group_name} (IMU)',
-                    legendgroup=group_name,
-                    hovertext=hover,
-                    hoverinfo='text',
-                ))
+            gi = np.where(gmask)[0]   # indices of centroids in this group
+            first_in_group = True     # only the first trace shows in legend
 
-            # Text points for this group (deduplicate identical labels)
-            text_mask = mask
-            if text_mask.any():
-                idx = np.where(text_mask)[0]
-                # Deduplicate: keep first occurrence of each label within this group
-                seen_labels = set()
-                dedup_idx = []
-                for i in idx:
-                    if labels[i] not in seen_labels:
-                        seen_labels.add(labels[i])
-                        dedup_idx.append(i)
-                dedup_idx = np.array(dedup_idx)
-                hover = [f"Label: {labels[i]}<br>Group: {group_name}" for i in dedup_idx]
-                text_labels = [labels[i] for i in dedup_idx]
-                fig.add_trace(go.Scatter3d(
-                    x=text_3d[dedup_idx, 0], y=text_3d[dedup_idx, 1], z=text_3d[dedup_idx, 2],
-                    mode='markers+text',
-                    marker=dict(size=8, color=color, opacity=1.0, symbol='diamond'),
-                    text=text_labels,
-                    textposition='top center',
-                    textfont=dict(size=9, color=color),
-                    name=f'{group_name} (Text)',
-                    legendgroup=group_name,
-                    hovertext=hover,
-                    hoverinfo='text',
-                ))
+            # --- Connecting lines (IMU centroid → text centroid per label) ---
+            lx, ly, lz = [], [], []
+            for i in gi:
+                lx += [imu_proj[i, 0], text_proj[i, 0], None]
+                ly += [imu_proj[i, 1], text_proj[i, 1], None]
+                lz += [imu_proj[i, 2], text_proj[i, 2], None]
+            fig.add_trace(go.Scatter3d(
+                x=lx, y=ly, z=lz,
+                mode='lines',
+                line=dict(color=color, width=2),
+                opacity=0.35,
+                name=group_name,
+                legendgroup=group_name,
+                showlegend=False,
+                hoverinfo='skip',
+            ))
 
-        # Layout
-        title_parts = [f'IMU-Text Embedding Alignment — 3D UMAP (Epoch {epoch})']
+            # --- IMU centroids (large spheres) ---
+            hover_imu = [f"<b>{unique_labels[i]}</b><br>Group: {group_name}<br>IMU centroid"
+                         for i in gi]
+            fig.add_trace(go.Scatter3d(
+                x=imu_proj[gi, 0], y=imu_proj[gi, 1], z=imu_proj[gi, 2],
+                mode='markers',
+                marker=dict(size=9, color=color, opacity=0.85,
+                            line=dict(color='white', width=1)),
+                name=group_name,
+                legendgroup=group_name,
+                showlegend=first_in_group,
+                hovertext=hover_imu,
+                hoverinfo='text',
+            ))
+            first_in_group = False
+
+            # --- Text centroids (smaller diamonds) ---
+            hover_txt = [f"<b>{unique_labels[i]}</b><br>Group: {group_name}<br>Text centroid"
+                         for i in gi]
+            fig.add_trace(go.Scatter3d(
+                x=text_proj[gi, 0], y=text_proj[gi, 1], z=text_proj[gi, 2],
+                mode='markers+text',
+                marker=dict(size=5, color=color, opacity=0.95, symbol='diamond',
+                            line=dict(color='black', width=0.5)),
+                text=[unique_labels[i].replace('_', ' ') for i in gi],
+                textposition='top center',
+                textfont=dict(size=8, color='#333333'),
+                name=group_name,
+                legendgroup=group_name,
+                showlegend=False,
+                hovertext=hover_txt,
+                hoverinfo='text',
+            ))
+
+            # --- Bold group-name label at the IMU group centroid ---
+            cx = imu_proj[gi, 0].mean()
+            cy = imu_proj[gi, 1].mean()
+            cz = imu_proj[gi, 2].mean()
+            fig.add_trace(go.Scatter3d(
+                x=[cx], y=[cy], z=[cz],
+                mode='text',
+                text=[f'<b>{group_name.replace("_", " ")}</b>'],
+                textfont=dict(size=11, color=color),
+                name=group_name,
+                legendgroup=group_name,
+                showlegend=False,
+                hoverinfo='skip',
+            ))
+
+        # Metrics annotation (bottom-left corner of the canvas)
+        metrics_lines = [f'Epoch {epoch}', f'NN Acc: {nn_accuracy:.1%}']
         if metrics:
-            metric_strs = [f'{k}: {v:.3f}' for k, v in metrics.items()]
-            title_parts.append(' | '.join(metric_strs))
+            if 'pos_sim' in metrics:
+                metrics_lines.append(f"Pos Sim: {metrics['pos_sim']:.3f}")
+            if 'sim_gap' in metrics:
+                metrics_lines.append(f"Sim Gap: {metrics['sim_gap']:.3f}")
+        fig.add_annotation(
+            xref='paper', yref='paper', x=0.01, y=0.01,
+            text='<br>'.join(metrics_lines),
+            showarrow=False, align='left',
+            bgcolor='rgba(255,255,255,0.85)',
+            bordercolor='#cccccc', borderwidth=1,
+            font=dict(size=11, color='#333333'),
+        )
+
+        title = (f'IMU–Text Embedding Alignment — 3D UMAP (Epoch {epoch})<br>'
+                 f'<sup>Spheres: IMU centroids &nbsp;|&nbsp; Diamonds: Text centroids &nbsp;|&nbsp; '
+                 f'Lines: Matched pairs</sup>')
         fig.update_layout(
-            title='<br>'.join(title_parts),
+            title=dict(text=title, font=dict(size=15, color='#222222')),
             scene=dict(
                 xaxis_title='UMAP 1',
                 yaxis_title='UMAP 2',
                 zaxis_title='UMAP 3',
-                bgcolor='rgb(20, 20, 30)',
+                bgcolor='rgb(245, 245, 248)',
+                xaxis=dict(backgroundcolor='rgb(235,235,240)', gridcolor='white'),
+                yaxis=dict(backgroundcolor='rgb(235,235,240)', gridcolor='white'),
+                zaxis=dict(backgroundcolor='rgb(225,225,232)', gridcolor='white'),
             ),
-            paper_bgcolor='rgb(20, 20, 30)',
-            font=dict(color='white'),
+            paper_bgcolor='white',
+            font=dict(color='#222222'),
             legend=dict(
-                bgcolor='rgba(40,40,50,0.8)',
+                bgcolor='rgba(255,255,255,0.9)',
+                bordercolor='#cccccc',
+                borderwidth=1,
                 font=dict(size=10),
                 itemsizing='constant',
+                title=dict(text='Activity Group', font=dict(size=11)),
             ),
-            margin=dict(l=0, r=0, t=60, b=0),
+            margin=dict(l=0, r=0, t=80, b=0),
         )
 
         output_path = self.output_dir / f'embedding_3d_epoch_{epoch:03d}.html'
