@@ -1,6 +1,6 @@
 # Benchmark Data for TSFM vs Baselines
 
-Unified benchmark comparing TSFM against LIMU-BERT, LanHAR, and CrossHAR on 14 HAR datasets.
+Unified benchmark comparing TSFM against LiMU-BERT, MOMENT, CrossHAR, and LanHAR on 14 HAR datasets.
 
 ## Quick Start
 
@@ -33,18 +33,25 @@ benchmark_data/
 │   └── ... (14 datasets)
 ├── processed/
 │   ├── tsfm/                   # Symlinks to data/{dataset}
-│   ├── limubert/               # LIMU-BERT .npy format
+│   ├── tsfm_eval/              # Native-rate .npy files for TSFM evaluation
+│   │   ├── motionsense/
+│   │   │   ├── data_native.npy
+│   │   │   ├── label_native.npy
+│   │   │   └── metadata.json
+│   │   └── ...
+│   ├── limubert/               # LIMU-BERT .npy format (20Hz, used by all baselines)
 │   │   ├── uci_har/
 │   │   │   ├── data_20_120.npy
 │   │   │   ├── label_20_120.npy
 │   │   │   └── mapping.json
 │   │   └── ...
-│   ├── lanhar/                 # For collaborator to fill
-│   └── crosshar/               # For collaborator to fill
+│   ├── lanhar/                 # LanHAR descriptions
+│   └── crosshar/               # CrossHAR processed data
 └── scripts/
     ├── export_raw.py
     ├── preprocess_limubert.py
-    └── preprocess_tsfm.py
+    ├── preprocess_tsfm.py
+    └── preprocess_tsfm_eval.py
 ```
 
 ## Datasets
@@ -66,7 +73,7 @@ benchmark_data/
 
 *Subsampled from original count via stratified sampling.
 
-### Zero-Shot (4 datasets, TSFM only)
+### Zero-Shot Test (4 datasets, all 5 models evaluated)
 
 | Dataset | Sessions | Activities | Difficulty |
 |---------|----------|------------|------------|

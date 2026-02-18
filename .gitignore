@@ -21,24 +21,50 @@ venv/
 .vscode/
 .idea/
 
-# Logs and outputs
-*.log
-*.out
+# Tool state
+.serena
+.claude
+.pytest_cache/
 
-# Data or debug artifacts
+# Debug artifacts
 debug_plots/
-data
-checkpoints/
 debug_stats
 debug
 debug_eval
 comparison
-training_output
-.serena
-.claude
-test_output/
-docs/*
-!docs/baselines/
-TSFM__MINSys_ACMconference_template_ (3).pdf
+
+# Cloned baseline repos (7.5 GB)
 auxiliary_repos/
-benchmark_data/
+
+# PDF drafts
+*.pdf
+
+# ──────────────────────────────────────────────────
+# Large binary data — ignore by extension/pattern
+# Scripts, configs, docs, plots are all tracked
+# ──────────────────────────────────────────────────
+
+# Raw dataset sessions (32 GB of parquet sensor data)
+data/*/sessions/
+data/raw/
+
+# Benchmark bulk data (CSVs and NumPy arrays)
+benchmark_data/raw/**/*.csv
+benchmark_data/processed/**/*.npy
+
+# LanHAR pre-generated descriptions (large CSVs)
+benchmark_data/processed/lanhar_descriptions/
+
+# TSFM session symlinks (point to data/ which is ignored)
+benchmark_data/processed/tsfm/
+
+# Model checkpoints and cached classifiers
+training_output/**/*.pt
+test_output/**/*.pt
+test_output/**/*.pkl
+
+# Training and eval logs
+*.log
+*.out
+test_output/**/*.log
+test_output/**/*.txt

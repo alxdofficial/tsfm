@@ -1,0 +1,32 @@
+{
+  "activity_to_idx": {
+    "climbing_stairs": 0,
+    "cycling": 1,
+    "frontal_elevation_arms": 2,
+    "jogging": 3,
+    "jump_front_back": 4,
+    "knees_bending": 5,
+    "lying": 6,
+    "running": 7,
+    "sitting": 8,
+    "standing": 9,
+    "waist_bends_forward": 10,
+    "walking": 11
+  },
+  "subject_to_idx": {
+    "1": 0,
+    "10": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "7": 7,
+    "8": 8,
+    "9": 9
+  },
+  "window_size": 120,
+  "sampling_rate_hz": 20,
+  "stride": 120,
+  "has_gyro": true
+}

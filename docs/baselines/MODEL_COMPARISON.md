@@ -9,7 +9,7 @@ novelties contribute to TSFM's performance advantages and where tradeoffs exist.
 
 | Model | Parameters | Embed Dim | Architecture in One Sentence |
 |-------|----------:|:---------:|------------------------------|
-| **TSFM** | ~5M | 384 | Dual-branch (temporal + cross-channel) Transformer with CLIP-style contrastive alignment to frozen SentenceBERT text embeddings, using soft targets, a memory bank, and variable-length patch tokenization. |
+| **TSFM** | ~19.5M | 384 | Dual-branch (temporal + cross-channel) Transformer with CLIP-style contrastive alignment to frozen SentenceBERT text embeddings, using soft targets, a memory bank, and variable-length patch tokenization. |
 | **LiMU-BERT** | ~62K | 72 | Single shared-parameter Transformer trained via masked reconstruction on 20-step IMU sub-windows; predicts masked timesteps from context. |
 | **MOMENT** | ~341M | 6144 | T5-Large encoder (24 layers, 1024-dim) pretrained on 13 domains of general time-series data via masked patch reconstruction; processes each IMU channel independently. |
 | **CrossHAR** | ~57K | 72 | Single shared-parameter Transformer with hierarchical pretraining: masked reconstruction first, then contrastive learning added; uses channel permutation augmentation. |
@@ -219,7 +219,7 @@ LiMU-BERT's core weakness is its extreme compactness (~62K parameters with param
 |---------------|-----------------|
 | Cross-channel attention learns sensor correlations natively | 341M parameters provide massive representational capacity |
 | Text alignment enables genuine zero-shot | 6144-dim embeddings give more capacity for downstream classifiers |
-| Compact model (~5M params), fast inference | Pretrained on 13 diverse time-series domains (broad temporal pattern knowledge) |
+| Compact model (~19.5M params), fast inference | Pretrained on 13 diverse time-series domains (broad temporal pattern knowledge) |
 | No wasted computation on padding | N/A |
 | Soft contrastive targets handle synonym labels | N/A |
 
@@ -273,7 +273,7 @@ TSFM is pretrained exclusively on 10 HAR datasets. Unlike MOMENT (pretrained on 
 
 ### 2. Larger Than LiMU-BERT/CrossHAR, Not Edge-Deployable
 
-TSFM (~5M parameters) is ~80x larger than LiMU-BERT (~62K) and CrossHAR (~57K). While still much smaller than MOMENT (~341M), TSFM is not suitable for on-device deployment on resource-constrained wearables. LiMU-BERT and CrossHAR were explicitly designed for mobile/edge inference.
+TSFM (~19.5M parameters) is ~300x larger than LiMU-BERT (~62K) and CrossHAR (~57K). While still much smaller than MOMENT (~341M), TSFM is not suitable for on-device deployment on resource-constrained wearables. LiMU-BERT and CrossHAR were explicitly designed for mobile/edge inference.
 
 ### 3. Requires Text Encoder at Inference
 

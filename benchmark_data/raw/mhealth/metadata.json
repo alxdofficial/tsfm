@@ -1,0 +1,73 @@
+{
+  "dataset_name": "MHEALTH",
+  "sampling_rate_hz": 50,
+  "channels": [
+    "acc_x",
+    "acc_y",
+    "acc_z",
+    "gyro_x",
+    "gyro_y",
+    "gyro_z"
+  ],
+  "extra_channels": [
+    "ecg_lead1",
+    "ecg_lead2",
+    "ankle_acc_x",
+    "ankle_acc_y",
+    "ankle_acc_z",
+    "ankle_mag_x",
+    "ankle_mag_y",
+    "ankle_mag_z",
+    "arm_acc_x",
+    "arm_acc_y",
+    "arm_acc_z",
+    "arm_gyro_x",
+    "arm_gyro_y",
+    "arm_gyro_z",
+    "arm_mag_x",
+    "arm_mag_y",
+    "arm_mag_z"
+  ],
+  "activities": [
+    "climbing_stairs",
+    "cycling",
+    "frontal_elevation_arms",
+    "jogging",
+    "jump_front_back",
+    "knees_bending",
+    "lying",
+    "running",
+    "sitting",
+    "standing",
+    "waist_bends_forward",
+    "walking"
+  ],
+  "subjects": [
+    1,
+    10,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "placement": "multi-body",
+  "num_sessions_original": 2029,
+  "train_subjects": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "test_subjects": [
+    8,
+    9,
+    10
+  ]
+}

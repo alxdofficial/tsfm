@@ -1,0 +1,266 @@
+{
+  "dataset_name": "PAMAP2",
+  "description": "Physical activity monitoring with 3 IMUs (hand, chest, ankle) and heart rate. 9 subjects performing 18 activities including walking, running, cycling, and household tasks.",
+  "channels": [
+    {
+      "name": "heart_rate",
+      "description": "Heart rate from chest monitor",
+      "sampling_rate_hz": 9.0
+    },
+    {
+      "name": "hand_temp",
+      "description": "Temperature from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_acc16_x",
+      "description": "Acceleration x-axis (\u00b116g scale) from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_acc16_y",
+      "description": "Acceleration y-axis (\u00b116g scale) from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_acc16_z",
+      "description": "Acceleration z-axis (\u00b116g scale) from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_acc6_x",
+      "description": "Acceleration x-axis (\u00b16g scale) from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_acc6_y",
+      "description": "Acceleration y-axis (\u00b16g scale) from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_acc6_z",
+      "description": "Acceleration z-axis (\u00b16g scale) from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_gyro_x",
+      "description": "Angular velocity x-axis from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_gyro_y",
+      "description": "Angular velocity y-axis from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_gyro_z",
+      "description": "Angular velocity z-axis from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_mag_x",
+      "description": "Magnetic field x-axis from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_mag_y",
+      "description": "Magnetic field y-axis from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_mag_z",
+      "description": "Magnetic field z-axis from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_ori_1",
+      "description": "Orientation quaternion component 1 from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_ori_2",
+      "description": "Orientation quaternion component 2 from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_ori_3",
+      "description": "Orientation quaternion component 3 from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "hand_ori_4",
+      "description": "Orientation quaternion component 4 from wrist-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_temp",
+      "description": "Temperature from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_acc16_x",
+      "description": "Acceleration x-axis (\u00b116g scale) from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_acc16_y",
+      "description": "Acceleration y-axis (\u00b116g scale) from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_acc16_z",
+      "description": "Acceleration z-axis (\u00b116g scale) from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_acc6_x",
+      "description": "Acceleration x-axis (\u00b16g scale) from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_acc6_y",
+      "description": "Acceleration y-axis (\u00b16g scale) from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_acc6_z",
+      "description": "Acceleration z-axis (\u00b16g scale) from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_gyro_x",
+      "description": "Angular velocity x-axis from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_gyro_y",
+      "description": "Angular velocity y-axis from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_gyro_z",
+      "description": "Angular velocity z-axis from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_mag_x",
+      "description": "Magnetic field x-axis from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_mag_y",
+      "description": "Magnetic field y-axis from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_mag_z",
+      "description": "Magnetic field z-axis from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_ori_1",
+      "description": "Orientation quaternion component 1 from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_ori_2",
+      "description": "Orientation quaternion component 2 from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_ori_3",
+      "description": "Orientation quaternion component 3 from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "chest_ori_4",
+      "description": "Orientation quaternion component 4 from chest-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_temp",
+      "description": "Temperature from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_acc16_x",
+      "description": "Acceleration x-axis (\u00b116g scale) from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_acc16_y",
+      "description": "Acceleration y-axis (\u00b116g scale) from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_acc16_z",
+      "description": "Acceleration z-axis (\u00b116g scale) from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_acc6_x",
+      "description": "Acceleration x-axis (\u00b16g scale) from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_acc6_y",
+      "description": "Acceleration y-axis (\u00b16g scale) from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_acc6_z",
+      "description": "Acceleration z-axis (\u00b16g scale) from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_gyro_x",
+      "description": "Angular velocity x-axis from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_gyro_y",
+      "description": "Angular velocity y-axis from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_gyro_z",
+      "description": "Angular velocity z-axis from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_mag_x",
+      "description": "Magnetic field x-axis from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_mag_y",
+      "description": "Magnetic field y-axis from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_mag_z",
+      "description": "Magnetic field z-axis from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_ori_1",
+      "description": "Orientation quaternion component 1 from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_ori_2",
+      "description": "Orientation quaternion component 2 from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_ori_3",
+      "description": "Orientation quaternion component 3 from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "ankle_ori_4",
+      "description": "Orientation quaternion component 4 from ankle-mounted IMU",
+      "sampling_rate_hz": 100.0
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "dataset_name": "VTT-ConIoT",
+  "description": "VTT-ConIoT: Construction Workers Activity Recognition Dataset. 13 workers performing 16 construction activities. IMU sensors at hip position. Triaxial accelerometer, gyroscope, and magnetometer resampled to 50Hz.",
+  "source": "https://zenodo.org/record/4683703",
+  "num_subjects": 13,
+  "body_position": "hip",
+  "channels": [
+    {
+      "name": "acc_x",
+      "description": "Accelerometer X-axis (hip)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_y",
+      "description": "Accelerometer Y-axis (hip)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_z",
+      "description": "Accelerometer Z-axis (hip)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_x",
+      "description": "Gyroscope X-axis (hip)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_y",
+      "description": "Gyroscope Y-axis (hip)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_z",
+      "description": "Gyroscope Z-axis (hip)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "mag_x",
+      "description": "Magnetometer X-axis (hip)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "mag_y",
+      "description": "Magnetometer Y-axis (hip)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "mag_z",
+      "description": "Magnetometer Z-axis (hip)",
+      "sampling_rate_hz": 50.0
+    }
+  ]
+}

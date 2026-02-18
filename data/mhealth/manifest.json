@@ -1,0 +1,121 @@
+{
+  "dataset_name": "MHEALTH",
+  "description": "Mobile health monitoring with 3 wearable sensors (chest, left ankle, right wrist). 10 subjects performing 12 activities. Includes accelerometer, gyroscope, magnetometer, and 2-lead ECG.",
+  "channels": [
+    {
+      "name": "chest_acc_x",
+      "description": "Chest acceleration X-axis from wearable sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "chest_acc_y",
+      "description": "Chest acceleration Y-axis from wearable sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "chest_acc_z",
+      "description": "Chest acceleration Z-axis from wearable sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "ecg_lead1",
+      "description": "ECG lead 1 from chest sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "ecg_lead2",
+      "description": "ECG lead 2 from chest sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "ankle_acc_x",
+      "description": "Left ankle acceleration X-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "ankle_acc_y",
+      "description": "Left ankle acceleration Y-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "ankle_acc_z",
+      "description": "Left ankle acceleration Z-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "ankle_gyro_x",
+      "description": "Left ankle angular velocity X-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "ankle_gyro_y",
+      "description": "Left ankle angular velocity Y-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "ankle_gyro_z",
+      "description": "Left ankle angular velocity Z-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "ankle_mag_x",
+      "description": "Left ankle magnetic field X-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "ankle_mag_y",
+      "description": "Left ankle magnetic field Y-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "ankle_mag_z",
+      "description": "Left ankle magnetic field Z-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "arm_acc_x",
+      "description": "Right wrist acceleration X-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "arm_acc_y",
+      "description": "Right wrist acceleration Y-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "arm_acc_z",
+      "description": "Right wrist acceleration Z-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "arm_gyro_x",
+      "description": "Right wrist angular velocity X-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "arm_gyro_y",
+      "description": "Right wrist angular velocity Y-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "arm_gyro_z",
+      "description": "Right wrist angular velocity Z-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "arm_mag_x",
+      "description": "Right wrist magnetic field X-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "arm_mag_y",
+      "description": "Right wrist magnetic field Y-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "arm_mag_z",
+      "description": "Right wrist magnetic field Z-axis",
+      "sampling_rate_hz": 50.0
+    }
+  ]
+}

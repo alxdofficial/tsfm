@@ -1,0 +1,38 @@
+{
+  "dataset_name": "KU-HAR",
+  "description": "KU-HAR (Korea University Human Activity Recognition) dataset. 90 subjects performing 18 activities including walking, running, jumping, stairs, sitting, standing, lying, and exercises (push-ups, sit-ups). Smartphone IMU at 100Hz with triaxial accelerometer and gyroscope.",
+  "source": "https://www.kaggle.com/datasets/niloy333/kuhar",
+  "num_subjects": 90,
+  "channels": [
+    {
+      "name": "acc_x",
+      "description": "Smartphone accelerometer X-axis (front trouser pocket)",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "acc_y",
+      "description": "Smartphone accelerometer Y-axis (front trouser pocket)",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "acc_z",
+      "description": "Smartphone accelerometer Z-axis (front trouser pocket)",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "gyro_x",
+      "description": "Smartphone gyroscope X-axis (front trouser pocket)",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "gyro_y",
+      "description": "Smartphone gyroscope Y-axis (front trouser pocket)",
+      "sampling_rate_hz": 100.0
+    },
+    {
+      "name": "gyro_z",
+      "description": "Smartphone gyroscope Z-axis (front trouser pocket)",
+      "sampling_rate_hz": 100.0
+    }
+  ]
+}

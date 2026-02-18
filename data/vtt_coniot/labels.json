@@ -1,0 +1,623 @@
+{
+  "u03_laying_back": [
+    "laying_back"
+  ],
+  "u03_roll_painting": [
+    "roll_painting"
+  ],
+  "u11_walking_straight": [
+    "walking_straight"
+  ],
+  "u07_walking_straight": [
+    "walking_straight"
+  ],
+  "u01_raising_hands": [
+    "raising_hands"
+  ],
+  "u11_walking_winding": [
+    "walking_winding"
+  ],
+  "u05_leveling_paint": [
+    "leveling_paint"
+  ],
+  "u05_walking_winding": [
+    "walking_winding"
+  ],
+  "u11_stairs": [
+    "stairs"
+  ],
+  "u10_raising_hands": [
+    "raising_hands"
+  ],
+  "u07_raising_hands": [
+    "raising_hands"
+  ],
+  "u04_leveling_paint": [
+    "leveling_paint"
+  ],
+  "u01_spraying_paint": [
+    "spraying_paint"
+  ],
+  "u02_kneeling_work": [
+    "kneeling_work"
+  ],
+  "u10_laying_back": [
+    "laying_back"
+  ],
+  "u13_carrying": [
+    "carrying"
+  ],
+  "u07_sitting": [
+    "sitting"
+  ],
+  "u01_lifting": [
+    "lifting"
+  ],
+  "u10_walking_straight": [
+    "walking_straight"
+  ],
+  "u05_roll_painting": [
+    "roll_painting"
+  ],
+  "u01_standing_work": [
+    "standing_work"
+  ],
+  "u08_roll_painting": [
+    "roll_painting"
+  ],
+  "u11_climbing_ladder": [
+    "climbing_ladder"
+  ],
+  "u03_stairs": [
+    "stairs"
+  ],
+  "u02_jumping_down": [
+    "jumping_down"
+  ],
+  "u10_kneeling_work": [
+    "kneeling_work"
+  ],
+  "u06_laying_back": [
+    "laying_back"
+  ],
+  "u09_stairs": [
+    "stairs"
+  ],
+  "u09_carrying": [
+    "carrying"
+  ],
+  "u12_lifting": [
+    "lifting"
+  ],
+  "u01_laying_back": [
+    "laying_back"
+  ],
+  "u11_laying_back": [
+    "laying_back"
+  ],
+  "u09_spraying_paint": [
+    "spraying_paint"
+  ],
+  "u10_carrying": [
+    "carrying"
+  ],
+  "u04_carrying": [
+    "carrying"
+  ],
+  "u06_climbing_ladder": [
+    "climbing_ladder"
+  ],
+  "u06_kneeling_work": [
+    "kneeling_work"
+  ],
+  "u02_spraying_paint": [
+    "spraying_paint"
+  ],
+  "u02_stairs": [
+    "stairs"
+  ],
+  "u13_sitting": [
+    "sitting"
+  ],
+  "u09_standing_work": [
+    "standing_work"
+  ],
+  "u13_walking_winding": [
+    "walking_winding"
+  ],
+  "u06_pushing_cart": [
+    "pushing_cart"
+  ],
+  "u09_walking_straight": [
+    "walking_straight"
+  ],
+  "u08_climbing_ladder": [
+    "climbing_ladder"
+  ],
+  "u06_walking_winding": [
+    "walking_winding"
+  ],
+  "u02_lifting": [
+    "lifting"
+  ],
+  "u06_sitting": [
+    "sitting"
+  ],
+  "u11_standing_work": [
+    "standing_work"
+  ],
+  "u13_jumping_down": [
+    "jumping_down"
+  ],
+  "u13_spraying_paint": [
+    "spraying_paint"
+  ],
+  "u01_pushing_cart": [
+    "pushing_cart"
+  ],
+  "u08_stairs": [
+    "stairs"
+  ],
+  "u03_climbing_ladder": [
+    "climbing_ladder"
+  ],
+  "u02_walking_straight": [
+    "walking_straight"
+  ],
+  "u07_laying_back": [
+    "laying_back"
+  ],
+  "u03_pushing_cart": [
+    "pushing_cart"
+  ],
+  "u03_spraying_paint": [
+    "spraying_paint"
+  ],
+  "u01_roll_painting": [
+    "roll_painting"
+  ],
+  "u13_leveling_paint": [
+    "leveling_paint"
+  ],
+  "u09_pushing_cart": [
+    "pushing_cart"
+  ],
+  "u01_kneeling_work": [
+    "kneeling_work"
+  ],
+  "u09_kneeling_work": [
+    "kneeling_work"
+  ],
+  "u05_standing_work": [
+    "standing_work"
+  ],
+  "u08_spraying_paint": [
+    "spraying_paint"
+  ],
+  "u07_spraying_paint": [
+    "spraying_paint"
+  ],
+  "u03_walking_winding": [
+    "walking_winding"
+  ],
+  "u11_jumping_down": [
+    "jumping_down"
+  ],
+  "u04_sitting": [
+    "sitting"
+  ],
+  "u04_stairs": [
+    "stairs"
+  ],
+  "u08_sitting": [
+    "sitting"
+  ],
+  "u12_stairs": [
+    "stairs"
+  ],
+  "u12_pushing_cart": [
+    "pushing_cart"
+  ],
+  "u07_standing_work": [
+    "standing_work"
+  ],
+  "u10_spraying_paint": [
+    "spraying_paint"
+  ],
+  "u03_lifting": [
+    "lifting"
+  ],
+  "u09_sitting": [
+    "sitting"
+  ],
+  "u13_lifting": [
+    "lifting"
+  ],
+  "u06_leveling_paint": [
+    "leveling_paint"
+  ],
+  "u10_pushing_cart": [
+    "pushing_cart"
+  ],
+  "u09_laying_back": [
+    "laying_back"
+  ],
+  "u13_stairs": [
+    "stairs"
+  ],
+  "u08_raising_hands": [
+    "raising_hands"
+  ],
+  "u07_walking_winding": [
+    "walking_winding"
+  ],
+  "u01_walking_winding": [
+    "walking_winding"
+  ],
+  "u12_sitting": [
+    "sitting"
+  ],
+  "u09_leveling_paint": [
+    "leveling_paint"
+  ],
+  "u13_standing_work": [
+    "standing_work"
+  ],
+  "u05_sitting": [
+    "sitting"
+  ],
+  "u02_standing_work": [
+    "standing_work"
+  ],
+  "u05_climbing_ladder": [
+    "climbing_ladder"
+  ],
+  "u10_standing_work": [
+    "standing_work"
+  ],
+  "u03_raising_hands": [
+    "raising_hands"
+  ],
+  "u11_pushing_cart": [
+    "pushing_cart"
+  ],
+  "u03_walking_straight": [
+    "walking_straight"
+  ],
+  "u04_lifting": [
+    "lifting"
+  ],
+  "u02_roll_painting": [
+    "roll_painting"
+  ],
+  "u08_lifting": [
+    "lifting"
+  ],
+  "u08_kneeling_work": [
+    "kneeling_work"
+  ],
+  "u04_raising_hands": [
+    "raising_hands"
+  ],
+  "u09_raising_hands": [
+    "raising_hands"
+  ],
+  "u10_leveling_paint": [
+    "leveling_paint"
+  ],
+  "u12_kneeling_work": [
+    "kneeling_work"
+  ],
+  "u05_spraying_paint": [
+    "spraying_paint"
+  ],
+  "u01_climbing_ladder": [
+    "climbing_ladder"
+  ],
+  "u07_jumping_down": [
+    "jumping_down"
+  ],
+  "u12_carrying": [
+    "carrying"
+  ],
+  "u09_jumping_down": [
+    "jumping_down"
+  ],
+  "u04_jumping_down": [
+    "jumping_down"
+  ],
+  "u08_walking_winding": [
+    "walking_winding"
+  ],
+  "u07_lifting": [
+    "lifting"
+  ],
+  "u11_lifting": [
+    "lifting"
+  ],
+  "u06_raising_hands": [
+    "raising_hands"
+  ],
+  "u08_walking_straight": [
+    "walking_straight"
+  ],
+  "u12_raising_hands": [
+    "raising_hands"
+  ],
+  "u03_standing_work": [
+    "standing_work"
+  ],
+  "u01_leveling_paint": [
+    "leveling_paint"
+  ],
+  "u10_sitting": [
+    "sitting"
+  ],
+  "u06_stairs": [
+    "stairs"
+  ],
+  "u07_climbing_ladder": [
+    "climbing_ladder"
+  ],
+  "u11_kneeling_work": [
+    "kneeling_work"
+  ],
+  "u13_raising_hands": [
+    "raising_hands"
+  ],
+  "u12_walking_winding": [
+    "walking_winding"
+  ],
+  "u11_spraying_paint": [
+    "spraying_paint"
+  ],
+  "u07_leveling_paint": [
+    "leveling_paint"
+  ],
+  "u05_pushing_cart": [
+    "pushing_cart"
+  ],
+  "u07_carrying": [
+    "carrying"
+  ],
+  "u09_climbing_ladder": [
+    "climbing_ladder"
+  ],
+  "u05_laying_back": [
+    "laying_back"
+  ],
+  "u02_leveling_paint": [
+    "leveling_paint"
+  ],
+  "u10_walking_winding": [
+    "walking_winding"
+  ],
+  "u04_spraying_paint": [
+    "spraying_paint"
+  ],
+  "u12_standing_work": [
+    "standing_work"
+  ],
+  "u11_leveling_paint": [
+    "leveling_paint"
+  ],
+  "u05_kneeling_work": [
+    "kneeling_work"
+  ],
+  "u13_kneeling_work": [
+    "kneeling_work"
+  ],
+  "u04_pushing_cart": [
+    "pushing_cart"
+  ],
+  "u02_carrying": [
+    "carrying"
+  ],
+  "u03_leveling_paint": [
+    "leveling_paint"
+  ],
+  "u08_leveling_paint": [
+    "leveling_paint"
+  ],
+  "u06_spraying_paint": [
+    "spraying_paint"
+  ],
+  "u03_jumping_down": [
+    "jumping_down"
+  ],
+  "u07_stairs": [
+    "stairs"
+  ],
+  "u08_standing_work": [
+    "standing_work"
+  ],
+  "u12_roll_painting": [
+    "roll_painting"
+  ],
+  "u05_stairs": [
+    "stairs"
+  ],
+  "u09_walking_winding": [
+    "walking_winding"
+  ],
+  "u02_sitting": [
+    "sitting"
+  ],
+  "u10_lifting": [
+    "lifting"
+  ],
+  "u12_jumping_down": [
+    "jumping_down"
+  ],
+  "u12_walking_straight": [
+    "walking_straight"
+  ],
+  "u03_carrying": [
+    "carrying"
+  ],
+  "u01_sitting": [
+    "sitting"
+  ],
+  "u01_stairs": [
+    "stairs"
+  ],
+  "u02_pushing_cart": [
+    "pushing_cart"
+  ],
+  "u13_roll_painting": [
+    "roll_painting"
+  ],
+  "u08_jumping_down": [
+    "jumping_down"
+  ],
+  "u05_raising_hands": [
+    "raising_hands"
+  ],
+  "u09_roll_painting": [
+    "roll_painting"
+  ],
+  "u12_spraying_paint": [
+    "spraying_paint"
+  ],
+  "u02_walking_winding": [
+    "walking_winding"
+  ],
+  "u04_roll_painting": [
+    "roll_painting"
+  ],
+  "u08_laying_back": [
+    "laying_back"
+  ],
+  "u06_roll_painting": [
+    "roll_painting"
+  ],
+  "u06_walking_straight": [
+    "walking_straight"
+  ],
+  "u11_raising_hands": [
+    "raising_hands"
+  ],
+  "u05_lifting": [
+    "lifting"
+  ],
+  "u08_pushing_cart": [
+    "pushing_cart"
+  ],
+  "u10_jumping_down": [
+    "jumping_down"
+  ],
+  "u11_carrying": [
+    "carrying"
+  ],
+  "u13_laying_back": [
+    "laying_back"
+  ],
+  "u04_kneeling_work": [
+    "kneeling_work"
+  ],
+  "u04_walking_winding": [
+    "walking_winding"
+  ],
+  "u02_climbing_ladder": [
+    "climbing_ladder"
+  ],
+  "u06_lifting": [
+    "lifting"
+  ],
+  "u13_climbing_ladder": [
+    "climbing_ladder"
+  ],
+  "u13_pushing_cart": [
+    "pushing_cart"
+  ],
+  "u12_laying_back": [
+    "laying_back"
+  ],
+  "u05_jumping_down": [
+    "jumping_down"
+  ],
+  "u01_walking_straight": [
+    "walking_straight"
+  ],
+  "u10_roll_painting": [
+    "roll_painting"
+  ],
+  "u13_walking_straight": [
+    "walking_straight"
+  ],
+  "u04_walking_straight": [
+    "walking_straight"
+  ],
+  "u08_carrying": [
+    "carrying"
+  ],
+  "u11_roll_painting": [
+    "roll_painting"
+  ],
+  "u09_lifting": [
+    "lifting"
+  ],
+  "u04_laying_back": [
+    "laying_back"
+  ],
+  "u12_leveling_paint": [
+    "leveling_paint"
+  ],
+  "u01_carrying": [
+    "carrying"
+  ],
+  "u07_pushing_cart": [
+    "pushing_cart"
+  ],
+  "u10_climbing_ladder": [
+    "climbing_ladder"
+  ],
+  "u03_sitting": [
+    "sitting"
+  ],
+  "u06_jumping_down": [
+    "jumping_down"
+  ],
+  "u02_raising_hands": [
+    "raising_hands"
+  ],
+  "u11_sitting": [
+    "sitting"
+  ],
+  "u01_jumping_down": [
+    "jumping_down"
+  ],
+  "u12_climbing_ladder": [
+    "climbing_ladder"
+  ],
+  "u05_walking_straight": [
+    "walking_straight"
+  ],
+  "u05_carrying": [
+    "carrying"
+  ],
+  "u07_kneeling_work": [
+    "kneeling_work"
+  ],
+  "u02_laying_back": [
+    "laying_back"
+  ],
+  "u03_kneeling_work": [
+    "kneeling_work"
+  ],
+  "u10_stairs": [
+    "stairs"
+  ],
+  "u04_climbing_ladder": [
+    "climbing_ladder"
+  ],
+  "u07_roll_painting": [
+    "roll_painting"
+  ],
+  "u06_standing_work": [
+    "standing_work"
+  ],
+  "u04_standing_work": [
+    "standing_work"
+  ]
+}

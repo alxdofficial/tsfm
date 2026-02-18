@@ -1,0 +1,522 @@
+diff --git a/config.py b/config.py
+index 1615c2b..9415b1c 100644
+--- a/config.py
++++ b/config.py
+@@ -115,7 +115,9 @@ class DatasetConfig(NamedTuple):
+ 
+     @classmethod
+     def from_json(cls, js):
+-        return cls(**js)
++        # Filter out keys not in the NamedTuple fields
++        valid = {k: v for k, v in js.items() if k in cls._fields}
++        return cls(**valid)
+ 
+ 
+ def create_io_config(args, dataset_name, version, pretrain_model=None, target='pretrain'):
+diff --git a/dataset/data_config.json b/dataset/data_config.json
+index 9eb1b5d..3aafe20 100644
+--- a/dataset/data_config.json
++++ b/dataset/data_config.json
+@@ -1,62 +1,367 @@
+ {
+-    "hhar_20_120": {
+-        "sr": 20,
+-        "seq_len": 120,
+-        "dimension": 6,
+-        "activity_label_index": 2,
+-        "activity_label_size": 6,
+-        "activity_label": [
+-            "bike", "sit", "downstairs", "upstairs", "stand", "walk"
+-        ],
+-        "user_label_index": 0,
+-        "user_label_size": 9,
+-        "model_label_index": 1,
+-        "model_label_size": 3,
+-        "size": 9166
+-    },
+-    "motion_20_120": {
+-        "sr": 20,
+-        "seq_len": 120,
+-        "dimension": 6,
+-        "activity_label_index": 0,
+-        "activity_label_size": 6,
+-        "activity_label": [
+-            "downstairs", "upstairs", "sitting", "standing", "walking", "jogging"
+-        ],
+-        "user_label_index": 1,
+-        "user_label_size": 24,
+-        "size": 4534
+-    },
+-    "uci_20_120": {
+-        "sr": 20,
+-        "seq_len": 120,
+-        "dimension": 6,
+-        "activity_label_index": 0,
+-        "activity_label_size": 6,
+-        "activity_label": [
+-            "walking", "upstairs", "downstairs", "sitting", "standing", "lying"
+-        ],
+-        "user_label_index": 1,
+-        "user_label_size": 30,
+-        "size": 2088
+-    },
+-    "shoaib_20_120": {
+-        "sr": 20,
+-        "seq_len": 120,
+-        "dimension": 9,
+-        "activity_label_index": 0,
+-        "activity_label_size": 7,
+-        "activity_label": [
+-            "walking", "sitting", "standing", "jogging", "biking", "upstairs" , "downstairs"
+-        ],
+-        "position_label_index": 1,
+-        "position_label_size": 5,
+-        "position_label": [
+-            "left_pocket", "right_pocket", "wrist", "upper_arm", "belt"
+-        ],
+-        "user_label_index": 2,
+-        "user_label_size": 10,
+-        "size": 10500
+-    }
+-}
+-
++  "uci_har_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 6,
++    "activity_label": [
++      "laying",
++      "sitting",
++      "standing",
++      "walking",
++      "walking_downstairs",
++      "walking_upstairs"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 30,
++    "has_gyro": true,
++    "size": 4378
++  },
++  "hhar_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 6,
++    "activity_label": [
++      "cycling",
++      "sitting",
++      "standing",
++      "walking",
++      "walking_downstairs",
++      "walking_upstairs"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 9,
++    "has_gyro": true,
++    "size": 6396
++  },
++  "pamap2_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 12,
++    "activity_label": [
++      "ascending_stairs",
++      "cycling",
++      "descending_stairs",
++      "ironing",
++      "lying",
++      "nordic_walking",
++      "rope_jumping",
++      "running",
++      "sitting",
++      "standing",
++      "vacuum_cleaning",
++      "walking"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 9,
++    "has_gyro": true,
++    "size": 8707
++  },
++  "wisdm_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 18,
++    "activity_label": [
++      "brushing_teeth",
++      "clapping",
++      "dribbling",
++      "drinking",
++      "eating_chips",
++      "eating_pasta",
++      "eating_sandwich",
++      "eating_soup",
++      "folding_clothes",
++      "jogging",
++      "kicking",
++      "playing_catch",
++      "sitting",
++      "stairs",
++      "standing",
++      "typing",
++      "walking",
++      "writing"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 51,
++    "has_gyro": true,
++    "size": 31991
++  },
++  "dsads_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 19,
++    "activity_label": [
++      "cycling_horizontal",
++      "cycling_vertical",
++      "exercising_cross_trainer",
++      "exercising_stepper",
++      "jumping",
++      "lying_back",
++      "lying_side",
++      "moving_elevator",
++      "playing_basketball",
++      "rowing",
++      "running_treadmill",
++      "sitting",
++      "stairs_down",
++      "stairs_up",
++      "standing",
++      "standing_elevator",
++      "walking_parking",
++      "walking_treadmill_flat",
++      "walking_treadmill_incline"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 8,
++    "has_gyro": true,
++    "size": 7600
++  },
++  "kuhar_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 17,
++    "activity_label": [
++      "jumping",
++      "lying",
++      "picking_up",
++      "playing_sports",
++      "push_up",
++      "running",
++      "sit_up",
++      "sitting",
++      "standing",
++      "standing_up_from_laying",
++      "standing_up_from_sitting",
++      "talking_sitting",
++      "talking_standing",
++      "walking",
++      "walking_backwards",
++      "walking_downstairs",
++      "walking_upstairs"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 89,
++    "has_gyro": true,
++    "size": 24076
++  },
++  "unimib_shar_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 17,
++    "activity_label": [
++      "falling_backward",
++      "falling_backward_sitting",
++      "falling_forward",
++      "falling_hitting_obstacle",
++      "falling_left",
++      "falling_right",
++      "falling_with_protection",
++      "going_down_stairs",
++      "going_up_stairs",
++      "jumping",
++      "lying_down_from_standing",
++      "running",
++      "sitting_down",
++      "standing_up_from_laying",
++      "standing_up_from_sitting",
++      "syncope",
++      "walking"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 30,
++    "has_gyro": false,
++    "size": 5911
++  },
++  "hapt_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 12,
++    "activity_label": [
++      "lie_to_sit",
++      "lie_to_stand",
++      "lying",
++      "sit_to_lie",
++      "sit_to_stand",
++      "sitting",
++      "stand_to_lie",
++      "stand_to_sit",
++      "standing",
++      "walking",
++      "walking_downstairs",
++      "walking_upstairs"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 30,
++    "has_gyro": true,
++    "size": 2660
++  },
++  "mhealth_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 12,
++    "activity_label": [
++      "climbing_stairs",
++      "cycling",
++      "frontal_elevation_arms",
++      "jogging",
++      "jump_front_back",
++      "knees_bending",
++      "lying",
++      "running",
++      "sitting",
++      "standing",
++      "waist_bends_forward",
++      "walking"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 10,
++    "has_gyro": true,
++    "size": 2890
++  },
++  "recgym_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 11,
++    "activity_label": [
++      "adductor_machine",
++      "arm_curl",
++      "bench_press",
++      "cycling",
++      "leg_curl",
++      "leg_press",
++      "rope_skipping",
++      "running",
++      "squat",
++      "stairclimber",
++      "walking"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 10,
++    "has_gyro": true,
++    "size": 16980
++  },
++  "motionsense_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 6,
++    "activity_label": [
++      "jogging",
++      "sitting",
++      "standing",
++      "walking",
++      "walking_downstairs",
++      "walking_upstairs"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 24,
++    "has_gyro": true,
++    "size": 12080
++  },
++  "realworld_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 8,
++    "activity_label": [
++      "jumping",
++      "lying",
++      "running",
++      "sitting",
++      "stairs_down",
++      "stairs_up",
++      "standing",
++      "walking"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 15,
++    "has_gyro": false,
++    "size": 27138
++  },
++  "mobiact_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 13,
++    "activity_label": [
++      "car_step_in",
++      "car_step_out",
++      "fall_backward_knees",
++      "fall_backward_sitting",
++      "fall_forward",
++      "fall_sideways",
++      "jogging",
++      "jumping",
++      "sitting_chair",
++      "stairs_down",
++      "stairs_up",
++      "standing",
++      "walking"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 24,
++    "has_gyro": true,
++    "size": 4345
++  },
++  "vtt_coniot_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 16,
++    "activity_label": [
++      "carrying",
++      "climbing_ladder",
++      "jumping_down",
++      "kneeling_work",
++      "laying_back",
++      "leveling_paint",
++      "lifting",
++      "pushing_cart",
++      "raising_hands",
++      "roll_painting",
++      "sitting",
++      "spraying_paint",
++      "stairs",
++      "standing_work",
++      "walking_straight",
++      "walking_winding"
++    ],
++    "user_label_index": 1,
++    "user_label_size": 13,
++    "has_gyro": true,
++    "size": 2058
++  },
++  "combined_train_20_120": {
++    "sr": 20,
++    "seq_len": 120,
++    "dimension": 6,
++    "activity_label_index": 0,
++    "activity_label_size": 0,
++    "user_label_index": 1,
++    "user_label_size": 0,
++    "size": 89665
++  }
++}
+\ No newline at end of file
+diff --git a/dataset/hhar/data_20_120.npy b/dataset/hhar/data_20_120.npy
+deleted file mode 100644
+index 9de1430..0000000
+Binary files a/dataset/hhar/data_20_120.npy and /dev/null differ
+diff --git a/dataset/hhar/label_20_120.npy b/dataset/hhar/label_20_120.npy
+deleted file mode 100644
+index 0a2038e..0000000
+Binary files a/dataset/hhar/label_20_120.npy and /dev/null differ
+diff --git a/dataset/motion/data_20_120.npy b/dataset/motion/data_20_120.npy
+deleted file mode 100644
+index de75931..0000000
+Binary files a/dataset/motion/data_20_120.npy and /dev/null differ
+diff --git a/dataset/motion/label_20_120.npy b/dataset/motion/label_20_120.npy
+deleted file mode 100644
+index c14c20c..0000000
+Binary files a/dataset/motion/label_20_120.npy and /dev/null differ
+diff --git a/dataset/shoaib/data_20_120.npy b/dataset/shoaib/data_20_120.npy
+deleted file mode 100644
+index 0fc1fb5..0000000
+Binary files a/dataset/shoaib/data_20_120.npy and /dev/null differ
+diff --git a/dataset/shoaib/label_20_120.npy b/dataset/shoaib/label_20_120.npy
+deleted file mode 100644
+index e38ebed..0000000
+Binary files a/dataset/shoaib/label_20_120.npy and /dev/null differ
+diff --git a/dataset/uci/data_20_120.npy b/dataset/uci/data_20_120.npy
+deleted file mode 100644
+index 51cca5c..0000000
+Binary files a/dataset/uci/data_20_120.npy and /dev/null differ
+diff --git a/dataset/uci/label_20_120.npy b/dataset/uci/label_20_120.npy
+deleted file mode 100644
+index 9eeb363..0000000
+Binary files a/dataset/uci/label_20_120.npy and /dev/null differ
+diff --git a/train.py b/train.py
+index ef4b3e8..4bb4c54 100644
+--- a/train.py
++++ b/train.py
+@@ -54,8 +54,8 @@ class Trainer(object):
+                 global_step += 1
+                 loss_sum += loss.item()
+ 
+-                # if global_step % self.cfg.save_steps == 0: # save
+-                #     self.save(global_step)
++                if global_step % self.cfg.save_steps == 0:  # periodic checkpoint
++                    self.save(global_step)
+ 
+                 if self.cfg.total_steps and self.cfg.total_steps < global_step:
+                     print('The Total Steps have been reached.')
+diff --git a/utils.py b/utils.py
+index ec2404c..b26985e 100644
+--- a/utils.py
++++ b/utils.py
+@@ -390,8 +390,8 @@ class LIBERTDataset4Pretrain(Dataset):
+ def handle_argv(target, config_train, prefix):
+     parser = argparse.ArgumentParser(description='PyTorch LIMU-BERT Model')
+     parser.add_argument('model_version', type=str, help='Model config')
+-    parser.add_argument('dataset', type=str, help='Dataset name', choices=['hhar', 'motion', 'uci', 'shoaib'])
+-    parser.add_argument('dataset_version',  type=str, help='Dataset version', choices=['10_100', '20_120'])
++    parser.add_argument('dataset', type=str, help='Dataset name')
++    parser.add_argument('dataset_version',  type=str, help='Dataset version')
+     parser.add_argument('-g', '--gpu', type=str, default=None, help='Set specific GPU')
+     parser.add_argument('-f', '--model_file', type=str, default=None, help='Pretrain model file')
+     parser.add_argument('-t', '--train_cfg', type=str, default='./config/' + config_train, help='Training config json file path')
+@@ -424,8 +424,8 @@ def handle_argv(target, config_train, prefix):
+ def handle_argv_simple():
+     parser = argparse.ArgumentParser(description='PyTorch LIMU-BERT Model')
+     parser.add_argument('model_file', type=str, default=None, help='Pretrain model file')
+-    parser.add_argument('dataset', type=str, help='Dataset name', choices=['hhar', 'motion', 'uci', 'shoaib','merge'])
+-    parser.add_argument('dataset_version',  type=str, help='Dataset version', choices=['10_100', '20_120'])
++    parser.add_argument('dataset', type=str, help='Dataset name')
++    parser.add_argument('dataset_version',  type=str, help='Dataset version')
+     args = parser.parse_args()
+     dataset_cfg = load_dataset_stats(args.dataset, args.dataset_version)
+     if dataset_cfg is None:

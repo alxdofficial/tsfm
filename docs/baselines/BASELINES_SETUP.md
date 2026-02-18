@@ -69,21 +69,37 @@ Checkpoint is at:
 ```
 training_output/semantic_alignment/{run_id}/best.pt
 ```
-The evaluation script auto-discovers the latest run.
+The checkpoint path is hardcoded in `evaluate_tsfm.py` — update it to point to your
+trained model.
 
 ## Step 3: Benchmark Data
 
-All models evaluate on the same standardized data:
+**Baselines** (LiMU-BERT, CrossHAR, MOMENT, LanHAR) evaluate on 20Hz resampled data:
 ```
-benchmark_data/processed/tsfm/{dataset}/data.npy    # (N, 120, 6) windows
-benchmark_data/processed/tsfm/{dataset}/labels.npy  # (N,) integer labels
+benchmark_data/processed/limubert/{dataset}/data_20_120.npy   # (N, 120, 6) windows at 20Hz
+benchmark_data/processed/limubert/{dataset}/label_20_120.npy  # (N, 120, 2) labels
 ```
 
-Data is standardized to 20Hz, 6-second windows, 6 IMU channels (acc_xyz + gyro_xyz).
+**TSFM** evaluates on native-rate data (50Hz for all 4 test datasets):
+```
+benchmark_data/processed/tsfm_eval/{dataset}/data_native.npy   # (N, 300, 6) windows at 50Hz
+benchmark_data/processed/tsfm_eval/{dataset}/label_native.npy  # (N, 300, 2) labels
+benchmark_data/processed/tsfm_eval/{dataset}/metadata.json     # sampling rate, window size
+```
 
 To prepare data from raw sources:
 ```bash
-python datascripts/setup_all_datasets.py
+# Download and convert all datasets to standardized session format
+python datascripts/setup_all_ts_datasets.py
+
+# Export raw per-subject CSVs for benchmark preprocessing
+python benchmark_data/scripts/export_raw.py
+
+# Generate 20Hz .npy files for baselines
+python benchmark_data/scripts/preprocess_limubert.py
+
+# Generate native-rate .npy files for TSFM evaluation
+python benchmark_data/scripts/preprocess_tsfm_eval.py
 ```
 
 ## Step 4: Run Evaluations

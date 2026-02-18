@@ -1,0 +1,48 @@
+{
+  "dataset_name": "HHAR",
+  "sampling_rate_hz": 50,
+  "channels": [
+    "acc_x",
+    "acc_y",
+    "acc_z",
+    "gyro_x",
+    "gyro_y",
+    "gyro_z"
+  ],
+  "extra_channels": [],
+  "activities": [
+    "cycling",
+    "sitting",
+    "standing",
+    "walking",
+    "walking_downstairs",
+    "walking_upstairs"
+  ],
+  "subjects": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i"
+  ],
+  "placement": "pocket",
+  "num_sessions_original": 146557,
+  "train_subjects": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g"
+  ],
+  "test_subjects": [
+    "h",
+    "i"
+  ],
+  "num_sessions_subsampled": 15000
+}

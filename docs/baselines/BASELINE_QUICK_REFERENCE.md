@@ -22,7 +22,7 @@ partial positives), a MoCo-style memory bank, and learnable label attention pool
 - Handles variable sampling rates natively (seconds-based patches + interpolation)
 - Uses per-dataset channel descriptions as semantic input (e.g., "Accelerometer X-axis (waist)")
 - Patch size augmentation during training forces resolution-robust representations
-- ~5M parameters
+- ~19.5M trainable parameters (encoder ~9.5M + semantic head ~8.7M + label bank ~1.3M)
 
 ---
 

@@ -1,0 +1,54 @@
+{
+  "dataset_name": "DSADS",
+  "description": "Daily and Sports Activities Dataset from UCI ML Repository. 8 subjects performing 19 daily and sports activities. Xsens MTx sensors on torso. Triaxial accelerometer, gyroscope, and magnetometer at 25Hz.",
+  "source": "https://archive.ics.uci.edu/dataset/256/daily+and+sports+activities",
+  "num_subjects": 8,
+  "body_position": "torso",
+  "channels": [
+    {
+      "name": "acc_x",
+      "description": "Accelerometer X-axis (torso)",
+      "sampling_rate_hz": 25.0
+    },
+    {
+      "name": "acc_y",
+      "description": "Accelerometer Y-axis (torso)",
+      "sampling_rate_hz": 25.0
+    },
+    {
+      "name": "acc_z",
+      "description": "Accelerometer Z-axis (torso)",
+      "sampling_rate_hz": 25.0
+    },
+    {
+      "name": "gyro_x",
+      "description": "Gyroscope X-axis (torso)",
+      "sampling_rate_hz": 25.0
+    },
+    {
+      "name": "gyro_y",
+      "description": "Gyroscope Y-axis (torso)",
+      "sampling_rate_hz": 25.0
+    },
+    {
+      "name": "gyro_z",
+      "description": "Gyroscope Z-axis (torso)",
+      "sampling_rate_hz": 25.0
+    },
+    {
+      "name": "mag_x",
+      "description": "Magnetometer X-axis (torso)",
+      "sampling_rate_hz": 25.0
+    },
+    {
+      "name": "mag_y",
+      "description": "Magnetometer Y-axis (torso)",
+      "sampling_rate_hz": 25.0
+    },
+    {
+      "name": "mag_z",
+      "description": "Magnetometer Z-axis (torso)",
+      "sampling_rate_hz": 25.0
+    }
+  ]
+}

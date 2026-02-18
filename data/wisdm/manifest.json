@@ -1,0 +1,66 @@
+{
+  "dataset_name": "WISDM",
+  "description": "Smartphone and smartwatch activity recognition. 51 subjects performing 18 activities with accelerometer and gyroscope on phone (pocket) and watch (wrist) at 20Hz.",
+  "channels": [
+    {
+      "name": "phone_accel_x",
+      "description": "Phone accelerometer X-axis (pocket-worn)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "phone_accel_y",
+      "description": "Phone accelerometer Y-axis (pocket-worn)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "phone_accel_z",
+      "description": "Phone accelerometer Z-axis (pocket-worn)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "phone_gyro_x",
+      "description": "Phone gyroscope X-axis (pocket-worn)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "phone_gyro_y",
+      "description": "Phone gyroscope Y-axis (pocket-worn)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "phone_gyro_z",
+      "description": "Phone gyroscope Z-axis (pocket-worn)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "watch_accel_x",
+      "description": "Smartwatch accelerometer X-axis (wrist-worn)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "watch_accel_y",
+      "description": "Smartwatch accelerometer Y-axis (wrist-worn)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "watch_accel_z",
+      "description": "Smartwatch accelerometer Z-axis (wrist-worn)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "watch_gyro_x",
+      "description": "Smartwatch gyroscope X-axis (wrist-worn)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "watch_gyro_y",
+      "description": "Smartwatch gyroscope Y-axis (wrist-worn)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "watch_gyro_z",
+      "description": "Smartwatch gyroscope Z-axis (wrist-worn)",
+      "sampling_rate_hz": 20.0
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "dataset_name": "UCI HAR",
+  "description": "Human activity recognition from smartphone sensors. 30 subjects performing 6 activities with waist-mounted Samsung Galaxy S II. Triaxial accelerometer and gyroscope at 50Hz.",
+  "channels": [
+    {
+      "name": "body_acc_x",
+      "description": "Body acceleration X-axis from accelerometer (gravity removed)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "body_acc_y",
+      "description": "Body acceleration Y-axis from accelerometer (gravity removed)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "body_acc_z",
+      "description": "Body acceleration Z-axis from accelerometer (gravity removed)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "total_acc_x",
+      "description": "Total acceleration X-axis from accelerometer (includes gravity)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "total_acc_y",
+      "description": "Total acceleration Y-axis from accelerometer (includes gravity)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "total_acc_z",
+      "description": "Total acceleration Z-axis from accelerometer (includes gravity)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "body_gyro_x",
+      "description": "Angular velocity X-axis from gyroscope",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "body_gyro_y",
+      "description": "Angular velocity Y-axis from gyroscope",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "body_gyro_z",
+      "description": "Angular velocity Z-axis from gyroscope",
+      "sampling_rate_hz": 50.0
+    }
+  ]
+}

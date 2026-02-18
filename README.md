@@ -39,7 +39,7 @@ Raw IMU Data (variable length, 6-48 channels)
 
 ## Training
 
-Training runs end-to-end from randomly initialized encoder weights:
+Training runs end-to-end, starting from the self-supervised pretrained encoder checkpoint when available:
 
 ```bash
 python training_scripts/human_activity_recognition/semantic_alignment_train.py
@@ -52,7 +52,7 @@ python training_scripts/human_activity_recognition/semantic_alignment_train.py
 | Effective batch size | 512 | 32 micro-batch x 16 accumulation steps |
 | Learning rate | 1e-4 | With 3-epoch warmup + cosine decay |
 | Epochs | 100 | ~2 min/epoch on RTX 4090 |
-| Encoder | 384-dim, 8 heads, 4 layers | 21M parameters |
+| Encoder | 384-dim, 8 heads, 4 layers | ~9.5M parameters |
 | Training datasets | 10 | See table below |
 | Temperature | 0.07 | CLIP default |
 | Memory bank | 256 queue size | MoCo-style additional negatives |
@@ -94,7 +94,7 @@ python training_scripts/human_activity_recognition/semantic_alignment_train.py
 |---------|:---:|-----------|:---:|
 | VTT-ConIoT | 16 | Severe (industrial/construction) | 50% |
 
-All data is standardized to `(N, 120, 6)` windows at 20Hz with 6 IMU channels (acc_xyz + gyro_xyz) for evaluation.
+Baseline models evaluate on standardized `(N, 120, 6)` windows at 20Hz. TSFM evaluates on native-rate data (50Hz for all test sets) — see [Evaluation Protocol](docs/baselines/EVALUATION_PROTOCOL.md) for sampling rate policy.
 
 ---
 
@@ -209,5 +209,5 @@ pip install torch torchvision
 pip install -r requirements.txt
 
 # Download and convert all datasets
-python datascripts/setup_all_datasets.py
+python datascripts/setup_all_ts_datasets.py
 ```

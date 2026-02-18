@@ -28,7 +28,6 @@ training_scripts/human_activity_recognition/
 ├── losses.py                    # Stage 1 losses (MAE + contrastive)
 ├── semantic_loss.py             # Stage 2 losses (InfoNCE, single/multi-prototype)
 ├── memory_bank.py               # MoCo-style momentum memory bank
-├── PROTOTYPES_README.md         # Prototype soft targets documentation
 └── README.md                    # This file
 ```
 
@@ -70,7 +69,7 @@ D_MODEL = 384
 BATCH_SIZE = 20
 LEARNING_RATE = 1e-4
 EPOCHS = 100
-MASK_RATIO = 0.5
+MASK_RATIO = 0.3
 ```
 
 ## Stage 2: Semantic Alignment (`semantic_alignment_train.py`)
@@ -78,7 +77,7 @@ MASK_RATIO = 0.5
 ### Objectives
 
 - **Text-IMU Alignment**: Aligns IMU embeddings with activity text descriptions using InfoNCE loss
-- **Prototype Learning**: K=3 learnable prototypes per activity class (LearnableLabelBank)
+- **Prototype Learning**: K=1 prototype per activity class (LearnableLabelBank; multi-prototype K>1 is supported but currently disabled)
 - **Memory Bank**: MoCo-style FIFO queue for additional negatives
 - **Channel Text Fusion**: Cross-attention between sensor tokens and channel description tokens
 
@@ -95,7 +94,7 @@ Hard-coded constants in `semantic_alignment_train.py`:
 
 ```python
 D_MODEL = 384
-NUM_PROTOTYPES = 3
+NUM_PROTOTYPES = 1
 MEMORY_BANK_SIZE = 256
 LEARNING_RATE = 1e-4
 FREEZE_ENCODER = False  # Encoder unfrozen for discriminative learning

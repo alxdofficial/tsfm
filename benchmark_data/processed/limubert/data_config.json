@@ -1,0 +1,63 @@
+{
+  "wisdm_20_120": {
+    "sr": 20,
+    "seq_len": 120,
+    "dimension": 6,
+    "activity_label_index": 0,
+    "activity_label_size": 18,
+    "activity_label": [
+      "brushing_teeth",
+      "clapping",
+      "dribbling",
+      "drinking",
+      "eating_chips",
+      "eating_pasta",
+      "eating_sandwich",
+      "eating_soup",
+      "folding_clothes",
+      "jogging",
+      "kicking",
+      "playing_catch",
+      "sitting",
+      "stairs",
+      "standing",
+      "typing",
+      "walking",
+      "writing"
+    ],
+    "user_label_index": 1,
+    "user_label_size": 51,
+    "has_gyro": true,
+    "size": 10067
+  },
+  "kuhar_20_120": {
+    "sr": 20,
+    "seq_len": 120,
+    "dimension": 6,
+    "activity_label_index": 0,
+    "activity_label_size": 17,
+    "activity_label": [
+      "jumping",
+      "lying",
+      "picking_up",
+      "playing_sports",
+      "push_up",
+      "running",
+      "sit_up",
+      "sitting",
+      "standing",
+      "standing_up_from_laying",
+      "standing_up_from_sitting",
+      "talking_sitting",
+      "talking_standing",
+      "walking",
+      "walking_backwards",
+      "walking_downstairs",
+      "walking_upstairs"
+    ],
+    "user_label_index": 1,
+    "user_label_size": 89,
+    "has_gyro": true,
+    "size": 24076
+  }
+}

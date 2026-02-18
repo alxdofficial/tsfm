@@ -1,0 +1,39 @@
+{
+  "dataset_name": "HAPT",
+  "description": "Human Activities and Postural Transitions dataset from UCI. 30 subjects performing 6 basic activities (walking, stairs, sitting, standing, lying) and 6 postural transitions (stand_to_sit, sit_to_stand, etc.) with waist-mounted smartphone (Samsung Galaxy S II). Triaxial accelerometer and gyroscope at 50Hz.",
+  "source": "https://archive.ics.uci.edu/dataset/341/smartphone+based+recognition+of+human+activities+and+postural+transitions",
+  "num_subjects": 30,
+  "body_position": "waist",
+  "channels": [
+    {
+      "name": "acc_x",
+      "description": "Accelerometer X-axis (waist)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_y",
+      "description": "Accelerometer Y-axis (waist)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_z",
+      "description": "Accelerometer Z-axis (waist)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_x",
+      "description": "Gyroscope X-axis (waist)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_y",
+      "description": "Gyroscope Y-axis (waist)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_z",
+      "description": "Gyroscope Z-axis (waist)",
+      "sampling_rate_hz": 50.0
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "dataset_name": "RealWorld HAR",
+  "description": "RealWorld Human Activity Recognition dataset from University of Mannheim. 15 subjects performing 8 activities with sensors at waist position. Triaxial accelerometer, gyroscope, and magnetometer resampled to 50Hz.",
+  "source": "https://www.uni-mannheim.de/dws/research/projects/activity-recognition/dataset/dataset-realworld/",
+  "num_subjects": 15,
+  "body_position": "waist",
+  "channels": [
+    {
+      "name": "acc_x",
+      "description": "Accelerometer X-axis (waist)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_y",
+      "description": "Accelerometer Y-axis (waist)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_z",
+      "description": "Accelerometer Z-axis (waist)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_x",
+      "description": "Gyroscope X-axis (waist)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_y",
+      "description": "Gyroscope Y-axis (waist)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_z",
+      "description": "Gyroscope Z-axis (waist)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "mag_x",
+      "description": "Magnetometer X-axis (waist)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "mag_y",
+      "description": "Magnetometer Y-axis (waist)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "mag_z",
+      "description": "Magnetometer Z-axis (waist)",
+      "sampling_rate_hz": 50.0
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "activity_to_idx": {
+    "carrying": 0,
+    "climbing_ladder": 1,
+    "jumping_down": 2,
+    "kneeling_work": 3,
+    "laying_back": 4,
+    "leveling_paint": 5,
+    "lifting": 6,
+    "pushing_cart": 7,
+    "raising_hands": 8,
+    "roll_painting": 9,
+    "sitting": 10,
+    "spraying_paint": 11,
+    "stairs": 12,
+    "standing_work": 13,
+    "walking_straight": 14,
+    "walking_winding": 15
+  },
+  "subject_to_idx": {
+    "u01": 0,
+    "u02": 1,
+    "u03": 2,
+    "u04": 3,
+    "u05": 4,
+    "u06": 5,
+    "u07": 6,
+    "u08": 7,
+    "u09": 8,
+    "u10": 9,
+    "u11": 10,
+    "u12": 11,
+    "u13": 12
+  },
+  "window_size": 120,
+  "sampling_rate_hz": 20,
+  "stride": 120,
+  "has_gyro": true
+}

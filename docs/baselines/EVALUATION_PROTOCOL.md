@@ -8,7 +8,7 @@ This protocol is designed to ensure **fair, reproducible comparison** across fun
 
 1. **No test data during training**: All 5 models train on the same 10 datasets; all 4 test datasets are strictly held out. No model ever sees test data during any training stage.
 2. **Native architectures**: Each baseline uses its own paper's downstream classifier — we do not impose a uniform architecture that might favor or penalize any model.
-3. **Identical test data**: All models evaluate on the exact same windows, labels, and data splits (same seed, same preprocessing).
+3. **Identical test windows**: All models evaluate on the same 6-second windows and labels with the same data splits (same seed). TSFM uses native-rate windows (50Hz); baselines use 20Hz-resampled windows — see **Sampling Rate Policy** below.
 4. **Multiple metrics**: 4 metrics spanning zero-shot to supervised fine-tuning capture different aspects of representation quality, avoiding cherry-picking a single favorable metric.
 5. **Reproducibility**: All evaluators set global seeds (42) and classifier seeds (3431) for deterministic results.
 

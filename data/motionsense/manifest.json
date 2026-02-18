@@ -1,0 +1,66 @@
+{
+  "dataset_name": "MotionSense",
+  "description": "Human activity recognition from iPhone 6s sensors. 24 subjects performing 6 activities (walking, jogging, stairs up, stairs down, sitting, standing) with smartphone in front trouser pocket. DeviceMotion data from Core Motion framework at 50Hz.",
+  "channels": [
+    {
+      "name": "acc_x",
+      "description": "User acceleration X-axis in g units (gravity removed by Core Motion)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_y",
+      "description": "User acceleration Y-axis in g units (gravity removed by Core Motion)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_z",
+      "description": "User acceleration Z-axis in g units (gravity removed by Core Motion)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_x",
+      "description": "Rotation rate X-axis from gyroscope in rad/s",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_y",
+      "description": "Rotation rate Y-axis from gyroscope in rad/s",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_z",
+      "description": "Rotation rate Z-axis from gyroscope in rad/s",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gravity_x",
+      "description": "Gravity unit vector X component (normalized)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gravity_y",
+      "description": "Gravity unit vector Y component (normalized)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gravity_z",
+      "description": "Gravity unit vector Z component (normalized)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "attitude_roll",
+      "description": "Device attitude roll angle in radians",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "attitude_pitch",
+      "description": "Device attitude pitch angle in radians",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "attitude_yaw",
+      "description": "Device attitude yaw angle in radians",
+      "sampling_rate_hz": 50.0
+    }
+  ]
+}

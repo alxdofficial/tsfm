@@ -1,0 +1,39 @@
+{
+  "dataset_name": "RecGym",
+  "description": "RecGym: Gym Workouts Recognition Dataset. 10 volunteers performing 11 gym exercises over 5 sessions. IMU sensors at wrist position. Triaxial accelerometer and gyroscope at 20Hz.",
+  "source": "https://archive.ics.uci.edu/dataset/1128/recgym:+gym+workouts+recognition+dataset+with+imu+and+capacitive+sensor-7",
+  "num_subjects": 10,
+  "body_position": "wrist",
+  "channels": [
+    {
+      "name": "acc_x",
+      "description": "Accelerometer X-axis (wrist)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "acc_y",
+      "description": "Accelerometer Y-axis (wrist)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "acc_z",
+      "description": "Accelerometer Z-axis (wrist)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "gyro_x",
+      "description": "Gyroscope X-axis (wrist)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "gyro_y",
+      "description": "Gyroscope Y-axis (wrist)",
+      "sampling_rate_hz": 20.0
+    },
+    {
+      "name": "gyro_z",
+      "description": "Gyroscope Z-axis (wrist)",
+      "sampling_rate_hz": 20.0
+    }
+  ]
+}

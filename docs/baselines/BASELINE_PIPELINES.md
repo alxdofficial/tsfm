@@ -201,11 +201,13 @@ oscillation..."). This reduces quality but the model still functions.
 | **Training time in eval** | ~5 min | ~15 min | ~8 min | **~90 min** | ~10 min |
 | **Embedding dim** | 72 | 6144 | 72 | 768 | 384 |
 | **Text-aligned** | No | No | No | Yes | Yes |
-| **Zero-shot capable** | Yes (native classifier) | Yes (native classifier) | Yes (native classifier) | Yes (cosine sim) | Yes (cosine sim) |
+| **Zero-shot capable** | Classifier-based* | Classifier-based* | Classifier-based* | Yes (cosine sim) | Yes (cosine sim) |
 | **# metrics reported** | 4 | 4 | 4 | 4 | 4 |
 | **Special preprocessing** | Sub-window split | Left-pad 512 | InstanceNorm | Gravity align | Fixed 1.0s patch |
 | **ZS Classifier** | GRU | SVM-RBF | Transformer_ft | Cosine sim | Cosine sim |
 | **Needs GPU** | Minimal | Yes (large model) | Minimal | Yes (training) | Yes |
+
+*\*Classifier-based zero-shot: These models train a classifier on the 10 training datasets' embeddings, then apply it to unseen test datasets. They can evaluate on unseen datasets but cannot classify arbitrary new label text — only labels seen during training (mapped through synonym groups).*
 
 ---
 
@@ -234,7 +236,7 @@ evaluate it."
 |---|---|---|---|---|---|
 | **Sees label text?** | No | No | No | Yes (SciBERT) | Yes (label bank) |
 | **Unseen labels?** | Cannot classify | Cannot classify | Cannot classify | Nearest known label | Nearest known label |
-| **Zero-shot capable?** | No | No | No | Yes | Yes |
+| **True zero-shot?** | No (trained classifier) | No (trained classifier) | No (trained classifier) | Yes (cosine sim) | Yes (cosine sim) |
 | **Foundation model?** | No | **Yes** | No | No | Yes (ours) |
 
 ### What "Foundation Model" Means for Each

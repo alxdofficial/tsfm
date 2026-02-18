@@ -1,0 +1,32 @@
+{
+  "sampling_rate_hz": 20,
+  "window_size": 120,
+  "window_duration_sec": 6.0,
+  "n_windows": 16980,
+  "has_gyro": true,
+  "activity_to_idx": {
+    "adductor_machine": 0,
+    "arm_curl": 1,
+    "bench_press": 2,
+    "cycling": 3,
+    "leg_curl": 4,
+    "leg_press": 5,
+    "rope_skipping": 6,
+    "running": 7,
+    "squat": 8,
+    "stairclimber": 9,
+    "walking": 10
+  },
+  "subject_to_idx": {
+    "s334": 0,
+    "s427": 1,
+    "s44": 2,
+    "s547": 3,
+    "s551": 4,
+    "s574": 5,
+    "s806": 6,
+    "s93": 7,
+    "s940": 8,
+    "s978": 9
+  }
+}

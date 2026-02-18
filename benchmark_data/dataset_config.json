@@ -1,0 +1,210 @@
+{
+  "description": "Benchmark dataset configuration for TSFM vs baselines comparison",
+  "train_datasets": [
+    "uci_har", "hhar", "pamap2", "wisdm", "dsads",
+    "kuhar", "unimib_shar", "hapt", "mhealth", "recgym"
+  ],
+  "zero_shot_datasets": [
+    "motionsense", "realworld", "mobiact", "vtt_coniot"
+  ],
+  "subsampling": {
+    "hhar": {
+      "target_sessions": 15000,
+      "method": "stratified",
+      "stratify_by": ["activity", "subject"]
+    },
+    "wisdm": {
+      "target_sessions": 15000,
+      "method": "stratified",
+      "stratify_by": ["activity", "subject"]
+    }
+  },
+  "datasets": {
+    "uci_har": {
+      "display_name": "UCI HAR",
+      "num_sessions": 10299,
+      "sampling_rate_hz": 50,
+      "channels": ["body_acc_x", "body_acc_y", "body_acc_z", "total_acc_x", "total_acc_y", "total_acc_z", "body_gyro_x", "body_gyro_y", "body_gyro_z"],
+      "core_channels": {"acc_x": "body_acc_x", "acc_y": "body_acc_y", "acc_z": "body_acc_z", "gyro_x": "body_gyro_x", "gyro_y": "body_gyro_y", "gyro_z": "body_gyro_z"},
+      "extra_channels": ["total_acc_x", "total_acc_y", "total_acc_z"],
+      "placement": "waist",
+      "num_subjects": 30,
+      "activities": ["laying", "sitting", "standing", "walking", "walking_downstairs", "walking_upstairs"],
+      "train_subjects": [1, 3, 5, 6, 7, 8, 11, 14, 15, 16, 17, 19, 21, 22, 23, 25, 26, 27, 28, 29, 30],
+      "test_subjects": [2, 4, 9, 10, 12, 13, 18, 20, 24]
+    },
+    "hhar": {
+      "display_name": "HHAR",
+      "num_sessions": 146557,
+      "num_sessions_subsampled": 15000,
+      "sampling_rate_hz": 50,
+      "channels": ["acc_x", "acc_y", "acc_z", "gyro_x", "gyro_y", "gyro_z"],
+      "core_channels": {"acc_x": "acc_x", "acc_y": "acc_y", "acc_z": "acc_z", "gyro_x": "gyro_x", "gyro_y": "gyro_y", "gyro_z": "gyro_z"},
+      "extra_channels": [],
+      "placement": "pocket",
+      "num_subjects": 9,
+      "activities": ["cycling", "sitting", "standing", "walking", "walking_downstairs", "walking_upstairs"],
+      "train_subjects": ["a", "b", "c", "d", "e", "f", "g"],
+      "test_subjects": ["h", "i"]
+    },
+    "pamap2": {
+      "display_name": "PAMAP2",
+      "num_sessions": 4342,
+      "sampling_rate_hz": 100,
+      "channels": ["heart_rate", "hand_temp", "hand_acc16_x", "hand_acc16_y", "hand_acc16_z", "hand_acc6_x", "hand_acc6_y", "hand_acc6_z", "hand_gyro_x", "hand_gyro_y", "hand_gyro_z", "hand_mag_x", "hand_mag_y", "hand_mag_z", "hand_ori_1", "hand_ori_2", "hand_ori_3", "hand_ori_4", "chest_temp", "chest_acc16_x", "chest_acc16_y", "chest_acc16_z", "chest_acc6_x", "chest_acc6_y", "chest_acc6_z", "chest_gyro_x", "chest_gyro_y", "chest_gyro_z", "chest_mag_x", "chest_mag_y", "chest_mag_z", "chest_ori_1", "chest_ori_2", "chest_ori_3", "chest_ori_4", "ankle_temp", "ankle_acc16_x", "ankle_acc16_y", "ankle_acc16_z", "ankle_acc6_x", "ankle_acc6_y", "ankle_acc6_z", "ankle_gyro_x", "ankle_gyro_y", "ankle_gyro_z", "ankle_mag_x", "ankle_mag_y", "ankle_mag_z", "ankle_ori_1", "ankle_ori_2", "ankle_ori_3", "ankle_ori_4"],
+      "core_channels": {"acc_x": "hand_acc16_x", "acc_y": "hand_acc16_y", "acc_z": "hand_acc16_z", "gyro_x": "hand_gyro_x", "gyro_y": "hand_gyro_y", "gyro_z": "hand_gyro_z"},
+      "extra_channels": ["heart_rate", "hand_temp", "hand_acc6_x", "hand_acc6_y", "hand_acc6_z", "hand_mag_x", "hand_mag_y", "hand_mag_z", "hand_ori_1", "hand_ori_2", "hand_ori_3", "hand_ori_4", "chest_temp", "chest_acc16_x", "chest_acc16_y", "chest_acc16_z", "chest_acc6_x", "chest_acc6_y", "chest_acc6_z", "chest_gyro_x", "chest_gyro_y", "chest_gyro_z", "chest_mag_x", "chest_mag_y", "chest_mag_z", "chest_ori_1", "chest_ori_2", "chest_ori_3", "chest_ori_4", "ankle_temp", "ankle_acc16_x", "ankle_acc16_y", "ankle_acc16_z", "ankle_acc6_x", "ankle_acc6_y", "ankle_acc6_z", "ankle_gyro_x", "ankle_gyro_y", "ankle_gyro_z", "ankle_mag_x", "ankle_mag_y", "ankle_mag_z", "ankle_ori_1", "ankle_ori_2", "ankle_ori_3", "ankle_ori_4"],
+      "placement": "multi-body",
+      "num_subjects": 9,
+      "activities": ["ascending_stairs", "cycling", "descending_stairs", "ironing", "lying", "nordic_walking", "rope_jumping", "running", "sitting", "standing", "vacuum_cleaning", "walking"],
+      "train_subjects": [101, 102, 103, 104, 105, 106, 108],
+      "test_subjects": [107, 109]
+    },
+    "wisdm": {
+      "display_name": "WISDM",
+      "num_sessions": 164623,
+      "num_sessions_subsampled": 15000,
+      "sampling_rate_hz": 20,
+      "channels": ["phone_accel_x", "phone_accel_y", "phone_accel_z", "phone_gyro_x", "phone_gyro_y", "phone_gyro_z", "watch_accel_x", "watch_accel_y", "watch_accel_z", "watch_gyro_x", "watch_gyro_y", "watch_gyro_z"],
+      "core_channels": {"acc_x": "phone_accel_x", "acc_y": "phone_accel_y", "acc_z": "phone_accel_z", "gyro_x": "phone_gyro_x", "gyro_y": "phone_gyro_y", "gyro_z": "phone_gyro_z"},
+      "extra_channels": ["watch_accel_x", "watch_accel_y", "watch_accel_z", "watch_gyro_x", "watch_gyro_y", "watch_gyro_z"],
+      "placement": "pocket+wrist",
+      "num_subjects": 51,
+      "activities": ["brushing_teeth", "clapping", "dribbling", "drinking", "eating_chips", "eating_pasta", "eating_sandwich", "eating_soup", "folding_clothes", "jogging", "kicking", "playing_catch", "sitting", "stairs", "standing", "typing", "walking", "writing"],
+      "train_subjects": [1600, 1601, 1602, 1603, 1604, 1605, 1606, 1607, 1608, 1609, 1610, 1611, 1612, 1613, 1614, 1615, 1616, 1617, 1618, 1619, 1620, 1621, 1622, 1623, 1624, 1625, 1626, 1627, 1628, 1629, 1630, 1631, 1632, 1633, 1634, 1635, 1636, 1637, 1638, 1639],
+      "test_subjects": [1640, 1641, 1642, 1643, 1644, 1645, 1646, 1647, 1648, 1649, 1650]
+    },
+    "dsads": {
+      "display_name": "DSADS",
+      "num_sessions": 9120,
+      "sampling_rate_hz": 25,
+      "channels": ["acc_x", "acc_y", "acc_z", "gyro_x", "gyro_y", "gyro_z", "mag_x", "mag_y", "mag_z"],
+      "core_channels": {"acc_x": "acc_x", "acc_y": "acc_y", "acc_z": "acc_z", "gyro_x": "gyro_x", "gyro_y": "gyro_y", "gyro_z": "gyro_z"},
+      "extra_channels": ["mag_x", "mag_y", "mag_z"],
+      "placement": "wrist",
+      "num_subjects": 8,
+      "activities": ["cycling_horizontal", "cycling_vertical", "exercising_cross_trainer", "exercising_stepper", "jumping", "lying_back", "lying_side", "moving_elevator", "playing_basketball", "rowing", "running_treadmill", "sitting", "stairs_down", "stairs_up", "standing", "standing_elevator", "walking_parking", "walking_treadmill_flat", "walking_treadmill_incline"],
+      "train_subjects": [1, 2, 3, 4, 5, 6],
+      "test_subjects": [7, 8]
+    },
+    "kuhar": {
+      "display_name": "KU-HAR",
+      "num_sessions": 17374,
+      "sampling_rate_hz": 100,
+      "channels": ["acc_x", "acc_y", "acc_z", "gyro_x", "gyro_y", "gyro_z"],
+      "core_channels": {"acc_x": "acc_x", "acc_y": "acc_y", "acc_z": "acc_z", "gyro_x": "gyro_x", "gyro_y": "gyro_y", "gyro_z": "gyro_z"},
+      "extra_channels": [],
+      "placement": "wrist",
+      "num_subjects": 89,
+      "activities": ["jumping", "lying", "picking_up", "playing_sports", "push_up", "running", "sit_up", "sitting", "standing", "standing_up_from_laying", "standing_up_from_sitting", "talking_sitting", "talking_standing", "walking", "walking_backwards", "walking_downstairs", "walking_upstairs"],
+      "train_subjects": [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1013, 1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023, 1024, 1025, 1026, 1027, 1028, 1029, 1030, 1031, 1032, 1033, 1034, 1035, 1036, 1037, 1038, 1039, 1040, 1041, 1042, 1043, 1044, 1045, 1046, 1047, 1048, 1049, 1050, 1051, 1052, 1053, 1054, 1055, 1056, 1057, 1058, 1060, 1061, 1062, 1063, 1064, 1065, 1066, 1067, 1068, 1069, 1070],
+      "test_subjects": [1071, 1072, 1073, 1074, 1075, 1076, 1077, 1078, 1079, 1080, 1081, 1082, 1083, 1084, 1085, 1086, 1087, 1088, 1089, 1090, 1101]
+    },
+    "unimib_shar": {
+      "display_name": "UniMiB SHAR",
+      "num_sessions": 11771,
+      "sampling_rate_hz": 50,
+      "channels": ["acc_x", "acc_y", "acc_z"],
+      "core_channels": {"acc_x": "acc_x", "acc_y": "acc_y", "acc_z": "acc_z"},
+      "extra_channels": [],
+      "placement": "pocket",
+      "num_subjects": 30,
+      "note": "Accelerometer only - no gyroscope. Gyro channels zero-padded for LIMU-BERT.",
+      "activities": ["falling_backward", "falling_backward_sitting", "falling_forward", "falling_hitting_obstacle", "falling_left", "falling_right", "falling_with_protection", "going_down_stairs", "going_up_stairs", "jumping", "lying_down_from_standing", "running", "sitting_down", "standing_up_from_laying", "standing_up_from_sitting", "syncope", "walking"],
+      "train_subjects": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+      "test_subjects": [22, 23, 24, 25, 26, 27, 28, 29, 30]
+    },
+    "hapt": {
+      "display_name": "HAPT",
+      "num_sessions": 2546,
+      "sampling_rate_hz": 50,
+      "channels": ["acc_x", "acc_y", "acc_z", "gyro_x", "gyro_y", "gyro_z"],
+      "core_channels": {"acc_x": "acc_x", "acc_y": "acc_y", "acc_z": "acc_z", "gyro_x": "gyro_x", "gyro_y": "gyro_y", "gyro_z": "gyro_z"},
+      "extra_channels": [],
+      "placement": "waist",
+      "num_subjects": 30,
+      "activities": ["lie_to_sit", "lie_to_stand", "lying", "sit_to_lie", "sit_to_stand", "sitting", "stand_to_lie", "stand_to_sit", "standing", "walking", "walking_downstairs", "walking_upstairs"],
+      "train_subjects": [1, 3, 5, 6, 7, 8, 11, 14, 15, 16, 17, 19, 21, 22, 23, 25, 26, 27, 28, 29, 30],
+      "test_subjects": [2, 4, 9, 10, 12, 13, 18, 20, 24]
+    },
+    "mhealth": {
+      "display_name": "MHEALTH",
+      "num_sessions": 2029,
+      "sampling_rate_hz": 50,
+      "channels": ["chest_acc_x", "chest_acc_y", "chest_acc_z", "ecg_lead1", "ecg_lead2", "ankle_acc_x", "ankle_acc_y", "ankle_acc_z", "ankle_gyro_x", "ankle_gyro_y", "ankle_gyro_z", "ankle_mag_x", "ankle_mag_y", "ankle_mag_z", "arm_acc_x", "arm_acc_y", "arm_acc_z", "arm_gyro_x", "arm_gyro_y", "arm_gyro_z", "arm_mag_x", "arm_mag_y", "arm_mag_z"],
+      "core_channels": {"acc_x": "chest_acc_x", "acc_y": "chest_acc_y", "acc_z": "chest_acc_z", "gyro_x": "ankle_gyro_x", "gyro_y": "ankle_gyro_y", "gyro_z": "ankle_gyro_z"},
+      "extra_channels": ["ecg_lead1", "ecg_lead2", "ankle_acc_x", "ankle_acc_y", "ankle_acc_z", "ankle_mag_x", "ankle_mag_y", "ankle_mag_z", "arm_acc_x", "arm_acc_y", "arm_acc_z", "arm_gyro_x", "arm_gyro_y", "arm_gyro_z", "arm_mag_x", "arm_mag_y", "arm_mag_z"],
+      "placement": "multi-body",
+      "num_subjects": 10,
+      "activities": ["climbing_stairs", "cycling", "frontal_elevation_arms", "jogging", "jump_front_back", "knees_bending", "lying", "running", "sitting", "standing", "waist_bends_forward", "walking"],
+      "train_subjects": [1, 2, 3, 4, 5, 6, 7],
+      "test_subjects": [8, 9, 10]
+    },
+    "recgym": {
+      "display_name": "RecGym",
+      "num_sessions": 7150,
+      "sampling_rate_hz": 20,
+      "channels": ["acc_x", "acc_y", "acc_z", "gyro_x", "gyro_y", "gyro_z"],
+      "core_channels": {"acc_x": "acc_x", "acc_y": "acc_y", "acc_z": "acc_z", "gyro_x": "gyro_x", "gyro_y": "gyro_y", "gyro_z": "gyro_z"},
+      "extra_channels": [],
+      "placement": "chest",
+      "num_subjects": 10,
+      "activities": ["adductor_machine", "arm_curl", "bench_press", "cycling", "leg_curl", "leg_press", "rope_skipping", "running", "squat", "stairclimber", "walking"],
+      "train_subjects": ["s44", "s93", "s334", "s427", "s547", "s551", "s574"],
+      "test_subjects": ["s806", "s940", "s978"]
+    },
+    "motionsense": {
+      "display_name": "MotionSense",
+      "num_sessions": 7989,
+      "sampling_rate_hz": 50,
+      "channels": ["acc_x", "acc_y", "acc_z", "gyro_x", "gyro_y", "gyro_z", "gravity_x", "gravity_y", "gravity_z", "attitude_roll", "attitude_pitch", "attitude_yaw"],
+      "core_channels": {"acc_x": "acc_x", "acc_y": "acc_y", "acc_z": "acc_z", "gyro_x": "gyro_x", "gyro_y": "gyro_y", "gyro_z": "gyro_z"},
+      "extra_channels": ["gravity_x", "gravity_y", "gravity_z", "attitude_roll", "attitude_pitch", "attitude_yaw"],
+      "placement": "pocket",
+      "num_subjects": 24,
+      "activities": ["jogging", "sitting", "standing", "walking", "walking_downstairs", "walking_upstairs"],
+      "train_subjects": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+      "test_subjects": [18, 19, 20, 21, 22, 23, 24]
+    },
+    "realworld": {
+      "display_name": "RealWorld HAR",
+      "num_sessions": 16830,
+      "sampling_rate_hz": 50,
+      "channels": ["acc_x", "acc_y", "acc_z"],
+      "core_channels": {"acc_x": "acc_x", "acc_y": "acc_y", "acc_z": "acc_z"},
+      "extra_channels": [],
+      "note": "Accelerometer only in processed sessions. Gyro channels zero-padded for LIMU-BERT.",
+      "placement": "waist",
+      "num_subjects": 15,
+      "activities": ["jumping", "lying", "running", "sitting", "stairs_down", "stairs_up", "standing", "walking"],
+      "train_subjects": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+      "test_subjects": [12, 13, 14, 15]
+    },
+    "mobiact": {
+      "display_name": "MobiAct",
+      "num_sessions": 3646,
+      "sampling_rate_hz": 50,
+      "channels": ["acc_x", "acc_y", "acc_z", "gyro_x", "gyro_y", "gyro_z"],
+      "core_channels": {"acc_x": "acc_x", "acc_y": "acc_y", "acc_z": "acc_z", "gyro_x": "gyro_x", "gyro_y": "gyro_y", "gyro_z": "gyro_z"},
+      "extra_channels": [],
+      "placement": "waist",
+      "num_subjects": 24,
+      "activities": ["car_step_in", "car_step_out", "fall_backward_knees", "fall_backward_sitting", "fall_forward", "fall_sideways", "jogging", "jumping", "sitting_chair", "stairs_down", "stairs_up", "standing", "walking"],
+      "train_subjects": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+      "test_subjects": [18, 19, 20, 21, 29, 30, 31]
+    },
+    "vtt_coniot": {
+      "display_name": "VTT-ConIoT",
+      "num_sessions": 207,
+      "sampling_rate_hz": 50,
+      "channels": ["acc_x", "acc_y", "acc_z", "gyro_x", "gyro_y", "gyro_z", "mag_x", "mag_y", "mag_z"],
+      "core_channels": {"acc_x": "acc_x", "acc_y": "acc_y", "acc_z": "acc_z", "gyro_x": "gyro_x", "gyro_y": "gyro_y", "gyro_z": "gyro_z"},
+      "extra_channels": ["mag_x", "mag_y", "mag_z"],
+      "placement": "hip",
+      "num_subjects": 13,
+      "activities": ["carrying", "climbing_ladder", "jumping_down", "kneeling_work", "laying_back", "leveling_paint", "lifting", "pushing_cart", "raising_hands", "roll_painting", "sitting", "spraying_paint", "stairs", "standing_work", "walking_straight", "walking_winding"],
+      "train_subjects": ["u01", "u02", "u03", "u04", "u05", "u06", "u07", "u08", "u09"],
+      "test_subjects": ["u10", "u11", "u12", "u13"]
+    }
+  }
+}

@@ -1,0 +1,6089 @@
+{
+  "subject1_seg000_0000": [
+    "standing"
+  ],
+  "subject1_seg000_0001": [
+    "standing"
+  ],
+  "subject1_seg000_0002": [
+    "standing"
+  ],
+  "subject1_seg000_0003": [
+    "standing"
+  ],
+  "subject1_seg000_0004": [
+    "standing"
+  ],
+  "subject1_seg000_0005": [
+    "standing"
+  ],
+  "subject1_seg000_0006": [
+    "standing"
+  ],
+  "subject1_seg000_0007": [
+    "standing"
+  ],
+  "subject1_seg000_0008": [
+    "standing"
+  ],
+  "subject1_seg000_0009": [
+    "standing"
+  ],
+  "subject1_seg000_0010": [
+    "standing"
+  ],
+  "subject1_seg000_0011": [
+    "standing"
+  ],
+  "subject1_seg000_0012": [
+    "standing"
+  ],
+  "subject1_seg000_0013": [
+    "standing"
+  ],
+  "subject1_seg000_0014": [
+    "standing"
+  ],
+  "subject1_seg000_0015": [
+    "standing"
+  ],
+  "subject1_seg000_0016": [
+    "standing"
+  ],
+  "subject1_seg001_0000": [
+    "sitting"
+  ],
+  "subject1_seg001_0001": [
+    "sitting"
+  ],
+  "subject1_seg001_0002": [
+    "sitting"
+  ],
+  "subject1_seg001_0003": [
+    "sitting"
+  ],
+  "subject1_seg001_0004": [
+    "sitting"
+  ],
+  "subject1_seg001_0005": [
+    "sitting"
+  ],
+  "subject1_seg001_0006": [
+    "sitting"
+  ],
+  "subject1_seg001_0007": [
+    "sitting"
+  ],
+  "subject1_seg001_0008": [
+    "sitting"
+  ],
+  "subject1_seg001_0009": [
+    "sitting"
+  ],
+  "subject1_seg001_0010": [
+    "sitting"
+  ],
+  "subject1_seg001_0011": [
+    "sitting"
+  ],
+  "subject1_seg001_0012": [
+    "sitting"
+  ],
+  "subject1_seg001_0013": [
+    "sitting"
+  ],
+  "subject1_seg001_0014": [
+    "sitting"
+  ],
+  "subject1_seg001_0015": [
+    "sitting"
+  ],
+  "subject1_seg001_0016": [
+    "sitting"
+  ],
+  "subject1_seg001_0017": [
+    "sitting"
+  ],
+  "subject1_seg001_0018": [
+    "sitting"
+  ],
+  "subject1_seg001_0019": [
+    "sitting"
+  ],
+  "subject1_seg002_0000": [
+    "lying"
+  ],
+  "subject1_seg002_0001": [
+    "lying"
+  ],
+  "subject1_seg002_0002": [
+    "lying"
+  ],
+  "subject1_seg002_0003": [
+    "lying"
+  ],
+  "subject1_seg002_0004": [
+    "lying"
+  ],
+  "subject1_seg002_0005": [
+    "lying"
+  ],
+  "subject1_seg002_0006": [
+    "lying"
+  ],
+  "subject1_seg002_0007": [
+    "lying"
+  ],
+  "subject1_seg002_0008": [
+    "lying"
+  ],
+  "subject1_seg002_0009": [
+    "lying"
+  ],
+  "subject1_seg002_0010": [
+    "lying"
+  ],
+  "subject1_seg002_0011": [
+    "lying"
+  ],
+  "subject1_seg002_0012": [
+    "lying"
+  ],
+  "subject1_seg002_0013": [
+    "lying"
+  ],
+  "subject1_seg002_0014": [
+    "lying"
+  ],
+  "subject1_seg002_0015": [
+    "lying"
+  ],
+  "subject1_seg002_0016": [
+    "lying"
+  ],
+  "subject1_seg002_0017": [
+    "lying"
+  ],
+  "subject1_seg002_0018": [
+    "lying"
+  ],
+  "subject1_seg003_0000": [
+    "walking"
+  ],
+  "subject1_seg003_0001": [
+    "walking"
+  ],
+  "subject1_seg003_0002": [
+    "walking"
+  ],
+  "subject1_seg003_0003": [
+    "walking"
+  ],
+  "subject1_seg003_0004": [
+    "walking"
+  ],
+  "subject1_seg003_0005": [
+    "walking"
+  ],
+  "subject1_seg003_0006": [
+    "walking"
+  ],
+  "subject1_seg003_0007": [
+    "walking"
+  ],
+  "subject1_seg003_0008": [
+    "walking"
+  ],
+  "subject1_seg003_0009": [
+    "walking"
+  ],
+  "subject1_seg003_0010": [
+    "walking"
+  ],
+  "subject1_seg003_0011": [
+    "walking"
+  ],
+  "subject1_seg003_0012": [
+    "walking"
+  ],
+  "subject1_seg003_0013": [
+    "walking"
+  ],
+  "subject1_seg003_0014": [
+    "walking"
+  ],
+  "subject1_seg003_0015": [
+    "walking"
+  ],
+  "subject1_seg003_0016": [
+    "walking"
+  ],
+  "subject1_seg003_0017": [
+    "walking"
+  ],
+  "subject1_seg004_0000": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0001": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0002": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0003": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0004": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0005": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0006": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0007": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0008": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0009": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0010": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0011": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0012": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0013": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0014": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0015": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0016": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0017": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg004_0018": [
+    "waist_bends_forward"
+  ],
+  "subject1_seg005_0000": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0001": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0002": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0003": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0004": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0005": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0006": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0007": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0008": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0009": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0010": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0011": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0012": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0013": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0014": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0015": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0016": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0017": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0018": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0019": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg005_0020": [
+    "frontal_elevation_arms"
+  ],
+  "subject1_seg006_0000": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0001": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0002": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0003": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0004": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0005": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0006": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0007": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0008": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0009": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0010": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0011": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0012": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0013": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0014": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0015": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0016": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0017": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0018": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0019": [
+    "knees_bending"
+  ],
+  "subject1_seg006_0020": [
+    "knees_bending"
+  ],
+  "subject1_seg007_0000": [
+    "cycling"
+  ],
+  "subject1_seg007_0001": [
+    "cycling"
+  ],
+  "subject1_seg007_0002": [
+    "cycling"
+  ],
+  "subject1_seg007_0003": [
+    "cycling"
+  ],
+  "subject1_seg007_0004": [
+    "cycling"
+  ],
+  "subject1_seg007_0005": [
+    "cycling"
+  ],
+  "subject1_seg007_0006": [
+    "cycling"
+  ],
+  "subject1_seg007_0007": [
+    "cycling"
+  ],
+  "subject1_seg007_0008": [
+    "cycling"
+  ],
+  "subject1_seg007_0009": [
+    "cycling"
+  ],
+  "subject1_seg007_0010": [
+    "cycling"
+  ],
+  "subject1_seg008_0000": [
+    "jogging"
+  ],
+  "subject1_seg008_0001": [
+    "jogging"
+  ],
+  "subject1_seg008_0002": [
+    "jogging"
+  ],
+  "subject1_seg008_0003": [
+    "jogging"
+  ],
+  "subject1_seg008_0004": [
+    "jogging"
+  ],
+  "subject1_seg008_0005": [
+    "jogging"
+  ],
+  "subject1_seg008_0006": [
+    "jogging"
+  ],
+  "subject1_seg008_0007": [
+    "jogging"
+  ],
+  "subject1_seg008_0008": [
+    "jogging"
+  ],
+  "subject1_seg008_0009": [
+    "jogging"
+  ],
+  "subject1_seg008_0010": [
+    "jogging"
+  ],
+  "subject1_seg008_0011": [
+    "jogging"
+  ],
+  "subject1_seg008_0012": [
+    "jogging"
+  ],
+  "subject1_seg008_0013": [
+    "jogging"
+  ],
+  "subject1_seg008_0014": [
+    "jogging"
+  ],
+  "subject1_seg008_0015": [
+    "jogging"
+  ],
+  "subject1_seg008_0016": [
+    "jogging"
+  ],
+  "subject1_seg008_0017": [
+    "jogging"
+  ],
+  "subject1_seg008_0018": [
+    "jogging"
+  ],
+  "subject1_seg009_0000": [
+    "running"
+  ],
+  "subject1_seg009_0001": [
+    "running"
+  ],
+  "subject1_seg009_0002": [
+    "running"
+  ],
+  "subject1_seg009_0003": [
+    "running"
+  ],
+  "subject1_seg009_0004": [
+    "running"
+  ],
+  "subject1_seg009_0005": [
+    "running"
+  ],
+  "subject1_seg009_0006": [
+    "running"
+  ],
+  "subject1_seg009_0007": [
+    "running"
+  ],
+  "subject1_seg009_0008": [
+    "running"
+  ],
+  "subject1_seg009_0009": [
+    "running"
+  ],
+  "subject1_seg009_0010": [
+    "running"
+  ],
+  "subject1_seg009_0011": [
+    "running"
+  ],
+  "subject1_seg009_0012": [
+    "running"
+  ],
+  "subject1_seg009_0013": [
+    "running"
+  ],
+  "subject1_seg009_0014": [
+    "running"
+  ],
+  "subject1_seg009_0015": [
+    "running"
+  ],
+  "subject1_seg009_0016": [
+    "running"
+  ],
+  "subject1_seg009_0017": [
+    "running"
+  ],
+  "subject1_seg009_0018": [
+    "running"
+  ],
+  "subject1_seg009_0019": [
+    "running"
+  ],
+  "subject1_seg010_0000": [
+    "jump_front_back"
+  ],
+  "subject1_seg010_0001": [
+    "jump_front_back"
+  ],
+  "subject1_seg010_0002": [
+    "jump_front_back"
+  ],
+  "subject1_seg010_0003": [
+    "jump_front_back"
+  ],
+  "subject1_seg010_0004": [
+    "jump_front_back"
+  ],
+  "subject1_seg010_0005": [
+    "jump_front_back"
+  ],
+  "subject1_seg010_0006": [
+    "jump_front_back"
+  ],
+  "subject1_seg011_0000": [
+    "climbing_stairs"
+  ],
+  "subject1_seg011_0001": [
+    "climbing_stairs"
+  ],
+  "subject1_seg011_0002": [
+    "climbing_stairs"
+  ],
+  "subject1_seg011_0003": [
+    "climbing_stairs"
+  ],
+  "subject1_seg011_0004": [
+    "climbing_stairs"
+  ],
+  "subject1_seg011_0005": [
+    "climbing_stairs"
+  ],
+  "subject1_seg011_0006": [
+    "climbing_stairs"
+  ],
+  "subject1_seg011_0007": [
+    "climbing_stairs"
+  ],
+  "subject1_seg011_0008": [
+    "climbing_stairs"
+  ],
+  "subject1_seg011_0009": [
+    "climbing_stairs"
+  ],
+  "subject1_seg011_0010": [
+    "climbing_stairs"
+  ],
+  "subject1_seg011_0011": [
+    "climbing_stairs"
+  ],
+  "subject1_seg011_0012": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0000": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0001": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0002": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0003": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0004": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0005": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0006": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0007": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0008": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0009": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0010": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0011": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0012": [
+    "climbing_stairs"
+  ],
+  "subject10_seg000_0013": [
+    "climbing_stairs"
+  ],
+  "subject10_seg001_0000": [
+    "standing"
+  ],
+  "subject10_seg001_0001": [
+    "standing"
+  ],
+  "subject10_seg001_0002": [
+    "standing"
+  ],
+  "subject10_seg001_0003": [
+    "standing"
+  ],
+  "subject10_seg001_0004": [
+    "standing"
+  ],
+  "subject10_seg001_0005": [
+    "standing"
+  ],
+  "subject10_seg001_0006": [
+    "standing"
+  ],
+  "subject10_seg001_0007": [
+    "standing"
+  ],
+  "subject10_seg001_0008": [
+    "standing"
+  ],
+  "subject10_seg001_0009": [
+    "standing"
+  ],
+  "subject10_seg001_0010": [
+    "standing"
+  ],
+  "subject10_seg001_0011": [
+    "standing"
+  ],
+  "subject10_seg001_0012": [
+    "standing"
+  ],
+  "subject10_seg001_0013": [
+    "standing"
+  ],
+  "subject10_seg001_0014": [
+    "standing"
+  ],
+  "subject10_seg001_0015": [
+    "standing"
+  ],
+  "subject10_seg001_0016": [
+    "standing"
+  ],
+  "subject10_seg001_0017": [
+    "standing"
+  ],
+  "subject10_seg001_0018": [
+    "standing"
+  ],
+  "subject10_seg001_0019": [
+    "standing"
+  ],
+  "subject10_seg001_0020": [
+    "standing"
+  ],
+  "subject10_seg002_0000": [
+    "sitting"
+  ],
+  "subject10_seg002_0001": [
+    "sitting"
+  ],
+  "subject10_seg002_0002": [
+    "sitting"
+  ],
+  "subject10_seg002_0003": [
+    "sitting"
+  ],
+  "subject10_seg002_0004": [
+    "sitting"
+  ],
+  "subject10_seg002_0005": [
+    "sitting"
+  ],
+  "subject10_seg002_0006": [
+    "sitting"
+  ],
+  "subject10_seg002_0007": [
+    "sitting"
+  ],
+  "subject10_seg002_0008": [
+    "sitting"
+  ],
+  "subject10_seg002_0009": [
+    "sitting"
+  ],
+  "subject10_seg002_0010": [
+    "sitting"
+  ],
+  "subject10_seg002_0011": [
+    "sitting"
+  ],
+  "subject10_seg002_0012": [
+    "sitting"
+  ],
+  "subject10_seg002_0013": [
+    "sitting"
+  ],
+  "subject10_seg002_0014": [
+    "sitting"
+  ],
+  "subject10_seg002_0015": [
+    "sitting"
+  ],
+  "subject10_seg002_0016": [
+    "sitting"
+  ],
+  "subject10_seg002_0017": [
+    "sitting"
+  ],
+  "subject10_seg003_0000": [
+    "lying"
+  ],
+  "subject10_seg003_0001": [
+    "lying"
+  ],
+  "subject10_seg003_0002": [
+    "lying"
+  ],
+  "subject10_seg003_0003": [
+    "lying"
+  ],
+  "subject10_seg003_0004": [
+    "lying"
+  ],
+  "subject10_seg003_0005": [
+    "lying"
+  ],
+  "subject10_seg003_0006": [
+    "lying"
+  ],
+  "subject10_seg003_0007": [
+    "lying"
+  ],
+  "subject10_seg003_0008": [
+    "lying"
+  ],
+  "subject10_seg003_0009": [
+    "lying"
+  ],
+  "subject10_seg003_0010": [
+    "lying"
+  ],
+  "subject10_seg003_0011": [
+    "lying"
+  ],
+  "subject10_seg003_0012": [
+    "lying"
+  ],
+  "subject10_seg003_0013": [
+    "lying"
+  ],
+  "subject10_seg003_0014": [
+    "lying"
+  ],
+  "subject10_seg003_0015": [
+    "lying"
+  ],
+  "subject10_seg003_0016": [
+    "lying"
+  ],
+  "subject10_seg003_0017": [
+    "lying"
+  ],
+  "subject10_seg003_0018": [
+    "lying"
+  ],
+  "subject10_seg003_0019": [
+    "lying"
+  ],
+  "subject10_seg004_0000": [
+    "walking"
+  ],
+  "subject10_seg004_0001": [
+    "walking"
+  ],
+  "subject10_seg004_0002": [
+    "walking"
+  ],
+  "subject10_seg004_0003": [
+    "walking"
+  ],
+  "subject10_seg004_0004": [
+    "walking"
+  ],
+  "subject10_seg004_0005": [
+    "walking"
+  ],
+  "subject10_seg004_0006": [
+    "walking"
+  ],
+  "subject10_seg004_0007": [
+    "walking"
+  ],
+  "subject10_seg004_0008": [
+    "walking"
+  ],
+  "subject10_seg004_0009": [
+    "walking"
+  ],
+  "subject10_seg004_0010": [
+    "walking"
+  ],
+  "subject10_seg004_0011": [
+    "walking"
+  ],
+  "subject10_seg004_0012": [
+    "walking"
+  ],
+  "subject10_seg004_0013": [
+    "walking"
+  ],
+  "subject10_seg004_0014": [
+    "walking"
+  ],
+  "subject10_seg004_0015": [
+    "walking"
+  ],
+  "subject10_seg004_0016": [
+    "walking"
+  ],
+  "subject10_seg005_0000": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0001": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0002": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0003": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0004": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0005": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0006": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0007": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0008": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0009": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0010": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0011": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0012": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0013": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg005_0014": [
+    "waist_bends_forward"
+  ],
+  "subject10_seg006_0000": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0001": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0002": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0003": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0004": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0005": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0006": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0007": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0008": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0009": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0010": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0011": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0012": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0013": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0014": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0015": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0016": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg006_0017": [
+    "frontal_elevation_arms"
+  ],
+  "subject10_seg007_0000": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0001": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0002": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0003": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0004": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0005": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0006": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0007": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0008": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0009": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0010": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0011": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0012": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0013": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0014": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0015": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0016": [
+    "knees_bending"
+  ],
+  "subject10_seg007_0017": [
+    "knees_bending"
+  ],
+  "subject10_seg008_0000": [
+    "cycling"
+  ],
+  "subject10_seg008_0001": [
+    "cycling"
+  ],
+  "subject10_seg008_0002": [
+    "cycling"
+  ],
+  "subject10_seg008_0003": [
+    "cycling"
+  ],
+  "subject10_seg008_0004": [
+    "cycling"
+  ],
+  "subject10_seg008_0005": [
+    "cycling"
+  ],
+  "subject10_seg008_0006": [
+    "cycling"
+  ],
+  "subject10_seg008_0007": [
+    "cycling"
+  ],
+  "subject10_seg008_0008": [
+    "cycling"
+  ],
+  "subject10_seg008_0009": [
+    "cycling"
+  ],
+  "subject10_seg008_0010": [
+    "cycling"
+  ],
+  "subject10_seg008_0011": [
+    "cycling"
+  ],
+  "subject10_seg008_0012": [
+    "cycling"
+  ],
+  "subject10_seg008_0013": [
+    "cycling"
+  ],
+  "subject10_seg008_0014": [
+    "cycling"
+  ],
+  "subject10_seg008_0015": [
+    "cycling"
+  ],
+  "subject10_seg009_0000": [
+    "jogging"
+  ],
+  "subject10_seg009_0001": [
+    "jogging"
+  ],
+  "subject10_seg009_0002": [
+    "jogging"
+  ],
+  "subject10_seg009_0003": [
+    "jogging"
+  ],
+  "subject10_seg009_0004": [
+    "jogging"
+  ],
+  "subject10_seg009_0005": [
+    "jogging"
+  ],
+  "subject10_seg009_0006": [
+    "jogging"
+  ],
+  "subject10_seg009_0007": [
+    "jogging"
+  ],
+  "subject10_seg009_0008": [
+    "jogging"
+  ],
+  "subject10_seg009_0009": [
+    "jogging"
+  ],
+  "subject10_seg009_0010": [
+    "jogging"
+  ],
+  "subject10_seg009_0011": [
+    "jogging"
+  ],
+  "subject10_seg009_0012": [
+    "jogging"
+  ],
+  "subject10_seg009_0013": [
+    "jogging"
+  ],
+  "subject10_seg009_0014": [
+    "jogging"
+  ],
+  "subject10_seg010_0000": [
+    "running"
+  ],
+  "subject10_seg010_0001": [
+    "running"
+  ],
+  "subject10_seg010_0002": [
+    "running"
+  ],
+  "subject10_seg010_0003": [
+    "running"
+  ],
+  "subject10_seg010_0004": [
+    "running"
+  ],
+  "subject10_seg010_0005": [
+    "running"
+  ],
+  "subject10_seg010_0006": [
+    "running"
+  ],
+  "subject10_seg010_0007": [
+    "running"
+  ],
+  "subject10_seg010_0008": [
+    "running"
+  ],
+  "subject10_seg010_0009": [
+    "running"
+  ],
+  "subject10_seg010_0010": [
+    "running"
+  ],
+  "subject10_seg010_0011": [
+    "running"
+  ],
+  "subject10_seg010_0012": [
+    "running"
+  ],
+  "subject10_seg010_0013": [
+    "running"
+  ],
+  "subject10_seg010_0014": [
+    "running"
+  ],
+  "subject10_seg010_0015": [
+    "running"
+  ],
+  "subject10_seg010_0016": [
+    "running"
+  ],
+  "subject10_seg010_0017": [
+    "running"
+  ],
+  "subject10_seg010_0018": [
+    "running"
+  ],
+  "subject10_seg010_0019": [
+    "running"
+  ],
+  "subject10_seg010_0020": [
+    "running"
+  ],
+  "subject10_seg010_0021": [
+    "running"
+  ],
+  "subject10_seg011_0000": [
+    "jump_front_back"
+  ],
+  "subject10_seg011_0001": [
+    "jump_front_back"
+  ],
+  "subject10_seg011_0002": [
+    "jump_front_back"
+  ],
+  "subject10_seg011_0003": [
+    "jump_front_back"
+  ],
+  "subject10_seg011_0004": [
+    "jump_front_back"
+  ],
+  "subject10_seg011_0005": [
+    "jump_front_back"
+  ],
+  "subject10_seg011_0006": [
+    "jump_front_back"
+  ],
+  "subject2_seg000_0000": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0001": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0002": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0003": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0004": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0005": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0006": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0007": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0008": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0009": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0010": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0011": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0012": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0013": [
+    "climbing_stairs"
+  ],
+  "subject2_seg000_0014": [
+    "climbing_stairs"
+  ],
+  "subject2_seg001_0000": [
+    "standing"
+  ],
+  "subject2_seg001_0001": [
+    "standing"
+  ],
+  "subject2_seg001_0002": [
+    "standing"
+  ],
+  "subject2_seg001_0003": [
+    "standing"
+  ],
+  "subject2_seg001_0004": [
+    "standing"
+  ],
+  "subject2_seg001_0005": [
+    "standing"
+  ],
+  "subject2_seg001_0006": [
+    "standing"
+  ],
+  "subject2_seg001_0007": [
+    "standing"
+  ],
+  "subject2_seg001_0008": [
+    "standing"
+  ],
+  "subject2_seg001_0009": [
+    "standing"
+  ],
+  "subject2_seg001_0010": [
+    "standing"
+  ],
+  "subject2_seg001_0011": [
+    "standing"
+  ],
+  "subject2_seg001_0012": [
+    "standing"
+  ],
+  "subject2_seg001_0013": [
+    "standing"
+  ],
+  "subject2_seg001_0014": [
+    "standing"
+  ],
+  "subject2_seg001_0015": [
+    "standing"
+  ],
+  "subject2_seg001_0016": [
+    "standing"
+  ],
+  "subject2_seg001_0017": [
+    "standing"
+  ],
+  "subject2_seg001_0018": [
+    "standing"
+  ],
+  "subject2_seg001_0019": [
+    "standing"
+  ],
+  "subject2_seg001_0020": [
+    "standing"
+  ],
+  "subject2_seg001_0021": [
+    "standing"
+  ],
+  "subject2_seg002_0000": [
+    "sitting"
+  ],
+  "subject2_seg002_0001": [
+    "sitting"
+  ],
+  "subject2_seg002_0002": [
+    "sitting"
+  ],
+  "subject2_seg002_0003": [
+    "sitting"
+  ],
+  "subject2_seg002_0004": [
+    "sitting"
+  ],
+  "subject2_seg002_0005": [
+    "sitting"
+  ],
+  "subject2_seg002_0006": [
+    "sitting"
+  ],
+  "subject2_seg002_0007": [
+    "sitting"
+  ],
+  "subject2_seg002_0008": [
+    "sitting"
+  ],
+  "subject2_seg002_0009": [
+    "sitting"
+  ],
+  "subject2_seg002_0010": [
+    "sitting"
+  ],
+  "subject2_seg002_0011": [
+    "sitting"
+  ],
+  "subject2_seg002_0012": [
+    "sitting"
+  ],
+  "subject2_seg002_0013": [
+    "sitting"
+  ],
+  "subject2_seg002_0014": [
+    "sitting"
+  ],
+  "subject2_seg002_0015": [
+    "sitting"
+  ],
+  "subject2_seg002_0016": [
+    "sitting"
+  ],
+  "subject2_seg002_0017": [
+    "sitting"
+  ],
+  "subject2_seg002_0018": [
+    "sitting"
+  ],
+  "subject2_seg002_0019": [
+    "sitting"
+  ],
+  "subject2_seg002_0020": [
+    "sitting"
+  ],
+  "subject2_seg003_0000": [
+    "lying"
+  ],
+  "subject2_seg003_0001": [
+    "lying"
+  ],
+  "subject2_seg003_0002": [
+    "lying"
+  ],
+  "subject2_seg003_0003": [
+    "lying"
+  ],
+  "subject2_seg003_0004": [
+    "lying"
+  ],
+  "subject2_seg003_0005": [
+    "lying"
+  ],
+  "subject2_seg003_0006": [
+    "lying"
+  ],
+  "subject2_seg003_0007": [
+    "lying"
+  ],
+  "subject2_seg003_0008": [
+    "lying"
+  ],
+  "subject2_seg003_0009": [
+    "lying"
+  ],
+  "subject2_seg003_0010": [
+    "lying"
+  ],
+  "subject2_seg003_0011": [
+    "lying"
+  ],
+  "subject2_seg003_0012": [
+    "lying"
+  ],
+  "subject2_seg003_0013": [
+    "lying"
+  ],
+  "subject2_seg003_0014": [
+    "lying"
+  ],
+  "subject2_seg003_0015": [
+    "lying"
+  ],
+  "subject2_seg003_0016": [
+    "lying"
+  ],
+  "subject2_seg003_0017": [
+    "lying"
+  ],
+  "subject2_seg003_0018": [
+    "lying"
+  ],
+  "subject2_seg003_0019": [
+    "lying"
+  ],
+  "subject2_seg003_0020": [
+    "lying"
+  ],
+  "subject2_seg004_0000": [
+    "walking"
+  ],
+  "subject2_seg004_0001": [
+    "walking"
+  ],
+  "subject2_seg004_0002": [
+    "walking"
+  ],
+  "subject2_seg004_0003": [
+    "walking"
+  ],
+  "subject2_seg004_0004": [
+    "walking"
+  ],
+  "subject2_seg004_0005": [
+    "walking"
+  ],
+  "subject2_seg004_0006": [
+    "walking"
+  ],
+  "subject2_seg004_0007": [
+    "walking"
+  ],
+  "subject2_seg004_0008": [
+    "walking"
+  ],
+  "subject2_seg004_0009": [
+    "walking"
+  ],
+  "subject2_seg004_0010": [
+    "walking"
+  ],
+  "subject2_seg004_0011": [
+    "walking"
+  ],
+  "subject2_seg004_0012": [
+    "walking"
+  ],
+  "subject2_seg004_0013": [
+    "walking"
+  ],
+  "subject2_seg004_0014": [
+    "walking"
+  ],
+  "subject2_seg004_0015": [
+    "walking"
+  ],
+  "subject2_seg004_0016": [
+    "walking"
+  ],
+  "subject2_seg005_0000": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0001": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0002": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0003": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0004": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0005": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0006": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0007": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0008": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0009": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0010": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0011": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0012": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0013": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0014": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0015": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0016": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0017": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0018": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0019": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg005_0020": [
+    "waist_bends_forward"
+  ],
+  "subject2_seg006_0000": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0001": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0002": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0003": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0004": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0005": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0006": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0007": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0008": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0009": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0010": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0011": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0012": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0013": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0014": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0015": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0016": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0017": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg006_0018": [
+    "frontal_elevation_arms"
+  ],
+  "subject2_seg007_0000": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0001": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0002": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0003": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0004": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0005": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0006": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0007": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0008": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0009": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0010": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0011": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0012": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0013": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0014": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0015": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0016": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0017": [
+    "knees_bending"
+  ],
+  "subject2_seg007_0018": [
+    "knees_bending"
+  ],
+  "subject2_seg008_0000": [
+    "jogging"
+  ],
+  "subject2_seg008_0001": [
+    "jogging"
+  ],
+  "subject2_seg008_0002": [
+    "jogging"
+  ],
+  "subject2_seg008_0003": [
+    "jogging"
+  ],
+  "subject2_seg008_0004": [
+    "jogging"
+  ],
+  "subject2_seg008_0005": [
+    "jogging"
+  ],
+  "subject2_seg008_0006": [
+    "jogging"
+  ],
+  "subject2_seg008_0007": [
+    "jogging"
+  ],
+  "subject2_seg008_0008": [
+    "jogging"
+  ],
+  "subject2_seg008_0009": [
+    "jogging"
+  ],
+  "subject2_seg008_0010": [
+    "jogging"
+  ],
+  "subject2_seg008_0011": [
+    "jogging"
+  ],
+  "subject2_seg008_0012": [
+    "jogging"
+  ],
+  "subject2_seg008_0013": [
+    "jogging"
+  ],
+  "subject2_seg008_0014": [
+    "jogging"
+  ],
+  "subject2_seg008_0015": [
+    "jogging"
+  ],
+  "subject2_seg008_0016": [
+    "jogging"
+  ],
+  "subject2_seg008_0017": [
+    "jogging"
+  ],
+  "subject2_seg008_0018": [
+    "jogging"
+  ],
+  "subject2_seg008_0019": [
+    "jogging"
+  ],
+  "subject2_seg008_0020": [
+    "jogging"
+  ],
+  "subject2_seg008_0021": [
+    "jogging"
+  ],
+  "subject2_seg008_0022": [
+    "jogging"
+  ],
+  "subject2_seg008_0023": [
+    "jogging"
+  ],
+  "subject2_seg009_0000": [
+    "running"
+  ],
+  "subject2_seg009_0001": [
+    "running"
+  ],
+  "subject2_seg009_0002": [
+    "running"
+  ],
+  "subject2_seg009_0003": [
+    "running"
+  ],
+  "subject2_seg009_0004": [
+    "running"
+  ],
+  "subject2_seg009_0005": [
+    "running"
+  ],
+  "subject2_seg009_0006": [
+    "running"
+  ],
+  "subject2_seg009_0007": [
+    "running"
+  ],
+  "subject2_seg009_0008": [
+    "running"
+  ],
+  "subject2_seg009_0009": [
+    "running"
+  ],
+  "subject2_seg009_0010": [
+    "running"
+  ],
+  "subject2_seg009_0011": [
+    "running"
+  ],
+  "subject2_seg009_0012": [
+    "running"
+  ],
+  "subject2_seg009_0013": [
+    "running"
+  ],
+  "subject2_seg009_0014": [
+    "running"
+  ],
+  "subject2_seg009_0015": [
+    "running"
+  ],
+  "subject2_seg009_0016": [
+    "running"
+  ],
+  "subject2_seg009_0017": [
+    "running"
+  ],
+  "subject2_seg009_0018": [
+    "running"
+  ],
+  "subject2_seg009_0019": [
+    "running"
+  ],
+  "subject2_seg010_0000": [
+    "jump_front_back"
+  ],
+  "subject2_seg010_0001": [
+    "jump_front_back"
+  ],
+  "subject2_seg010_0002": [
+    "jump_front_back"
+  ],
+  "subject2_seg010_0003": [
+    "jump_front_back"
+  ],
+  "subject2_seg010_0004": [
+    "jump_front_back"
+  ],
+  "subject2_seg011_0000": [
+    "cycling"
+  ],
+  "subject2_seg011_0001": [
+    "cycling"
+  ],
+  "subject2_seg011_0002": [
+    "cycling"
+  ],
+  "subject2_seg011_0003": [
+    "cycling"
+  ],
+  "subject2_seg011_0004": [
+    "cycling"
+  ],
+  "subject2_seg011_0005": [
+    "cycling"
+  ],
+  "subject2_seg011_0006": [
+    "cycling"
+  ],
+  "subject2_seg011_0007": [
+    "cycling"
+  ],
+  "subject2_seg011_0008": [
+    "cycling"
+  ],
+  "subject2_seg011_0009": [
+    "cycling"
+  ],
+  "subject2_seg011_0010": [
+    "cycling"
+  ],
+  "subject2_seg011_0011": [
+    "cycling"
+  ],
+  "subject2_seg011_0012": [
+    "cycling"
+  ],
+  "subject2_seg011_0013": [
+    "cycling"
+  ],
+  "subject2_seg011_0014": [
+    "cycling"
+  ],
+  "subject3_seg000_0000": [
+    "standing"
+  ],
+  "subject3_seg000_0001": [
+    "standing"
+  ],
+  "subject3_seg000_0002": [
+    "standing"
+  ],
+  "subject3_seg000_0003": [
+    "standing"
+  ],
+  "subject3_seg000_0004": [
+    "standing"
+  ],
+  "subject3_seg000_0005": [
+    "standing"
+  ],
+  "subject3_seg000_0006": [
+    "standing"
+  ],
+  "subject3_seg000_0007": [
+    "standing"
+  ],
+  "subject3_seg000_0008": [
+    "standing"
+  ],
+  "subject3_seg000_0009": [
+    "standing"
+  ],
+  "subject3_seg000_0010": [
+    "standing"
+  ],
+  "subject3_seg000_0011": [
+    "standing"
+  ],
+  "subject3_seg000_0012": [
+    "standing"
+  ],
+  "subject3_seg000_0013": [
+    "standing"
+  ],
+  "subject3_seg000_0014": [
+    "standing"
+  ],
+  "subject3_seg000_0015": [
+    "standing"
+  ],
+  "subject3_seg000_0016": [
+    "standing"
+  ],
+  "subject3_seg000_0017": [
+    "standing"
+  ],
+  "subject3_seg000_0018": [
+    "standing"
+  ],
+  "subject3_seg001_0000": [
+    "sitting"
+  ],
+  "subject3_seg001_0001": [
+    "sitting"
+  ],
+  "subject3_seg001_0002": [
+    "sitting"
+  ],
+  "subject3_seg001_0003": [
+    "sitting"
+  ],
+  "subject3_seg001_0004": [
+    "sitting"
+  ],
+  "subject3_seg001_0005": [
+    "sitting"
+  ],
+  "subject3_seg001_0006": [
+    "sitting"
+  ],
+  "subject3_seg001_0007": [
+    "sitting"
+  ],
+  "subject3_seg001_0008": [
+    "sitting"
+  ],
+  "subject3_seg001_0009": [
+    "sitting"
+  ],
+  "subject3_seg001_0010": [
+    "sitting"
+  ],
+  "subject3_seg001_0011": [
+    "sitting"
+  ],
+  "subject3_seg001_0012": [
+    "sitting"
+  ],
+  "subject3_seg001_0013": [
+    "sitting"
+  ],
+  "subject3_seg001_0014": [
+    "sitting"
+  ],
+  "subject3_seg001_0015": [
+    "sitting"
+  ],
+  "subject3_seg001_0016": [
+    "sitting"
+  ],
+  "subject3_seg001_0017": [
+    "sitting"
+  ],
+  "subject3_seg001_0018": [
+    "sitting"
+  ],
+  "subject3_seg002_0000": [
+    "lying"
+  ],
+  "subject3_seg002_0001": [
+    "lying"
+  ],
+  "subject3_seg002_0002": [
+    "lying"
+  ],
+  "subject3_seg002_0003": [
+    "lying"
+  ],
+  "subject3_seg002_0004": [
+    "lying"
+  ],
+  "subject3_seg002_0005": [
+    "lying"
+  ],
+  "subject3_seg002_0006": [
+    "lying"
+  ],
+  "subject3_seg002_0007": [
+    "lying"
+  ],
+  "subject3_seg002_0008": [
+    "lying"
+  ],
+  "subject3_seg002_0009": [
+    "lying"
+  ],
+  "subject3_seg002_0010": [
+    "lying"
+  ],
+  "subject3_seg002_0011": [
+    "lying"
+  ],
+  "subject3_seg002_0012": [
+    "lying"
+  ],
+  "subject3_seg002_0013": [
+    "lying"
+  ],
+  "subject3_seg002_0014": [
+    "lying"
+  ],
+  "subject3_seg002_0015": [
+    "lying"
+  ],
+  "subject3_seg002_0016": [
+    "lying"
+  ],
+  "subject3_seg003_0000": [
+    "walking"
+  ],
+  "subject3_seg003_0001": [
+    "walking"
+  ],
+  "subject3_seg003_0002": [
+    "walking"
+  ],
+  "subject3_seg003_0003": [
+    "walking"
+  ],
+  "subject3_seg003_0004": [
+    "walking"
+  ],
+  "subject3_seg003_0005": [
+    "walking"
+  ],
+  "subject3_seg003_0006": [
+    "walking"
+  ],
+  "subject3_seg003_0007": [
+    "walking"
+  ],
+  "subject3_seg003_0008": [
+    "walking"
+  ],
+  "subject3_seg003_0009": [
+    "walking"
+  ],
+  "subject3_seg003_0010": [
+    "walking"
+  ],
+  "subject3_seg003_0011": [
+    "walking"
+  ],
+  "subject3_seg003_0012": [
+    "walking"
+  ],
+  "subject3_seg003_0013": [
+    "walking"
+  ],
+  "subject3_seg003_0014": [
+    "walking"
+  ],
+  "subject3_seg003_0015": [
+    "walking"
+  ],
+  "subject3_seg003_0016": [
+    "walking"
+  ],
+  "subject3_seg004_0000": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0001": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0002": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0003": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0004": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0005": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0006": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0007": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0008": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0009": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0010": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0011": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0012": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0013": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0014": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0015": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0016": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0017": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0018": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg004_0019": [
+    "waist_bends_forward"
+  ],
+  "subject3_seg005_0000": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0001": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0002": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0003": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0004": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0005": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0006": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0007": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0008": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0009": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0010": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0011": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0012": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0013": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0014": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0015": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0016": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg005_0017": [
+    "frontal_elevation_arms"
+  ],
+  "subject3_seg006_0000": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0001": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0002": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0003": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0004": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0005": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0006": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0007": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0008": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0009": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0010": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0011": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0012": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0013": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0014": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0015": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0016": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0017": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0018": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0019": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0020": [
+    "knees_bending"
+  ],
+  "subject3_seg006_0021": [
+    "knees_bending"
+  ],
+  "subject3_seg007_0000": [
+    "cycling"
+  ],
+  "subject3_seg007_0001": [
+    "cycling"
+  ],
+  "subject3_seg007_0002": [
+    "cycling"
+  ],
+  "subject3_seg007_0003": [
+    "cycling"
+  ],
+  "subject3_seg007_0004": [
+    "cycling"
+  ],
+  "subject3_seg007_0005": [
+    "cycling"
+  ],
+  "subject3_seg007_0006": [
+    "cycling"
+  ],
+  "subject3_seg007_0007": [
+    "cycling"
+  ],
+  "subject3_seg007_0008": [
+    "cycling"
+  ],
+  "subject3_seg007_0009": [
+    "cycling"
+  ],
+  "subject3_seg007_0010": [
+    "cycling"
+  ],
+  "subject3_seg007_0011": [
+    "cycling"
+  ],
+  "subject3_seg007_0012": [
+    "cycling"
+  ],
+  "subject3_seg007_0013": [
+    "cycling"
+  ],
+  "subject3_seg008_0000": [
+    "jogging"
+  ],
+  "subject3_seg008_0001": [
+    "jogging"
+  ],
+  "subject3_seg008_0002": [
+    "jogging"
+  ],
+  "subject3_seg008_0003": [
+    "jogging"
+  ],
+  "subject3_seg008_0004": [
+    "jogging"
+  ],
+  "subject3_seg008_0005": [
+    "jogging"
+  ],
+  "subject3_seg008_0006": [
+    "jogging"
+  ],
+  "subject3_seg008_0007": [
+    "jogging"
+  ],
+  "subject3_seg008_0008": [
+    "jogging"
+  ],
+  "subject3_seg008_0009": [
+    "jogging"
+  ],
+  "subject3_seg008_0010": [
+    "jogging"
+  ],
+  "subject3_seg008_0011": [
+    "jogging"
+  ],
+  "subject3_seg008_0012": [
+    "jogging"
+  ],
+  "subject3_seg008_0013": [
+    "jogging"
+  ],
+  "subject3_seg008_0014": [
+    "jogging"
+  ],
+  "subject3_seg008_0015": [
+    "jogging"
+  ],
+  "subject3_seg008_0016": [
+    "jogging"
+  ],
+  "subject3_seg008_0017": [
+    "jogging"
+  ],
+  "subject3_seg009_0000": [
+    "running"
+  ],
+  "subject3_seg009_0001": [
+    "running"
+  ],
+  "subject3_seg009_0002": [
+    "running"
+  ],
+  "subject3_seg009_0003": [
+    "running"
+  ],
+  "subject3_seg009_0004": [
+    "running"
+  ],
+  "subject3_seg009_0005": [
+    "running"
+  ],
+  "subject3_seg009_0006": [
+    "running"
+  ],
+  "subject3_seg009_0007": [
+    "running"
+  ],
+  "subject3_seg009_0008": [
+    "running"
+  ],
+  "subject3_seg009_0009": [
+    "running"
+  ],
+  "subject3_seg009_0010": [
+    "running"
+  ],
+  "subject3_seg009_0011": [
+    "running"
+  ],
+  "subject3_seg009_0012": [
+    "running"
+  ],
+  "subject3_seg009_0013": [
+    "running"
+  ],
+  "subject3_seg009_0014": [
+    "running"
+  ],
+  "subject3_seg009_0015": [
+    "running"
+  ],
+  "subject3_seg009_0016": [
+    "running"
+  ],
+  "subject3_seg009_0017": [
+    "running"
+  ],
+  "subject3_seg010_0000": [
+    "jump_front_back"
+  ],
+  "subject3_seg010_0001": [
+    "jump_front_back"
+  ],
+  "subject3_seg010_0002": [
+    "jump_front_back"
+  ],
+  "subject3_seg010_0003": [
+    "jump_front_back"
+  ],
+  "subject3_seg010_0004": [
+    "jump_front_back"
+  ],
+  "subject3_seg010_0005": [
+    "jump_front_back"
+  ],
+  "subject3_seg011_0000": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0001": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0002": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0003": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0004": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0005": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0006": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0007": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0008": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0009": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0010": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0011": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0012": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0013": [
+    "climbing_stairs"
+  ],
+  "subject3_seg011_0014": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0000": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0001": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0002": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0003": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0004": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0005": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0006": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0007": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0008": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0009": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0010": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0011": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0012": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0013": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0014": [
+    "climbing_stairs"
+  ],
+  "subject4_seg000_0015": [
+    "climbing_stairs"
+  ],
+  "subject4_seg001_0000": [
+    "standing"
+  ],
+  "subject4_seg001_0001": [
+    "standing"
+  ],
+  "subject4_seg001_0002": [
+    "standing"
+  ],
+  "subject4_seg001_0003": [
+    "standing"
+  ],
+  "subject4_seg001_0004": [
+    "standing"
+  ],
+  "subject4_seg001_0005": [
+    "standing"
+  ],
+  "subject4_seg001_0006": [
+    "standing"
+  ],
+  "subject4_seg001_0007": [
+    "standing"
+  ],
+  "subject4_seg001_0008": [
+    "standing"
+  ],
+  "subject4_seg001_0009": [
+    "standing"
+  ],
+  "subject4_seg001_0010": [
+    "standing"
+  ],
+  "subject4_seg001_0011": [
+    "standing"
+  ],
+  "subject4_seg001_0012": [
+    "standing"
+  ],
+  "subject4_seg001_0013": [
+    "standing"
+  ],
+  "subject4_seg001_0014": [
+    "standing"
+  ],
+  "subject4_seg001_0015": [
+    "standing"
+  ],
+  "subject4_seg001_0016": [
+    "standing"
+  ],
+  "subject4_seg001_0017": [
+    "standing"
+  ],
+  "subject4_seg002_0000": [
+    "sitting"
+  ],
+  "subject4_seg002_0001": [
+    "sitting"
+  ],
+  "subject4_seg002_0002": [
+    "sitting"
+  ],
+  "subject4_seg002_0003": [
+    "sitting"
+  ],
+  "subject4_seg002_0004": [
+    "sitting"
+  ],
+  "subject4_seg002_0005": [
+    "sitting"
+  ],
+  "subject4_seg002_0006": [
+    "sitting"
+  ],
+  "subject4_seg002_0007": [
+    "sitting"
+  ],
+  "subject4_seg002_0008": [
+    "sitting"
+  ],
+  "subject4_seg002_0009": [
+    "sitting"
+  ],
+  "subject4_seg002_0010": [
+    "sitting"
+  ],
+  "subject4_seg002_0011": [
+    "sitting"
+  ],
+  "subject4_seg002_0012": [
+    "sitting"
+  ],
+  "subject4_seg002_0013": [
+    "sitting"
+  ],
+  "subject4_seg002_0014": [
+    "sitting"
+  ],
+  "subject4_seg002_0015": [
+    "sitting"
+  ],
+  "subject4_seg002_0016": [
+    "sitting"
+  ],
+  "subject4_seg002_0017": [
+    "sitting"
+  ],
+  "subject4_seg002_0018": [
+    "sitting"
+  ],
+  "subject4_seg002_0019": [
+    "sitting"
+  ],
+  "subject4_seg003_0000": [
+    "lying"
+  ],
+  "subject4_seg003_0001": [
+    "lying"
+  ],
+  "subject4_seg003_0002": [
+    "lying"
+  ],
+  "subject4_seg003_0003": [
+    "lying"
+  ],
+  "subject4_seg003_0004": [
+    "lying"
+  ],
+  "subject4_seg003_0005": [
+    "lying"
+  ],
+  "subject4_seg003_0006": [
+    "lying"
+  ],
+  "subject4_seg003_0007": [
+    "lying"
+  ],
+  "subject4_seg003_0008": [
+    "lying"
+  ],
+  "subject4_seg003_0009": [
+    "lying"
+  ],
+  "subject4_seg003_0010": [
+    "lying"
+  ],
+  "subject4_seg003_0011": [
+    "lying"
+  ],
+  "subject4_seg003_0012": [
+    "lying"
+  ],
+  "subject4_seg003_0013": [
+    "lying"
+  ],
+  "subject4_seg003_0014": [
+    "lying"
+  ],
+  "subject4_seg003_0015": [
+    "lying"
+  ],
+  "subject4_seg003_0016": [
+    "lying"
+  ],
+  "subject4_seg003_0017": [
+    "lying"
+  ],
+  "subject4_seg003_0018": [
+    "lying"
+  ],
+  "subject4_seg004_0000": [
+    "walking"
+  ],
+  "subject4_seg004_0001": [
+    "walking"
+  ],
+  "subject4_seg004_0002": [
+    "walking"
+  ],
+  "subject4_seg004_0003": [
+    "walking"
+  ],
+  "subject4_seg004_0004": [
+    "walking"
+  ],
+  "subject4_seg004_0005": [
+    "walking"
+  ],
+  "subject4_seg004_0006": [
+    "walking"
+  ],
+  "subject4_seg004_0007": [
+    "walking"
+  ],
+  "subject4_seg004_0008": [
+    "walking"
+  ],
+  "subject4_seg004_0009": [
+    "walking"
+  ],
+  "subject4_seg004_0010": [
+    "walking"
+  ],
+  "subject4_seg004_0011": [
+    "walking"
+  ],
+  "subject4_seg004_0012": [
+    "walking"
+  ],
+  "subject4_seg004_0013": [
+    "walking"
+  ],
+  "subject4_seg004_0014": [
+    "walking"
+  ],
+  "subject4_seg005_0000": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0001": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0002": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0003": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0004": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0005": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0006": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0007": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0008": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0009": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0010": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0011": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0012": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0013": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0014": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0015": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0016": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0017": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0018": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg005_0019": [
+    "waist_bends_forward"
+  ],
+  "subject4_seg006_0000": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0001": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0002": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0003": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0004": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0005": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0006": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0007": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0008": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0009": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0010": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0011": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0012": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0013": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0014": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0015": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg006_0016": [
+    "frontal_elevation_arms"
+  ],
+  "subject4_seg007_0000": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0001": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0002": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0003": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0004": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0005": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0006": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0007": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0008": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0009": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0010": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0011": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0012": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0013": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0014": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0015": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0016": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0017": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0018": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0019": [
+    "knees_bending"
+  ],
+  "subject4_seg007_0020": [
+    "knees_bending"
+  ],
+  "subject4_seg008_0000": [
+    "cycling"
+  ],
+  "subject4_seg008_0001": [
+    "cycling"
+  ],
+  "subject4_seg008_0002": [
+    "cycling"
+  ],
+  "subject4_seg008_0003": [
+    "cycling"
+  ],
+  "subject4_seg008_0004": [
+    "cycling"
+  ],
+  "subject4_seg008_0005": [
+    "cycling"
+  ],
+  "subject4_seg008_0006": [
+    "cycling"
+  ],
+  "subject4_seg008_0007": [
+    "cycling"
+  ],
+  "subject4_seg008_0008": [
+    "cycling"
+  ],
+  "subject4_seg008_0009": [
+    "cycling"
+  ],
+  "subject4_seg008_0010": [
+    "cycling"
+  ],
+  "subject4_seg008_0011": [
+    "cycling"
+  ],
+  "subject4_seg008_0012": [
+    "cycling"
+  ],
+  "subject4_seg008_0013": [
+    "cycling"
+  ],
+  "subject4_seg008_0014": [
+    "cycling"
+  ],
+  "subject4_seg008_0015": [
+    "cycling"
+  ],
+  "subject4_seg009_0000": [
+    "jogging"
+  ],
+  "subject4_seg009_0001": [
+    "jogging"
+  ],
+  "subject4_seg009_0002": [
+    "jogging"
+  ],
+  "subject4_seg009_0003": [
+    "jogging"
+  ],
+  "subject4_seg009_0004": [
+    "jogging"
+  ],
+  "subject4_seg009_0005": [
+    "jogging"
+  ],
+  "subject4_seg009_0006": [
+    "jogging"
+  ],
+  "subject4_seg009_0007": [
+    "jogging"
+  ],
+  "subject4_seg009_0008": [
+    "jogging"
+  ],
+  "subject4_seg009_0009": [
+    "jogging"
+  ],
+  "subject4_seg009_0010": [
+    "jogging"
+  ],
+  "subject4_seg009_0011": [
+    "jogging"
+  ],
+  "subject4_seg009_0012": [
+    "jogging"
+  ],
+  "subject4_seg009_0013": [
+    "jogging"
+  ],
+  "subject4_seg009_0014": [
+    "jogging"
+  ],
+  "subject4_seg009_0015": [
+    "jogging"
+  ],
+  "subject4_seg009_0016": [
+    "jogging"
+  ],
+  "subject4_seg009_0017": [
+    "jogging"
+  ],
+  "subject4_seg009_0018": [
+    "jogging"
+  ],
+  "subject4_seg009_0019": [
+    "jogging"
+  ],
+  "subject4_seg010_0000": [
+    "running"
+  ],
+  "subject4_seg010_0001": [
+    "running"
+  ],
+  "subject4_seg010_0002": [
+    "running"
+  ],
+  "subject4_seg010_0003": [
+    "running"
+  ],
+  "subject4_seg010_0004": [
+    "running"
+  ],
+  "subject4_seg010_0005": [
+    "running"
+  ],
+  "subject4_seg010_0006": [
+    "running"
+  ],
+  "subject4_seg010_0007": [
+    "running"
+  ],
+  "subject4_seg010_0008": [
+    "running"
+  ],
+  "subject4_seg010_0009": [
+    "running"
+  ],
+  "subject4_seg010_0010": [
+    "running"
+  ],
+  "subject4_seg010_0011": [
+    "running"
+  ],
+  "subject4_seg010_0012": [
+    "running"
+  ],
+  "subject4_seg010_0013": [
+    "running"
+  ],
+  "subject4_seg010_0014": [
+    "running"
+  ],
+  "subject4_seg010_0015": [
+    "running"
+  ],
+  "subject4_seg010_0016": [
+    "running"
+  ],
+  "subject4_seg010_0017": [
+    "running"
+  ],
+  "subject4_seg010_0018": [
+    "running"
+  ],
+  "subject4_seg010_0019": [
+    "running"
+  ],
+  "subject4_seg011_0000": [
+    "jump_front_back"
+  ],
+  "subject4_seg011_0001": [
+    "jump_front_back"
+  ],
+  "subject4_seg011_0002": [
+    "jump_front_back"
+  ],
+  "subject4_seg011_0003": [
+    "jump_front_back"
+  ],
+  "subject4_seg011_0004": [
+    "jump_front_back"
+  ],
+  "subject4_seg011_0005": [
+    "jump_front_back"
+  ],
+  "subject4_seg011_0006": [
+    "jump_front_back"
+  ],
+  "subject5_seg000_0000": [
+    "standing"
+  ],
+  "subject5_seg000_0001": [
+    "standing"
+  ],
+  "subject5_seg000_0002": [
+    "standing"
+  ],
+  "subject5_seg000_0003": [
+    "standing"
+  ],
+  "subject5_seg000_0004": [
+    "standing"
+  ],
+  "subject5_seg000_0005": [
+    "standing"
+  ],
+  "subject5_seg000_0006": [
+    "standing"
+  ],
+  "subject5_seg000_0007": [
+    "standing"
+  ],
+  "subject5_seg000_0008": [
+    "standing"
+  ],
+  "subject5_seg000_0009": [
+    "standing"
+  ],
+  "subject5_seg000_0010": [
+    "standing"
+  ],
+  "subject5_seg000_0011": [
+    "standing"
+  ],
+  "subject5_seg000_0012": [
+    "standing"
+  ],
+  "subject5_seg000_0013": [
+    "standing"
+  ],
+  "subject5_seg001_0000": [
+    "sitting"
+  ],
+  "subject5_seg001_0001": [
+    "sitting"
+  ],
+  "subject5_seg001_0002": [
+    "sitting"
+  ],
+  "subject5_seg001_0003": [
+    "sitting"
+  ],
+  "subject5_seg001_0004": [
+    "sitting"
+  ],
+  "subject5_seg001_0005": [
+    "sitting"
+  ],
+  "subject5_seg001_0006": [
+    "sitting"
+  ],
+  "subject5_seg001_0007": [
+    "sitting"
+  ],
+  "subject5_seg001_0008": [
+    "sitting"
+  ],
+  "subject5_seg001_0009": [
+    "sitting"
+  ],
+  "subject5_seg001_0010": [
+    "sitting"
+  ],
+  "subject5_seg001_0011": [
+    "sitting"
+  ],
+  "subject5_seg001_0012": [
+    "sitting"
+  ],
+  "subject5_seg001_0013": [
+    "sitting"
+  ],
+  "subject5_seg001_0014": [
+    "sitting"
+  ],
+  "subject5_seg001_0015": [
+    "sitting"
+  ],
+  "subject5_seg001_0016": [
+    "sitting"
+  ],
+  "subject5_seg001_0017": [
+    "sitting"
+  ],
+  "subject5_seg001_0018": [
+    "sitting"
+  ],
+  "subject5_seg001_0019": [
+    "sitting"
+  ],
+  "subject5_seg001_0020": [
+    "sitting"
+  ],
+  "subject5_seg001_0021": [
+    "sitting"
+  ],
+  "subject5_seg002_0000": [
+    "lying"
+  ],
+  "subject5_seg002_0001": [
+    "lying"
+  ],
+  "subject5_seg002_0002": [
+    "lying"
+  ],
+  "subject5_seg002_0003": [
+    "lying"
+  ],
+  "subject5_seg002_0004": [
+    "lying"
+  ],
+  "subject5_seg002_0005": [
+    "lying"
+  ],
+  "subject5_seg002_0006": [
+    "lying"
+  ],
+  "subject5_seg002_0007": [
+    "lying"
+  ],
+  "subject5_seg002_0008": [
+    "lying"
+  ],
+  "subject5_seg002_0009": [
+    "lying"
+  ],
+  "subject5_seg002_0010": [
+    "lying"
+  ],
+  "subject5_seg002_0011": [
+    "lying"
+  ],
+  "subject5_seg002_0012": [
+    "lying"
+  ],
+  "subject5_seg002_0013": [
+    "lying"
+  ],
+  "subject5_seg002_0014": [
+    "lying"
+  ],
+  "subject5_seg002_0015": [
+    "lying"
+  ],
+  "subject5_seg002_0016": [
+    "lying"
+  ],
+  "subject5_seg002_0017": [
+    "lying"
+  ],
+  "subject5_seg003_0000": [
+    "walking"
+  ],
+  "subject5_seg003_0001": [
+    "walking"
+  ],
+  "subject5_seg003_0002": [
+    "walking"
+  ],
+  "subject5_seg003_0003": [
+    "walking"
+  ],
+  "subject5_seg003_0004": [
+    "walking"
+  ],
+  "subject5_seg003_0005": [
+    "walking"
+  ],
+  "subject5_seg003_0006": [
+    "walking"
+  ],
+  "subject5_seg003_0007": [
+    "walking"
+  ],
+  "subject5_seg003_0008": [
+    "walking"
+  ],
+  "subject5_seg003_0009": [
+    "walking"
+  ],
+  "subject5_seg003_0010": [
+    "walking"
+  ],
+  "subject5_seg003_0011": [
+    "walking"
+  ],
+  "subject5_seg003_0012": [
+    "walking"
+  ],
+  "subject5_seg003_0013": [
+    "walking"
+  ],
+  "subject5_seg003_0014": [
+    "walking"
+  ],
+  "subject5_seg003_0015": [
+    "walking"
+  ],
+  "subject5_seg004_0000": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0001": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0002": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0003": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0004": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0005": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0006": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0007": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0008": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0009": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0010": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0011": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0012": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0013": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0014": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0015": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg004_0016": [
+    "waist_bends_forward"
+  ],
+  "subject5_seg005_0000": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0001": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0002": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0003": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0004": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0005": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0006": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0007": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0008": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0009": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0010": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0011": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0012": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0013": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0014": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0015": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg005_0016": [
+    "frontal_elevation_arms"
+  ],
+  "subject5_seg006_0000": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0001": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0002": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0003": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0004": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0005": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0006": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0007": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0008": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0009": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0010": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0011": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0012": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0013": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0014": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0015": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0016": [
+    "knees_bending"
+  ],
+  "subject5_seg006_0017": [
+    "knees_bending"
+  ],
+  "subject5_seg007_0000": [
+    "cycling"
+  ],
+  "subject5_seg007_0001": [
+    "cycling"
+  ],
+  "subject5_seg007_0002": [
+    "cycling"
+  ],
+  "subject5_seg007_0003": [
+    "cycling"
+  ],
+  "subject5_seg007_0004": [
+    "cycling"
+  ],
+  "subject5_seg007_0005": [
+    "cycling"
+  ],
+  "subject5_seg007_0006": [
+    "cycling"
+  ],
+  "subject5_seg007_0007": [
+    "cycling"
+  ],
+  "subject5_seg007_0008": [
+    "cycling"
+  ],
+  "subject5_seg007_0009": [
+    "cycling"
+  ],
+  "subject5_seg007_0010": [
+    "cycling"
+  ],
+  "subject5_seg007_0011": [
+    "cycling"
+  ],
+  "subject5_seg007_0012": [
+    "cycling"
+  ],
+  "subject5_seg008_0000": [
+    "jogging"
+  ],
+  "subject5_seg008_0001": [
+    "jogging"
+  ],
+  "subject5_seg008_0002": [
+    "jogging"
+  ],
+  "subject5_seg008_0003": [
+    "jogging"
+  ],
+  "subject5_seg008_0004": [
+    "jogging"
+  ],
+  "subject5_seg008_0005": [
+    "jogging"
+  ],
+  "subject5_seg008_0006": [
+    "jogging"
+  ],
+  "subject5_seg008_0007": [
+    "jogging"
+  ],
+  "subject5_seg008_0008": [
+    "jogging"
+  ],
+  "subject5_seg008_0009": [
+    "jogging"
+  ],
+  "subject5_seg008_0010": [
+    "jogging"
+  ],
+  "subject5_seg008_0011": [
+    "jogging"
+  ],
+  "subject5_seg008_0012": [
+    "jogging"
+  ],
+  "subject5_seg008_0013": [
+    "jogging"
+  ],
+  "subject5_seg008_0014": [
+    "jogging"
+  ],
+  "subject5_seg008_0015": [
+    "jogging"
+  ],
+  "subject5_seg008_0016": [
+    "jogging"
+  ],
+  "subject5_seg008_0017": [
+    "jogging"
+  ],
+  "subject5_seg009_0000": [
+    "running"
+  ],
+  "subject5_seg009_0001": [
+    "running"
+  ],
+  "subject5_seg009_0002": [
+    "running"
+  ],
+  "subject5_seg009_0003": [
+    "running"
+  ],
+  "subject5_seg009_0004": [
+    "running"
+  ],
+  "subject5_seg009_0005": [
+    "running"
+  ],
+  "subject5_seg009_0006": [
+    "running"
+  ],
+  "subject5_seg009_0007": [
+    "running"
+  ],
+  "subject5_seg009_0008": [
+    "running"
+  ],
+  "subject5_seg009_0009": [
+    "running"
+  ],
+  "subject5_seg009_0010": [
+    "running"
+  ],
+  "subject5_seg009_0011": [
+    "running"
+  ],
+  "subject5_seg009_0012": [
+    "running"
+  ],
+  "subject5_seg009_0013": [
+    "running"
+  ],
+  "subject5_seg009_0014": [
+    "running"
+  ],
+  "subject5_seg009_0015": [
+    "running"
+  ],
+  "subject5_seg009_0016": [
+    "running"
+  ],
+  "subject5_seg009_0017": [
+    "running"
+  ],
+  "subject5_seg009_0018": [
+    "running"
+  ],
+  "subject5_seg009_0019": [
+    "running"
+  ],
+  "subject5_seg010_0000": [
+    "jump_front_back"
+  ],
+  "subject5_seg010_0001": [
+    "jump_front_back"
+  ],
+  "subject5_seg010_0002": [
+    "jump_front_back"
+  ],
+  "subject5_seg010_0003": [
+    "jump_front_back"
+  ],
+  "subject5_seg010_0004": [
+    "jump_front_back"
+  ],
+  "subject5_seg010_0005": [
+    "jump_front_back"
+  ],
+  "subject5_seg010_0006": [
+    "jump_front_back"
+  ],
+  "subject5_seg010_0007": [
+    "jump_front_back"
+  ],
+  "subject5_seg011_0000": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0001": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0002": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0003": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0004": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0005": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0006": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0007": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0008": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0009": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0010": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0011": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0012": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0013": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0014": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0015": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0016": [
+    "climbing_stairs"
+  ],
+  "subject5_seg011_0017": [
+    "climbing_stairs"
+  ],
+  "subject6_seg000_0000": [
+    "standing"
+  ],
+  "subject6_seg000_0001": [
+    "standing"
+  ],
+  "subject6_seg000_0002": [
+    "standing"
+  ],
+  "subject6_seg000_0003": [
+    "standing"
+  ],
+  "subject6_seg000_0004": [
+    "standing"
+  ],
+  "subject6_seg000_0005": [
+    "standing"
+  ],
+  "subject6_seg000_0006": [
+    "standing"
+  ],
+  "subject6_seg000_0007": [
+    "standing"
+  ],
+  "subject6_seg000_0008": [
+    "standing"
+  ],
+  "subject6_seg000_0009": [
+    "standing"
+  ],
+  "subject6_seg000_0010": [
+    "standing"
+  ],
+  "subject6_seg000_0011": [
+    "standing"
+  ],
+  "subject6_seg000_0012": [
+    "standing"
+  ],
+  "subject6_seg000_0013": [
+    "standing"
+  ],
+  "subject6_seg000_0014": [
+    "standing"
+  ],
+  "subject6_seg000_0015": [
+    "standing"
+  ],
+  "subject6_seg000_0016": [
+    "standing"
+  ],
+  "subject6_seg000_0017": [
+    "standing"
+  ],
+  "subject6_seg000_0018": [
+    "standing"
+  ],
+  "subject6_seg000_0019": [
+    "standing"
+  ],
+  "subject6_seg001_0000": [
+    "sitting"
+  ],
+  "subject6_seg001_0001": [
+    "sitting"
+  ],
+  "subject6_seg001_0002": [
+    "sitting"
+  ],
+  "subject6_seg001_0003": [
+    "sitting"
+  ],
+  "subject6_seg001_0004": [
+    "sitting"
+  ],
+  "subject6_seg001_0005": [
+    "sitting"
+  ],
+  "subject6_seg001_0006": [
+    "sitting"
+  ],
+  "subject6_seg001_0007": [
+    "sitting"
+  ],
+  "subject6_seg001_0008": [
+    "sitting"
+  ],
+  "subject6_seg001_0009": [
+    "sitting"
+  ],
+  "subject6_seg001_0010": [
+    "sitting"
+  ],
+  "subject6_seg001_0011": [
+    "sitting"
+  ],
+  "subject6_seg001_0012": [
+    "sitting"
+  ],
+  "subject6_seg001_0013": [
+    "sitting"
+  ],
+  "subject6_seg001_0014": [
+    "sitting"
+  ],
+  "subject6_seg001_0015": [
+    "sitting"
+  ],
+  "subject6_seg001_0016": [
+    "sitting"
+  ],
+  "subject6_seg001_0017": [
+    "sitting"
+  ],
+  "subject6_seg001_0018": [
+    "sitting"
+  ],
+  "subject6_seg001_0019": [
+    "sitting"
+  ],
+  "subject6_seg001_0020": [
+    "sitting"
+  ],
+  "subject6_seg002_0000": [
+    "lying"
+  ],
+  "subject6_seg002_0001": [
+    "lying"
+  ],
+  "subject6_seg002_0002": [
+    "lying"
+  ],
+  "subject6_seg002_0003": [
+    "lying"
+  ],
+  "subject6_seg002_0004": [
+    "lying"
+  ],
+  "subject6_seg002_0005": [
+    "lying"
+  ],
+  "subject6_seg002_0006": [
+    "lying"
+  ],
+  "subject6_seg002_0007": [
+    "lying"
+  ],
+  "subject6_seg002_0008": [
+    "lying"
+  ],
+  "subject6_seg002_0009": [
+    "lying"
+  ],
+  "subject6_seg002_0010": [
+    "lying"
+  ],
+  "subject6_seg002_0011": [
+    "lying"
+  ],
+  "subject6_seg002_0012": [
+    "lying"
+  ],
+  "subject6_seg002_0013": [
+    "lying"
+  ],
+  "subject6_seg002_0014": [
+    "lying"
+  ],
+  "subject6_seg002_0015": [
+    "lying"
+  ],
+  "subject6_seg002_0016": [
+    "lying"
+  ],
+  "subject6_seg002_0017": [
+    "lying"
+  ],
+  "subject6_seg002_0018": [
+    "lying"
+  ],
+  "subject6_seg002_0019": [
+    "lying"
+  ],
+  "subject6_seg003_0000": [
+    "walking"
+  ],
+  "subject6_seg003_0001": [
+    "walking"
+  ],
+  "subject6_seg003_0002": [
+    "walking"
+  ],
+  "subject6_seg003_0003": [
+    "walking"
+  ],
+  "subject6_seg003_0004": [
+    "walking"
+  ],
+  "subject6_seg003_0005": [
+    "walking"
+  ],
+  "subject6_seg003_0006": [
+    "walking"
+  ],
+  "subject6_seg003_0007": [
+    "walking"
+  ],
+  "subject6_seg003_0008": [
+    "walking"
+  ],
+  "subject6_seg003_0009": [
+    "walking"
+  ],
+  "subject6_seg003_0010": [
+    "walking"
+  ],
+  "subject6_seg003_0011": [
+    "walking"
+  ],
+  "subject6_seg003_0012": [
+    "walking"
+  ],
+  "subject6_seg003_0013": [
+    "walking"
+  ],
+  "subject6_seg003_0014": [
+    "walking"
+  ],
+  "subject6_seg003_0015": [
+    "walking"
+  ],
+  "subject6_seg003_0016": [
+    "walking"
+  ],
+  "subject6_seg003_0017": [
+    "walking"
+  ],
+  "subject6_seg003_0018": [
+    "walking"
+  ],
+  "subject6_seg004_0000": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg004_0001": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg004_0002": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg004_0003": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg004_0004": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg004_0005": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg004_0006": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg004_0007": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg004_0008": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg004_0009": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg004_0010": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg004_0011": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg004_0012": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg004_0013": [
+    "waist_bends_forward"
+  ],
+  "subject6_seg005_0000": [
+    "frontal_elevation_arms"
+  ],
+  "subject6_seg005_0001": [
+    "frontal_elevation_arms"
+  ],
+  "subject6_seg005_0002": [
+    "frontal_elevation_arms"
+  ],
+  "subject6_seg005_0003": [
+    "frontal_elevation_arms"
+  ],
+  "subject6_seg005_0004": [
+    "frontal_elevation_arms"
+  ],
+  "subject6_seg005_0005": [
+    "frontal_elevation_arms"
+  ],
+  "subject6_seg005_0006": [
+    "frontal_elevation_arms"
+  ],
+  "subject6_seg005_0007": [
+    "frontal_elevation_arms"
+  ],
+  "subject6_seg005_0008": [
+    "frontal_elevation_arms"
+  ],
+  "subject6_seg006_0000": [
+    "knees_bending"
+  ],
+  "subject6_seg006_0001": [
+    "knees_bending"
+  ],
+  "subject6_seg006_0002": [
+    "knees_bending"
+  ],
+  "subject6_seg006_0003": [
+    "knees_bending"
+  ],
+  "subject6_seg006_0004": [
+    "knees_bending"
+  ],
+  "subject6_seg006_0005": [
+    "knees_bending"
+  ],
+  "subject6_seg006_0006": [
+    "knees_bending"
+  ],
+  "subject6_seg006_0007": [
+    "knees_bending"
+  ],
+  "subject6_seg006_0008": [
+    "knees_bending"
+  ],
+  "subject6_seg006_0009": [
+    "knees_bending"
+  ],
+  "subject6_seg006_0010": [
+    "knees_bending"
+  ],
+  "subject6_seg006_0011": [
+    "knees_bending"
+  ],
+  "subject6_seg007_0000": [
+    "cycling"
+  ],
+  "subject6_seg007_0001": [
+    "cycling"
+  ],
+  "subject6_seg007_0002": [
+    "cycling"
+  ],
+  "subject6_seg007_0003": [
+    "cycling"
+  ],
+  "subject6_seg007_0004": [
+    "cycling"
+  ],
+  "subject6_seg007_0005": [
+    "cycling"
+  ],
+  "subject6_seg007_0006": [
+    "cycling"
+  ],
+  "subject6_seg007_0007": [
+    "cycling"
+  ],
+  "subject6_seg007_0008": [
+    "cycling"
+  ],
+  "subject6_seg007_0009": [
+    "cycling"
+  ],
+  "subject6_seg007_0010": [
+    "cycling"
+  ],
+  "subject6_seg007_0011": [
+    "cycling"
+  ],
+  "subject6_seg007_0012": [
+    "cycling"
+  ],
+  "subject6_seg008_0000": [
+    "jogging"
+  ],
+  "subject6_seg008_0001": [
+    "jogging"
+  ],
+  "subject6_seg008_0002": [
+    "jogging"
+  ],
+  "subject6_seg008_0003": [
+    "jogging"
+  ],
+  "subject6_seg008_0004": [
+    "jogging"
+  ],
+  "subject6_seg008_0005": [
+    "jogging"
+  ],
+  "subject6_seg008_0006": [
+    "jogging"
+  ],
+  "subject6_seg008_0007": [
+    "jogging"
+  ],
+  "subject6_seg008_0008": [
+    "jogging"
+  ],
+  "subject6_seg008_0009": [
+    "jogging"
+  ],
+  "subject6_seg008_0010": [
+    "jogging"
+  ],
+  "subject6_seg008_0011": [
+    "jogging"
+  ],
+  "subject6_seg008_0012": [
+    "jogging"
+  ],
+  "subject6_seg008_0013": [
+    "jogging"
+  ],
+  "subject6_seg008_0014": [
+    "jogging"
+  ],
+  "subject6_seg008_0015": [
+    "jogging"
+  ],
+  "subject6_seg008_0016": [
+    "jogging"
+  ],
+  "subject6_seg008_0017": [
+    "jogging"
+  ],
+  "subject6_seg008_0018": [
+    "jogging"
+  ],
+  "subject6_seg009_0000": [
+    "running"
+  ],
+  "subject6_seg009_0001": [
+    "running"
+  ],
+  "subject6_seg009_0002": [
+    "running"
+  ],
+  "subject6_seg009_0003": [
+    "running"
+  ],
+  "subject6_seg009_0004": [
+    "running"
+  ],
+  "subject6_seg009_0005": [
+    "running"
+  ],
+  "subject6_seg009_0006": [
+    "running"
+  ],
+  "subject6_seg009_0007": [
+    "running"
+  ],
+  "subject6_seg009_0008": [
+    "running"
+  ],
+  "subject6_seg009_0009": [
+    "running"
+  ],
+  "subject6_seg009_0010": [
+    "running"
+  ],
+  "subject6_seg009_0011": [
+    "running"
+  ],
+  "subject6_seg009_0012": [
+    "running"
+  ],
+  "subject6_seg009_0013": [
+    "running"
+  ],
+  "subject6_seg009_0014": [
+    "running"
+  ],
+  "subject6_seg009_0015": [
+    "running"
+  ],
+  "subject6_seg009_0016": [
+    "running"
+  ],
+  "subject6_seg009_0017": [
+    "running"
+  ],
+  "subject6_seg009_0018": [
+    "running"
+  ],
+  "subject6_seg009_0019": [
+    "running"
+  ],
+  "subject6_seg010_0000": [
+    "jump_front_back"
+  ],
+  "subject6_seg010_0001": [
+    "jump_front_back"
+  ],
+  "subject6_seg010_0002": [
+    "jump_front_back"
+  ],
+  "subject6_seg010_0003": [
+    "jump_front_back"
+  ],
+  "subject6_seg010_0004": [
+    "jump_front_back"
+  ],
+  "subject6_seg010_0005": [
+    "jump_front_back"
+  ],
+  "subject6_seg010_0006": [
+    "jump_front_back"
+  ],
+  "subject6_seg010_0007": [
+    "jump_front_back"
+  ],
+  "subject6_seg011_0000": [
+    "climbing_stairs"
+  ],
+  "subject6_seg011_0001": [
+    "climbing_stairs"
+  ],
+  "subject6_seg011_0002": [
+    "climbing_stairs"
+  ],
+  "subject6_seg011_0003": [
+    "climbing_stairs"
+  ],
+  "subject6_seg011_0004": [
+    "climbing_stairs"
+  ],
+  "subject6_seg011_0005": [
+    "climbing_stairs"
+  ],
+  "subject6_seg011_0006": [
+    "climbing_stairs"
+  ],
+  "subject6_seg011_0007": [
+    "climbing_stairs"
+  ],
+  "subject6_seg011_0008": [
+    "climbing_stairs"
+  ],
+  "subject6_seg011_0009": [
+    "climbing_stairs"
+  ],
+  "subject6_seg011_0010": [
+    "climbing_stairs"
+  ],
+  "subject6_seg011_0011": [
+    "climbing_stairs"
+  ],
+  "subject6_seg011_0012": [
+    "climbing_stairs"
+  ],
+  "subject6_seg011_0013": [
+    "climbing_stairs"
+  ],
+  "subject7_seg000_0000": [
+    "climbing_stairs"
+  ],
+  "subject7_seg000_0001": [
+    "climbing_stairs"
+  ],
+  "subject7_seg000_0002": [
+    "climbing_stairs"
+  ],
+  "subject7_seg001_0000": [
+    "climbing_stairs"
+  ],
+  "subject7_seg001_0001": [
+    "climbing_stairs"
+  ],
+  "subject7_seg002_0000": [
+    "climbing_stairs"
+  ],
+  "subject7_seg002_0001": [
+    "climbing_stairs"
+  ],
+  "subject7_seg003_0000": [
+    "climbing_stairs"
+  ],
+  "subject7_seg003_0001": [
+    "climbing_stairs"
+  ],
+  "subject7_seg004_0000": [
+    "climbing_stairs"
+  ],
+  "subject7_seg004_0001": [
+    "climbing_stairs"
+  ],
+  "subject7_seg005_0000": [
+    "climbing_stairs"
+  ],
+  "subject7_seg005_0001": [
+    "climbing_stairs"
+  ],
+  "subject7_seg006_0000": [
+    "standing"
+  ],
+  "subject7_seg006_0001": [
+    "standing"
+  ],
+  "subject7_seg006_0002": [
+    "standing"
+  ],
+  "subject7_seg006_0003": [
+    "standing"
+  ],
+  "subject7_seg006_0004": [
+    "standing"
+  ],
+  "subject7_seg006_0005": [
+    "standing"
+  ],
+  "subject7_seg006_0006": [
+    "standing"
+  ],
+  "subject7_seg006_0007": [
+    "standing"
+  ],
+  "subject7_seg006_0008": [
+    "standing"
+  ],
+  "subject7_seg006_0009": [
+    "standing"
+  ],
+  "subject7_seg006_0010": [
+    "standing"
+  ],
+  "subject7_seg006_0011": [
+    "standing"
+  ],
+  "subject7_seg006_0012": [
+    "standing"
+  ],
+  "subject7_seg006_0013": [
+    "standing"
+  ],
+  "subject7_seg006_0014": [
+    "standing"
+  ],
+  "subject7_seg006_0015": [
+    "standing"
+  ],
+  "subject7_seg006_0016": [
+    "standing"
+  ],
+  "subject7_seg006_0017": [
+    "standing"
+  ],
+  "subject7_seg007_0000": [
+    "sitting"
+  ],
+  "subject7_seg007_0001": [
+    "sitting"
+  ],
+  "subject7_seg007_0002": [
+    "sitting"
+  ],
+  "subject7_seg007_0003": [
+    "sitting"
+  ],
+  "subject7_seg007_0004": [
+    "sitting"
+  ],
+  "subject7_seg007_0005": [
+    "sitting"
+  ],
+  "subject7_seg007_0006": [
+    "sitting"
+  ],
+  "subject7_seg007_0007": [
+    "sitting"
+  ],
+  "subject7_seg007_0008": [
+    "sitting"
+  ],
+  "subject7_seg007_0009": [
+    "sitting"
+  ],
+  "subject7_seg007_0010": [
+    "sitting"
+  ],
+  "subject7_seg007_0011": [
+    "sitting"
+  ],
+  "subject7_seg007_0012": [
+    "sitting"
+  ],
+  "subject7_seg007_0013": [
+    "sitting"
+  ],
+  "subject7_seg007_0014": [
+    "sitting"
+  ],
+  "subject7_seg007_0015": [
+    "sitting"
+  ],
+  "subject7_seg007_0016": [
+    "sitting"
+  ],
+  "subject7_seg007_0017": [
+    "sitting"
+  ],
+  "subject7_seg007_0018": [
+    "sitting"
+  ],
+  "subject7_seg007_0019": [
+    "sitting"
+  ],
+  "subject7_seg007_0020": [
+    "sitting"
+  ],
+  "subject7_seg007_0021": [
+    "sitting"
+  ],
+  "subject7_seg008_0000": [
+    "lying"
+  ],
+  "subject7_seg008_0001": [
+    "lying"
+  ],
+  "subject7_seg008_0002": [
+    "lying"
+  ],
+  "subject7_seg008_0003": [
+    "lying"
+  ],
+  "subject7_seg008_0004": [
+    "lying"
+  ],
+  "subject7_seg008_0005": [
+    "lying"
+  ],
+  "subject7_seg008_0006": [
+    "lying"
+  ],
+  "subject7_seg008_0007": [
+    "lying"
+  ],
+  "subject7_seg008_0008": [
+    "lying"
+  ],
+  "subject7_seg008_0009": [
+    "lying"
+  ],
+  "subject7_seg008_0010": [
+    "lying"
+  ],
+  "subject7_seg008_0011": [
+    "lying"
+  ],
+  "subject7_seg008_0012": [
+    "lying"
+  ],
+  "subject7_seg008_0013": [
+    "lying"
+  ],
+  "subject7_seg008_0014": [
+    "lying"
+  ],
+  "subject7_seg008_0015": [
+    "lying"
+  ],
+  "subject7_seg008_0016": [
+    "lying"
+  ],
+  "subject7_seg008_0017": [
+    "lying"
+  ],
+  "subject7_seg008_0018": [
+    "lying"
+  ],
+  "subject7_seg009_0000": [
+    "walking"
+  ],
+  "subject7_seg009_0001": [
+    "walking"
+  ],
+  "subject7_seg009_0002": [
+    "walking"
+  ],
+  "subject7_seg009_0003": [
+    "walking"
+  ],
+  "subject7_seg009_0004": [
+    "walking"
+  ],
+  "subject7_seg009_0005": [
+    "walking"
+  ],
+  "subject7_seg009_0006": [
+    "walking"
+  ],
+  "subject7_seg009_0007": [
+    "walking"
+  ],
+  "subject7_seg009_0008": [
+    "walking"
+  ],
+  "subject7_seg009_0009": [
+    "walking"
+  ],
+  "subject7_seg009_0010": [
+    "walking"
+  ],
+  "subject7_seg009_0011": [
+    "walking"
+  ],
+  "subject7_seg009_0012": [
+    "walking"
+  ],
+  "subject7_seg009_0013": [
+    "walking"
+  ],
+  "subject7_seg009_0014": [
+    "walking"
+  ],
+  "subject7_seg009_0015": [
+    "walking"
+  ],
+  "subject7_seg009_0016": [
+    "walking"
+  ],
+  "subject7_seg009_0017": [
+    "walking"
+  ],
+  "subject7_seg010_0000": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0001": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0002": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0003": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0004": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0005": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0006": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0007": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0008": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0009": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0010": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0011": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0012": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0013": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0014": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0015": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0016": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0017": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0018": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0019": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0020": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0021": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg010_0022": [
+    "waist_bends_forward"
+  ],
+  "subject7_seg011_0000": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0001": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0002": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0003": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0004": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0005": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0006": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0007": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0008": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0009": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0010": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0011": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0012": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0013": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg011_0014": [
+    "frontal_elevation_arms"
+  ],
+  "subject7_seg012_0000": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0001": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0002": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0003": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0004": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0005": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0006": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0007": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0008": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0009": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0010": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0011": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0012": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0013": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0014": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0015": [
+    "knees_bending"
+  ],
+  "subject7_seg012_0016": [
+    "knees_bending"
+  ],
+  "subject7_seg013_0000": [
+    "cycling"
+  ],
+  "subject7_seg013_0001": [
+    "cycling"
+  ],
+  "subject7_seg013_0002": [
+    "cycling"
+  ],
+  "subject7_seg013_0003": [
+    "cycling"
+  ],
+  "subject7_seg013_0004": [
+    "cycling"
+  ],
+  "subject7_seg013_0005": [
+    "cycling"
+  ],
+  "subject7_seg013_0006": [
+    "cycling"
+  ],
+  "subject7_seg013_0007": [
+    "cycling"
+  ],
+  "subject7_seg013_0008": [
+    "cycling"
+  ],
+  "subject7_seg013_0009": [
+    "cycling"
+  ],
+  "subject7_seg013_0010": [
+    "cycling"
+  ],
+  "subject7_seg013_0011": [
+    "cycling"
+  ],
+  "subject7_seg013_0012": [
+    "cycling"
+  ],
+  "subject7_seg013_0013": [
+    "cycling"
+  ],
+  "subject7_seg014_0000": [
+    "jogging"
+  ],
+  "subject7_seg014_0001": [
+    "jogging"
+  ],
+  "subject7_seg014_0002": [
+    "jogging"
+  ],
+  "subject7_seg014_0003": [
+    "jogging"
+  ],
+  "subject7_seg014_0004": [
+    "jogging"
+  ],
+  "subject7_seg014_0005": [
+    "jogging"
+  ],
+  "subject7_seg014_0006": [
+    "jogging"
+  ],
+  "subject7_seg014_0007": [
+    "jogging"
+  ],
+  "subject7_seg014_0008": [
+    "jogging"
+  ],
+  "subject7_seg014_0009": [
+    "jogging"
+  ],
+  "subject7_seg014_0010": [
+    "jogging"
+  ],
+  "subject7_seg014_0011": [
+    "jogging"
+  ],
+  "subject7_seg014_0012": [
+    "jogging"
+  ],
+  "subject7_seg014_0013": [
+    "jogging"
+  ],
+  "subject7_seg014_0014": [
+    "jogging"
+  ],
+  "subject7_seg014_0015": [
+    "jogging"
+  ],
+  "subject7_seg014_0016": [
+    "jogging"
+  ],
+  "subject7_seg014_0017": [
+    "jogging"
+  ],
+  "subject7_seg014_0018": [
+    "jogging"
+  ],
+  "subject7_seg015_0000": [
+    "running"
+  ],
+  "subject7_seg015_0001": [
+    "running"
+  ],
+  "subject7_seg015_0002": [
+    "running"
+  ],
+  "subject7_seg015_0003": [
+    "running"
+  ],
+  "subject7_seg015_0004": [
+    "running"
+  ],
+  "subject7_seg015_0005": [
+    "running"
+  ],
+  "subject7_seg015_0006": [
+    "running"
+  ],
+  "subject7_seg015_0007": [
+    "running"
+  ],
+  "subject7_seg015_0008": [
+    "running"
+  ],
+  "subject7_seg015_0009": [
+    "running"
+  ],
+  "subject7_seg015_0010": [
+    "running"
+  ],
+  "subject7_seg015_0011": [
+    "running"
+  ],
+  "subject7_seg015_0012": [
+    "running"
+  ],
+  "subject7_seg015_0013": [
+    "running"
+  ],
+  "subject7_seg015_0014": [
+    "running"
+  ],
+  "subject7_seg015_0015": [
+    "running"
+  ],
+  "subject7_seg015_0016": [
+    "running"
+  ],
+  "subject7_seg015_0017": [
+    "running"
+  ],
+  "subject7_seg015_0018": [
+    "running"
+  ],
+  "subject7_seg015_0019": [
+    "running"
+  ],
+  "subject7_seg015_0020": [
+    "running"
+  ],
+  "subject7_seg016_0000": [
+    "jump_front_back"
+  ],
+  "subject7_seg016_0001": [
+    "jump_front_back"
+  ],
+  "subject7_seg016_0002": [
+    "jump_front_back"
+  ],
+  "subject7_seg016_0003": [
+    "jump_front_back"
+  ],
+  "subject7_seg016_0004": [
+    "jump_front_back"
+  ],
+  "subject7_seg016_0005": [
+    "jump_front_back"
+  ],
+  "subject7_seg016_0006": [
+    "jump_front_back"
+  ],
+  "subject8_seg000_0000": [
+    "standing"
+  ],
+  "subject8_seg000_0001": [
+    "standing"
+  ],
+  "subject8_seg000_0002": [
+    "standing"
+  ],
+  "subject8_seg000_0003": [
+    "standing"
+  ],
+  "subject8_seg000_0004": [
+    "standing"
+  ],
+  "subject8_seg000_0005": [
+    "standing"
+  ],
+  "subject8_seg000_0006": [
+    "standing"
+  ],
+  "subject8_seg000_0007": [
+    "standing"
+  ],
+  "subject8_seg000_0008": [
+    "standing"
+  ],
+  "subject8_seg000_0009": [
+    "standing"
+  ],
+  "subject8_seg000_0010": [
+    "standing"
+  ],
+  "subject8_seg000_0011": [
+    "standing"
+  ],
+  "subject8_seg000_0012": [
+    "standing"
+  ],
+  "subject8_seg000_0013": [
+    "standing"
+  ],
+  "subject8_seg000_0014": [
+    "standing"
+  ],
+  "subject8_seg000_0015": [
+    "standing"
+  ],
+  "subject8_seg000_0016": [
+    "standing"
+  ],
+  "subject8_seg000_0017": [
+    "standing"
+  ],
+  "subject8_seg000_0018": [
+    "standing"
+  ],
+  "subject8_seg000_0019": [
+    "standing"
+  ],
+  "subject8_seg000_0020": [
+    "standing"
+  ],
+  "subject8_seg001_0000": [
+    "lying"
+  ],
+  "subject8_seg001_0001": [
+    "lying"
+  ],
+  "subject8_seg001_0002": [
+    "lying"
+  ],
+  "subject8_seg001_0003": [
+    "lying"
+  ],
+  "subject8_seg001_0004": [
+    "lying"
+  ],
+  "subject8_seg001_0005": [
+    "lying"
+  ],
+  "subject8_seg001_0006": [
+    "lying"
+  ],
+  "subject8_seg001_0007": [
+    "lying"
+  ],
+  "subject8_seg001_0008": [
+    "lying"
+  ],
+  "subject8_seg001_0009": [
+    "lying"
+  ],
+  "subject8_seg001_0010": [
+    "lying"
+  ],
+  "subject8_seg001_0011": [
+    "lying"
+  ],
+  "subject8_seg001_0012": [
+    "lying"
+  ],
+  "subject8_seg001_0013": [
+    "lying"
+  ],
+  "subject8_seg001_0014": [
+    "lying"
+  ],
+  "subject8_seg001_0015": [
+    "lying"
+  ],
+  "subject8_seg001_0016": [
+    "lying"
+  ],
+  "subject8_seg001_0017": [
+    "lying"
+  ],
+  "subject8_seg001_0018": [
+    "lying"
+  ],
+  "subject8_seg001_0019": [
+    "lying"
+  ],
+  "subject8_seg001_0020": [
+    "lying"
+  ],
+  "subject8_seg001_0021": [
+    "lying"
+  ],
+  "subject8_seg002_0000": [
+    "sitting"
+  ],
+  "subject8_seg002_0001": [
+    "sitting"
+  ],
+  "subject8_seg002_0002": [
+    "sitting"
+  ],
+  "subject8_seg002_0003": [
+    "sitting"
+  ],
+  "subject8_seg002_0004": [
+    "sitting"
+  ],
+  "subject8_seg002_0005": [
+    "sitting"
+  ],
+  "subject8_seg002_0006": [
+    "sitting"
+  ],
+  "subject8_seg002_0007": [
+    "sitting"
+  ],
+  "subject8_seg002_0008": [
+    "sitting"
+  ],
+  "subject8_seg002_0009": [
+    "sitting"
+  ],
+  "subject8_seg002_0010": [
+    "sitting"
+  ],
+  "subject8_seg002_0011": [
+    "sitting"
+  ],
+  "subject8_seg002_0012": [
+    "sitting"
+  ],
+  "subject8_seg002_0013": [
+    "sitting"
+  ],
+  "subject8_seg002_0014": [
+    "sitting"
+  ],
+  "subject8_seg002_0015": [
+    "sitting"
+  ],
+  "subject8_seg002_0016": [
+    "sitting"
+  ],
+  "subject8_seg003_0000": [
+    "walking"
+  ],
+  "subject8_seg003_0001": [
+    "walking"
+  ],
+  "subject8_seg003_0002": [
+    "walking"
+  ],
+  "subject8_seg003_0003": [
+    "walking"
+  ],
+  "subject8_seg003_0004": [
+    "walking"
+  ],
+  "subject8_seg003_0005": [
+    "walking"
+  ],
+  "subject8_seg003_0006": [
+    "walking"
+  ],
+  "subject8_seg003_0007": [
+    "walking"
+  ],
+  "subject8_seg003_0008": [
+    "walking"
+  ],
+  "subject8_seg003_0009": [
+    "walking"
+  ],
+  "subject8_seg003_0010": [
+    "walking"
+  ],
+  "subject8_seg003_0011": [
+    "walking"
+  ],
+  "subject8_seg003_0012": [
+    "walking"
+  ],
+  "subject8_seg004_0000": [
+    "climbing_stairs"
+  ],
+  "subject8_seg004_0001": [
+    "climbing_stairs"
+  ],
+  "subject8_seg004_0002": [
+    "climbing_stairs"
+  ],
+  "subject8_seg004_0003": [
+    "climbing_stairs"
+  ],
+  "subject8_seg004_0004": [
+    "climbing_stairs"
+  ],
+  "subject8_seg004_0005": [
+    "climbing_stairs"
+  ],
+  "subject8_seg004_0006": [
+    "climbing_stairs"
+  ],
+  "subject8_seg004_0007": [
+    "climbing_stairs"
+  ],
+  "subject8_seg005_0000": [
+    "climbing_stairs"
+  ],
+  "subject8_seg005_0001": [
+    "climbing_stairs"
+  ],
+  "subject8_seg005_0002": [
+    "climbing_stairs"
+  ],
+  "subject8_seg005_0003": [
+    "climbing_stairs"
+  ],
+  "subject8_seg005_0004": [
+    "climbing_stairs"
+  ],
+  "subject8_seg005_0005": [
+    "climbing_stairs"
+  ],
+  "subject8_seg005_0006": [
+    "climbing_stairs"
+  ],
+  "subject8_seg006_0000": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg006_0001": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg006_0002": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg006_0003": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg006_0004": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg006_0005": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg006_0006": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg006_0007": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg006_0008": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg006_0009": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg006_0010": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg006_0011": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg006_0012": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg006_0013": [
+    "waist_bends_forward"
+  ],
+  "subject8_seg007_0000": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0001": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0002": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0003": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0004": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0005": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0006": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0007": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0008": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0009": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0010": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0011": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0012": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0013": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0014": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0015": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0016": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg007_0017": [
+    "frontal_elevation_arms"
+  ],
+  "subject8_seg008_0000": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0001": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0002": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0003": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0004": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0005": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0006": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0007": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0008": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0009": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0010": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0011": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0012": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0013": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0014": [
+    "knees_bending"
+  ],
+  "subject8_seg008_0015": [
+    "knees_bending"
+  ],
+  "subject8_seg009_0000": [
+    "cycling"
+  ],
+  "subject8_seg009_0001": [
+    "cycling"
+  ],
+  "subject8_seg009_0002": [
+    "cycling"
+  ],
+  "subject8_seg009_0003": [
+    "cycling"
+  ],
+  "subject8_seg009_0004": [
+    "cycling"
+  ],
+  "subject8_seg009_0005": [
+    "cycling"
+  ],
+  "subject8_seg009_0006": [
+    "cycling"
+  ],
+  "subject8_seg009_0007": [
+    "cycling"
+  ],
+  "subject8_seg009_0008": [
+    "cycling"
+  ],
+  "subject8_seg009_0009": [
+    "cycling"
+  ],
+  "subject8_seg009_0010": [
+    "cycling"
+  ],
+  "subject8_seg009_0011": [
+    "cycling"
+  ],
+  "subject8_seg009_0012": [
+    "cycling"
+  ],
+  "subject8_seg009_0013": [
+    "cycling"
+  ],
+  "subject8_seg009_0014": [
+    "cycling"
+  ],
+  "subject8_seg009_0015": [
+    "cycling"
+  ],
+  "subject8_seg009_0016": [
+    "cycling"
+  ],
+  "subject8_seg010_0000": [
+    "jogging"
+  ],
+  "subject8_seg010_0001": [
+    "jogging"
+  ],
+  "subject8_seg010_0002": [
+    "jogging"
+  ],
+  "subject8_seg010_0003": [
+    "jogging"
+  ],
+  "subject8_seg010_0004": [
+    "jogging"
+  ],
+  "subject8_seg010_0005": [
+    "jogging"
+  ],
+  "subject8_seg010_0006": [
+    "jogging"
+  ],
+  "subject8_seg010_0007": [
+    "jogging"
+  ],
+  "subject8_seg010_0008": [
+    "jogging"
+  ],
+  "subject8_seg010_0009": [
+    "jogging"
+  ],
+  "subject8_seg010_0010": [
+    "jogging"
+  ],
+  "subject8_seg010_0011": [
+    "jogging"
+  ],
+  "subject8_seg010_0012": [
+    "jogging"
+  ],
+  "subject8_seg010_0013": [
+    "jogging"
+  ],
+  "subject8_seg010_0014": [
+    "jogging"
+  ],
+  "subject8_seg010_0015": [
+    "jogging"
+  ],
+  "subject8_seg010_0016": [
+    "jogging"
+  ],
+  "subject8_seg010_0017": [
+    "jogging"
+  ],
+  "subject8_seg011_0000": [
+    "running"
+  ],
+  "subject8_seg011_0001": [
+    "running"
+  ],
+  "subject8_seg011_0002": [
+    "running"
+  ],
+  "subject8_seg011_0003": [
+    "running"
+  ],
+  "subject8_seg011_0004": [
+    "running"
+  ],
+  "subject8_seg011_0005": [
+    "running"
+  ],
+  "subject8_seg011_0006": [
+    "running"
+  ],
+  "subject8_seg011_0007": [
+    "running"
+  ],
+  "subject8_seg011_0008": [
+    "running"
+  ],
+  "subject8_seg011_0009": [
+    "running"
+  ],
+  "subject8_seg011_0010": [
+    "running"
+  ],
+  "subject8_seg011_0011": [
+    "running"
+  ],
+  "subject8_seg011_0012": [
+    "running"
+  ],
+  "subject8_seg011_0013": [
+    "running"
+  ],
+  "subject8_seg011_0014": [
+    "running"
+  ],
+  "subject8_seg011_0015": [
+    "running"
+  ],
+  "subject8_seg012_0000": [
+    "jump_front_back"
+  ],
+  "subject8_seg012_0001": [
+    "jump_front_back"
+  ],
+  "subject8_seg012_0002": [
+    "jump_front_back"
+  ],
+  "subject8_seg012_0003": [
+    "jump_front_back"
+  ],
+  "subject8_seg012_0004": [
+    "jump_front_back"
+  ],
+  "subject8_seg012_0005": [
+    "jump_front_back"
+  ],
+  "subject9_seg000_0000": [
+    "standing"
+  ],
+  "subject9_seg000_0001": [
+    "standing"
+  ],
+  "subject9_seg000_0002": [
+    "standing"
+  ],
+  "subject9_seg000_0003": [
+    "standing"
+  ],
+  "subject9_seg000_0004": [
+    "standing"
+  ],
+  "subject9_seg000_0005": [
+    "standing"
+  ],
+  "subject9_seg000_0006": [
+    "standing"
+  ],
+  "subject9_seg000_0007": [
+    "standing"
+  ],
+  "subject9_seg000_0008": [
+    "standing"
+  ],
+  "subject9_seg000_0009": [
+    "standing"
+  ],
+  "subject9_seg000_0010": [
+    "standing"
+  ],
+  "subject9_seg000_0011": [
+    "standing"
+  ],
+  "subject9_seg000_0012": [
+    "standing"
+  ],
+  "subject9_seg000_0013": [
+    "standing"
+  ],
+  "subject9_seg000_0014": [
+    "standing"
+  ],
+  "subject9_seg000_0015": [
+    "standing"
+  ],
+  "subject9_seg000_0016": [
+    "standing"
+  ],
+  "subject9_seg000_0017": [
+    "standing"
+  ],
+  "subject9_seg001_0000": [
+    "sitting"
+  ],
+  "subject9_seg001_0001": [
+    "sitting"
+  ],
+  "subject9_seg001_0002": [
+    "sitting"
+  ],
+  "subject9_seg001_0003": [
+    "sitting"
+  ],
+  "subject9_seg001_0004": [
+    "sitting"
+  ],
+  "subject9_seg001_0005": [
+    "sitting"
+  ],
+  "subject9_seg001_0006": [
+    "sitting"
+  ],
+  "subject9_seg001_0007": [
+    "sitting"
+  ],
+  "subject9_seg001_0008": [
+    "sitting"
+  ],
+  "subject9_seg001_0009": [
+    "sitting"
+  ],
+  "subject9_seg001_0010": [
+    "sitting"
+  ],
+  "subject9_seg001_0011": [
+    "sitting"
+  ],
+  "subject9_seg001_0012": [
+    "sitting"
+  ],
+  "subject9_seg001_0013": [
+    "sitting"
+  ],
+  "subject9_seg001_0014": [
+    "sitting"
+  ],
+  "subject9_seg001_0015": [
+    "sitting"
+  ],
+  "subject9_seg001_0016": [
+    "sitting"
+  ],
+  "subject9_seg002_0000": [
+    "lying"
+  ],
+  "subject9_seg002_0001": [
+    "lying"
+  ],
+  "subject9_seg002_0002": [
+    "lying"
+  ],
+  "subject9_seg002_0003": [
+    "lying"
+  ],
+  "subject9_seg002_0004": [
+    "lying"
+  ],
+  "subject9_seg002_0005": [
+    "lying"
+  ],
+  "subject9_seg002_0006": [
+    "lying"
+  ],
+  "subject9_seg002_0007": [
+    "lying"
+  ],
+  "subject9_seg002_0008": [
+    "lying"
+  ],
+  "subject9_seg002_0009": [
+    "lying"
+  ],
+  "subject9_seg002_0010": [
+    "lying"
+  ],
+  "subject9_seg002_0011": [
+    "lying"
+  ],
+  "subject9_seg002_0012": [
+    "lying"
+  ],
+  "subject9_seg002_0013": [
+    "lying"
+  ],
+  "subject9_seg002_0014": [
+    "lying"
+  ],
+  "subject9_seg002_0015": [
+    "lying"
+  ],
+  "subject9_seg002_0016": [
+    "lying"
+  ],
+  "subject9_seg002_0017": [
+    "lying"
+  ],
+  "subject9_seg002_0018": [
+    "lying"
+  ],
+  "subject9_seg002_0019": [
+    "lying"
+  ],
+  "subject9_seg003_0000": [
+    "walking"
+  ],
+  "subject9_seg003_0001": [
+    "walking"
+  ],
+  "subject9_seg003_0002": [
+    "walking"
+  ],
+  "subject9_seg003_0003": [
+    "walking"
+  ],
+  "subject9_seg003_0004": [
+    "walking"
+  ],
+  "subject9_seg003_0005": [
+    "walking"
+  ],
+  "subject9_seg003_0006": [
+    "walking"
+  ],
+  "subject9_seg003_0007": [
+    "walking"
+  ],
+  "subject9_seg003_0008": [
+    "walking"
+  ],
+  "subject9_seg003_0009": [
+    "walking"
+  ],
+  "subject9_seg003_0010": [
+    "walking"
+  ],
+  "subject9_seg003_0011": [
+    "walking"
+  ],
+  "subject9_seg003_0012": [
+    "walking"
+  ],
+  "subject9_seg003_0013": [
+    "walking"
+  ],
+  "subject9_seg003_0014": [
+    "walking"
+  ],
+  "subject9_seg003_0015": [
+    "walking"
+  ],
+  "subject9_seg004_0000": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0001": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0002": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0003": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0004": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0005": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0006": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0007": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0008": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0009": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0010": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0011": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0012": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0013": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0014": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0015": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0016": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg004_0017": [
+    "waist_bends_forward"
+  ],
+  "subject9_seg005_0000": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0001": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0002": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0003": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0004": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0005": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0006": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0007": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0008": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0009": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0010": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0011": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0012": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0013": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0014": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0015": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg005_0016": [
+    "frontal_elevation_arms"
+  ],
+  "subject9_seg006_0000": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0001": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0002": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0003": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0004": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0005": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0006": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0007": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0008": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0009": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0010": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0011": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0012": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0013": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0014": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0015": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0016": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0017": [
+    "knees_bending"
+  ],
+  "subject9_seg006_0018": [
+    "knees_bending"
+  ],
+  "subject9_seg007_0000": [
+    "cycling"
+  ],
+  "subject9_seg007_0001": [
+    "cycling"
+  ],
+  "subject9_seg007_0002": [
+    "cycling"
+  ],
+  "subject9_seg007_0003": [
+    "cycling"
+  ],
+  "subject9_seg007_0004": [
+    "cycling"
+  ],
+  "subject9_seg007_0005": [
+    "cycling"
+  ],
+  "subject9_seg007_0006": [
+    "cycling"
+  ],
+  "subject9_seg007_0007": [
+    "cycling"
+  ],
+  "subject9_seg007_0008": [
+    "cycling"
+  ],
+  "subject9_seg007_0009": [
+    "cycling"
+  ],
+  "subject9_seg007_0010": [
+    "cycling"
+  ],
+  "subject9_seg007_0011": [
+    "cycling"
+  ],
+  "subject9_seg007_0012": [
+    "cycling"
+  ],
+  "subject9_seg007_0013": [
+    "cycling"
+  ],
+  "subject9_seg007_0014": [
+    "cycling"
+  ],
+  "subject9_seg007_0015": [
+    "cycling"
+  ],
+  "subject9_seg007_0016": [
+    "cycling"
+  ],
+  "subject9_seg008_0000": [
+    "jogging"
+  ],
+  "subject9_seg008_0001": [
+    "jogging"
+  ],
+  "subject9_seg008_0002": [
+    "jogging"
+  ],
+  "subject9_seg008_0003": [
+    "jogging"
+  ],
+  "subject9_seg008_0004": [
+    "jogging"
+  ],
+  "subject9_seg008_0005": [
+    "jogging"
+  ],
+  "subject9_seg008_0006": [
+    "jogging"
+  ],
+  "subject9_seg008_0007": [
+    "jogging"
+  ],
+  "subject9_seg008_0008": [
+    "jogging"
+  ],
+  "subject9_seg008_0009": [
+    "jogging"
+  ],
+  "subject9_seg008_0010": [
+    "jogging"
+  ],
+  "subject9_seg008_0011": [
+    "jogging"
+  ],
+  "subject9_seg008_0012": [
+    "jogging"
+  ],
+  "subject9_seg008_0013": [
+    "jogging"
+  ],
+  "subject9_seg008_0014": [
+    "jogging"
+  ],
+  "subject9_seg008_0015": [
+    "jogging"
+  ],
+  "subject9_seg008_0016": [
+    "jogging"
+  ],
+  "subject9_seg008_0017": [
+    "jogging"
+  ],
+  "subject9_seg008_0018": [
+    "jogging"
+  ],
+  "subject9_seg008_0019": [
+    "jogging"
+  ],
+  "subject9_seg008_0020": [
+    "jogging"
+  ],
+  "subject9_seg008_0021": [
+    "jogging"
+  ],
+  "subject9_seg009_0000": [
+    "running"
+  ],
+  "subject9_seg009_0001": [
+    "running"
+  ],
+  "subject9_seg009_0002": [
+    "running"
+  ],
+  "subject9_seg009_0003": [
+    "running"
+  ],
+  "subject9_seg009_0004": [
+    "running"
+  ],
+  "subject9_seg009_0005": [
+    "running"
+  ],
+  "subject9_seg009_0006": [
+    "running"
+  ],
+  "subject9_seg009_0007": [
+    "running"
+  ],
+  "subject9_seg009_0008": [
+    "running"
+  ],
+  "subject9_seg009_0009": [
+    "running"
+  ],
+  "subject9_seg009_0010": [
+    "running"
+  ],
+  "subject9_seg009_0011": [
+    "running"
+  ],
+  "subject9_seg009_0012": [
+    "running"
+  ],
+  "subject9_seg009_0013": [
+    "running"
+  ],
+  "subject9_seg009_0014": [
+    "running"
+  ],
+  "subject9_seg009_0015": [
+    "running"
+  ],
+  "subject9_seg009_0016": [
+    "running"
+  ],
+  "subject9_seg009_0017": [
+    "running"
+  ],
+  "subject9_seg009_0018": [
+    "running"
+  ],
+  "subject9_seg009_0019": [
+    "running"
+  ],
+  "subject9_seg010_0000": [
+    "jump_front_back"
+  ],
+  "subject9_seg010_0001": [
+    "jump_front_back"
+  ],
+  "subject9_seg010_0002": [
+    "jump_front_back"
+  ],
+  "subject9_seg010_0003": [
+    "jump_front_back"
+  ],
+  "subject9_seg010_0004": [
+    "jump_front_back"
+  ],
+  "subject9_seg010_0005": [
+    "jump_front_back"
+  ],
+  "subject9_seg011_0000": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0001": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0002": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0003": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0004": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0005": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0006": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0007": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0008": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0009": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0010": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0011": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0012": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0013": [
+    "climbing_stairs"
+  ],
+  "subject9_seg011_0014": [
+    "climbing_stairs"
+  ]
+}

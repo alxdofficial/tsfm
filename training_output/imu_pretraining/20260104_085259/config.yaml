@@ -1,0 +1,46 @@
+data:
+  data_root: /home/alex/code/tsfm/data
+  datasets:
+  - uci_har
+  - hhar
+  - mhealth
+  - pamap2
+  - wisdm
+  - unimib_shar
+  max_patches_per_sample: 48
+  patch_size_per_dataset:
+    hhar: 1.0
+    mhealth: 2.0
+    pamap2: 2.0
+    uci_har: 1.0
+    unimib_shar: 1.0
+    wisdm: 2.0
+encoder:
+  cnn_channels:
+  - 32
+  - 64
+  cnn_kernel_sizes:
+  - 5
+  d_model: 384
+  dim_feedforward: 1536
+  dropout: 0.1
+  num_heads: 8
+  num_temporal_layers: 4
+  patch_chunk_size: 16
+  use_cross_channel: true
+model:
+  projection_dim: 256
+training:
+  batch_size: 20
+  contrastive_weight: 1.0
+  epochs: 100
+  lr: 0.0001
+  mae_weight: 1.0
+  mask_ratio: 0.3
+  num_workers: 4
+  output_dir: training_output/imu_pretraining
+  save_every: 10
+  seed: 42
+  temperature: 0.2
+  warmup_epochs: 10
+  weight_decay: 1.0e-05

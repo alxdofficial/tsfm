@@ -1,0 +1,21 @@
+{
+  "dataset_name": "UniMiB SHAR",
+  "description": "Smartphone accelerometer activity recognition. 30 subjects performing 17 activities (9 ADL + 8 falls) at 50Hz. NOTE: Accelerometer only - no gyroscope data!",
+  "channels": [
+    {
+      "name": "acc_x",
+      "description": "Smartphone accelerometer X-axis (trouser pocket)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_y",
+      "description": "Smartphone accelerometer Y-axis (trouser pocket)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_z",
+      "description": "Smartphone accelerometer Z-axis (trouser pocket)",
+      "sampling_rate_hz": 50.0
+    }
+  ]
+}

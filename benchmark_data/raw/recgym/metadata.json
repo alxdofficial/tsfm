@@ -1,0 +1,54 @@
+{
+  "dataset_name": "RecGym",
+  "sampling_rate_hz": 20,
+  "channels": [
+    "acc_x",
+    "acc_y",
+    "acc_z",
+    "gyro_x",
+    "gyro_y",
+    "gyro_z"
+  ],
+  "extra_channels": [],
+  "activities": [
+    "adductor_machine",
+    "arm_curl",
+    "bench_press",
+    "cycling",
+    "leg_curl",
+    "leg_press",
+    "rope_skipping",
+    "running",
+    "squat",
+    "stairclimber",
+    "walking"
+  ],
+  "subjects": [
+    "s334",
+    "s427",
+    "s44",
+    "s547",
+    "s551",
+    "s574",
+    "s806",
+    "s93",
+    "s940",
+    "s978"
+  ],
+  "placement": "chest",
+  "num_sessions_original": 7150,
+  "train_subjects": [
+    "s44",
+    "s93",
+    "s334",
+    "s427",
+    "s547",
+    "s551",
+    "s574"
+  ],
+  "test_subjects": [
+    "s806",
+    "s940",
+    "s978"
+  ]
+}

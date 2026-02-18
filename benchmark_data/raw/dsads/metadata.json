@@ -1,0 +1,62 @@
+{
+  "dataset_name": "DSADS",
+  "sampling_rate_hz": 25,
+  "channels": [
+    "acc_x",
+    "acc_y",
+    "acc_z",
+    "gyro_x",
+    "gyro_y",
+    "gyro_z"
+  ],
+  "extra_channels": [
+    "mag_x",
+    "mag_y",
+    "mag_z"
+  ],
+  "activities": [
+    "cycling_horizontal",
+    "cycling_vertical",
+    "exercising_cross_trainer",
+    "exercising_stepper",
+    "jumping",
+    "lying_back",
+    "lying_side",
+    "moving_elevator",
+    "playing_basketball",
+    "rowing",
+    "running_treadmill",
+    "sitting",
+    "stairs_down",
+    "stairs_up",
+    "standing",
+    "standing_elevator",
+    "walking_parking",
+    "walking_treadmill_flat",
+    "walking_treadmill_incline"
+  ],
+  "subjects": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "placement": "wrist",
+  "num_sessions_original": 9120,
+  "train_subjects": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "test_subjects": [
+    7,
+    8
+  ]
+}

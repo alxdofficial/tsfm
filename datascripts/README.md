@@ -15,7 +15,7 @@ The format is designed to be:
 - **Real-world time:** All temporal reasoning uses seconds, not timesteps
 - **Tool-friendly:** Easy for both symbolic tools (Phase 1) and tokenizers (Phase 2) to consume
 
-📖 **See [ARCHITECTURE.md](../ARCHITECTURE.md) for full system design**
+📖 **See [ARCHITECTURE.md](../docs/ARCHITECTURE.md) for full system design**
 
 ## Standardized Format
 
@@ -146,16 +146,16 @@ python3 datascripts/verify_conversions.py uci_har
 
 ### Download Scripts
 
-#### `download_all_datasets.py`
+#### `shared/download_all_datasets.py`
 
 Downloads raw datasets from UCI ML Repository and other sources.
 
 ```bash
 # Download all
-python datascripts/download_all_datasets.py
+python datascripts/shared/download_all_datasets.py
 
 # Download specific
-python datascripts/download_all_datasets.py pamap2
+python datascripts/shared/download_all_datasets.py pamap2
 ```
 
 **Supported datasets:**
@@ -168,13 +168,13 @@ python datascripts/download_all_datasets.py pamap2
 
 ### Conversion Scripts
 
-Each dataset has a dedicated converter:
+Each dataset has a dedicated converter at `datascripts/{dataset}/convert.py`:
 
-- `convert_uci_har.py` - Converts UCI HAR windowed inertial signals
-- `convert_pamap2.py` - Segments PAMAP2 continuous recordings by activity
-- `convert_mhealth.py` - Segments MHEALTH log files by activity
-- `convert_wisdm.py` - Organizes WISDM multi-device data into sessions
-- `convert_actionsense.py` - Converts ActionSense multi-modal CSV files
+- `uci_har/convert.py` - Converts UCI HAR windowed inertial signals
+- `pamap2/convert.py` - Segments PAMAP2 continuous recordings by activity
+- `mhealth/convert.py` - Segments MHEALTH log files by activity
+- `wisdm/convert.py` - Organizes WISDM multi-device data into sessions
+- `actionsense/convert.py` - Converts ActionSense multi-modal CSV files
 
 All converters:
 1. Load raw data
@@ -184,16 +184,16 @@ All converters:
 
 ### Master Pipeline
 
-#### `setup_all_datasets.py`
+#### `setup_all_ts_datasets.py`
 
 Orchestrates complete pipeline: download → convert → validate.
 
 ```bash
 # Process all datasets
-python datascripts/setup_all_datasets.py
+python datascripts/setup_all_ts_datasets.py
 
 # Process specific dataset
-python datascripts/setup_all_datasets.py mhealth
+python datascripts/setup_all_ts_datasets.py mhealth
 ```
 
 ## Dataset-Specific Notes

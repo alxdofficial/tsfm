@@ -202,9 +202,6 @@ imu_activity_recognition_encoder/
 ├── semantic_alignment.py       # Semantic alignment head + projection + label bank
 ├── token_text_encoder.py       # Token-level text encoding (SentenceTransformer)
 ├── config.py                   # Default configurations
-├── example_usage.py            # Usage examples
-├── test_integration.py         # Integration tests
-├── test_preprocessing.py       # Preprocessing tests
 └── README.md                   # This file
 ```
 
@@ -252,7 +249,7 @@ The following features are fully implemented:
 3. **Semantic alignment**: Text-IMU alignment with learnable multi-prototype label bank
 4. **Channel text fusion**: Cross-attention between sensor tokens and channel description tokens
 
-See [`training_scripts/human_activity_recognition/README.md`](../../../training_scripts/human_activity_recognition/README.md) for training details.
+See [`training_scripts/human_activity_recognition/README.md`](../training_scripts/human_activity_recognition/README.md) for training details.
 
 ## Citation
 

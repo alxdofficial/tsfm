@@ -1,0 +1,36 @@
+{
+  "dataset_name": "HHAR",
+  "description": "Heterogeneity Human Activity Recognition dataset. 9 users performing 6 activities with heterogeneous devices (Nexus 4, Galaxy S3, S3 Mini, LG G Watch). Triaxial accelerometer and gyroscope data.",
+  "channels": [
+    {
+      "name": "acc_x",
+      "description": "Smartphone/smartwatch accelerometer X-axis (variable device and placement)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_y",
+      "description": "Smartphone/smartwatch accelerometer Y-axis (variable device and placement)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_z",
+      "description": "Smartphone/smartwatch accelerometer Z-axis (variable device and placement)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_x",
+      "description": "Smartphone/smartwatch gyroscope X-axis (variable device and placement)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_y",
+      "description": "Smartphone/smartwatch gyroscope Y-axis (variable device and placement)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_z",
+      "description": "Smartphone/smartwatch gyroscope Z-axis (variable device and placement)",
+      "sampling_rate_hz": 50.0
+    }
+  ]
+}

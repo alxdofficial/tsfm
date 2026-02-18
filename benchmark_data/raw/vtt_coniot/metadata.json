@@ -1,0 +1,69 @@
+{
+  "dataset_name": "VTT-ConIoT",
+  "sampling_rate_hz": 50,
+  "channels": [
+    "acc_x",
+    "acc_y",
+    "acc_z",
+    "gyro_x",
+    "gyro_y",
+    "gyro_z"
+  ],
+  "extra_channels": [
+    "mag_x",
+    "mag_y",
+    "mag_z"
+  ],
+  "activities": [
+    "carrying",
+    "climbing_ladder",
+    "jumping_down",
+    "kneeling_work",
+    "laying_back",
+    "leveling_paint",
+    "lifting",
+    "pushing_cart",
+    "raising_hands",
+    "roll_painting",
+    "sitting",
+    "spraying_paint",
+    "stairs",
+    "standing_work",
+    "walking_straight",
+    "walking_winding"
+  ],
+  "subjects": [
+    "u01",
+    "u02",
+    "u03",
+    "u04",
+    "u05",
+    "u06",
+    "u07",
+    "u08",
+    "u09",
+    "u10",
+    "u11",
+    "u12",
+    "u13"
+  ],
+  "placement": "hip",
+  "num_sessions_original": 207,
+  "train_subjects": [
+    "u01",
+    "u02",
+    "u03",
+    "u04",
+    "u05",
+    "u06",
+    "u07",
+    "u08",
+    "u09"
+  ],
+  "test_subjects": [
+    "u10",
+    "u11",
+    "u12",
+    "u13"
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "dataset_name": "RealWorld HAR",
+  "sampling_rate_hz": 50,
+  "channels": [
+    "acc_x",
+    "acc_y",
+    "acc_z"
+  ],
+  "extra_channels": [],
+  "activities": [
+    "jumping",
+    "lying",
+    "running",
+    "sitting",
+    "stairs_down",
+    "stairs_up",
+    "standing",
+    "walking"
+  ],
+  "subjects": [
+    1,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "placement": "waist",
+  "num_sessions_original": 16830,
+  "train_subjects": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "test_subjects": [
+    12,
+    13,
+    14,
+    15
+  ]
+}
