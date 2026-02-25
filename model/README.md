@@ -253,21 +253,5 @@ See [`training_scripts/human_activity_recognition/README.md`](../training_script
 
 ## Citation
 
-If you use this encoder in your research, please cite:
+If you use this encoder in your research, please cite the TSFM paper (citation TBD).
 
-```
-@software{imu_activity_recognition_encoder,
-  title = {IMU Activity Recognition Encoder},
-  year = {2025},
-  author = {Your Name},
-  description = {A patch-based transformer encoder for IMU sensor data}
-}
-```
-
-## License
-
-[Your License Here]
-
-## Contact
-
-[Your Contact Information Here]

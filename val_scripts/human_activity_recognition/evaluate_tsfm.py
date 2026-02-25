@@ -25,6 +25,7 @@ Usage:
 
 import copy
 import json
+import os
 import random
 import sys
 from pathlib import Path
@@ -67,8 +68,20 @@ DATASET_CONFIG_PATH = BENCHMARK_DIR / "dataset_config.json"
 GLOBAL_LABEL_PATH = LIMUBERT_DATA_DIR / "global_label_mapping.json"
 OUTPUT_DIR = PROJECT_ROOT / "test_output" / "baseline_evaluation"
 
-# TSFM checkpoint - update this path to your trained model
-CHECKPOINT_PATH = "training_output/semantic_alignment/20260217_113136/best.pt"
+# TSFM checkpoint - set TSFM_CHECKPOINT env var, or update this default path
+def _find_latest_checkpoint():
+    """Find most recent best.pt in training_output/semantic_alignment/."""
+    sa_dir = PROJECT_ROOT / "training_output" / "semantic_alignment"
+    if not sa_dir.exists():
+        return str(sa_dir / "TIMESTAMP" / "best.pt")  # placeholder
+    runs = sorted(sa_dir.iterdir(), reverse=True)
+    for run in runs:
+        best = run / "best.pt"
+        if best.exists():
+            return str(best)
+    return str(sa_dir / "TIMESTAMP" / "best.pt")
+
+CHECKPOINT_PATH = os.environ.get("TSFM_CHECKPOINT", _find_latest_checkpoint())
 
 # Data specs
 DATA_CHANNELS = 6          # 6-channel IMU (3 accel + 3 gyro)

@@ -1,6 +1,6 @@
 # TSFM: Language-Aligned IMU Foundation Model for Human Activity Recognition
 
-A foundation model that aligns IMU sensor embeddings with natural language descriptions, enabling zero-shot activity recognition on unseen datasets. Trained end-to-end on 10 diverse HAR datasets and evaluated against 4 baselines on 4 held-out test datasets.
+A foundation model that aligns IMU sensor embeddings with natural language descriptions, enabling zero-shot activity recognition on unseen datasets. Trained end-to-end on 10 diverse HAR datasets and evaluated against 5 baselines on 7 held-out test datasets.
 
 ---
 
@@ -14,6 +14,8 @@ TSFM uses a **CLIP-style** training approach: a dual-branch transformer encoder 
 Raw IMU Data (variable length, 6-48 channels)
          |
     Patch Tokenization (variable-size patches, interpolated to 64 timesteps)
+         |
+    Per-Channel Encoding (each channel processed independently)
          |
     Dual-Branch Transformer Encoder (4 layers)
     [Temporal Self-Attention] + [Cross-Channel Self-Attention]
@@ -37,6 +39,35 @@ Raw IMU Data (variable length, 6-48 channels)
 
 ---
 
+## Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/alxdofficial/tsfm.git
+cd tsfm
+
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies (requires CUDA-compatible PyTorch — adjust for your GPU)
+pip install -r requirements.txt
+
+# Download and convert all 20 datasets to standardized session format
+python datascripts/setup_all_ts_datasets.py
+
+# Generate benchmark evaluation data
+python benchmark_data/scripts/export_raw.py
+python benchmark_data/scripts/preprocess_limubert.py
+python benchmark_data/scripts/preprocess_tsfm_eval.py
+```
+
+**Note**: Some datasets require manual download — see `datascripts/setup_all_ts_datasets.py`
+for URLs and instructions per dataset. The script will skip datasets whose raw data is not
+yet downloaded and tell you where to get them.
+
+---
+
 ## Training
 
 Training runs end-to-end, starting from the self-supervised pretrained encoder checkpoint when available:
@@ -56,6 +87,11 @@ python training_scripts/human_activity_recognition/semantic_alignment_train.py
 | Training datasets | 10 | See table below |
 | Temperature | 0.07 | CLIP default |
 | Memory bank | 256 queue size | MoCo-style additional negatives |
+
+**Data root**: By default, looks for `data/` in the project root. Override with:
+```bash
+export TSFM_DATA_ROOT=/path/to/your/data
+```
 
 **Training outputs** are saved to `training_output/semantic_alignment/{timestamp}/` with checkpoints every 5 epochs, loss plots, and embedding visualizations.
 
@@ -78,37 +114,41 @@ python training_scripts/human_activity_recognition/semantic_alignment_train.py
 | KU-HAR | 6 | 100 Hz | 17 | 89 subjects |
 | RecGym | 6 | 20 Hz | 11 | Gym exercises |
 
-### Zero-Shot Test (4 datasets, never seen during training)
+### Zero-Shot Test (7 datasets, never seen during training)
 
 **Main test datasets** (85-100% label coverage — used for primary results):
 
-| Dataset | Activities | Difficulty | Group Coverage |
-|---------|:---:|-----------|:---:|
-| MotionSense | 6 | Easy (basic locomotion) | 100% |
-| RealWorld | 8 | Medium (multi-placement) | 100% |
-| MobiAct | 13 | Hard (falls, vehicle entry) | 85% |
+| Dataset | Activities | Hz | Difficulty | Group Coverage |
+|---------|:---:|:---:|-----------|:---:|
+| MotionSense | 6 | 50 | Easy (basic locomotion) | 100% |
+| RealWorld | 8 | 50 | Medium (multi-placement) | 100% |
+| MobiAct | 13 | 50 | Hard (falls, vehicle entry) | 85% |
+| Shoaib | 7 | 50 | Medium (multi-placement smartphone) | 100% |
+| Opportunity | 4 | 30 | Medium (raw XSens body IMU) | 100% |
+| HARTH | 12 | 50 | Hard (back-only accelerometer, distribution shift) | 100% |
 
 **Severe out-of-domain** (reported separately — 50% of activities have no training equivalent):
 
-| Dataset | Activities | Difficulty | Group Coverage |
-|---------|:---:|-----------|:---:|
-| VTT-ConIoT | 16 | Severe (industrial/construction) | 50% |
+| Dataset | Activities | Hz | Difficulty | Group Coverage |
+|---------|:---:|:---:|-----------|:---:|
+| VTT-ConIoT | 16 | 50 | Severe (industrial/construction) | 50% |
 
-Baseline models evaluate on standardized `(N, 120, 6)` windows at 20Hz. TSFM evaluates on native-rate data (50Hz for all test sets) — see [Evaluation Protocol](docs/baselines/EVALUATION_PROTOCOL.md) for sampling rate policy.
+Baseline models evaluate on standardized `(N, 120, 6)` windows at 20Hz. TSFM evaluates on native-rate data — see [Evaluation Protocol](docs/baselines/EVALUATION_PROTOCOL.md) for sampling rate policy.
 
 ---
 
 ## Baseline Evaluation
 
-We compare TSFM against 4 baselines using a unified 4-metric evaluation framework:
+We compare TSFM against 5 baselines using a unified 4-metric evaluation framework:
 
 | Baseline | Type | Zero-Shot Method | Embedding Dim |
 |----------|------|------------------|:---:|
 | **TSFM (ours)** | Text-aligned | Cosine similarity | 384 |
 | **LanHAR** | Text-aligned | Cosine similarity (SciBERT) | 768 |
 | **LiMU-BERT** | Encoder-only | GRU classifier | 72 |
-| **MOMENT** | Encoder-only | SVM-RBF classifier | 6144 |
-| **CrossHAR** | Encoder-only | Transformer_ft classifier | 72 |
+| **MOMENT** | General time-series | SVM-RBF classifier | 6144 |
+| **CrossHAR** | Encoder-only | Transformer classifier | 72 |
+| **LLaSA** | LLM-based | Generative text parsing | 7B params |
 
 ### 4-Metric Evaluation
 
@@ -120,18 +160,28 @@ We compare TSFM against 4 baselines using a unified 4-metric evaluation framewor
 ### Running Evaluations
 
 ```bash
-# Individual baselines
+# All baselines sequentially
+bash scripts/run_all_evaluations.sh
+
+# Or individually
 python val_scripts/human_activity_recognition/evaluate_tsfm.py
 python val_scripts/human_activity_recognition/evaluate_limubert.py
 python val_scripts/human_activity_recognition/evaluate_moment.py
 python val_scripts/human_activity_recognition/evaluate_crosshar.py
 python val_scripts/human_activity_recognition/evaluate_lanhar.py
+python val_scripts/human_activity_recognition/evaluate_llasa.py   # optional, ~16GB VRAM
 
 # Generate combined comparison table
 python scripts/generate_results_table.py
 ```
 
+**TSFM checkpoint**: The evaluation script auto-discovers the latest checkpoint in
+`training_output/semantic_alignment/`. Override with `TSFM_CHECKPOINT` env var.
+
 Results are saved to `test_output/baseline_evaluation/{model}_evaluation.json`.
+
+For baseline setup (cloning repos, checkpoints, data preparation), see
+[docs/baselines/BASELINES_SETUP.md](docs/baselines/BASELINES_SETUP.md).
 
 ---
 
@@ -140,14 +190,15 @@ Results are saved to `test_output/baseline_evaluation/{model}_evaluation.json`.
 | Document | Description |
 |----------|-------------|
 | **[docs/README.md](docs/README.md)** | Documentation index + single-source-of-truth map |
+| **[docs/baselines/RESULTS.md](docs/baselines/RESULTS.md)** | Current evaluation results and fairness analysis |
 | **[docs/baselines/EVALUATION_PROTOCOL.md](docs/baselines/EVALUATION_PROTOCOL.md)** | Evaluation framework, fairness justifications, per-dataset label coverage |
 | **[docs/baselines/BASELINE_IMPLEMENTATION_NOTES.md](docs/baselines/BASELINE_IMPLEMENTATION_NOTES.md)** | Per-baseline implementation details and design decisions |
 | **[docs/baselines/BASELINES_SETUP.md](docs/baselines/BASELINES_SETUP.md)** | How to set up and reproduce baseline evaluations |
-| **[docs/baselines/RESULTS.md](docs/baselines/RESULTS.md)** | Current evaluation results table |
 | **[model/README.md](model/README.md)** | Model architecture API |
-| **[datasets/imu_pretraining_dataset/README.md](datasets/imu_pretraining_dataset/README.md)** | Dataset format and loading |
 | **[training_scripts/human_activity_recognition/README.md](training_scripts/human_activity_recognition/README.md)** | Training pipeline details |
-| **[benchmark_data/README.md](benchmark_data/README.md)** | Benchmark data format |
+| **[benchmark_data/README.md](benchmark_data/README.md)** | Benchmark data format and preprocessing |
+| **[datascripts/README.md](datascripts/README.md)** | Dataset download and conversion pipeline |
+| **[DATA_FORMAT.md](DATA_FORMAT.md)** | Standardized session parquet format spec |
 
 ---
 
@@ -173,6 +224,7 @@ tsfm/
 │   ├── evaluate_moment.py         # MOMENT baseline
 │   ├── evaluate_crosshar.py       # CrossHAR baseline
 │   ├── evaluate_lanhar.py         # LanHAR baseline
+│   ├── evaluate_llasa.py          # LLaSA baseline
 │   ├── grouped_zero_shot.py       # Shared zero-shot utilities
 │   ├── model_loading.py           # TSFM model/label bank loading
 │   ├── evaluation_metrics.py      # Group-aware accuracy, similarity
@@ -183,12 +235,12 @@ tsfm/
 │   ├── label_groups.py            # 87 labels -> 34 semantic groups
 │   └── augmentations.py           # Physical augmentations
 │
-├── benchmark_data/                 # Standardized evaluation data
-├── docs/baselines/                 # Evaluation protocol & results
-├── scripts/                        # Utility scripts
-├── tests/                          # Pytest regression suite
-├── data/                           # Raw + processed training data
-└── training_output/                # Checkpoints, plots, logs
+├── datascripts/                    # Dataset download + conversion (20 datasets)
+├── benchmark_data/                 # Standardized evaluation data + preprocessing scripts
+├── docs/baselines/                 # Evaluation protocol, results, fairness analysis
+├── scripts/                        # Utility scripts (runner, results table)
+├── data/                           # Raw + processed training data (gitignored)
+└── training_output/                # Checkpoints, plots, logs (gitignored)
 ```
 
 ---
@@ -201,14 +253,9 @@ pytest tests/ -v
 
 ---
 
-## Setup
+## Environment Variables
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install torch torchvision
-pip install -r requirements.txt
-
-# Download and convert all datasets
-python datascripts/setup_all_ts_datasets.py
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TSFM_DATA_ROOT` | `{project_root}/data` | Path to dataset directory |
+| `TSFM_CHECKPOINT` | Auto-discovers latest in `training_output/` | Path to trained TSFM checkpoint |

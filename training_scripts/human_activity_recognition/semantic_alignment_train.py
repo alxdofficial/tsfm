@@ -4,6 +4,7 @@ Semantic alignment training for IMU activity recognition.
 Stage 2 of training: Align pretrained encoder outputs with text embeddings.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -104,7 +105,7 @@ class ChannelBucketBatchSampler:
 # ======================== HYPERPARAMETERS ========================
 
 # Data configuration
-DATA_ROOT = "/home/alex/code/tsfm/data"
+DATA_ROOT = os.environ.get("TSFM_DATA_ROOT", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data"))
 # Training datasets (10 diverse HAR datasets)
 # Zero-shot test datasets are EXCLUDED: motionsense, realworld, mobiact, vtt_coniot
 # Also excluded for GOAT comparison: opportunity, realdisp, daphnet_fog

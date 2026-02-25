@@ -5,9 +5,9 @@ anyone reproducing the results.
 
 ## Overview
 
-Our evaluation compares 5 models. The evaluation code lives in this repository
-(`val_scripts/human_activity_recognition/evaluate_*.py`), but 3 baselines require
-their original code repos for model definitions and pretrained checkpoints.
+Our evaluation compares 6 models on 7 test datasets using a unified 4-metric framework.
+The evaluation code lives in this repository (`val_scripts/human_activity_recognition/evaluate_*.py`),
+but 3 baselines require their original code repos for model definitions and pretrained checkpoints.
 
 | Model | Source | What's Needed |
 |-------|--------|--------------|
@@ -16,6 +16,7 @@ their original code repos for model definitions and pretrained checkpoints.
 | **LiMU-BERT** | GitHub clone | Model definitions + pretrained checkpoint |
 | **CrossHAR** | GitHub clone | Model definitions + pretrained checkpoint |
 | **MOMENT** | HuggingFace | Auto-downloaded at runtime |
+| **LLaSA** | HuggingFace | Auto-downloaded at runtime (~16GB VRAM required) |
 
 ## Step 1: Clone Baseline Repositories
 
@@ -33,23 +34,42 @@ cd LIMU-BERT-Public && git checkout decffee && cd ..
 # LanHAR (Hao et al., IMWUT 2025)
 git clone https://github.com/DASHLab/LanHAR.git
 cd LanHAR && git checkout 1fe98fa && cd ..
+
+# LLaSA (optional — requires ~16GB VRAM for 7B model)
+git clone https://github.com/BASH-Lab/LLaSA.git
+cd LLaSA && cd ..
 ```
 
 MOMENT (Goswami et al., ICML 2024) is auto-downloaded from HuggingFace
 (`AutonLab/MOMENT-1-large`) on first run — no manual setup needed.
 
-## Step 2: Pretrained Checkpoints
+LLaSA (Li et al., 2024) downloads its model (`BASH-Lab/LLaSA-7B`) from
+HuggingFace at runtime.
+
+## Step 2: Apply Patches to Baseline Repos
+
+Some baseline repos need minor modifications for our evaluation framework:
+
+```bash
+# From project root:
+# Apply LiMU-BERT patches (adds combined pretraining support)
+cp docs/baselines/auxiliary_patches/limubert/* auxiliary_repos/LIMU-BERT-Public/
+
+# Apply CrossHAR patches (adds combined pretraining support)
+cp docs/baselines/auxiliary_patches/crosshar/* auxiliary_repos/CrossHAR/
+```
+
+See `docs/baselines/auxiliary_patches/` for the exact files and their purpose.
+
+## Step 3: Pretrained Checkpoints
 
 ### LiMU-BERT
 The pretrained combined checkpoint should be at:
 ```
-auxiliary_repos/LIMU-BERT-Public/saved/pretrain_base_recgym_20_120/pretrained_combined.pt
+auxiliary_repos/LIMU-BERT-Public/saved/pretrain_base_combined_train_20_120/pretrained_combined.pt
 ```
 This checkpoint was trained on all 10 training datasets using the LiMU-BERT
-pretraining script. Pre-extracted embeddings for all datasets should be at:
-```
-auxiliary_repos/LIMU-BERT-Public/embed/embed_pretrained_combined_{dataset}_20_120.npy
-```
+pretraining script with the combined training configuration.
 
 ### CrossHAR
 The pretrained encoder checkpoint should be at:
@@ -65,47 +85,52 @@ It downloads SciBERT (`allenai/scibert_scivocab_uncased`) from HuggingFace
 automatically.
 
 ### TSFM (ours)
-Checkpoint is at:
+Checkpoint is auto-discovered at:
 ```
-training_output/semantic_alignment/{run_id}/best.pt
+training_output/semantic_alignment/{latest_run}/best.pt
 ```
-The checkpoint path is hardcoded in `evaluate_tsfm.py` — update it to point to your
-trained model.
+You can also set the `TSFM_CHECKPOINT` environment variable to override:
+```bash
+export TSFM_CHECKPOINT="training_output/semantic_alignment/20260217_113136/best.pt"
+```
 
-## Step 3: Benchmark Data
+## Step 4: Benchmark Data
 
-**Baselines** (LiMU-BERT, CrossHAR, MOMENT, LanHAR) evaluate on 20Hz resampled data:
+All models evaluate on preprocessed `.npy` windows. These are generated from the
+standardized session data in `data/`.
+
+**Baselines** (LiMU-BERT, CrossHAR, MOMENT, LanHAR, LLaSA) evaluate on 20Hz resampled data:
 ```
 benchmark_data/processed/limubert/{dataset}/data_20_120.npy   # (N, 120, 6) windows at 20Hz
 benchmark_data/processed/limubert/{dataset}/label_20_120.npy  # (N, 120, 2) labels
 ```
 
-**TSFM** evaluates on native-rate data (50Hz for all 4 test datasets):
+**TSFM** evaluates on native-rate data (50Hz for most datasets, 30Hz for Opportunity):
 ```
-benchmark_data/processed/tsfm_eval/{dataset}/data_native.npy   # (N, 300, 6) windows at 50Hz
-benchmark_data/processed/tsfm_eval/{dataset}/label_native.npy  # (N, 300, 2) labels
+benchmark_data/processed/tsfm_eval/{dataset}/data_native.npy   # (N, W, 6) windows at native Hz
+benchmark_data/processed/tsfm_eval/{dataset}/label_native.npy  # (N, W, 2) labels
 benchmark_data/processed/tsfm_eval/{dataset}/metadata.json     # sampling rate, window size
 ```
 
 To prepare data from raw sources:
 ```bash
-# Download and convert all datasets to standardized session format
+# 1. Download and convert all datasets to standardized session format
 python datascripts/setup_all_ts_datasets.py
 
-# Export raw per-subject CSVs for benchmark preprocessing
+# 2. Export raw per-subject CSVs for benchmark preprocessing
 python benchmark_data/scripts/export_raw.py
 
-# Generate 20Hz .npy files for baselines
+# 3. Generate 20Hz .npy files for baselines
 python benchmark_data/scripts/preprocess_limubert.py
 
-# Generate native-rate .npy files for TSFM evaluation
+# 4. Generate native-rate .npy files for TSFM evaluation
 python benchmark_data/scripts/preprocess_tsfm_eval.py
 ```
 
-## Step 4: Run Evaluations
+## Step 5: Run Evaluations
 
 ```bash
-# All baselines sequentially
+# All baselines sequentially (including LLaSA)
 bash scripts/run_all_evaluations.sh
 
 # Or individually
@@ -114,9 +139,7 @@ python val_scripts/human_activity_recognition/evaluate_limubert.py
 python val_scripts/human_activity_recognition/evaluate_moment.py
 python val_scripts/human_activity_recognition/evaluate_crosshar.py
 python val_scripts/human_activity_recognition/evaluate_lanhar.py
-
-# Generate combined comparison table
-python scripts/generate_results_table.py
+python val_scripts/human_activity_recognition/evaluate_llasa.py  # optional, needs ~16GB VRAM
 ```
 
 Results are written to `test_output/baseline_evaluation/{model}_evaluation.json`.
@@ -125,17 +148,18 @@ Results are written to `test_output/baseline_evaluation/{model}_evaluation.json`
 
 | Model | Time | Notes |
 |-------|------|-------|
-| TSFM | ~10 min | Fixed 1.0s patch, 4 test datasets |
-| MOMENT | ~20-40 min | SVM GridSearchCV is slow |
-| LiMU-BERT | ~1-2 hrs | 100-epoch GRU training for zero-shot |
-| CrossHAR | ~2-4 hrs | 100-epoch Transformer training for zero-shot |
-| LanHAR | ~4-8 hrs | Full 60-epoch training from scratch |
+| TSFM | ~15 min | 7 test datasets, native rate |
+| MOMENT | ~30-60 min | SVM GridSearchCV is slow |
+| LiMU-BERT | ~2-4 hrs | 100-epoch GRU training for zero-shot |
+| CrossHAR | ~3-6 hrs | 100-epoch Transformer training for zero-shot |
+| LanHAR | ~6-12 hrs | Full 60-epoch training from scratch |
+| LLaSA | ~2-4 hrs | 7B LLM inference, 100 samples/class |
 
 ## What Reviewers Should Examine
 
 1. **Evaluation framework**: `docs/baselines/EVALUATION_PROTOCOL.md`
-2. **Fairness justifications**: Same file, "Fairness Justifications" section
-3. **Per-baseline adaptations**: `docs/baselines/BASELINE_IMPLEMENTATION_NOTES.md`
+2. **Fairness justifications**: `docs/baselines/RESULTS.md` (Fairness Notes + MOMENT Advantages sections)
+3. **Per-baseline adaptations**: `docs/baselines/RESULTS.md` (Adaptations table)
 4. **Our model evaluation**: `val_scripts/human_activity_recognition/evaluate_tsfm.py`
 5. **A baseline evaluation** (for comparison): `val_scripts/human_activity_recognition/evaluate_moment.py`
 6. **Results**: `docs/baselines/RESULTS.md`
