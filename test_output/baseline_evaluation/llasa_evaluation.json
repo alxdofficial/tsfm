@@ -1,0 +1,121 @@
+{
+  "motionsense": {
+    "zero_shot_closed_set": {
+      "accuracy": 28.499999999999996,
+      "f1_macro": 16.39717660055397,
+      "f1_weighted": 19.130039367312964,
+      "n_samples": 600,
+      "n_unclear": 1,
+      "n_classes": 6
+    },
+    "zero_shot_open_set": {
+      "accuracy": 7.166666666666667,
+      "f1_macro": 6.204906204906205,
+      "f1_weighted": 7.23905723905724,
+      "n_samples": 600,
+      "n_unclear": 0
+    }
+  },
+  "realworld": {
+    "zero_shot_closed_set": {
+      "accuracy": 15.25,
+      "f1_macro": 9.69594618924505,
+      "f1_weighted": 9.69594618924505,
+      "n_samples": 800,
+      "n_unclear": 0,
+      "n_classes": 8
+    },
+    "zero_shot_open_set": {
+      "accuracy": 0.0,
+      "f1_macro": 0.0,
+      "f1_weighted": 0.0,
+      "n_samples": 800,
+      "n_unclear": 0
+    }
+  },
+  "mobiact": {
+    "zero_shot_closed_set": {
+      "accuracy": 4.426229508196721,
+      "f1_macro": 0.9531297111469282,
+      "f1_weighted": 1.0156300200745958,
+      "n_samples": 1220,
+      "n_unclear": 0,
+      "n_classes": 13
+    },
+    "zero_shot_open_set": {
+      "accuracy": 0.0,
+      "f1_macro": 0.0,
+      "f1_weighted": 0.0,
+      "n_samples": 1220,
+      "n_unclear": 0
+    }
+  },
+  "vtt_coniot": {
+    "zero_shot_closed_set": {
+      "accuracy": 6.937500000000001,
+      "f1_macro": 1.3567243303571428,
+      "f1_weighted": 1.3567243303571428,
+      "n_samples": 1600,
+      "n_unclear": 0,
+      "n_classes": 16
+    },
+    "zero_shot_open_set": {
+      "accuracy": 0.0,
+      "f1_macro": 0.0,
+      "f1_weighted": 0.0,
+      "n_samples": 1600,
+      "n_unclear": 0
+    }
+  },
+  "shoaib": {
+    "zero_shot_closed_set": {
+      "accuracy": 14.000000000000002,
+      "f1_macro": 4.688850585882558,
+      "f1_weighted": 5.35868638386578,
+      "n_samples": 700,
+      "n_unclear": 2,
+      "n_classes": 7
+    },
+    "zero_shot_open_set": {
+      "accuracy": 0.0,
+      "f1_macro": 0.0,
+      "f1_weighted": 0.0,
+      "n_samples": 700,
+      "n_unclear": 0
+    }
+  },
+  "opportunity": {
+    "zero_shot_closed_set": {
+      "accuracy": 25.0,
+      "f1_macro": 10.0,
+      "f1_weighted": 10.0,
+      "n_samples": 400,
+      "n_unclear": 0,
+      "n_classes": 4
+    },
+    "zero_shot_open_set": {
+      "accuracy": 0.0,
+      "f1_macro": 0.0,
+      "f1_weighted": 0.0,
+      "n_samples": 400,
+      "n_unclear": 0
+    }
+  },
+  "harth": {
+    "zero_shot_closed_set": {
+      "accuracy": 12.5,
+      "f1_macro": 2.5281253950195928,
+      "f1_weighted": 2.844141069397042,
+      "n_samples": 800,
+      "n_unclear": 0,
+      "n_classes": 12
+    },
+    "zero_shot_open_set": {
+      "accuracy": 11.875,
+      "f1_macro": 3.3783783783783785,
+      "f1_weighted": 3.3783783783783785,
+      "n_samples": 800,
+      "n_unclear": 0
+    }
+  }
+}

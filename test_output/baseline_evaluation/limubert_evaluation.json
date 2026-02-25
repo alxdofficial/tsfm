@@ -126,5 +126,101 @@
       "n_train_samples": 160,
       "n_classes": 16
     }
+  },
+  "shoaib": {
+    "zero_shot_open_set": {
+      "accuracy": 16.8141592920354,
+      "f1_macro": 6.480989041811445,
+      "f1_weighted": 21.17635925768605,
+      "n_samples": 5537
+    },
+    "zero_shot_closed_set": {
+      "accuracy": 37.63770995123713,
+      "f1_macro": 33.55139007084688,
+      "f1_weighted": 33.483246826514254,
+      "n_samples": 5537,
+      "n_allowed": 25,
+      "n_masked": 62
+    },
+    "1pct_supervised": {
+      "accuracy": 14.954954954954955,
+      "f1_macro": 3.716972682489924,
+      "f1_weighted": 3.8911011324804434,
+      "n_samples": 555,
+      "n_train_samples": 42,
+      "n_classes": 7
+    },
+    "10pct_supervised": {
+      "accuracy": 91.8918918918919,
+      "f1_macro": 91.67789695755026,
+      "f1_weighted": 91.8278131904459,
+      "n_samples": 555,
+      "n_train_samples": 441,
+      "n_classes": 7
+    }
+  },
+  "opportunity": {
+    "zero_shot_open_set": {
+      "accuracy": 28.06446613977995,
+      "f1_macro": 10.957163601161666,
+      "f1_weighted": 12.300277874913235,
+      "n_samples": 6453
+    },
+    "zero_shot_closed_set": {
+      "accuracy": 28.06446613977995,
+      "f1_macro": 10.957163601161666,
+      "f1_weighted": 12.300277874913235,
+      "n_samples": 6453,
+      "n_allowed": 14,
+      "n_masked": 73
+    },
+    "1pct_supervised": {
+      "accuracy": 49.07120743034056,
+      "f1_macro": 49.42378402715039,
+      "f1_weighted": 39.50582706576146,
+      "n_samples": 646,
+      "n_train_samples": 48,
+      "n_classes": 4
+    },
+    "10pct_supervised": {
+      "accuracy": 74.14860681114551,
+      "f1_macro": 79.08695453576561,
+      "f1_weighted": 73.57958539391572,
+      "n_samples": 646,
+      "n_train_samples": 516,
+      "n_classes": 4
+    }
+  },
+  "harth": {
+    "zero_shot_open_set": {
+      "accuracy": 0.0021128248468201983,
+      "f1_macro": 0.000736675383992044,
+      "f1_weighted": 0.003971790080014574,
+      "n_samples": 47330
+    },
+    "zero_shot_closed_set": {
+      "accuracy": 20.175364462286076,
+      "f1_macro": 5.0907395385531355,
+      "f1_weighted": 7.08073513253302,
+      "n_samples": 47330,
+      "n_allowed": 29,
+      "n_masked": 58
+    },
+    "1pct_supervised": {
+      "accuracy": 19.078808366786394,
+      "f1_macro": 2.670333569907736,
+      "f1_weighted": 6.113613894679955,
+      "n_samples": 4733,
+      "n_train_samples": 376,
+      "n_classes": 12
+    },
+    "10pct_supervised": {
+      "accuracy": 61.7367420240862,
+      "f1_macro": 14.473579197382561,
+      "f1_weighted": 47.60639941712256,
+      "n_samples": 4733,
+      "n_train_samples": 3359,
+      "n_classes": 12
+    }
   }
 }
