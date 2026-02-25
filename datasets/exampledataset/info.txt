@@ -1,2 +1,0 @@
-this folder will contain implementations of a dataest class for a certain data and certain task. for example the action sense
-dataset folder may contain a dataset class for feature extractor pretraining or some sort 
