@@ -64,16 +64,142 @@ The table below documents every significant deviation and its fairness rationale
 |----------|----------------|------------------------|----------------|-------------------|
 | **LiMU-BERT** | Window-level scoring | Scores each 20-step sub-window independently (6x more evaluation units per window) | Majority vote across 6 sub-windows per 120-step window | All models must be scored on the same evaluation units (windows) for comparable n_samples |
 | **LiMU-BERT** | Single combined checkpoint | Separate pretrained models per dataset | One model pretrained on all 10 datasets combined | Unified pretraining for fair cross-dataset comparison |
+| **LiMU-BERT** | GRU zero-shot classifier | Paper uses GRU for supervised only, not for zero-shot transfer | Train GRU (72→20→10→87) on training embeddings, predict test via logits | Only available mechanism — LiMU-BERT has no text branch for cosine similarity. GRU matches the paper's classifier architecture |
 | **CrossHAR** | End-to-end supervised fine-tuning | Freezes encoder; trains only classifier head on static pre-extracted embeddings | Fine-tunes encoder + classifier jointly | All baselines use end-to-end fine-tuning for supervised metrics, giving each encoder a chance to adapt; this slightly *advantages* CrossHAR vs its paper |
+| **CrossHAR** | Transformer zero-shot classifier | Paper uses Transformer classifier for supervised only, not for zero-shot | Train Transformer(72→100→87, 1-layer, 4-head) on training embeddings, predict test via logits | Same rationale as LiMU-BERT; matches the paper's classifier architecture |
 | **MOMENT** | Linear head for supervised | Paper's classification evaluation uses only SVM-RBF on frozen embeddings (no fine-tuning) | Linear head (from MOMENT codebase's `ClassificationHead`) fine-tuned end-to-end | SVM is not differentiable; linear head enables end-to-end fine-tuning consistent with other baselines |
+| **MOMENT** | SVM zero-shot classifier | Paper does not evaluate zero-shot transfer | SVM-RBF (GridSearchCV, 5-fold, 9 C values) trained on training embeddings; predict test via masked logits | SVM-RBF is MOMENT's native classifier — uses their codebase's approach. GridSearchCV ensures optimal hyperparameters |
+| **MOMENT** | Per-channel processing | Paper processes each channel independently (univariate) | Same — each of 6 channels processed as univariate (1, 512) series, embeddings concatenated to (N, 6144) | Faithful to MOMENT's design; concatenation is the standard multi-channel approach from their codebase |
 | **LanHAR** | No target data in Stage 2 | Sensor encoder trains on source + target data combined | Source data only (test data never seen) | No other baseline sees test data during training; exclusion prevents unfair distributional advantage but slightly *disadvantages* LanHAR vs its paper |
 | **LanHAR** | Supervised fine-tuning added | Paper is zero-shot only (no supervised protocol) | Fine-tune entire model end-to-end (BERT + sensor encoder + projections) via cosine sim with frozen text prototypes | Extension for benchmark completeness; all baselines fine-tune end-to-end for consistency |
+| **LanHAR** | BERT unfrozen during fine-tuning | Paper freezes BERT after Stage 1 | Fine-tune all parameters including BERT, with uniform lr=1e-5 | Consistent with other text-aligned models (TSFM fine-tunes its full model). Gives LanHAR the best chance to adapt. Since TSFM also fine-tunes its text components, this is equitable |
 | **LLaSA** | Published weights as-is | Paper trains on HHAR, MotionSense, Shoaib, UCI-HAR with GPT-generated narrations | Use published BASH-Lab/LLaSA-7B from HuggingFace at fp16; no retraining | Retraining a 7B LLM is infeasible for a baseline comparison; published weights are evaluated as-is |
-| **LLaSA** | Zero-shot only | Paper evaluates zero-shot classification | Zero-shot closed-set only; no supervised fine-tuning | Fine-tuning a 7B LLM with 1%/10% labeled data is impractical and incomparable to fine-tuning smaller encoders |
-| **LLaSA** | Subsampled evaluation | Not specified | Up to 100 samples per class (vs full dataset for other baselines) | LLM inference at ~0.3s/sample makes full-dataset evaluation prohibitively slow (~hours per dataset) |
-| **All** | Unified batch sizes | Each paper uses its own batch size (typically 128) | 512 for classifiers, 32 for fine-tuning | Speed optimization; applied uniformly across all baselines |
+| **LLaSA** | 7B model (not 13B) | Paper uses Vicuna-13B | Vicuna-7B (from published HuggingFace weights) | 13B model requires >26GB VRAM; 7B is the published alternative. This may slightly *disadvantage* LLaSA |
+| **LLaSA** | Zero-shot only | Paper evaluates zero-shot classification | Zero-shot open-set and closed-set; no supervised fine-tuning | Fine-tuning a 7B LLM with 1%/10% labeled data is impractical and incomparable to fine-tuning smaller encoders |
+| **LLaSA** | Subsampled evaluation | Paper uses 10 samples per class | Up to 100 samples per class (vs full dataset for other baselines) | LLM inference at ~0.3s/sample makes full-dataset evaluation prohibitively slow. 100/class is 10x the paper's 10/class, giving LLaSA more evaluation signal |
+| **All** | Unified zero-shot protocol | Each paper has its own evaluation protocol (if any) | Standardized open-set (87 labels + group matching) and closed-set (test labels only) applied uniformly | Enables fair cross-model comparison on identical tasks |
+| **All** | Unified supervised protocol | Each paper has its own supervised setup | Standardized: 1% and 10% labeled data, 80/10/10 split, seed 3431, max 20 epochs, patience 5, val accuracy for model selection | Ensures identical data conditions across all baselines |
+| **All** | Unified batch sizes | Each paper uses its own batch size (typically 128) | 512 for zero-shot classifiers, 32 for fine-tuning | Speed optimization; applied uniformly across all baselines |
 
 See [BASELINE_IMPLEMENTATION_NOTES.md](BASELINE_IMPLEMENTATION_NOTES.md) for full per-model implementation details.
+
+## Evaluation Protocol
+
+All evaluations use a unified protocol with 4 metrics: zero-shot open-set, zero-shot closed-set,
+1% supervised fine-tuning, and 10% supervised fine-tuning. This section describes the exact
+implementation of each metric, since these protocols are our own design (not from any baseline paper).
+
+### Shared Infrastructure
+
+**Label groups**: The 10 training datasets use 87 unique activity labels, many of which are synonyms
+(e.g., "jogging"/"running", "walking_downstairs"/"stairs_down"). We define label groups that cluster
+semantically equivalent labels (`datasets/imu_pretraining_dataset/label_groups.py`). The function
+`get_label_to_group_mapping()` maps each label to its canonical group. Group matching means
+a prediction of "jogging" is scored correct if the ground truth is "running" (same group).
+
+**Data splits**: All models use the same random split (seed `3431`). Windows are shuffled and
+split 80/10/10 into train/val/test. Subsampling for 1% and 10% is applied only to the train
+portion (balanced across classes: `n_per_class = max(1, int(N_train * rate) // n_classes)`).
+Val and test sets are always the full 10% slice — never subsampled.
+
+### Zero-Shot Open-Set
+
+The model predicts from all 87 training labels. Scoring uses group matching: both the predicted
+label and the ground-truth label are mapped through `label_to_group`, then accuracy and F1 are
+computed on the group strings. This means test activities that share a group with any training
+label can be correctly predicted, while test activities with no matching group are guaranteed
+failures.
+
+The prediction mechanism differs by model type:
+
+| Model Type | Mechanism |
+|-----------|-----------|
+| **Text-aligned** (TSFM, LanHAR) | Encode all 87 labels as text embeddings; predict via argmax cosine similarity against sensor embeddings. No classifier training needed. |
+| **Classifier-based** (LiMU-BERT, MOMENT, CrossHAR) | Train a native classifier on pre-extracted training embeddings (87-class). LiMU-BERT uses a GRU (Adam, lr=1e-3, 100 epochs, batch 512); MOMENT uses SVM-RBF (GridSearchCV, 5-fold, 9 C values); CrossHAR uses a Transformer classifier (Adam, lr=1e-3, 100 epochs, batch 512). Predict on test embeddings, argmax over all 87 logits, then group-match. |
+| **Generative** (LLaSA) | Prompt the LLM with all 87 labels plus sensor tokens; parse the generated text to extract a label; fuzzy string matching to map output to a valid label; group-match for scoring. |
+
+**Fairness note**: Classifier-based models train their ZS classifier on embeddings from the 10
+training datasets (never test data). The classifier's capacity to generalize is part of the
+model's capability being evaluated — some models (e.g., SVM-RBF) may generalize better than
+others (e.g., GRU). Text-aligned models have a structural advantage here: they need no classifier
+training and can directly compare any text label to any sensor embedding.
+
+### Zero-Shot Closed-Set
+
+The model predicts only from the test dataset's own activity labels. This removes the difficulty
+of selecting among 87 labels and focuses on discriminating test activities. Scoring differs between
+model types:
+
+| Model Type | Prediction | Scoring |
+|-----------|-----------|---------|
+| **Text-aligned** (TSFM, LanHAR) | Encode only the C test labels as text; argmax cosine similarity. | **Exact match**: predicted label must exactly equal the ground-truth label. |
+| **Classifier-based** (LiMU-BERT, MOMENT, CrossHAR) | Mask the 87-class classifier logits: set logits to -inf for any training label whose group does NOT appear in the test dataset. Argmax over remaining logits. | **Group match**: predicted training label is mapped through `label_to_group` and compared to ground-truth's group. |
+| **Generative** (LLaSA) | Prompt with only the C test labels; parse output. | **Exact match**: parsed label must match ground-truth exactly. |
+
+**Important closed-set scoring asymmetry**: Text-aligned models (TSFM, LanHAR) use exact match,
+which is strictly harder than the group matching used by classifier-based models. For example,
+on MobiAct, if the ground truth is "sitting_chair" and the classifier predicts the training
+label "sitting" (same group), classifier-based models score this as correct via group matching.
+Text-aligned models would need to predict exactly "sitting_chair" (the test label). This means
+**closed-set results are not directly comparable between model types** — text-aligned models face
+a harder test. We report both types as-is because the mechanisms are inherent to each model's
+architecture and cannot be unified without fundamentally changing how one type works.
+
+### Supervised Fine-Tuning (1% and 10%)
+
+Each model's encoder is fine-tuned end-to-end with a small amount of labeled data from the
+test dataset. The classification head matches each model's native architecture:
+
+| Model | What Is Fine-Tuned | Classification Head | Optimizer | LR |
+|-------|-------------------|--------------------|-----------|----|
+| **TSFM** | Full model (deep copy) | None — cosine sim vs frozen text embeddings, temperature=0.07 | AdamW | Uniform 1e-5 |
+| **LiMU-BERT** | Encoder + fresh GRU head (deep copy) | GRU(72→20→10→C) | AdamW | Encoder 1e-5, head 1e-3 |
+| **MOMENT** | Full model + fresh linear head | Linear(6144, C) | AdamW | Encoder 1e-5, head 1e-3 |
+| **CrossHAR** | Encoder + fresh Transformer head (deep copy) | Transformer(72→100→C) with 1-layer self-attention | AdamW | Encoder 1e-5, head 1e-3 |
+| **LanHAR** | Full model (BERT + sensor encoder + projections, deep copy) | None — cosine sim vs frozen text embeddings, pretrained logit_scale | AdamW | Uniform 1e-5 |
+| **LLaSA** | N/A | N/A | N/A | N/A |
+
+**Shared settings**: All models use max 20 epochs with early stopping (patience=5, monitored
+on val accuracy). Loss is cross-entropy. Best checkpoint by val accuracy is restored before
+test evaluation. AMP (GradScaler) is used for TSFM and LanHAR on CUDA; other models do not
+use AMP.
+
+**Fairness note on classification heads**: Text-aligned models (TSFM, LanHAR) classify via
+cosine similarity against frozen text label embeddings, which means the text encoder's quality
+directly influences supervised results. Classifier-based models use fresh randomly-initialized
+heads (GRU, linear, Transformer) that are trained from scratch — this means they need more data
+to converge but are not limited by text encoder quality. This explains why LiMU-BERT's 1%
+performance is particularly weak (26.6% avg): the GRU head has too few samples to learn from
+scratch, while TSFM's cosine-sim mechanism works even with very few samples because the text
+embeddings provide structured class prototypes.
+
+**Fairness note on differential learning rates**: LiMU-BERT, MOMENT, and CrossHAR use
+differential learning rates (encoder at 1e-5, head at 1e-3) because their heads are randomly
+initialized and need faster convergence. TSFM and LanHAR use uniform 1e-5 because they have no
+separate head — the entire model is fine-tuned as one unit. This is the standard practice from
+each model's codebase/paper.
+
+### Data Preprocessing Comparison
+
+Each model uses the preprocessing pipeline that matches its architecture. This is a genuine
+capability difference, not a configurable choice:
+
+| Model | Sampling Rate | Window Size | Channels | Normalization |
+|-------|:---:|:---:|:---:|---------------|
+| **TSFM** | Native (30-50Hz) | Varies (180-300 steps, 6s) | 6 (acc+gyro) | None (model normalizes internally) |
+| **LiMU-BERT** | 20Hz (resampled) | 120 steps (6s) | 6 (acc+gyro) | acc /= 9.8 (for fine-tuning only) |
+| **MOMENT** | 20Hz (resampled) | 120 steps, left-zero-padded to 512 | 6 (processed per-channel as univariate) | None |
+| **CrossHAR** | 20Hz (resampled) | 120 steps (6s) | 6 (acc+gyro) | InstanceNorm1d per sample per channel |
+| **LanHAR** | 20Hz (resampled) | 120 steps (6s) | 6 (acc+gyro) | Gravity alignment (Butterworth LP at 0.3Hz, Rodrigues rotation to +Z) |
+| **LLaSA** | 20Hz (resampled) | 120 steps (6s) | 6 (acc+gyro) | None |
+
+**Fairness note**: TSFM's native-rate evaluation is a genuine architectural capability (seconds-based
+patch tokenization with interpolation to fixed 64 steps). Baselines cannot use native rates because
+their architectures have fixed positional embeddings tied to specific sequence lengths
+(LiMU-BERT/CrossHAR: 120 positions at 20Hz; MOMENT: 512 positions). Resampling all models to
+20Hz would artificially handicap TSFM while giving no benefit to baselines. See the
+[Ablation](#ablation-native-rate--rich-channel-descriptions) section for the measured impact of
+native rate + channel descriptions.
 
 ## Test Datasets
 
