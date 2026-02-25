@@ -68,3 +68,6 @@ test_output/**/*.pkl
 *.out
 test_output/**/*.log
 test_output/**/*.txt
+
+# Packaged zips for sharing
+*.zip
