@@ -216,6 +216,29 @@ their architectures have fixed positional embeddings tied to specific sequence l
 [Ablation](#ablation-native-rate--rich-channel-descriptions) section for the measured impact of
 native rate + channel descriptions.
 
+### Native Architectural Capabilities
+
+Our evaluation preprocesses all baseline data to 6 channels at 20Hz (see above), but this is a
+pipeline choice driven by baseline limitations — not all models are architecturally restricted this
+way. The table below documents each model's **native** capabilities for handling variable sampling
+rates and variable channel counts, independent of how we evaluate them.
+
+| Model | Variable Sampling Rate | Variable Channel Count | Architectural Constraint |
+|-------|:---:|:---:|---|
+| **TSFM (ours)** | Yes | Yes | Patches in seconds → `F.interpolate` to fixed 64 timesteps; channels are a dynamic axis with channel-independent CNN + cross-channel attention. No hardcoded channel count or sequence length. |
+| **LiMU-BERT** | No | No | Input projection is `Linear(6, 72)` — hardcodes 6 channels. Positional encoding is `Embedding(120, 72)` — hardcodes 120 timesteps (6s × 20Hz). Changing either requires retraining. |
+| **MOMENT** | No | Partially | Fixed 512-token sequence length with no concept of physical time (no Hz-awareness). Univariate per-channel processing means arbitrary channel counts are theoretically possible, but our pipeline hardcodes 6 channels for SVM compatibility. |
+| **CrossHAR** | No | No | Same architecture as LiMU-BERT: `Linear(6, 72)` input and `Embedding(120, 72)` positional encoding. Identical constraints. |
+| **LanHAR** | Partially | No | Sinusoidal positional encoding (not learned) could handle variable sequence lengths, but input projection is `Linear(6, 768)` — hardcodes 6 channels. |
+| **LLaSA** | No | No | Uses LiMU-BERT as its IMU encoder — inherits the same `Linear(6, 72)` and `Embedding(120, 72)` constraints. |
+
+**Why this matters**: TSFM is the only model that can natively process datasets at their original
+sampling rate and with their full channel set. All other models require resampling to a fixed rate
+and/or channel extraction to exactly 6 channels. This is an inherent architectural capability —
+TSFM was designed with seconds-based temporal reasoning and dynamic channel handling, while
+baselines were designed for fixed-format inputs. When evaluating at native rates (50Hz, 30Hz, etc.),
+TSFM exploits higher temporal resolution that baselines architecturally cannot access.
+
 ## Test Datasets
 
 We evaluate on 6 main test datasets with high label group coverage (85-100%), plus 1 severe
