@@ -1806,7 +1806,11 @@ def main():
         print(f"Testing LanHAR on {test_ds}")
         print(f"{'='*60}")
 
-        raw_data, raw_labels = load_raw_data(test_ds)
+        try:
+            raw_data, raw_labels = load_raw_data(test_ds)
+        except FileNotFoundError as e:
+            print(f"  SKIPPED: {e}")
+            continue
         # Apply gravity alignment (matching LanHAR paper preprocessing)
         raw_data = gravity_align_dataset(raw_data)
         test_emb = extract_lanhar_embeddings(model, raw_data, device)

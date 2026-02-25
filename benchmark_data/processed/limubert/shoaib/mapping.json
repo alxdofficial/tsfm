@@ -1,0 +1,27 @@
+{
+  "activity_to_idx": {
+    "cycling": 0,
+    "jogging": 1,
+    "sitting": 2,
+    "standing": 3,
+    "walking": 4,
+    "walking_downstairs": 5,
+    "walking_upstairs": 6
+  },
+  "subject_to_idx": {
+    "P01": 0,
+    "P02": 1,
+    "P03": 2,
+    "P04": 3,
+    "P05": 4,
+    "P06": 5,
+    "P07": 6,
+    "P08": 7,
+    "P09": 8,
+    "P10": 9
+  },
+  "window_size": 120,
+  "sampling_rate_hz": 20,
+  "stride": 120,
+  "has_gyro": true
+}

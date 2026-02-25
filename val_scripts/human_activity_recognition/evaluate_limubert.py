@@ -789,8 +789,12 @@ def main():
         print(f"{'='*60}")
 
         # Load both embeddings (for zero-shot) and raw data (for fine-tuning)
-        test_emb, test_lab = load_embeddings(test_ds)
-        raw_data, raw_labels = load_raw_data(test_ds)
+        try:
+            test_emb, test_lab = load_embeddings(test_ds)
+            raw_data, raw_labels = load_raw_data(test_ds)
+        except FileNotFoundError as e:
+            print(f"  SKIPPED: {e}")
+            continue
         test_activities = get_dataset_labels(test_ds)
         print(f"  Test data: {test_emb.shape[0]} windows, "
               f"{len(test_activities)} classes")

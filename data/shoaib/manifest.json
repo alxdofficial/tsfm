@@ -1,0 +1,233 @@
+{
+  "dataset_name": "Shoaib",
+  "description": "Activity recognition with multiple body-worn smartphones. 10 subjects performing 7 physical activities. Sensors at 5 body positions (left_pocket, right_pocket, wrist, upper_arm, belt) with accelerometer, gyroscope, and magnetometer at 50 Hz.",
+  "source": "https://www.utwente.nl/en/eemcs/ps/research/dataset/",
+  "num_subjects": 10,
+  "channels": [
+    {
+      "name": "left_pocket_acc_x",
+      "description": "Accelerometer X-axis from left trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "left_pocket_acc_y",
+      "description": "Accelerometer Y-axis from left trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "left_pocket_acc_z",
+      "description": "Accelerometer Z-axis from left trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "left_pocket_gyro_x",
+      "description": "Gyroscope X-axis from left trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "left_pocket_gyro_y",
+      "description": "Gyroscope Y-axis from left trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "left_pocket_gyro_z",
+      "description": "Gyroscope Z-axis from left trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "left_pocket_mag_x",
+      "description": "Magnetometer X-axis from left trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "left_pocket_mag_y",
+      "description": "Magnetometer Y-axis from left trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "left_pocket_mag_z",
+      "description": "Magnetometer Z-axis from left trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "right_pocket_acc_x",
+      "description": "Accelerometer X-axis from right trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "right_pocket_acc_y",
+      "description": "Accelerometer Y-axis from right trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "right_pocket_acc_z",
+      "description": "Accelerometer Z-axis from right trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "right_pocket_gyro_x",
+      "description": "Gyroscope X-axis from right trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "right_pocket_gyro_y",
+      "description": "Gyroscope Y-axis from right trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "right_pocket_gyro_z",
+      "description": "Gyroscope Z-axis from right trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "right_pocket_mag_x",
+      "description": "Magnetometer X-axis from right trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "right_pocket_mag_y",
+      "description": "Magnetometer Y-axis from right trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "right_pocket_mag_z",
+      "description": "Magnetometer Z-axis from right trouser pocket smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "wrist_acc_x",
+      "description": "Accelerometer X-axis from right wrist smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "wrist_acc_y",
+      "description": "Accelerometer Y-axis from right wrist smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "wrist_acc_z",
+      "description": "Accelerometer Z-axis from right wrist smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "wrist_gyro_x",
+      "description": "Gyroscope X-axis from right wrist smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "wrist_gyro_y",
+      "description": "Gyroscope Y-axis from right wrist smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "wrist_gyro_z",
+      "description": "Gyroscope Z-axis from right wrist smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "wrist_mag_x",
+      "description": "Magnetometer X-axis from right wrist smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "wrist_mag_y",
+      "description": "Magnetometer Y-axis from right wrist smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "wrist_mag_z",
+      "description": "Magnetometer Z-axis from right wrist smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "upper_arm_acc_x",
+      "description": "Accelerometer X-axis from right upper arm smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "upper_arm_acc_y",
+      "description": "Accelerometer Y-axis from right upper arm smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "upper_arm_acc_z",
+      "description": "Accelerometer Z-axis from right upper arm smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "upper_arm_gyro_x",
+      "description": "Gyroscope X-axis from right upper arm smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "upper_arm_gyro_y",
+      "description": "Gyroscope Y-axis from right upper arm smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "upper_arm_gyro_z",
+      "description": "Gyroscope Z-axis from right upper arm smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "upper_arm_mag_x",
+      "description": "Magnetometer X-axis from right upper arm smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "upper_arm_mag_y",
+      "description": "Magnetometer Y-axis from right upper arm smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "upper_arm_mag_z",
+      "description": "Magnetometer Z-axis from right upper arm smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "belt_acc_x",
+      "description": "Accelerometer X-axis from belt-mounted on right leg smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "belt_acc_y",
+      "description": "Accelerometer Y-axis from belt-mounted on right leg smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "belt_acc_z",
+      "description": "Accelerometer Z-axis from belt-mounted on right leg smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "belt_gyro_x",
+      "description": "Gyroscope X-axis from belt-mounted on right leg smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "belt_gyro_y",
+      "description": "Gyroscope Y-axis from belt-mounted on right leg smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "belt_gyro_z",
+      "description": "Gyroscope Z-axis from belt-mounted on right leg smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "belt_mag_x",
+      "description": "Magnetometer X-axis from belt-mounted on right leg smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "belt_mag_y",
+      "description": "Magnetometer Y-axis from belt-mounted on right leg smartphone sensor",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "belt_mag_z",
+      "description": "Magnetometer Z-axis from belt-mounted on right leg smartphone sensor",
+      "sampling_rate_hz": 50.0
+    }
+  ]
+}

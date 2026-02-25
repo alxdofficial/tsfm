@@ -1,0 +1,60 @@
+{
+  "dataset_name": "OPPORTUNITY",
+  "sampling_rate_hz": 30,
+  "channels": [
+    "acc_x",
+    "acc_y",
+    "acc_z",
+    "gyro_x",
+    "gyro_y",
+    "gyro_z"
+  ],
+  "extra_channels": [
+    "rua_acc_x",
+    "rua_acc_y",
+    "rua_acc_z",
+    "rua_gyro_x",
+    "rua_gyro_y",
+    "rua_gyro_z",
+    "rla_acc_x",
+    "rla_acc_y",
+    "rla_acc_z",
+    "rla_gyro_x",
+    "rla_gyro_y",
+    "rla_gyro_z",
+    "lua_acc_x",
+    "lua_acc_y",
+    "lua_acc_z",
+    "lua_gyro_x",
+    "lua_gyro_y",
+    "lua_gyro_z",
+    "lla_acc_x",
+    "lla_acc_y",
+    "lla_acc_z",
+    "lla_gyro_x",
+    "lla_gyro_y",
+    "lla_gyro_z"
+  ],
+  "activities": [
+    "lying",
+    "sitting",
+    "standing",
+    "walking"
+  ],
+  "subjects": [
+    "S1",
+    "S2",
+    "S3",
+    "S4"
+  ],
+  "placement": "multi-body",
+  "num_sessions_original": null,
+  "train_subjects": [
+    1,
+    2,
+    3
+  ],
+  "test_subjects": [
+    4
+  ]
+}

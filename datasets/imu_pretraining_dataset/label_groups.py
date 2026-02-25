@@ -19,9 +19,12 @@ LABEL_GROUPS = {
     # Note: nordic_walking, walking_straight, walking_winding are VTT-ConIoT (zero-shot)
     # but walking exists in training, so these can be evaluated as synonyms
     # KU-HAR: walking_backwards (backwards locomotion, still walking pattern)
+    # USC-HAD: walking_forward, walking_left, walking_right (directional walking)
+    # HARTH: shuffling (slow, impaired gait pattern — still walking variant)
     'walking': ['walking', 'nordic_walking', 'walking_parking', 'walking_treadmill_flat',
                 'walking_treadmill_incline', 'walking_straight', 'walking_winding',
-                'walking_backwards'],
+                'walking_backwards', 'walking_forward', 'walking_left', 'walking_right',
+                'shuffling'],
 
     # Stairs - ascending (upward motion pattern)
     'ascending_stairs': ['ascending_stairs', 'climbing_stairs', 'going_up_stairs',
@@ -35,16 +38,20 @@ LABEL_GROUPS = {
     'stairs': ['stairs'],
 
     # Running/jogging (fast locomotion)
-    'running': ['running', 'jogging', 'running_treadmill'],
+    # USC-HAD: running_forward (directional running)
+    'running': ['running', 'jogging', 'running_treadmill', 'running_forward'],
 
     # Lying/laying (horizontal posture)
-    'lying': ['lying', 'laying', 'lying_back', 'lying_side', 'laying_back'],
+    # USC-HAD: sleeping (extended horizontal posture)
+    'lying': ['lying', 'laying', 'lying_back', 'lying_side', 'laying_back', 'sleeping'],
 
     # Sitting (seated posture)
-    'sitting': ['sitting', 'sitting_down', 'sitting_chair'],
+    # HARTH: transport_sit (seated in vehicle — same seated posture)
+    'sitting': ['sitting', 'sitting_down', 'sitting_chair', 'transport_sit'],
 
     # Standing (upright posture)
-    'standing': ['standing', 'standing_elevator', 'standing_work'],
+    # HARTH: transport_stand (standing in vehicle — same upright posture)
+    'standing': ['standing', 'standing_elevator', 'standing_work', 'transport_stand'],
 
     # Postural transitions - distinct motion patterns from static postures
     # UniMiB SHAR transitions (whole-body repositioning)
@@ -68,15 +75,18 @@ LABEL_GROUPS = {
     # Jumping variants (vertical explosive motion)
     # Note: rope_jumping/rope_skipping are RecGym (zero-shot) but jumping is in training
     # REALDISP: jump_up, jump_front_back, jump_sideways, jump_legs_arms, jump_rope
+    # USC-HAD: jumping_up (vertical jump)
     'jumping': ['jumping', 'jump_front_back', 'rope_jumping', 'rope_skipping', 'jumping_down',
-                'jump_up', 'jump_sideways', 'jump_legs_arms', 'jump_rope'],
+                'jump_up', 'jump_sideways', 'jump_legs_arms', 'jump_rope', 'jumping_up'],
 
     # Eating/drinking (hand-to-mouth repetitive motion)
     'eating': ['eating_chips', 'eating_pasta', 'eating_sandwich', 'eating_soup', 'drinking'],
 
     # Cycling variants (pedaling motion)
     # DSADS has cycling_horizontal, cycling_vertical
-    'cycling': ['cycling', 'cycling_horizontal', 'cycling_vertical'],
+    # HARTH: cycling_sit, cycling_stand (seated vs standing cycling)
+    'cycling': ['cycling', 'cycling_horizontal', 'cycling_vertical',
+                'cycling_sit', 'cycling_stand'],
 
     # Cardio exercise machines (rhythmic full-body motion)
     'cardio_machine': ['exercising_stepper', 'exercising_cross_trainer', 'rowing', 'stairclimber',
@@ -86,7 +96,8 @@ LABEL_GROUPS = {
     'vehicle_entry': ['car_step_in', 'car_step_out'],
 
     # Elevator (stationary or subtle motion)
-    'elevator': ['moving_elevator'],
+    # USC-HAD: elevator_up, elevator_down (directional elevator)
+    'elevator': ['moving_elevator', 'elevator_up', 'elevator_down'],
 
     # Ball sports (throwing, catching, dribbling patterns)
     'sports': ['playing_basketball', 'playing_catch', 'dribbling', 'kicking'],
@@ -104,7 +115,6 @@ LABEL_GROUPS = {
     # Exercise/stretching movements (MHEALTH activities)
     'arm_exercise': ['frontal_elevation_arms', 'raising_hands'],
     'leg_exercise': ['knees_bending'],
-    'torso_exercise': ['waist_bends_forward'],
 
     # KU-HAR exercises (floor/body-weight exercises)
     'push_up': ['push_up'],
@@ -140,13 +150,14 @@ LABEL_GROUPS = {
 # For coarser evaluation - groups semantically similar activities
 # Use when fine-grained distinctions aren't important or data is limited
 LABEL_GROUPS_SIMPLE = {
-    # Locomotion - walking pace (includes backwards walking)
+    # Locomotion - walking pace (includes backwards walking, directional walking, shuffling)
     'walking': ['walking', 'nordic_walking', 'walking_parking', 'walking_treadmill_flat',
                 'walking_treadmill_incline', 'walking_straight', 'walking_winding',
-                'walking_backwards'],
+                'walking_backwards', 'walking_forward', 'walking_left', 'walking_right',
+                'shuffling'],
 
     # Locomotion - running pace
-    'running': ['running', 'jogging', 'running_treadmill'],
+    'running': ['running', 'jogging', 'running_treadmill', 'running_forward'],
 
     # Locomotion - stairs (any direction)
     'stairs': ['stairs', 'ascending_stairs', 'climbing_stairs', 'going_up_stairs', 'walking_upstairs',
@@ -154,16 +165,18 @@ LABEL_GROUPS_SIMPLE = {
                'stairs_up', 'stairs_down'],
 
     # Locomotion - cycling
-    'cycling': ['cycling', 'cycling_horizontal', 'cycling_vertical'],
+    'cycling': ['cycling', 'cycling_horizontal', 'cycling_vertical',
+                'cycling_sit', 'cycling_stand'],
 
     # Stationary - sitting (seated postures only, no transitions)
-    'sitting': ['sitting', 'sitting_down', 'sitting_chair'],
+    'sitting': ['sitting', 'sitting_down', 'sitting_chair', 'transport_sit'],
 
     # Stationary - standing (upright postures only, no transitions)
-    'standing': ['standing', 'standing_elevator', 'moving_elevator', 'standing_work'],
+    'standing': ['standing', 'standing_elevator', 'moving_elevator', 'standing_work',
+                 'elevator_up', 'elevator_down', 'transport_stand'],
 
     # Stationary - lying (horizontal postures only, no transitions)
-    'lying': ['lying', 'laying', 'lying_back', 'lying_side', 'laying_back'],
+    'lying': ['lying', 'laying', 'lying_back', 'lying_side', 'laying_back', 'sleeping'],
 
     # Postural transitions (whole-body repositioning — distinct motion patterns)
     'postural_transition': ['standing_up_from_laying', 'standing_up_from_sitting',
@@ -175,13 +188,13 @@ LABEL_GROUPS_SIMPLE = {
     'talking': ['talking_sitting', 'talking_standing'],
 
     # Dynamic exercise (jumping, body-weight exercises, cardio machines)
-    'exercise': ['jumping', 'jump_front_back', 'rope_jumping', 'rope_skipping', 'jumping_down',
+    'exercise': ['jumping', 'jumping_up', 'jump_front_back', 'rope_jumping', 'rope_skipping', 'jumping_down',
                  'knees_bending', 'waist_bends_forward', 'frontal_elevation_arms', 'raising_hands',
                  'exercising_stepper', 'exercising_cross_trainer', 'rowing', 'stairclimber', 'climbing_ladder',
                  'squat', 'bench_press', 'leg_press', 'leg_curl', 'arm_curl', 'adductor_machine',
                  'push_up', 'sit_up', 'picking_up',
                  # REALDISP fitness exercises (A1-A33)
-                 'jump_up', 'jump_front_back', 'jump_sideways', 'jump_legs_arms', 'jump_rope',
+                 'jump_up', 'jump_sideways', 'jump_legs_arms', 'jump_rope',
                  'trunk_twist_arms_out', 'trunk_twist_elbows_bent', 'upper_lower_twist',
                  'waist_rotation', 'waist_bend_cross', 'lateral_bend', 'lateral_bend_arm_up',
                  'forward_stretching', 'reach_heels_backwards',

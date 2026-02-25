@@ -1,0 +1,156 @@
+{
+  "dataset_name": "OPPORTUNITY",
+  "description": "Activities of daily living in a sensor-rich kitchen environment. 4 subjects performing locomotion activities (stand, walk, sit, lie). 5 body-worn XSens IMUs on back, upper arms, and lower arms at 30 Hz.",
+  "channels": [
+    {
+      "name": "lua_acc_x",
+      "description": "Accelerometer X-axis from left upper arm XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "lua_acc_y",
+      "description": "Accelerometer Y-axis from left upper arm XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "lua_acc_z",
+      "description": "Accelerometer Z-axis from left upper arm XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "rua_acc_x",
+      "description": "Accelerometer X-axis from right upper arm XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "rua_acc_y",
+      "description": "Accelerometer Y-axis from right upper arm XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "rua_acc_z",
+      "description": "Accelerometer Z-axis from right upper arm XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "back_acc_x",
+      "description": "Accelerometer X-axis from back-mounted (lower back) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "back_acc_y",
+      "description": "Accelerometer Y-axis from back-mounted (lower back) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "back_acc_z",
+      "description": "Accelerometer Z-axis from back-mounted (lower back) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "back_gyro_x",
+      "description": "Gyroscope X-axis from back-mounted (lower back) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "back_gyro_y",
+      "description": "Gyroscope Y-axis from back-mounted (lower back) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "back_gyro_z",
+      "description": "Gyroscope Z-axis from back-mounted (lower back) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "rua_gyro_x",
+      "description": "Gyroscope X-axis from right upper arm XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "rua_gyro_y",
+      "description": "Gyroscope Y-axis from right upper arm XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "rua_gyro_z",
+      "description": "Gyroscope Z-axis from right upper arm XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "rla_acc_x",
+      "description": "Accelerometer X-axis from right lower arm (forearm) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "rla_acc_y",
+      "description": "Accelerometer Y-axis from right lower arm (forearm) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "rla_acc_z",
+      "description": "Accelerometer Z-axis from right lower arm (forearm) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "rla_gyro_x",
+      "description": "Gyroscope X-axis from right lower arm (forearm) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "rla_gyro_y",
+      "description": "Gyroscope Y-axis from right lower arm (forearm) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "rla_gyro_z",
+      "description": "Gyroscope Z-axis from right lower arm (forearm) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "lua_gyro_x",
+      "description": "Gyroscope X-axis from left upper arm XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "lua_gyro_y",
+      "description": "Gyroscope Y-axis from left upper arm XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "lua_gyro_z",
+      "description": "Gyroscope Z-axis from left upper arm XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "lla_acc_x",
+      "description": "Accelerometer X-axis from left lower arm (forearm) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "lla_acc_y",
+      "description": "Accelerometer Y-axis from left lower arm (forearm) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "lla_acc_z",
+      "description": "Accelerometer Z-axis from left lower arm (forearm) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "lla_gyro_x",
+      "description": "Gyroscope X-axis from left lower arm (forearm) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "lla_gyro_y",
+      "description": "Gyroscope Y-axis from left lower arm (forearm) XSens IMU",
+      "sampling_rate_hz": 30.0
+    },
+    {
+      "name": "lla_gyro_z",
+      "description": "Gyroscope Z-axis from left lower arm (forearm) XSens IMU",
+      "sampling_rate_hz": 30.0
+    }
+  ]
+}

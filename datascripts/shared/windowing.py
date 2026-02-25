@@ -161,13 +161,13 @@ ACTIVITY_WINDOW_RANGES = {
 
     # REALDISP fitness exercises (A1-A33)
     "jump_up": (2, 10),
-    "jump_front_back": (2, 10),
+    # jump_front_back already defined above (3, 15) for MHEALTH — reused by REALDISP
     "jump_sideways": (2, 10),
     "jump_legs_arms": (2, 10),
     "jump_rope": (3, 20),
     "trunk_twist_arms_out": (3, 15),
     "trunk_twist_elbows_bent": (3, 15),
-    "waist_bends_forward": (3, 15),
+    # waist_bends_forward already defined above (3, 15) for MHEALTH — reused by REALDISP
     "waist_rotation": (3, 15),
     "waist_bend_cross": (3, 15),
     "reach_heels_backwards": (3, 15),
@@ -192,6 +192,23 @@ ACTIVITY_WINDOW_RANGES = {
 
     # Daphnet FoG - gait/freeze episodes
     "freezing_gait": (2, 15),
+
+    # USC-HAD activities
+    "walking_forward": (2, 20),
+    "walking_left": (2, 20),
+    "walking_right": (2, 20),
+    "running_forward": (2, 15),
+    "jumping_up": (2, 10),
+    "sleeping": (5, 30),
+    "elevator_up": (5, 30),
+    "elevator_down": (5, 30),
+
+    # HARTH activities
+    "shuffling": (2, 15),
+    "cycling_sit": (3, 20),
+    "cycling_stand": (3, 20),
+    "transport_sit": (5, 30),
+    "transport_stand": (5, 30),
 }
 
 # Maximum session duration to fit in context window (45 patches × ~2s)

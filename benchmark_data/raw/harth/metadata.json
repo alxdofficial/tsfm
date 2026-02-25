@@ -1,0 +1,80 @@
+{
+  "dataset_name": "HARTH",
+  "sampling_rate_hz": 50,
+  "channels": [
+    "acc_x",
+    "acc_y",
+    "acc_z"
+  ],
+  "extra_channels": [
+    "thigh_acc_x",
+    "thigh_acc_y",
+    "thigh_acc_z"
+  ],
+  "activities": [
+    "cycling_sit",
+    "cycling_stand",
+    "lying",
+    "running",
+    "shuffling",
+    "sitting",
+    "stairs_down",
+    "stairs_up",
+    "standing",
+    "transport_sit",
+    "transport_stand",
+    "walking"
+  ],
+  "subjects": [
+    "S006",
+    "S008",
+    "S009",
+    "S010",
+    "S012",
+    "S013",
+    "S014",
+    "S015",
+    "S016",
+    "S017",
+    "S018",
+    "S019",
+    "S020",
+    "S021",
+    "S022",
+    "S023",
+    "S024",
+    "S025",
+    "S026",
+    "S027",
+    "S028",
+    "S029"
+  ],
+  "placement": "back+thigh",
+  "num_sessions_original": null,
+  "train_subjects": [
+    6,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+  ],
+  "test_subjects": [
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "sampling_rate_hz": 30,
+  "window_size": 180,
+  "window_duration_sec": 6.0,
+  "n_windows": 6453,
+  "has_gyro": true,
+  "activity_to_idx": {
+    "lying": 0,
+    "sitting": 1,
+    "standing": 2,
+    "walking": 3
+  },
+  "subject_to_idx": {
+    "S1": 0,
+    "S2": 1,
+    "S3": 2,
+    "S4": 3
+  }
+}

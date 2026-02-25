@@ -79,6 +79,24 @@ def extract_subject(session_name: str, dataset: str):
     elif dataset == "vtt_coniot":
         # u01_carrying -> 'u01'
         return session_name.split("_")[0]
+    elif dataset == "shoaib":
+        # shoaib_P01_cycling_0000 -> 'P01'
+        return session_name.split("_")[1]
+    elif dataset == "opportunity":
+        # opportunity_S1_seg000_0000 -> 'S1'
+        return session_name.split("_")[1]
+    elif dataset == "harth":
+        # harth_S006_walking_0000_0000 -> 'S006'
+        return session_name.split("_")[1]
+    elif dataset == "usc_had":
+        # usc_had_s01_walking_forward_t01_0000 -> 1
+        return int(re.search(r"s(\d+)", session_name).group(1))
+    elif dataset == "realdisp":
+        # realdisp_s01_walking_0000 -> 1
+        return int(re.search(r"s(\d+)", session_name).group(1))
+    elif dataset == "daphnet_fog":
+        # daphnet_S01R01_seg000_0000 -> 'S01R01'
+        return session_name.split("_")[1]
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
 

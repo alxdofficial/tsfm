@@ -32,6 +32,8 @@ Available datasets:
     - opportunity (4 locomotion, 30 channels, 30Hz) - manual download
     - realdisp (33 fitness activities, 81 channels, 50Hz) - manual download
     - daphnet_fog (2 activities, 9 channels, 64Hz) - manual download
+    - usc_had (12 activities, 6 channels, 100Hz) - ZERO-SHOT TEST, manual download
+    - harth (12 activities, 6 channels, 50Hz) - ZERO-SHOT TEST, manual download
 """
 
 import sys
@@ -157,7 +159,21 @@ DATASETS = {
         "convert_script": "datascripts/daphnet_fog/convert.py",
         "requires_manual": True,
         "note": "10 Parkinson's patients, 2 activities (walking, freezing), 3 accelerometers, 64Hz. Download from UCI."
-    }
+    },
+    "usc_had": {
+        "name": "USC-HAD",
+        "download_script": None,  # Manual download from USC
+        "convert_script": "datascripts/usc_had/convert.py",
+        "requires_manual": True,
+        "note": "ZERO-SHOT TEST SET. 14 subjects, 12 activities, waist IMU (acc+gyro), 100Hz. Download from USC SIPI."
+    },
+    "harth": {
+        "name": "HARTH",
+        "download_script": None,  # Manual download from UCI
+        "convert_script": "datascripts/harth/convert.py",
+        "requires_manual": True,
+        "note": "ZERO-SHOT TEST SET. 22 subjects, 12 activities, 2 accelerometers (back+thigh), 50Hz. Download from UCI."
+    },
 }
 
 

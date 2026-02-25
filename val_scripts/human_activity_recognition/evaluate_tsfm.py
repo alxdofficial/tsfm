@@ -727,6 +727,13 @@ def main():
         print(f"Testing TSFM on {test_ds}")
         print(f"{'='*60}")
 
+        # Check if processed data exists
+        processed_dir = TSFM_EVAL_DIR / test_ds
+        if not processed_dir.exists() or not (processed_dir / "data_native.npy").exists():
+            print(f"  SKIPPED: No processed data found at {processed_dir}")
+            print(f"  Run: python benchmark_data/scripts/preprocess_tsfm_eval.py --datasets {test_ds}")
+            continue
+
         # Load per-dataset metadata from manifest
         meta = get_dataset_metadata(test_ds)
         raw_data, raw_labels, sr = load_raw_data(test_ds)

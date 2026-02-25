@@ -29,6 +29,8 @@ PATCH_SIZE_PER_DATASET = {
     'opportunity': 1.5,   # 30 Hz, 5 IMUs acc+gyro
     'realdisp': 1.5,      # 50 Hz, 9 sensors x acc+gyro+mag
     'daphnet_fog': 1.5,   # 64 Hz, 3 acc
+    'usc_had': 1.5,       # 100 Hz, acc+gyro, waist
+    'harth': 1.5,         # 50 Hz, acc only, back+thigh
 }
 
 # Standard training datasets
@@ -41,4 +43,5 @@ TRAINING_DATASETS = [
 UNSEEN_DATASETS = [
     'motionsense', 'mobiact', 'realworld', 'shoaib',
     'opportunity', 'realdisp', 'daphnet_fog', 'vtt_coniot',
+    'usc_had', 'harth',
 ]

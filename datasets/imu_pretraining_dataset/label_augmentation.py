@@ -466,6 +466,40 @@ DATASET_CONFIGS = {
         },
         "templates": ["{}"],
     },
+    "usc_had": {
+        "synonyms": {
+            "walking_forward": ["walking forward", "forward walking", "walking straight ahead"],
+            "walking_left": ["walking left", "turning left while walking", "walking leftward"],
+            "walking_right": ["walking right", "turning right while walking", "walking rightward"],
+            "walking_upstairs": ["walking upstairs", "ascending stairs", "climbing stairs"],
+            "walking_downstairs": ["walking downstairs", "descending stairs"],
+            "running_forward": ["running forward", "running", "sprinting forward"],
+            "jumping_up": ["jumping up", "vertical jump", "jumping"],
+            "sitting": ["sitting", "seated"],
+            "standing": ["standing", "upright"],
+            "sleeping": ["sleeping", "lying down", "resting", "in bed"],
+            "elevator_up": ["elevator up", "riding elevator up", "ascending in elevator"],
+            "elevator_down": ["elevator down", "riding elevator down", "descending in elevator"],
+        },
+        "templates": ["{}"],
+    },
+    "harth": {
+        "synonyms": {
+            "walking": ["walking", "strolling", "ambulating"],
+            "running": ["running", "jogging", "sprinting"],
+            "shuffling": ["shuffling", "slow walking", "dragging feet"],
+            "stairs_up": ["stairs up", "climbing stairs", "ascending stairs"],
+            "stairs_down": ["stairs down", "descending stairs", "going downstairs"],
+            "standing": ["standing", "upright", "on feet"],
+            "sitting": ["sitting", "seated"],
+            "lying": ["lying", "lying down", "horizontal", "reclining"],
+            "cycling_sit": ["cycling seated", "sitting cycling", "recumbent cycling"],
+            "cycling_stand": ["cycling standing", "standing cycling", "upright cycling"],
+            "transport_sit": ["sitting in transport", "seated in vehicle", "riding seated"],
+            "transport_stand": ["standing in transport", "standing in vehicle", "riding standing"],
+        },
+        "templates": ["{}"],
+    },
 }
 
 

@@ -1,0 +1,18 @@
+{
+  "activity_to_idx": {
+    "lying": 0,
+    "sitting": 1,
+    "standing": 2,
+    "walking": 3
+  },
+  "subject_to_idx": {
+    "S1": 0,
+    "S2": 1,
+    "S3": 2,
+    "S4": 3
+  },
+  "window_size": 120,
+  "sampling_rate_hz": 20,
+  "stride": 120,
+  "has_gyro": true
+}

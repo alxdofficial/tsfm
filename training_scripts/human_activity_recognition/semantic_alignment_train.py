@@ -128,10 +128,13 @@ PATCH_SIZE_PER_DATASET = {
     'hapt': 1.25,         # 50 Hz, min_session=1.48s → use 1.25s (was 1.5s)
     'kuhar': 1.5,         # 100 Hz, min_session=2.0s → use 1.5s
     # Zero-shot datasets (NOT trained on, only for evaluation)
+    'motionsense': 1.5,   # 50 Hz — zero-shot (primary eval dataset)
     'opportunity': 1.5,   # 30 Hz — zero-shot (GOAT baseline comparison)
     'realdisp': 1.5,      # 50 Hz — zero-shot (GOAT baseline comparison)
     'daphnet_fog': 1.5,   # 64 Hz — zero-shot (GOAT baseline comparison)
     'shoaib': 1.5,        # 50 Hz — zero-shot (LanHAR/CrossHAR baseline comparison)
+    'usc_had': 1.5,       # 100 Hz — zero-shot (waist IMU, acc+gyro)
+    'harth': 1.5,         # 50 Hz — zero-shot (acc only, back+thigh)
 }
 
 MAX_PATCHES_PER_SAMPLE = 48

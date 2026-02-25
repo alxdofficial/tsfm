@@ -733,7 +733,11 @@ def main():
         print(f"Testing MOMENT on {test_ds}")
         print(f"{'='*60}")
 
-        raw_data, raw_labels = load_raw_data(test_ds)
+        try:
+            raw_data, raw_labels = load_raw_data(test_ds)
+        except FileNotFoundError as e:
+            print(f"  SKIPPED: {e}")
+            continue
         test_emb = extract_moment_embeddings(moment_model, raw_data, device)
         test_labels = get_window_labels(raw_labels)
         test_activities = get_dataset_labels(test_ds)

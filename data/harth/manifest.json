@@ -1,0 +1,38 @@
+{
+  "dataset_name": "HARTH",
+  "description": "Human Activity Recognition Trondheim. 22 subjects performing 12 daily activities recorded in free-living conditions. Two 3-axis accelerometers (lower back and right thigh) at 50 Hz. Accelerometer only.",
+  "source": "https://archive.ics.uci.edu/dataset/779/harth",
+  "num_subjects": 22,
+  "channels": [
+    {
+      "name": "back_acc_x",
+      "description": "Back accelerometer X-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "back_acc_y",
+      "description": "Back accelerometer Y-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "back_acc_z",
+      "description": "Back accelerometer Z-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "thigh_acc_x",
+      "description": "Thigh accelerometer X-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "thigh_acc_y",
+      "description": "Thigh accelerometer Y-axis",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "thigh_acc_z",
+      "description": "Thigh accelerometer Z-axis",
+      "sampling_rate_hz": 50.0
+    }
+  ]
+}
