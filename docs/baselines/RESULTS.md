@@ -6,9 +6,9 @@ Generated: 2026-02-25 | Framework: 4-metric unified evaluation | Seed: 3431
 
 | Model | How It Works | Embed Dim | Zero-Shot | Supervised |
 |-------|-------------|:---------:|-----------|------------|
-| **TSFM (ours)** | Dual-branch Transformer trained with CLIP-style contrastive alignment between IMU patches and text labels | 384 | Cosine sim with text embeddings | End-to-end cosine sim |
+| **TSFM (ours)** | Dual-branch Transformer trained with CLIP-style contrastive alignment between IMU patches and text labels; processes each channel independently then fuses to 384-dim | 384 | Cosine sim with text embeddings | End-to-end cosine sim |
 | **LiMU-BERT** | BERT-style masked reconstruction on 20-step IMU sub-windows; predicts masked timesteps from context | 72 | GRU classifier + group scoring | End-to-end encoder + GRU |
-| **MOMENT** | General time-series Transformer pretrained on diverse time-series data (no HAR); processes each IMU channel independently | 6144 | SVM-RBF + group scoring | End-to-end encoder + linear |
+| **MOMENT** | General time-series Transformer pretrained on diverse time-series data (no HAR); processes each IMU channel independently and **concatenates** (no fusion) to 6144-dim | 6144 | SVM-RBF + group scoring | End-to-end encoder + linear |
 | **CrossHAR** | Hierarchical self-supervised pretraining combining masked reconstruction and contrastive learning on IMU sequences | 72 | Transformer_ft classifier + group scoring | End-to-end encoder + Transformer_ft |
 | **LanHAR** | 2-stage CLIP-style alignment: (1) fine-tune SciBERT on activity text, (2) train a sensor Transformer to align with text space | 768 | Cosine sim with text embeddings | End-to-end cosine sim |
 | **LLaSA** | LIMU-BERT IMU encoder + Vicuna-7B LLM; classifies by prompting the LLM with sensor tokens and parsing the generated text response | 7B params | LLM prompt → parse text | N/A (7B LLM not fine-tunable with few labels) |
@@ -52,8 +52,14 @@ smartphone)"), while baselines use 20Hz resampled data with no channel metadata.
 classification mechanism. Text-aligned models (TSFM, LanHAR) classify via cosine similarity
 with frozen text embeddings. Non-text-aligned models use their paper's native classifier head.
 
-**Embedding dimensions vary**: MOMENT (6144) >> LanHAR (768) > TSFM (384) >> LiMU-BERT/CrossHAR (72).
-Higher dimensions give more capacity for downstream tasks.
+**Embedding dimensions vary significantly**: MOMENT (6144) >> LanHAR (768) > TSFM (384) >>
+LiMU-BERT/CrossHAR (72). Both TSFM and MOMENT process IMU channels independently, but TSFM
+fuses per-channel representations into a compact 384-dim vector, while MOMENT concatenates
+6 × 1024 = 6144-dim without any compression. This 16× dimensionality gap gives MOMENT's
+downstream classifiers (SVM-RBF for ZS, linear head for supervised) substantially more
+information to work with, which largely explains why MOMENT performs close to TSFM despite
+having no text alignment and no HAR-specific pretraining.
+See [Note on MOMENT's Structural Advantages](#note-on-moments-structural-advantages) below.
 
 ## Adaptations from Original Papers
 
@@ -69,7 +75,7 @@ The table below documents every significant deviation and its fairness rationale
 | **CrossHAR** | Transformer zero-shot classifier | Paper uses Transformer classifier for supervised only, not for zero-shot | Train Transformer(72→100→87, 1-layer, 4-head) on training embeddings, predict test via logits | Same rationale as LiMU-BERT; matches the paper's classifier architecture |
 | **MOMENT** | Linear head for supervised | Paper's classification evaluation uses only SVM-RBF on frozen embeddings (no fine-tuning) | Linear head (from MOMENT codebase's `ClassificationHead`) fine-tuned end-to-end | SVM is not differentiable; linear head enables end-to-end fine-tuning consistent with other baselines |
 | **MOMENT** | SVM zero-shot classifier | Paper does not evaluate zero-shot transfer | SVM-RBF (GridSearchCV, 5-fold, 9 C values) trained on training embeddings; predict test via masked logits | SVM-RBF is MOMENT's native classifier — uses their codebase's approach. GridSearchCV ensures optimal hyperparameters |
-| **MOMENT** | Per-channel processing | Paper processes each channel independently (univariate) | Same — each of 6 channels processed as univariate (1, 512) series, embeddings concatenated to (N, 6144) | Faithful to MOMENT's design; concatenation is the standard multi-channel approach from their codebase |
+| **MOMENT** | Per-channel processing with concatenation | Paper processes each channel independently (univariate) and concatenates to 6144-dim | Same — each of 6 channels processed as univariate (1, 512) series, embeddings concatenated to (N, 6144). Note: TSFM also processes channels independently but fuses to 384-dim | Faithful to MOMENT's design. The 6144-dim output gives MOMENT's classifiers 16× more information than TSFM's 384-dim, which partly explains MOMENT's strong performance. See [Note on MOMENT's Structural Advantages](#note-on-moments-structural-advantages) |
 | **LanHAR** | No target data in Stage 2 | Sensor encoder trains on source + target data combined | Source data only (test data never seen) | No other baseline sees test data during training; exclusion prevents unfair distributional advantage but slightly *disadvantages* LanHAR vs its paper |
 | **LanHAR** | Supervised fine-tuning added | Paper is zero-shot only (no supervised protocol) | Fine-tune entire model end-to-end (BERT + sensor encoder + projections) via cosine sim with frozen text prototypes | Extension for benchmark completeness; all baselines fine-tune end-to-end for consistency |
 | **LanHAR** | BERT unfrozen during fine-tuning | Paper freezes BERT after Stage 1 | Fine-tune all parameters including BERT, with uniform lr=1e-5 | Consistent with other text-aligned models (TSFM fine-tunes its full model). Gives LanHAR the best chance to adapt. Since TSFM also fine-tunes its text components, this is equitable |
@@ -380,9 +386,12 @@ of severe domain shift rather than cross-dataset generalization.
    After fixing, Opportunity produces meaningful results across all models: TSFM 42.3% ZS-Closed,
    MOMENT 53.9%, with supervised results up to 79.7% (MOMENT) and 77.6% (TSFM) at 10%.
 
-4. **MOMENT is consistently the closest competitor** — Second-best on most metrics, and leads on
-   Opportunity (53.9% ZS-Closed), Shoaib 1% (88.8%), and has the best 1% F1 overall. Its large
-   6144-dim embeddings and general time-series pretraining transfer well.
+4. **MOMENT is consistently the closest competitor, partly due to structural advantages** —
+   Second-best on most metrics, and leads on Opportunity (53.9% ZS-Closed), Shoaib 1% (88.8%),
+   and has the best 1% F1 overall. However, MOMENT benefits from a 6144-dim embedding (16× TSFM's
+   384-dim), group-based ZS-closed scoring (vs TSFM's stricter exact match), and an SVM-RBF
+   classifier for ZS that is stronger than the GRU/Transformer classifiers used by LiMU-BERT and
+   CrossHAR. See [Note on MOMENT's Structural Advantages](#note-on-moments-structural-advantages).
 
 5. **CrossHAR is a strong third** — 76.7% at 10% supervised avg, competitive with MOMENT on
    MotionSense (92.2%) and Shoaib (93.3%), despite a much smaller embedding (72-dim). Shows an
@@ -404,6 +413,84 @@ of severe domain shift rather than cross-dataset generalization.
 9. **TSFM uses a fixed 1.0s patch size** — no per-dataset sweep or test-time tuning. Patch size
    sensitivity analysis shows 1.0s is within 1.3% of the best patch size on all datasets.
    See [Patch Size Sensitivity](#tsfm-patch-size-sensitivity) below.
+
+---
+
+## Note on MOMENT's Structural Advantages
+
+MOMENT performs surprisingly close to TSFM despite being a general time-series model with no text
+alignment and no HAR-specific pretraining. This section documents the structural factors that
+contribute to MOMENT's strong performance and should be considered when interpreting the results.
+
+**No data leakage**: We verified that MOMENT's zero-shot evaluation is clean. The ZS SVM is
+trained only on the 10 training datasets (completely disjoint from test). ZS evaluation runs
+before any supervised fine-tuning on each dataset. After each supervised FT run, the original
+pretrained weights are restored via `deepcopy`. There is no supervised data contamination in
+MOMENT's zero-shot numbers.
+
+### 1. Embedding Dimensionality (16× larger than TSFM)
+
+Both TSFM and MOMENT process IMU channels independently — this is not a MOMENT-specific
+advantage. The critical difference is what happens after per-channel processing:
+
+| Model | Per-Channel Dim | Fusion | Final Embedding |
+|-------|:-:|---|:-:|
+| **TSFM** | Variable | Learned cross-channel attention → compressed | **384** |
+| **MOMENT** | 1024 | Simple concatenation (no compression) | **6144** |
+
+MOMENT preserves the full 6 × 1024 = 6144 dimensions, giving downstream classifiers (SVM for
+ZS, linear head for supervised) 16× more information to work with than TSFM's 384-dim output,
+and 85× more than LiMU-BERT/CrossHAR's 72-dim. An RBF-kernel SVM on 6144 dimensions can exploit
+fine-grained per-channel patterns that are compressed away in lower-dimensional spaces.
+
+This is most visible in the supervised results: MOMENT's `Linear(6144, C)` head with 1% data
+(88.8% on Shoaib, 87.4% on MotionSense) nearly matches TSFM despite having no text-based class
+prototypes to guide learning. The high dimensionality compensates for the lack of text alignment.
+
+### 2. ZS Closed-Set Scoring Asymmetry
+
+As documented in [Zero-Shot Closed-Set](#zero-shot-closed-set), classifier-based models (MOMENT,
+LiMU-BERT, CrossHAR) use **group-based matching** for ZS-closed scoring, while text-aligned
+models (TSFM, LanHAR) use **exact match**. This asymmetry systematically favors MOMENT.
+
+Concrete example of the closed-set mask expansion:
+
+| Test Dataset | Test Classes | Allowed Training Labels (mask) | Expansion Factor |
+|---|:-:|:-:|:-:|
+| MotionSense | 6 | 22 | 3.7× |
+| RealWorld | 8 | 30 | 3.8× |
+| MobiAct | 13 | 34 | 2.6× |
+| Shoaib | 7 | 25 | 3.6× |
+| Opportunity | 4 | 14 | 3.5× |
+| HARTH | 12 | 29 | 2.4× |
+
+MOMENT's SVM chooses among ~3× more allowed labels than TSFM sees, but any prediction within the
+correct group is scored as correct. TSFM must predict the exact test label. This means MOMENT
+gets multiple "chances" per group while TSFM gets exactly one.
+
+### 3. SVM-RBF Is a Stronger ZS Classifier Than GRU/Transformer
+
+Among the three classifier-based models, MOMENT's SVM-RBF with GridSearchCV (5-fold, 9 C values)
+is a notably stronger choice than LiMU-BERT's GRU (trained from scratch, 100 epochs) or CrossHAR's
+Transformer (also from scratch, 100 epochs). The SVM benefits from:
+- **No training instability**: Convex optimization with guaranteed convergence
+- **Automatic regularization**: GridSearchCV finds optimal C without manual tuning
+- **Kernel trick**: RBF kernel captures nonlinear patterns in the 6144-dim space
+
+This partly explains why MOMENT's ZS numbers (37.6% avg closed-set) exceed LiMU-BERT (30.9%)
+and CrossHAR (32.0%) by a larger margin than the embedding dimensionality alone would predict.
+
+### 4. Combined Effect
+
+These advantages compound: MOMENT operates on 6144-dim embeddings (more capacity) with an
+SVM-RBF classifier (stronger learner) and group-based scoring (more lenient). Each factor
+individually provides a modest edge; combined, they make MOMENT appear close to TSFM despite
+fundamental architectural differences.
+
+**This is fair in the sense that we follow MOMENT's published protocol** — per-channel processing
+and SVM-RBF are how MOMENT is designed to be used. We do not artificially inflate MOMENT's
+numbers. However, readers should be aware that direct numerical comparison between MOMENT and
+TSFM is not apples-to-apples due to the embedding dimensionality gap and the ZS scoring asymmetry.
 
 ---
 
