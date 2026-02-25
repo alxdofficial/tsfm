@@ -39,10 +39,16 @@ smartphone)"), while baselines use 20Hz resampled data with no channel metadata.
 
 **Zero-shot prediction mechanisms differ by model type**:
 - *Text-aligned models* (TSFM, LanHAR): Encode activity labels as text, predict via cosine similarity
-  with sensor embeddings. Open-set uses all 87 labels + group scoring; closed-set uses only test labels + exact match.
-- *Classifier-based models* (LiMU-BERT, MOMENT, CrossHAR): Train a native classifier on training embeddings
-  (87 global labels), predict via classifier logits + group scoring. Open-set uses all 87 logits;
-  closed-set masks logits to training labels whose group appears in the test dataset.
+  with sensor embeddings. **Truly training-data-free** — no classifier is fitted, no labeled data is
+  used at inference time. Open-set uses all 87 labels + group scoring; closed-set uses only test
+  labels + exact match.
+- *Classifier-based models* (LiMU-BERT, MOMENT, CrossHAR): Train a native classifier on
+  **training dataset** embeddings (87 global labels), then predict on test data. This is
+  "zero-shot" in the sense of zero-shot *transfer to unseen datasets* — the classifier never sees
+  test data, but it does use labeled training data to learn the embedding-to-label mapping.
+  LiMU-BERT uses a GRU, MOMENT uses SVM-RBF, CrossHAR uses a Transformer. Open-set uses all 87
+  logits + group scoring; closed-set masks logits to training labels whose group appears in the
+  test dataset + group scoring.
 - *Generative model* (LLaSA): Prompts a 7B LLM with sensor tokens and activity list; parses the
   generated text response to extract the predicted label. Responses that cannot be matched to any
   valid label are counted as "unclear" (wrong). This is inherent to generative classification —
@@ -124,11 +130,14 @@ The prediction mechanism differs by model type:
 | **Classifier-based** (LiMU-BERT, MOMENT, CrossHAR) | Train a native classifier on pre-extracted training embeddings (87-class). LiMU-BERT uses a GRU (Adam, lr=1e-3, 100 epochs, batch 512); MOMENT uses SVM-RBF (GridSearchCV, 5-fold, 9 C values); CrossHAR uses a Transformer classifier (Adam, lr=1e-3, 100 epochs, batch 512). Predict on test embeddings, argmax over all 87 logits, then group-match. |
 | **Generative** (LLaSA) | Prompt the LLM with all 87 labels plus sensor tokens; parse the generated text to extract a label; fuzzy string matching to map output to a valid label; group-match for scoring. |
 
-**Fairness note**: Classifier-based models train their ZS classifier on embeddings from the 10
-training datasets (never test data). The classifier's capacity to generalize is part of the
-model's capability being evaluated — some models (e.g., SVM-RBF) may generalize better than
-others (e.g., GRU). Text-aligned models have a structural advantage here: they need no classifier
-training and can directly compare any text label to any sensor embedding.
+**Fairness note**: "Zero-shot" here means zero-shot *with respect to the test dataset* — no test
+data is ever used for classifier training. However, classifier-based models do use labeled
+training data to fit their ZS classifiers, while text-aligned models are truly training-data-free
+at inference time (cosine similarity requires no fitted classifier). The classifier's capacity to
+generalize is part of the model's capability being evaluated — some classifiers (e.g., SVM-RBF)
+may generalize better than others (e.g., GRU). Text-aligned models have a structural advantage
+here: they need no classifier training and can directly compare any text label to any sensor
+embedding.
 
 ### Zero-Shot Closed-Set
 
@@ -427,6 +436,14 @@ trained only on the 10 training datasets (completely disjoint from test). ZS eva
 before any supervised fine-tuning on each dataset. After each supervised FT run, the original
 pretrained weights are restored via `deepcopy`. There is no supervised data contamination in
 MOMENT's zero-shot numbers.
+
+**No HAR pretraining**: Unlike TSFM, LiMU-BERT, CrossHAR, and LanHAR (all pretrained on our
+10 HAR training datasets), MOMENT uses its published pretrained weights
+(`AutonLab/MOMENT-1-large`) which were trained on general time-series data (weather, electricity,
+traffic, etc.) with **no HAR or IMU data whatsoever**. The MOMENT encoder is never retrained on
+our HAR data — only the downstream SVM (for ZS) and linear head (for supervised) see HAR labels.
+This makes MOMENT's strong performance especially notable: its encoder has zero exposure to
+activity recognition data, yet it nearly matches TSFM which was purpose-built for HAR.
 
 ### 1. Embedding Dimensionality (16× larger than TSFM)
 
