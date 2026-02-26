@@ -230,7 +230,7 @@ def main():
 
     # ---------- PLOT ----------
     print("Plotting...")
-    plt.rcParams.update({"font.family": "sans-serif", "font.size": 8})
+    plt.rcParams.update({"font.family": "sans-serif", "font.size": 11})
 
     # Test/OOD color per dataset
     TEST_COLORS = {
@@ -292,7 +292,7 @@ def main():
     for ds, c in test_centroids.items():
         color = TEST_COLORS[ds]
         t = ax.text(c[0], c[1], DISPLAY_NAMES[ds],
-                    fontsize=7.0,
+                    fontsize=10,
                     fontweight="bold",
                     color=color, ha="center", va="center", zorder=10,
                     bbox=dict(boxstyle="round,pad=0.15", facecolor="white",
@@ -324,7 +324,7 @@ def main():
     # ---- Layer 5: "Training region" label ----
     tc = train_pts.mean(0)
     ax.text(tc[0], tc[1], "Training\nregion",
-            fontsize=9, fontweight="bold", color="#4e79a7",
+            fontsize=12, fontweight="bold", color="#4e79a7",
             ha="center", va="center", alpha=0.5, zorder=2,
             fontstyle="italic")
 
@@ -336,14 +336,14 @@ def main():
                markersize=7, markeredgecolor="white", markeredgewidth=0.5,
                label="Zero-shot test (7)"),
     ]
-    ax.legend(handles=legend_handles, loc="lower right", fontsize=7.5,
+    ax.legend(handles=legend_handles, loc="lower right", fontsize=10,
               frameon=True, framealpha=0.95, edgecolor="#cccccc",
               borderpad=0.6, handletextpad=0.4, labelspacing=0.5)
 
-    ax.set_xlabel("UMAP 1", fontsize=9)
-    ax.set_ylabel("UMAP 2", fontsize=9)
+    ax.set_xlabel("UMAP 1", fontsize=12)
+    ax.set_ylabel("UMAP 2", fontsize=12)
     ax.set_title("Distribution Gap Between Training and Zero-Shot Test Datasets",
-                 fontsize=9.5, fontweight="bold", pad=8)
+                 fontsize=13, fontweight="bold", pad=8)
     ax.set_xticks([])
     ax.set_yticks([])
     for sp in ax.spines.values():
