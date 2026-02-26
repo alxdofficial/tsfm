@@ -24,6 +24,7 @@ import math
 
 from datasets.imu_pretraining_dataset.multi_dataset_loader import IMUPretrainingDataset, worker_init_fn
 from torch.utils.data import DataLoader
+from model.config import get_config
 from model.encoder import IMUActivityRecognitionEncoder
 from model.semantic_alignment import SemanticAlignmentHead
 from model.token_text_encoder import (
@@ -141,31 +142,40 @@ PATCH_SIZE_PER_DATASET = {
 MAX_PATCHES_PER_SAMPLE = 48
 MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
-# Encoder configuration
-# --- Scaled-up model: d=768, 8 layers, all-mpnet-base-v2 (768-dim text) ---
-D_MODEL = 768
-NUM_HEADS = 12  # 64 dims per head
-NUM_TEMPORAL_LAYERS = 8
-DIM_FEEDFORWARD = 3072  # 4x d_model
-DROPOUT = 0.1
-USE_CROSS_CHANNEL = True
-CNN_CHANNELS = [64, 128]
-CNN_KERNEL_SIZES = [5]
-TARGET_PATCH_SIZE = 64  # Fixed timesteps per patch after interpolation
+# ---- Architecture configuration (single source of truth: model/config.py) ----
+MODEL_SIZE = "medium"  # Options: "tiny", "small", "medium", "large"
+_cfg = get_config(MODEL_SIZE)
 
-# Semantic alignment configuration
-D_MODEL_FUSED = 768  # Dimension after cross-channel fusion (match D_MODEL to avoid bottleneck)
-SEMANTIC_DIM = 768  # Final embedding dimension (must match SentenceBERT)
-NUM_SEMANTIC_TEMPORAL_LAYERS = 2  # Temporal attention layers in semantic head
+# Encoder
+D_MODEL = _cfg["d_model"]
+NUM_HEADS = _cfg["num_heads"]
+NUM_TEMPORAL_LAYERS = _cfg["num_temporal_layers"]
+DIM_FEEDFORWARD = _cfg["dim_feedforward"]
+DROPOUT = _cfg["dropout"]
+USE_CROSS_CHANNEL = _cfg["use_cross_channel"]
+CNN_CHANNELS = _cfg["cnn_channels"]
+CNN_KERNEL_SIZES = _cfg["cnn_kernel_sizes"]
+TARGET_PATCH_SIZE = _cfg["target_patch_size"]
 
-# Multi-query fusion/pooling configuration (symmetric architecture)
-NUM_FUSION_QUERIES = 4  # Query tokens for channel fusion (channels → 1 vector per patch)
-USE_FUSION_SELF_ATTENTION = True  # Fusion queries coordinate via self-attention
-NUM_POOL_QUERIES = 4  # Query tokens for temporal pooling (patches → 1 vector)
-USE_POOL_SELF_ATTENTION = True  # Pooling queries coordinate via self-attention
+# Semantic alignment head
+D_MODEL_FUSED = _cfg["d_model_fused"]
+SEMANTIC_DIM = _cfg["semantic_dim"]
+NUM_SEMANTIC_TEMPORAL_LAYERS = _cfg["num_semantic_temporal_layers"]
+NUM_FUSION_QUERIES = _cfg["num_fusion_queries"]
+USE_FUSION_SELF_ATTENTION = _cfg["use_fusion_self_attention"]
+NUM_POOL_QUERIES = _cfg["num_pool_queries"]
+USE_POOL_SELF_ATTENTION = _cfg["use_pool_self_attention"]
 
-# Text encoder configuration
-SENTENCE_BERT_MODEL = 'all-mpnet-base-v2'  # 768-dim embeddings, scaled
+# Text encoder
+SENTENCE_BERT_MODEL = _cfg["sentence_bert_model"]
+
+# Channel-text fusion
+CHANNEL_TEXT_NUM_HEADS = _cfg["channel_text_num_heads"]
+
+# Label bank
+LABEL_BANK_NUM_HEADS = _cfg["label_bank_num_heads"]
+LABEL_BANK_NUM_QUERIES = _cfg["label_bank_num_queries"]
+LABEL_BANK_NUM_PROTOTYPES = _cfg["label_bank_num_prototypes"]
 
 # Training configuration
 OUTPUT_DIR = "training_output/semantic_alignment"  # Note: plots go to semantic_alignment/<timestamp>/plots/
@@ -243,9 +253,8 @@ DEBUG_METRIC_FREQUENCY = 50  # Compute expensive debug metrics every N batches (
 # Token-level text encoding configuration
 # Uses cross-attention between sensor tokens and channel description tokens,
 # plus learnable attention pooling for label refinement.
-TOKEN_TEXT_NUM_HEADS = 4     # Attention heads for text fusion/pooling
-TOKEN_TEXT_NUM_QUERIES = 4   # Learnable query tokens for label pooling
-NUM_PROTOTYPES = 1           # Number of prototype embeddings per label (K=1 for single, K=3 for multi)
+# (num_heads, num_queries, num_prototypes now come from config via
+#  CHANNEL_TEXT_NUM_HEADS, LABEL_BANK_NUM_HEADS/QUERIES/PROTOTYPES)
 
 # Ablation: use mean pooling instead of learnable attention pooling
 # When True: uses SentenceBERT's default mean pooling (no learnable params)
@@ -316,6 +325,7 @@ class SemanticAlignmentModel(nn.Module):
         super().__init__()
         self.encoder = encoder
         self.semantic_head = semantic_head
+        self.semantic_dim = semantic_head.output_dim
         self.use_patch_augmentation = use_patch_augmentation
         self.min_patches_per_sample = min_patches_per_sample
 
@@ -323,8 +333,10 @@ class SemanticAlignmentModel(nn.Module):
         self.text_encoder = text_encoder if text_encoder is not None else TokenTextEncoder()
 
         # Channel text fusion (learnable cross-attention)
+        # Use encoder's d_model (not the module-level global) so this works
+        # when loading checkpoints trained at a different model size
         self.channel_fusion = ChannelTextFusion(
-            d_model=D_MODEL,
+            d_model=encoder.d_model,
             num_heads=num_heads,
             dropout=dropout
         )
@@ -517,7 +529,7 @@ class SemanticAlignmentModel(nn.Module):
         )
         if result is None:
             # No valid samples — return empty embeddings
-            return torch.zeros(0, SEMANTIC_DIM, device=data.device)
+            return torch.zeros(0, self.semantic_dim, device=data.device)
 
         batched_patches, patch_mask, batched_channel_mask, batched_channel_descs, valid_indices = result
         return self.forward(batched_patches, batched_channel_descs, batched_channel_mask, patch_mask)
@@ -1142,6 +1154,73 @@ def main():
         plot_dir = CHECKPOINT_DIR / "plots"
         print(f"Resuming training from: {CHECKPOINT_DIR}")
 
+        # Load architecture config from checkpoint to ensure consistency
+        resume_hp_path = CHECKPOINT_DIR / 'hyperparameters.json'
+        if resume_hp_path.exists():
+            with open(resume_hp_path) as f:
+                resume_hp = json.load(f)
+            # Override architecture constants from saved config
+            if 'config' in resume_hp:
+                saved_cfg = resume_hp['config']
+                saved_size = resume_hp.get('model_size', 'unknown')
+                if saved_size != MODEL_SIZE:
+                    print(f"  Note: Checkpoint was trained with MODEL_SIZE='{saved_size}', "
+                          f"overriding current '{MODEL_SIZE}'")
+                # Override all architecture globals from the saved config
+                D_MODEL = saved_cfg['d_model']
+                NUM_HEADS = saved_cfg['num_heads']
+                NUM_TEMPORAL_LAYERS = saved_cfg['num_temporal_layers']
+                DIM_FEEDFORWARD = saved_cfg['dim_feedforward']
+                DROPOUT = saved_cfg['dropout']
+                USE_CROSS_CHANNEL = saved_cfg['use_cross_channel']
+                CNN_CHANNELS = saved_cfg['cnn_channels']
+                CNN_KERNEL_SIZES = saved_cfg['cnn_kernel_sizes']
+                TARGET_PATCH_SIZE = saved_cfg['target_patch_size']
+                D_MODEL_FUSED = saved_cfg['d_model_fused']
+                SEMANTIC_DIM = saved_cfg['semantic_dim']
+                NUM_SEMANTIC_TEMPORAL_LAYERS = saved_cfg['num_semantic_temporal_layers']
+                NUM_FUSION_QUERIES = saved_cfg['num_fusion_queries']
+                USE_FUSION_SELF_ATTENTION = saved_cfg['use_fusion_self_attention']
+                NUM_POOL_QUERIES = saved_cfg['num_pool_queries']
+                USE_POOL_SELF_ATTENTION = saved_cfg['use_pool_self_attention']
+                SENTENCE_BERT_MODEL = saved_cfg['sentence_bert_model']
+                CHANNEL_TEXT_NUM_HEADS = saved_cfg['channel_text_num_heads']
+                LABEL_BANK_NUM_HEADS = saved_cfg['label_bank_num_heads']
+                LABEL_BANK_NUM_QUERIES = saved_cfg['label_bank_num_queries']
+                LABEL_BANK_NUM_PROTOTYPES = saved_cfg['label_bank_num_prototypes']
+                print(f"  ✓ Loaded architecture config from checkpoint (d={D_MODEL}, "
+                      f"layers={NUM_TEMPORAL_LAYERS}, sbert={SENTENCE_BERT_MODEL})")
+            elif 'encoder' in resume_hp:
+                # Legacy format (pre-config refactor): read from structured sections
+                enc = resume_hp['encoder']
+                D_MODEL = enc.get('d_model', D_MODEL)
+                NUM_HEADS = enc.get('num_heads', NUM_HEADS)
+                NUM_TEMPORAL_LAYERS = enc.get('num_temporal_layers', NUM_TEMPORAL_LAYERS)
+                DIM_FEEDFORWARD = enc.get('dim_feedforward', DIM_FEEDFORWARD)
+                DROPOUT = enc.get('dropout', DROPOUT)
+                USE_CROSS_CHANNEL = enc.get('use_cross_channel', USE_CROSS_CHANNEL)
+                CNN_CHANNELS = enc.get('cnn_channels', CNN_CHANNELS)
+                CNN_KERNEL_SIZES = enc.get('cnn_kernel_sizes', CNN_KERNEL_SIZES)
+                TARGET_PATCH_SIZE = enc.get('target_patch_size', TARGET_PATCH_SIZE)
+                sem = resume_hp.get('semantic', {})
+                D_MODEL_FUSED = sem.get('d_model_fused', D_MODEL_FUSED)
+                SEMANTIC_DIM = sem.get('semantic_dim', SEMANTIC_DIM)
+                SENTENCE_BERT_MODEL = sem.get('sentence_bert_model', SENTENCE_BERT_MODEL)
+                head = resume_hp.get('semantic_head', {})
+                NUM_SEMANTIC_TEMPORAL_LAYERS = head.get('num_temporal_layers', NUM_SEMANTIC_TEMPORAL_LAYERS)
+                NUM_FUSION_QUERIES = head.get('num_fusion_queries', NUM_FUSION_QUERIES)
+                USE_FUSION_SELF_ATTENTION = head.get('use_fusion_self_attention', USE_FUSION_SELF_ATTENTION)
+                NUM_POOL_QUERIES = head.get('num_pool_queries', NUM_POOL_QUERIES)
+                USE_POOL_SELF_ATTENTION = head.get('use_pool_self_attention', USE_POOL_SELF_ATTENTION)
+                tok = resume_hp.get('token_level_text', {})
+                CHANNEL_TEXT_NUM_HEADS = tok.get('num_heads', CHANNEL_TEXT_NUM_HEADS)
+                LABEL_BANK_NUM_HEADS = tok.get('num_heads', LABEL_BANK_NUM_HEADS)
+                LABEL_BANK_NUM_QUERIES = tok.get('num_queries', LABEL_BANK_NUM_QUERIES)
+                LABEL_BANK_NUM_PROTOTYPES = tok.get('num_prototypes', LABEL_BANK_NUM_PROTOTYPES)
+                print(f"  ✓ Loaded architecture from legacy hyperparameters (d={D_MODEL})")
+        else:
+            print("  Warning: No hyperparameters.json found, using current script settings")
+
         # Find the latest checkpoint
         checkpoint_files = list(CHECKPOINT_DIR.glob("epoch_*.pt"))
         if checkpoint_files:
@@ -1162,30 +1241,63 @@ def main():
         plot_dir.mkdir(exist_ok=True)
         print(f"Output directory: {CHECKPOINT_DIR}")
 
-    # Save hyperparameters
+    # Save hyperparameters — everything needed to reconstruct the model from scratch
+    # Build config dict from local vars (which may have been overridden during resume)
+    _active_config = {
+        "d_model": D_MODEL, "num_heads": NUM_HEADS, "num_temporal_layers": NUM_TEMPORAL_LAYERS,
+        "dim_feedforward": DIM_FEEDFORWARD, "dropout": DROPOUT, "use_cross_channel": USE_CROSS_CHANNEL,
+        "cnn_channels": CNN_CHANNELS, "cnn_kernel_sizes": CNN_KERNEL_SIZES,
+        "target_patch_size": TARGET_PATCH_SIZE,
+        "normalization_method": "zscore", "interpolation_method": "linear",
+        "temporal_init_scale": 0.1, "channel_init_scale": 0.1, "use_channel_encoding": True,
+        "max_patches": 5000,
+        "sentence_bert_model": SENTENCE_BERT_MODEL,
+        "semantic_dim": SEMANTIC_DIM, "d_model_fused": D_MODEL_FUSED,
+        "num_semantic_temporal_layers": NUM_SEMANTIC_TEMPORAL_LAYERS,
+        "num_fusion_queries": NUM_FUSION_QUERIES, "use_fusion_self_attention": USE_FUSION_SELF_ATTENTION,
+        "num_pool_queries": NUM_POOL_QUERIES, "use_pool_self_attention": USE_POOL_SELF_ATTENTION,
+        "channel_text_num_heads": CHANNEL_TEXT_NUM_HEADS,
+        "label_bank_num_heads": LABEL_BANK_NUM_HEADS,
+        "label_bank_num_queries": LABEL_BANK_NUM_QUERIES,
+        "label_bank_num_prototypes": LABEL_BANK_NUM_PROTOTYPES,
+    }
     hyperparams = {
+        'model_size': MODEL_SIZE,
+        'config': _active_config,  # Built from local vars, correct even on resume
         'encoder': {
             'd_model': D_MODEL, 'num_heads': NUM_HEADS, 'num_temporal_layers': NUM_TEMPORAL_LAYERS,
             'dim_feedforward': DIM_FEEDFORWARD, 'dropout': DROPOUT, 'use_cross_channel': USE_CROSS_CHANNEL,
             'cnn_channels': CNN_CHANNELS, 'cnn_kernel_sizes': CNN_KERNEL_SIZES,
-            'target_patch_size': TARGET_PATCH_SIZE, 'use_channel_encoding': False
+            'target_patch_size': TARGET_PATCH_SIZE, 'use_channel_encoding': False,
         },
-        'semantic': {'d_model_fused': D_MODEL_FUSED, 'semantic_dim': SEMANTIC_DIM,
-                     'sentence_bert_model': SENTENCE_BERT_MODEL, 'temperature': TEMPERATURE,
-                     'use_soft_targets': USE_SOFT_TARGETS, 'soft_target_temperature': SOFT_TARGET_TEMPERATURE,
-                     'soft_target_weight': SOFT_TARGET_WEIGHT,
-                     'use_memory_bank': USE_MEMORY_BANK, 'memory_bank_size': MEMORY_BANK_SIZE},
-        'training': {'epochs': EPOCHS, 'batch_size': BATCH_SIZE, 'accumulation_steps': ACCUMULATION_STEPS,
-                     'effective_batch_size': BATCH_SIZE * ACCUMULATION_STEPS,
-                     'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS, 'max_grad_norm': MAX_GRAD_NORM},
-        'data': {'channel_augmentation': False, 'use_channel_encoding': False},  # ChannelTextFusion handles channel semantics
-        'channel_projection': {'enabled': True, 'hidden_dim': None},  # Hardcoded: projection enabled
-        'token_level_text': {'num_heads': TOKEN_TEXT_NUM_HEADS, 'num_queries': TOKEN_TEXT_NUM_QUERIES,
-                             'use_mean_pooling': USE_MEAN_POOLING, 'freeze_label_bank': FREEZE_LABEL_BANK,
-                             'num_prototypes': NUM_PROTOTYPES},
-        'semantic_head': {'num_temporal_layers': NUM_SEMANTIC_TEMPORAL_LAYERS,
-                          'num_fusion_queries': NUM_FUSION_QUERIES, 'use_fusion_self_attention': USE_FUSION_SELF_ATTENTION,
-                          'num_pool_queries': NUM_POOL_QUERIES, 'use_pool_self_attention': USE_POOL_SELF_ATTENTION}
+        'semantic_head': {
+            'd_model_fused': D_MODEL_FUSED, 'semantic_dim': SEMANTIC_DIM,
+            'num_temporal_layers': NUM_SEMANTIC_TEMPORAL_LAYERS,
+            'num_fusion_queries': NUM_FUSION_QUERIES, 'use_fusion_self_attention': USE_FUSION_SELF_ATTENTION,
+            'num_pool_queries': NUM_POOL_QUERIES, 'use_pool_self_attention': USE_POOL_SELF_ATTENTION,
+        },
+        'channel_text_fusion': {
+            'num_heads': CHANNEL_TEXT_NUM_HEADS,
+        },
+        'label_bank': {
+            'sentence_bert_model': SENTENCE_BERT_MODEL,
+            'num_heads': LABEL_BANK_NUM_HEADS,
+            'num_queries': LABEL_BANK_NUM_QUERIES,
+            'num_prototypes': LABEL_BANK_NUM_PROTOTYPES,
+            'use_mean_pooling': USE_MEAN_POOLING,
+            'freeze_label_bank': FREEZE_LABEL_BANK,
+        },
+        'loss': {
+            'temperature': TEMPERATURE,
+            'use_soft_targets': USE_SOFT_TARGETS, 'soft_target_temperature': SOFT_TARGET_TEMPERATURE,
+            'soft_target_weight': SOFT_TARGET_WEIGHT,
+            'use_memory_bank': USE_MEMORY_BANK, 'memory_bank_size': MEMORY_BANK_SIZE,
+        },
+        'training': {
+            'epochs': EPOCHS, 'batch_size': BATCH_SIZE, 'accumulation_steps': ACCUMULATION_STEPS,
+            'effective_batch_size': BATCH_SIZE * ACCUMULATION_STEPS,
+            'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS, 'max_grad_norm': MAX_GRAD_NORM,
+        },
     }
     with open(CHECKPOINT_DIR / 'hyperparameters.json', 'w') as f:
         json.dump(hyperparams, f, indent=2)
@@ -1245,7 +1357,7 @@ def main():
     print("Using token-level text encoding with cross-attention")
     model = SemanticAlignmentModel(
         encoder, semantic_head,
-        num_heads=TOKEN_TEXT_NUM_HEADS,
+        num_heads=CHANNEL_TEXT_NUM_HEADS,
         dropout=DROPOUT,
         use_patch_augmentation=USE_PATCH_SIZE_AUGMENTATION,
         min_patches_per_sample=MIN_PATCHES_PER_SAMPLE,
@@ -1284,9 +1396,9 @@ def main():
         model_name=SENTENCE_BERT_MODEL,
         device=device,
         d_model=SEMANTIC_DIM,
-        num_heads=TOKEN_TEXT_NUM_HEADS,
-        num_queries=TOKEN_TEXT_NUM_QUERIES,
-        num_prototypes=NUM_PROTOTYPES,
+        num_heads=LABEL_BANK_NUM_HEADS,
+        num_queries=LABEL_BANK_NUM_QUERIES,
+        num_prototypes=LABEL_BANK_NUM_PROTOTYPES,
         dropout=0.0,  # Zero dropout: contrastive text targets must be deterministic
         use_mean_pooling=USE_MEAN_POOLING,
         text_encoder=shared_text_encoder  # Share text encoder with model

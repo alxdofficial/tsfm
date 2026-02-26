@@ -496,6 +496,7 @@ class LearnableLabelBank(nn.Module):
     ):
         super().__init__()
         self.device = device if device else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.d_model = d_model
         self.use_mean_pooling = use_mean_pooling
         self.num_prototypes = num_prototypes
 
@@ -555,8 +556,8 @@ class LearnableLabelBank(nn.Module):
 
     @property
     def embedding_dim(self) -> int:
-        """Return embedding dimension - same as LabelBank."""
-        return 384
+        """Return embedding dimension."""
+        return self.d_model
 
     def to(self, device):
         """Move to device."""

@@ -377,6 +377,7 @@ class SemanticAlignmentHead(nn.Module):
             use_pool_self_attention: Whether pooling queries coordinate via self-attention
         """
         super().__init__()
+        self.output_dim = output_dim
 
         # Multi-query channel fusion: fuses all channels into one vector per patch
         self.cross_channel_fusion = CrossChannelFusion(

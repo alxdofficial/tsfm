@@ -3,6 +3,10 @@
 Consolidates the model loading logic that was duplicated across
 evaluate_tsfm.py, compare_models.py, benchmark_baselines.py,
 session_explorer.py, embedding_video_4d.py, and visualization_3d.py.
+
+Reads architecture hyperparameters from hyperparameters.json saved alongside
+the checkpoint. Supports both new format (with 'config' key) and legacy
+format (with separate 'encoder'/'semantic_head'/'token_level_text' keys).
 """
 
 import json
@@ -14,7 +18,90 @@ import torch
 from model.encoder import IMUActivityRecognitionEncoder
 from model.semantic_alignment import SemanticAlignmentHead
 from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
-from model.token_text_encoder import LearnableLabelBank
+from model.token_text_encoder import LearnableLabelBank, TokenTextEncoder
+
+
+def _load_hyperparams(hyperparams_path: Path) -> dict:
+    """Load and normalize hyperparameters from JSON, handling both formats."""
+    with open(hyperparams_path) as f:
+        hp = json.load(f)
+
+    # New format: 'config' contains the full architecture dict
+    if 'config' in hp:
+        cfg = hp['config']
+        return {
+            'encoder': {
+                'd_model': cfg['d_model'],
+                'num_heads': cfg['num_heads'],
+                'num_temporal_layers': cfg['num_temporal_layers'],
+                'dim_feedforward': cfg['dim_feedforward'],
+                'dropout': cfg.get('dropout', 0.1),
+                'use_cross_channel': cfg.get('use_cross_channel', True),
+                'cnn_channels': cfg.get('cnn_channels', [32, 64]),
+                'cnn_kernel_sizes': cfg.get('cnn_kernel_sizes', [5]),
+                'target_patch_size': cfg.get('target_patch_size', 64),
+                'use_channel_encoding': False,
+            },
+            'semantic_head': {
+                'd_model_fused': cfg.get('d_model_fused', cfg['d_model']),
+                'semantic_dim': cfg.get('semantic_dim', cfg['d_model']),
+                'num_temporal_layers': cfg.get('num_semantic_temporal_layers', 2),
+                'num_fusion_queries': cfg.get('num_fusion_queries', 4),
+                'use_fusion_self_attention': cfg.get('use_fusion_self_attention', True),
+                'num_pool_queries': cfg.get('num_pool_queries', 4),
+                'use_pool_self_attention': cfg.get('use_pool_self_attention', True),
+            },
+            'channel_text_fusion': {
+                'num_heads': cfg.get('channel_text_num_heads', 4),
+            },
+            'label_bank': {
+                'sentence_bert_model': cfg.get('sentence_bert_model', 'all-MiniLM-L6-v2'),
+                'd_model': cfg.get('semantic_dim', cfg['d_model']),
+                'num_heads': cfg.get('label_bank_num_heads', 4),
+                'num_queries': cfg.get('label_bank_num_queries', 4),
+                'num_prototypes': cfg.get('label_bank_num_prototypes', 1),
+            },
+        }
+
+    # Legacy format: separate sections
+    enc = hp.get('encoder', {})
+    sem = hp.get('semantic', {})
+    head = hp.get('semantic_head', {})
+    tok = hp.get('token_level_text', {})
+    d_model = enc.get('d_model', 384)
+    return {
+        'encoder': {
+            'd_model': d_model,
+            'num_heads': enc.get('num_heads', 8),
+            'num_temporal_layers': enc.get('num_temporal_layers', 4),
+            'dim_feedforward': enc.get('dim_feedforward', 1536),
+            'dropout': enc.get('dropout', 0.1),
+            'use_cross_channel': enc.get('use_cross_channel', True),
+            'cnn_channels': enc.get('cnn_channels', [32, 64]),
+            'cnn_kernel_sizes': enc.get('cnn_kernel_sizes', [5]),
+            'target_patch_size': enc.get('target_patch_size', 64),
+            'use_channel_encoding': enc.get('use_channel_encoding', False),
+        },
+        'semantic_head': {
+            'd_model_fused': sem.get('d_model_fused', d_model),
+            'semantic_dim': sem.get('semantic_dim', d_model),
+            'num_temporal_layers': head.get('num_temporal_layers', 2),
+            'num_fusion_queries': head.get('num_fusion_queries', 4),
+            'use_fusion_self_attention': head.get('use_fusion_self_attention', True),
+            'num_pool_queries': head.get('num_pool_queries', 4),
+            'use_pool_self_attention': head.get('use_pool_self_attention', True),
+        },
+        'channel_text_fusion': {
+            'num_heads': tok.get('num_heads', 4),
+        },
+        'label_bank': {
+            'sentence_bert_model': sem.get('sentence_bert_model', 'all-MiniLM-L6-v2'),
+            'd_model': sem.get('semantic_dim', d_model),
+            'num_heads': tok.get('num_heads', 4),
+            'num_queries': tok.get('num_queries', 4),
+            'num_prototypes': tok.get('num_prototypes', 1),
+        },
+    }
 
 
 def load_model(
@@ -52,56 +139,75 @@ def load_model(
             "This checkpoint may be from an older incompatible version."
         )
 
-    with open(hyperparams_path) as f:
-        hyperparams = json.load(f)
-    enc_cfg = hyperparams.get('encoder', {})
-    head_cfg = hyperparams.get('semantic_head', {})
-    token_cfg = hyperparams.get('token_level_text', {})
+    hp = _load_hyperparams(hyperparams_path)
+    enc_cfg = hp['encoder']
+    head_cfg = hp['semantic_head']
+    fusion_cfg = hp['channel_text_fusion']
+    lb_cfg = hp['label_bank']
+
+    d_model = enc_cfg['d_model']
 
     # Create encoder
     encoder = IMUActivityRecognitionEncoder(
-        d_model=enc_cfg.get('d_model', 384),
-        num_heads=enc_cfg.get('num_heads', 8),
-        num_temporal_layers=enc_cfg.get('num_temporal_layers', 4),
-        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
-        dropout=enc_cfg.get('dropout', 0.1),
-        use_cross_channel=enc_cfg.get('use_cross_channel', True),
-        cnn_channels=enc_cfg.get('cnn_channels', [32, 64]),
-        cnn_kernel_sizes=enc_cfg.get('cnn_kernel_sizes', [5]),
-        target_patch_size=enc_cfg.get('target_patch_size', 64),
-        use_channel_encoding=enc_cfg.get('use_channel_encoding', False),
+        d_model=d_model,
+        num_heads=enc_cfg['num_heads'],
+        num_temporal_layers=enc_cfg['num_temporal_layers'],
+        dim_feedforward=enc_cfg['dim_feedforward'],
+        dropout=enc_cfg['dropout'],
+        use_cross_channel=enc_cfg['use_cross_channel'],
+        cnn_channels=enc_cfg['cnn_channels'],
+        cnn_kernel_sizes=enc_cfg['cnn_kernel_sizes'],
+        target_patch_size=enc_cfg['target_patch_size'],
+        use_channel_encoding=enc_cfg['use_channel_encoding'],
     )
 
     # Create semantic head
     semantic_head = SemanticAlignmentHead(
-        d_model=enc_cfg.get('d_model', 384),
-        d_model_fused=384,
-        output_dim=384,
-        num_temporal_layers=head_cfg.get('num_temporal_layers', 2),
-        num_heads=enc_cfg.get('num_heads', 8),
-        dim_feedforward=enc_cfg.get('dim_feedforward', 1536),
-        dropout=enc_cfg.get('dropout', 0.1),
-        num_fusion_queries=head_cfg.get('num_fusion_queries', 4),
-        use_fusion_self_attention=head_cfg.get('use_fusion_self_attention', True),
-        num_pool_queries=head_cfg.get('num_pool_queries', 4),
-        use_pool_self_attention=head_cfg.get('use_pool_self_attention', True),
+        d_model=d_model,
+        d_model_fused=head_cfg['d_model_fused'],
+        output_dim=head_cfg['semantic_dim'],
+        num_temporal_layers=head_cfg['num_temporal_layers'],
+        num_heads=enc_cfg['num_heads'],
+        dim_feedforward=head_cfg['d_model_fused'] * 4,
+        dropout=enc_cfg['dropout'],
+        num_fusion_queries=head_cfg['num_fusion_queries'],
+        use_fusion_self_attention=head_cfg['use_fusion_self_attention'],
+        num_pool_queries=head_cfg['num_pool_queries'],
+        use_pool_self_attention=head_cfg['use_pool_self_attention'],
     )
+
+    # Create shared text encoder
+    shared_text_encoder = TokenTextEncoder(model_name=lb_cfg['sentence_bert_model'])
 
     # Create full model with token-level text encoding
     model = SemanticAlignmentModel(
         encoder,
         semantic_head,
-        num_heads=token_cfg.get('num_heads', 4),
-        dropout=enc_cfg.get('dropout', 0.1),
+        num_heads=fusion_cfg['num_heads'],
+        dropout=enc_cfg['dropout'],
+        text_encoder=shared_text_encoder,
     )
 
+    # Convert legacy combined gate weights to split gate format if needed
+    # Old: channel_fusion.gate.0.weight (d, 2*d), gate.0.bias (d,)
+    # New: gate_sensor.weight (d, d), gate_channel.weight (d, d), gate_channel.bias (d,)
+    state_dict = checkpoint['model_state_dict']
+    old_gate_w = 'channel_fusion.gate.0.weight'
+    old_gate_b = 'channel_fusion.gate.0.bias'
+    if old_gate_w in state_dict and old_gate_b in state_dict:
+        W = state_dict.pop(old_gate_w)  # (d, 2*d)
+        b = state_dict.pop(old_gate_b)  # (d,)
+        d = W.shape[0]
+        state_dict['channel_fusion.gate_sensor.weight'] = W[:, :d]    # first d cols
+        state_dict['channel_fusion.gate_channel.weight'] = W[:, d:]   # last d cols
+        state_dict['channel_fusion.gate_channel.bias'] = b
+
     # Load state dict (strict=False only to tolerate removed channel_encoding keys)
-    missing_keys, unexpected_keys = model.load_state_dict(
-        checkpoint['model_state_dict'], strict=False
-    )
+    missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
     # Filter out known benign mismatches
-    benign_unexpected = [k for k in unexpected_keys if 'channel_encoding' in k]
-    critical_unexpected = [k for k in unexpected_keys if 'channel_encoding' not in k]
+    benign_patterns = ('channel_encoding',)
+    benign_unexpected = [k for k in unexpected_keys if any(p in k for p in benign_patterns)]
+    critical_unexpected = [k for k in unexpected_keys if not any(p in k for p in benign_patterns)]
     if critical_unexpected:
         raise RuntimeError(
             f"Checkpoint has {len(critical_unexpected)} unexpected keys "
@@ -120,9 +226,13 @@ def load_model(
 
     if verbose:
         print(f"  Loaded checkpoint from epoch {epoch}")
-        print(f"  Encoder: d_model={enc_cfg.get('d_model', 384)}, "
-              f"layers={enc_cfg.get('num_temporal_layers', 4)}, "
-              f"heads={enc_cfg.get('num_heads', 8)}")
+        print(f"  Encoder: d_model={d_model}, "
+              f"layers={enc_cfg['num_temporal_layers']}, "
+              f"heads={enc_cfg['num_heads']}")
+        print(f"  Semantic head: d_fused={head_cfg['d_model_fused']}, "
+              f"layers={head_cfg['num_temporal_layers']}, "
+              f"fusion_q={head_cfg['num_fusion_queries']}, "
+              f"pool_q={head_cfg['num_pool_queries']}")
 
     return model, checkpoint, hyperparams_path
 
@@ -132,6 +242,7 @@ def load_label_bank(
     device: torch.device,
     hyperparams_path: Path,
     verbose: bool = True,
+    text_encoder: TokenTextEncoder = None,
 ) -> LearnableLabelBank:
     """Load a LearnableLabelBank with trained state from a checkpoint.
 
@@ -140,29 +251,30 @@ def load_label_bank(
         device: Device to load the label bank onto.
         hyperparams_path: Path to hyperparameters.json.
         verbose: Whether to print loading information.
+        text_encoder: Optional shared TokenTextEncoder (avoids loading a second copy).
 
     Returns:
         label_bank: The loaded LearnableLabelBank in inference mode.
     """
-    if hyperparams_path.exists():
-        with open(hyperparams_path) as f:
-            hyperparams = json.load(f)
-        token_cfg = hyperparams.get('token_level_text', {})
-    else:
-        token_cfg = {}
+    hp = _load_hyperparams(hyperparams_path)
+    lb_cfg = hp['label_bank']
 
     label_bank = LearnableLabelBank(
+        model_name=lb_cfg['sentence_bert_model'],
         device=device,
-        num_heads=token_cfg.get('num_heads', 4),
-        num_queries=token_cfg.get('num_queries', 4),
-        num_prototypes=token_cfg.get('num_prototypes', 1),
-        dropout=0.1,
+        d_model=lb_cfg['d_model'],
+        num_heads=lb_cfg['num_heads'],
+        num_queries=lb_cfg['num_queries'],
+        num_prototypes=lb_cfg['num_prototypes'],
+        dropout=0.0,
+        text_encoder=text_encoder,
     )
 
     if 'label_bank_state_dict' in checkpoint:
         label_bank.load_state_dict(checkpoint['label_bank_state_dict'])
         if verbose:
-            print("  Loaded trained LearnableLabelBank state")
+            print(f"  Loaded LearnableLabelBank state (d={lb_cfg['d_model']}, "
+                  f"heads={lb_cfg['num_heads']}, queries={lb_cfg['num_queries']})")
     else:
         if verbose:
             print("  Warning: No label_bank_state_dict in checkpoint, using untrained weights")

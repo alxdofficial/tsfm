@@ -9,6 +9,9 @@ Three deployment tiers:
 Text encoder weights are frozen and used only during training to produce
 channel/label embeddings. At inference, precomputed embeddings are stored
 as constants, so the text encoder is never deployed on-device.
+
+Each config is the single source of truth for all architecture hyperparameters:
+encoder, semantic head, channel-text fusion, and label bank.
 """
 
 from typing import Dict, Any
@@ -20,6 +23,7 @@ from typing import Dict, Any
 # Suitable for smartphone / edge deployment.
 # ---------------------------------------------------------------------------
 SMALL_CONFIG: Dict[str, Any] = {
+    # --- Encoder ---
     "d_model": 384,
     "num_heads": 8,              # 48 dims per head
     "num_temporal_layers": 4,
@@ -34,8 +38,27 @@ SMALL_CONFIG: Dict[str, Any] = {
     "temporal_init_scale": 0.1,
     "channel_init_scale": 0.1,
     "use_channel_encoding": True,
+    "max_patches": 5000,
+
+    # --- Text encoder (frozen, not deployed on-device) ---
     "sentence_bert_model": "all-MiniLM-L6-v2",   # 384-dim embeddings
-    "max_patches": 5000
+
+    # --- Semantic alignment head ---
+    "semantic_dim": 384,                   # Final embedding dim (matches SBERT)
+    "d_model_fused": 384,                  # Cross-channel fusion output dim
+    "num_semantic_temporal_layers": 2,     # Temporal attention layers in head
+    "num_fusion_queries": 4,               # Query tokens for channel fusion
+    "use_fusion_self_attention": True,
+    "num_pool_queries": 4,                 # Query tokens for temporal pooling
+    "use_pool_self_attention": True,
+
+    # --- Channel-text fusion ---
+    "channel_text_num_heads": 4,           # Cross-attention heads
+
+    # --- Label bank ---
+    "label_bank_num_heads": 4,             # Attention heads for label pooling
+    "label_bank_num_queries": 4,           # Learnable query tokens per label
+    "label_bank_num_prototypes": 1,        # Prototype embeddings per label
 }
 
 
@@ -45,6 +68,7 @@ SMALL_CONFIG: Dict[str, Any] = {
 # Balanced quality-to-cost ratio for GPU servers.
 # ---------------------------------------------------------------------------
 MEDIUM_CONFIG: Dict[str, Any] = {
+    # --- Encoder ---
     "d_model": 768,
     "num_heads": 12,             # 64 dims per head
     "num_temporal_layers": 8,
@@ -59,8 +83,27 @@ MEDIUM_CONFIG: Dict[str, Any] = {
     "temporal_init_scale": 0.1,
     "channel_init_scale": 0.1,
     "use_channel_encoding": True,
+    "max_patches": 5000,
+
+    # --- Text encoder (frozen, not deployed on-device) ---
     "sentence_bert_model": "all-mpnet-base-v2",   # 768-dim embeddings
-    "max_patches": 5000
+
+    # --- Semantic alignment head ---
+    "semantic_dim": 768,
+    "d_model_fused": 768,
+    "num_semantic_temporal_layers": 4,     # Scaled up from 2
+    "num_fusion_queries": 6,               # Scaled up from 4
+    "use_fusion_self_attention": True,
+    "num_pool_queries": 6,                 # Scaled up from 4
+    "use_pool_self_attention": True,
+
+    # --- Channel-text fusion ---
+    "channel_text_num_heads": 8,           # Scaled up from 4
+
+    # --- Label bank ---
+    "label_bank_num_heads": 8,             # Scaled up from 4
+    "label_bank_num_queries": 6,           # Scaled up from 4
+    "label_bank_num_prototypes": 1,
 }
 
 
@@ -70,6 +113,7 @@ MEDIUM_CONFIG: Dict[str, Any] = {
 # Maximum quality; requires >=40GB GPU for training.
 # ---------------------------------------------------------------------------
 LARGE_CONFIG: Dict[str, Any] = {
+    # --- Encoder ---
     "d_model": 1024,
     "num_heads": 16,             # 64 dims per head
     "num_temporal_layers": 12,
@@ -84,8 +128,27 @@ LARGE_CONFIG: Dict[str, Any] = {
     "temporal_init_scale": 0.1,
     "channel_init_scale": 0.1,
     "use_channel_encoding": True,
+    "max_patches": 5000,
+
+    # --- Text encoder (frozen, not deployed on-device) ---
     "sentence_bert_model": "BAAI/bge-large-en-v1.5",  # 1024-dim embeddings
-    "max_patches": 5000
+
+    # --- Semantic alignment head ---
+    "semantic_dim": 1024,
+    "d_model_fused": 1024,
+    "num_semantic_temporal_layers": 6,     # Scaled up from 2
+    "num_fusion_queries": 8,               # Scaled up from 4
+    "use_fusion_self_attention": True,
+    "num_pool_queries": 8,                 # Scaled up from 4
+    "use_pool_self_attention": True,
+
+    # --- Channel-text fusion ---
+    "channel_text_num_heads": 16,          # 1024/16=64 dims per head
+
+    # --- Label bank ---
+    "label_bank_num_heads": 16,            # 1024/16=64 dims per head
+    "label_bank_num_queries": 8,           # Scaled up from 4
+    "label_bank_num_prototypes": 1,
 }
 
 
@@ -107,7 +170,21 @@ TINY_CONFIG: Dict[str, Any] = {
     "temporal_init_scale": 0.1,
     "channel_init_scale": 0.1,
     "use_channel_encoding": False,
-    "max_patches": 5000
+    "max_patches": 5000,
+
+    # --- Downstream (minimal for tests) ---
+    "sentence_bert_model": "all-MiniLM-L6-v2",
+    "semantic_dim": 64,
+    "d_model_fused": 64,
+    "num_semantic_temporal_layers": 1,
+    "num_fusion_queries": 2,
+    "use_fusion_self_attention": False,
+    "num_pool_queries": 2,
+    "use_pool_self_attention": False,
+    "channel_text_num_heads": 2,
+    "label_bank_num_heads": 2,
+    "label_bank_num_queries": 2,
+    "label_bank_num_prototypes": 1,
 }
 
 
@@ -119,7 +196,8 @@ def get_config(size: str = "small") -> Dict[str, Any]:
         size: One of "tiny", "small", "medium", "large"
 
     Returns:
-        Configuration dictionary
+        Configuration dictionary containing all architecture hyperparameters
+        for encoder, semantic head, channel-text fusion, and label bank.
 
     Example:
         >>> config = get_config("small")

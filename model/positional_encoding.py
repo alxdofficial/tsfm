@@ -191,7 +191,7 @@ class ChannelSemanticEncoding(nn.Module):
                 if self.d_model != self._sbert_dim:
                     raise ValueError(
                         f"d_model ({self.d_model}) must match Sentence-BERT dimension ({self._sbert_dim}). "
-                        f"For {self.sentence_bert_model}, use d_model=384"
+                        f"For {self.sentence_bert_model}, use d_model={self._sbert_dim}"
                     )
 
                 # Freeze Sentence-BERT parameters - no need to fine-tune
