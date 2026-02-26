@@ -8,10 +8,12 @@ Methodology:
   2. Extract 6 IMU channels (acc + gyro) via core_channels mapping
   3. Resample to 128 timesteps, compute 52 raw statistical + spectral
      features per session (no z-score — we want to show actual gap)
-  4. Standardize, remove 4-sigma outliers, project via UMAP
-  5. Plot: single aggregate training cloud (blue) with individual test
-     dataset ellipses overlaid, clearly showing where test distributions
-     fall relative to training coverage
+  4. Standardize, remove outliers (4σ train / 6σ test), project via UMAP
+  5. Apply radial log-compression (log(1+d)) to compress extreme distances
+     while preserving local structure
+  6. Plot: single aggregate training cloud (blue convex hull) with
+     individual test dataset confidence ellipses (1.5σ) overlaid, showing
+     where test distributions fall relative to training coverage
 
 The figure communicates: training data covers region X, but zero-shot
 test data extends into regions Y and Z that training never covered.
