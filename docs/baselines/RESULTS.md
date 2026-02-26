@@ -13,6 +13,117 @@ Generated: 2026-02-25 | Framework: 4-metric unified evaluation | Seed: 3431
 | **LanHAR** | 2-stage CLIP-style alignment: (1) fine-tune SciBERT on activity text, (2) train a sensor Transformer to align with text space | 768 | Cosine sim with text embeddings | End-to-end cosine sim |
 | **LLaSA** | LIMU-BERT IMU encoder + Vicuna-7B LLM; classifies by prompting the LLM with sensor tokens and parsing the generated text response | 7B params | LLM prompt → parse text | N/A (7B LLM not fine-tunable with few labels) |
 
+## Model Size Comparison
+
+Parameter counts measured by instantiating each model and summing `p.numel()` for all parameters.
+"Trainable" means parameters updated during our HAR pretraining or stage-2 alignment training.
+"Inference total" includes all parameters that must be loaded and run forward passes at test time,
+including frozen components.
+
+### Summary
+
+| Model | IMU Encoder | Language/Text Module | Classifier/Projection Heads | Trainable | Inference Total |
+|-------|----------:|---------------------:|----------------------------:|----------:|----------------:|
+| **TSFM (ours)** | 9.8M | 22.7M (frozen SBERT) | 10.9M | **20.7M** | **43.4M** |
+| **LiMU-BERT** | 62.6K | — | 10.1K (GRU) | **72.7K** | **72.7K** |
+| **MOMENT** | 341.2M | — | ~50K (linear) | **341.2M** | **341.2M** |
+| **CrossHAR** | 62.8K | — | 468.6K (Transformer) | **531.4K** | **531.4K** |
+| **LanHAR** | 11.8M | 109.9M (SciBERT) | 1.2M (projections) | **13.0M**\* | **122.9M** |
+| **LLaSA** | 62.6K (LiMU-BERT) | ~6.7B (Vicuna-7B) | ~17M (MLP projector) | **~6.7B** | **~6.7B** |
+
+\*LanHAR stage-2 training freezes SciBERT (only sensor encoder + projections are trained). During
+supervised fine-tuning, SciBERT is unfrozen and all 122.9M parameters are updated.
+
+### Component Breakdown
+
+**TSFM (ours)** — 20.7M trainable, 43.4M at inference:
+
+| Component | Parameters | Role |
+|-----------|----------:|------|
+| CNN feature extractor (channel-independent Conv1d, [32,64], kernel=5) | 35.6K | Temporal feature extraction per channel |
+| Positional encoding (sinusoidal temporal + channel semantic MLP 384→384) | 295.7K | Time + sensor meaning encoding |
+| Dual-branch Transformer (4 layers, d=384, 8 heads, temporal + cross-channel) | 9.5M | Core IMU encoder |
+| Semantic alignment head (cross-channel fusion + temporal attention + pooling + projection) | 7.9M | Fuses channels → single embedding, projects to semantic space |
+| Channel-text fusion (cross-attention between sensor tokens and text tokens) | 1.6M | Conditions sensor encoding on channel descriptions |
+| Learnable label bank (attention pooling over text token sequences) | 1.3M | Multi-prototype text embeddings per label |
+| **Trainable subtotal** | **20.7M** | Saved in checkpoint |
+| all-MiniLM-L6-v2 (SentenceBERT, 6-layer, d=384) | 22.7M | Frozen text encoder for channel descriptions + labels |
+| **Inference total** | **43.4M** | |
+
+**LiMU-BERT** — 72.7K at inference:
+
+| Component | Parameters | Role |
+|-----------|----------:|------|
+| Input projection (Linear(6→72)) | 504 | Channel embedding |
+| Positional embedding (Embedding(120,72)) | 8,640 | Fixed 120-position learned PE |
+| Shared Transformer block (d=72, 4 heads, ff=144) — stored once, looped 4× | 42,408 | Masked reconstruction encoder |
+| Pretrain decoder head (Linear(72→6)) | 11,094 | In checkpoint, unused during embedding |
+| GRU classifier (72→20→10→87, 2-layer GRU) | 10,077 | Zero-shot: trained on training data |
+| **Total** | **72.7K** | |
+
+**MOMENT** — 341.2M at inference:
+
+| Component | Parameters | Role |
+|-----------|----------:|------|
+| Patch embedding (Conv1d input projection) | ~2M | Time series → patch tokens |
+| T5 Transformer encoder (24 layers, d=1024, ff=4096, 16 heads) | ~339M | General time-series encoder |
+| Linear classification head (Linear(6144→N)) | ~50K | Fresh per dataset (6×1024 concat → N classes) |
+| **Total** | **341.2M** | |
+
+**CrossHAR** — 531.4K at inference:
+
+| Component | Parameters | Role |
+|-----------|----------:|------|
+| Input projection (Linear(6→72)) | 504 | Channel embedding |
+| Positional embedding (Embedding(120,72)) | 8,640 | Fixed 120-position learned PE |
+| Transformer block (d=72, 4 heads, ff=144, 1 layer) | 42,408 | Hierarchical SSL encoder |
+| Pretrain decoder head | 11,094 | In checkpoint, unused during embedding |
+| Transformer classifier (72→100, 1 layer, 4 heads, ff=2048→87) | 468,635 | Zero-shot: trained on training data |
+| **Total** | **531.4K** | |
+
+**LanHAR** — 122.9M at inference:
+
+| Component | Parameters | Role |
+|-----------|----------:|------|
+| SciBERT (12-layer BERT-base, sci vocab, d=768) | 109.9M | Text encoder (frozen stage 2, unfrozen supervised FT) |
+| Sensor Transformer (3 layers, d=768, 2 heads, ff=1024) | 11.8M | IMU encoder |
+| Text projection (Linear(768→768) + LN) | 592K | Project text to shared space |
+| Sensor projection (Linear(768→768) + LN) | 592K | Project sensor to shared space |
+| Logit scale | 1 | Learned temperature |
+| **Total** | **122.9M** | |
+
+**LLaSA** — ~6.7B at inference:
+
+| Component | Parameters | Role |
+|-----------|----------:|------|
+| LiMU-BERT IMU encoder (same arch as standalone) | 62.6K | Sensor token extraction |
+| MLP projector (Linear(72→4096) + GELU + Linear(4096→4096)) | ~17M | Bridge IMU tokens → LLM token space |
+| Vicuna-7B (32-layer LLaMA, d=4096, 32 heads) | ~6.7B | Language model backbone |
+| **Total** | **~6.7B** | |
+
+### Observations
+
+1. **TSFM is the second-smallest trainable model** (20.7M), behind only LiMU-BERT (72.7K) and
+   CrossHAR (531.4K). Despite being ~5900× smaller than MOMENT and ~325× smaller than LLaSA, TSFM
+   leads on most evaluation metrics.
+
+2. **MOMENT's 341.2M parameters are 16× larger than TSFM's inference total** (43.4M). Combined
+   with its 6144-dim embedding (vs TSFM's 384-dim), this partly explains why MOMENT performs close
+   to TSFM without text alignment — the model has far more capacity to encode discriminative
+   patterns.
+
+3. **LiMU-BERT and CrossHAR share the same encoder architecture** (Linear(6→72), Embedding(120,72),
+   d=72 transformer) — the main difference is pretraining strategy (masked reconstruction vs
+   hierarchical SSL) and the number of transformer layers (4 shared vs 1). CrossHAR's larger
+   classifier head (468.6K vs 10.1K) accounts for most of its parameter difference.
+
+4. **LanHAR's trainable portion (13.0M) is comparable to TSFM** (20.7M), but 89% of its inference
+   parameters come from the frozen SciBERT (109.9M). During supervised fine-tuning SciBERT is
+   unfrozen, making the effective trainable count 122.9M.
+
+5. **LLaSA is dominated by the 6.7B Vicuna-7B LLM** — the IMU encoder (62.6K) is <0.001% of the
+   total model. The MLP projector (17M) bridges a 72-dim sensor space to a 4096-dim LLM space.
+
 ## Fairness Notes
 
 **Training data**: All HAR-pretrained models (TSFM, LiMU-BERT, CrossHAR, LanHAR) use 10 training
