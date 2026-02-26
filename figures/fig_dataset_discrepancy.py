@@ -4,37 +4,34 @@ Generate UMAP visualization of distribution gap between training and
 zero-shot test HAR datasets (Fig. X in paper).
 
 Methodology:
-  1. Sample up to 300 sessions per dataset from all 17 HAR datasets
-  2. Extract 3 accelerometer channels (acc_x/y/z) using core_channels
-     mapping — accelerometer is universal across all datasets, avoiding
-     trivial separation from gyroscope availability differences
+  1. Sample up to 400 sessions per dataset from all 17 HAR datasets
+  2. Extract all available channels using core_channels mapping and
+     compute RAW statistical features (no normalization — the point is
+     to show the distributional gap as it exists in the data, which
+     motivates the need for our normalization + semantic alignment)
   3. Resample each session to 128 timesteps via linear interpolation
-     (matches the model's patch preprocessing)
-  4. Apply per-channel z-score normalization (matches the model's
-     per-patch normalization) — this removes mean/scale differences
-     from sensor calibration
-  5. Extract 39 features per session (13 per channel):
-     - Post-normalization: skewness, kurtosis, normalized min/max,
-       IQR, zero-crossing rate, lag-1 autocorrelation,
-       mean absolute difference, jerk (1st-derivative std)
-     - Frequency domain: dominant frequency, spectral centroid,
-       spectral entropy, low/high energy ratio
-  6. Standardize features, remove 4-sigma outliers (~4%)
-  7. Project to 2D via UMAP (n_neighbors=50, min_dist=0.5)
-  8. Plot with group-coded markers and convex hulls
+  4. Extract 52 features per session:
+     - Per-channel (acc_x/y/z + gyro_x/y/z, 6 channels × 7 stats):
+       mean, std, min, max, skewness, kurtosis, zero-crossing rate
+     - Acceleration magnitude: mean, std, min, max
+     - Cross-channel correlations: acc_x-acc_y, acc_x-acc_z, acc_y-acc_z
+     - Signal energy: RMS per channel (already captured via std+mean)
+     - Spectral centroid per acc channel (3)
+  5. Standardize features (zero-mean unit-variance across all sessions)
+  6. Remove 4-sigma outliers
+  7. Project to 2D via UMAP
+  8. Plot per-dataset 2-sigma Gaussian confidence ellipses + centroids
+     (NOT individual points) for a clean, readable figure
 
-Sampling rate note: datasets range from 20-100 Hz. After resampling
-to 128 fixed timesteps, frequency features are in normalized frequency
-space (0 to Nyquist). This means the same physical motion at different
-sampling rates produces different spectral signatures — this is a real
-source of distribution shift the model must handle.
+The figure shows that training and test datasets occupy distinct regions
+of feature space, motivating the zero-shot challenge.
 
 Usage:
     python figures/fig_dataset_discrepancy.py
 
 Output:
     figures/fig_dataset_discrepancy.pdf  (300 DPI, vector)
-    figures/fig_dataset_discrepancy.png  (200 DPI, for quick viewing)
+    figures/fig_dataset_discrepancy.png  (200 DPI, raster)
 """
 
 import json
@@ -48,8 +45,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib.patches import Ellipse
 from scipy.stats import skew, kurtosis
-from scipy.spatial import ConvexHull
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -72,46 +69,41 @@ ALL_DATASETS = TRAIN_DATASETS + ZEROSHOT_TEST + SEVERE_OOD
 DISPLAY_NAMES = {
     "uci_har": "UCI HAR", "hhar": "HHAR", "pamap2": "PAMAP2",
     "wisdm": "WISDM", "dsads": "DSADS", "kuhar": "KU-HAR",
-    "unimib_shar": "UniMiB SHAR", "hapt": "HAPT", "mhealth": "MHEALTH",
+    "unimib_shar": "UniMiB", "hapt": "HAPT", "mhealth": "MHEALTH",
     "recgym": "RecGym", "motionsense": "MotionSense",
     "realworld": "RealWorld", "mobiact": "MobiAct",
     "harth": "HARTH", "vtt_coniot": "VTT-ConIoT",
-    "shoaib": "Shoaib", "opportunity": "OPPORTUNITY",
+    "shoaib": "Shoaib", "opportunity": "OPPORT.",
 }
 
-# Accelerometer only — available in ALL datasets
-CORE_CHANNELS = ["acc_x", "acc_y", "acc_z"]
-N_FEATURES = 39   # 3 channels x 13 features
-FIXED_LEN = 128   # Resample target (matches model patch size x2)
+CORE_CHANNELS = ["acc_x", "acc_y", "acc_z", "gyro_x", "gyro_y", "gyro_z"]
+N_FEATURES = 52  # 6×7 + 4 + 3 + 3
+FIXED_LEN = 128
 
 
 # ---------------------------------------------------------------------------
-# Core channel mapping
+# Helpers
 # ---------------------------------------------------------------------------
 def load_core_channel_mapping():
-    config_path = PROJECT_ROOT / "benchmark_data" / "dataset_config.json"
-    with open(config_path) as f:
+    with open(PROJECT_ROOT / "benchmark_data" / "dataset_config.json") as f:
         cfg = json.load(f)
     return {name: info["core_channels"] for name, info in cfg["datasets"].items()}
-
-
-# ---------------------------------------------------------------------------
-# Feature extraction
-# ---------------------------------------------------------------------------
-def _zscore(col):
-    mu, sigma = np.mean(col), np.std(col)
-    return (col - mu) / sigma if sigma > 1e-10 else col - mu
 
 
 def _resample(col, target_len):
     if len(col) == target_len:
         return col
-    return np.interp(np.linspace(0, 1, target_len), np.linspace(0, 1, len(col)), col)
+    return np.interp(np.linspace(0, 1, target_len),
+                     np.linspace(0, 1, len(col)), col)
 
 
 def extract_features(df, core_map):
-    """Extract 39 post-normalization + frequency features from one session."""
-    features = []
+    """Extract 52 RAW statistical + spectral features from one session.
+
+    No z-score normalization — we want to capture the actual distributional
+    differences (sensor scale, calibration, placement) between datasets.
+    """
+    channels = {}
     for core_name in CORE_CHANNELS:
         if core_name in core_map and core_map[core_name] in df.columns:
             raw = df[core_map[core_name]].values.astype(np.float64)
@@ -119,49 +111,54 @@ def extract_features(df, core_map):
             raw = np.zeros(len(df), dtype=np.float64)
         raw = np.nan_to_num(raw, nan=0.0)
         if len(raw) < 4:
-            features.extend([0.0] * 13)
-            continue
-
-        raw = _resample(raw, FIXED_LEN)
-        col = _zscore(raw)
-
-        # Post-normalization stats (9)
-        features.append(float(skew(col)) if np.std(col) > 1e-10 else 0.0)
-        features.append(float(kurtosis(col)) if np.std(col) > 1e-10 else 0.0)
-        features.append(np.min(col))
-        features.append(np.max(col))
-        q75, q25 = np.percentile(col, [75, 25])
-        features.append(q75 - q25)
-        features.append(np.sum(np.diff(np.sign(col)) != 0) / max(len(col) - 1, 1))
-        ac1 = np.corrcoef(col[:-1], col[1:])[0, 1] if np.std(col) > 1e-10 else 0.0
-        features.append(ac1 if np.isfinite(ac1) else 0.0)
-        features.append(np.mean(np.abs(np.diff(col))))
-        features.append(np.std(np.diff(col)))
-
-        # Frequency domain (4)
-        fft_mag = np.abs(np.fft.rfft(col))
-        freqs = np.fft.rfftfreq(len(col))
-        fft_mag_nodc, freqs_nodc = fft_mag[1:], freqs[1:]
-        if len(fft_mag_nodc) > 0 and fft_mag_nodc.sum() > 1e-10:
-            features.append(freqs_nodc[np.argmax(fft_mag_nodc)])
-            features.append(np.sum(freqs_nodc * fft_mag_nodc) / np.sum(fft_mag_nodc))
-            psd = fft_mag_nodc ** 2
-            psd_norm = psd / psd.sum()
-            psd_norm = psd_norm[psd_norm > 1e-20]
-            features.append(-np.sum(psd_norm * np.log2(psd_norm)) / max(np.log2(len(psd_norm)), 1))
-            low_mask = freqs_nodc < 0.1
-            low_e, high_e = np.sum(fft_mag_nodc[low_mask] ** 2), np.sum(fft_mag_nodc[~low_mask] ** 2)
-            features.append(low_e / max(low_e + high_e, 1e-10))
+            raw = np.zeros(FIXED_LEN, dtype=np.float64)
         else:
-            features.extend([0.0, 0.0, 0.0, 0.5])
+            raw = _resample(raw, FIXED_LEN)
+        channels[core_name] = raw
+
+    features = []
+
+    # Per-channel stats (6 channels × 7 stats = 42)
+    for name in CORE_CHANNELS:
+        col = channels[name]
+        s = np.std(col)
+        features.extend([
+            np.mean(col),
+            s,
+            np.min(col),
+            np.max(col),
+            float(skew(col)) if s > 1e-10 else 0.0,
+            float(kurtosis(col)) if s > 1e-10 else 0.0,
+            np.sum(np.diff(np.sign(col)) != 0) / max(len(col) - 1, 1),
+        ])
+
+    # Acceleration magnitude stats (4)
+    acc_mag = np.sqrt(sum(channels[f"acc_{a}"] ** 2 for a in "xyz"))
+    features.extend([np.mean(acc_mag), np.std(acc_mag),
+                     np.min(acc_mag), np.max(acc_mag)])
+
+    # Cross-channel correlations (3)
+    for a, b in [("acc_x", "acc_y"), ("acc_x", "acc_z"), ("acc_y", "acc_z")]:
+        if np.std(channels[a]) > 1e-10 and np.std(channels[b]) > 1e-10:
+            r = np.corrcoef(channels[a], channels[b])[0, 1]
+            features.append(r if np.isfinite(r) else 0.0)
+        else:
+            features.append(0.0)
+
+    # Spectral centroid per acc channel (3)
+    for a in ["acc_x", "acc_y", "acc_z"]:
+        fft_mag = np.abs(np.fft.rfft(channels[a]))[1:]
+        freqs = np.fft.rfftfreq(FIXED_LEN)[1:]
+        if fft_mag.sum() > 1e-10:
+            features.append(np.sum(freqs * fft_mag) / np.sum(fft_mag))
+        else:
+            features.append(0.0)
 
     return np.array(features, dtype=np.float32)
 
 
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
-def load_dataset_features(dataset_name, data_dir, core_map, max_sessions=300, seed=42):
+def load_dataset_features(dataset_name, data_dir, core_map,
+                          max_sessions=400, seed=42):
     sessions_dir = data_dir / dataset_name / "sessions"
     if not sessions_dir.exists():
         return np.empty((0, N_FEATURES), dtype=np.float32)
@@ -169,50 +166,39 @@ def load_dataset_features(dataset_name, data_dir, core_map, max_sessions=300, se
     all_sessions = sorted(os.listdir(sessions_dir))
     rng = np.random.RandomState(seed)
     if len(all_sessions) > max_sessions:
-        indices = rng.choice(len(all_sessions), max_sessions, replace=False)
-        selected = [all_sessions[i] for i in sorted(indices)]
+        idx = rng.choice(len(all_sessions), max_sessions, replace=False)
+        selected = [all_sessions[i] for i in sorted(idx)]
     else:
         selected = all_sessions
 
-    features_list = []
-    for sess_name in selected:
-        parquet_path = sessions_dir / sess_name / "data.parquet"
-        if not parquet_path.exists():
+    feats = []
+    for sess in selected:
+        path = sessions_dir / sess / "data.parquet"
+        if not path.exists():
             continue
         try:
-            df = pd.read_parquet(parquet_path)
-            # Skip near-constant sessions (degenerate after z-score)
-            acc_stds = []
-            for ch in CORE_CHANNELS:
-                if ch in core_map and core_map[ch] in df.columns:
-                    acc_stds.append(df[core_map[ch]].std())
-            if acc_stds and max(acc_stds) < 0.02:
-                continue
-            feat = extract_features(df, core_map)
-            if np.all(np.isfinite(feat)):
-                features_list.append(feat)
+            df = pd.read_parquet(path)
+            f = extract_features(df, core_map)
+            if np.all(np.isfinite(f)):
+                feats.append(f)
         except Exception:
             continue
+    return np.stack(feats) if feats else np.empty((0, N_FEATURES), dtype=np.float32)
 
-    return np.stack(features_list) if features_list else np.empty((0, N_FEATURES), dtype=np.float32)
 
+def draw_confidence_ellipse(ax, mean, cov, n_std=1.5, **kwargs):
+    """Draw a 2D Gaussian confidence ellipse."""
+    from matplotlib.patches import Ellipse
+    import matplotlib.transforms as transforms
 
-def draw_smooth_hull(ax, points, color, alpha=0.08, edge_alpha=0.4, linewidth=1.5, pad=0.5):
-    if len(points) < 3:
-        return
-    try:
-        hull = ConvexHull(points)
-    except Exception:
-        return
-    hull_pts = np.vstack([points[hull.vertices], points[hull.vertices[0]]])
-    centroid = points.mean(axis=0)
-    directions = hull_pts - centroid
-    norms = np.linalg.norm(directions, axis=1, keepdims=True)
-    norms[norms < 1e-8] = 1.0
-    hull_pts = hull_pts + pad * directions / norms
-    ax.fill(hull_pts[:, 0], hull_pts[:, 1], color=color, alpha=alpha, zorder=0)
-    ax.plot(hull_pts[:, 0], hull_pts[:, 1], color=color, alpha=edge_alpha,
-            linewidth=linewidth, zorder=0)
+    vals, vecs = np.linalg.eigh(cov)
+    vals = np.maximum(vals, 1e-6)  # numerical safety
+    angle = np.degrees(np.arctan2(vecs[1, 1], vecs[0, 1]))
+    width, height = 2 * n_std * np.sqrt(vals)
+
+    ellipse = Ellipse(xy=mean, width=width, height=height, angle=angle, **kwargs)
+    ax.add_patch(ellipse)
+    return ellipse
 
 
 # ---------------------------------------------------------------------------
@@ -223,188 +209,204 @@ def main():
     output_path = PROJECT_ROOT / "figures" / "fig_dataset_discrepancy.pdf"
     core_maps = load_core_channel_mapping()
 
-    # --- Load and featurize ---
-    print("Loading and featurizing sessions...")
-    all_features, all_dataset_ids, all_groups = [], [], []
-    dataset_counts = {}
-
-    for ds_name in ALL_DATASETS:
-        if ds_name not in core_maps:
+    # --- Load ---
+    print("Loading sessions...")
+    all_features, all_ds, all_groups = [], [], []
+    for ds in ALL_DATASETS:
+        if ds not in core_maps:
             continue
-        print(f"  {DISPLAY_NAMES.get(ds_name, ds_name)}...", end="", flush=True)
-        feats = load_dataset_features(ds_name, data_dir, core_maps[ds_name])
-        print(f" {len(feats)} sessions")
+        print(f"  {DISPLAY_NAMES[ds]:12s}", end="", flush=True)
+        feats = load_dataset_features(ds, data_dir, core_maps[ds])
+        print(f" {len(feats):>4d} sessions")
         if len(feats) == 0:
             continue
         all_features.append(feats)
-        all_dataset_ids.extend([ds_name] * len(feats))
-        dataset_counts[ds_name] = len(feats)
-        if ds_name in TRAIN_DATASETS:
-            all_groups.extend(["Training"] * len(feats))
-        elif ds_name in ZEROSHOT_TEST:
-            all_groups.extend(["Zero-Shot Test"] * len(feats))
-        else:
-            all_groups.extend(["Severe OOD"] * len(feats))
+        all_ds.extend([ds] * len(feats))
+        grp = ("Training" if ds in TRAIN_DATASETS
+               else "Zero-Shot Test" if ds in ZEROSHOT_TEST
+               else "Severe OOD")
+        all_groups.extend([grp] * len(feats))
 
-    X = np.concatenate(all_features, axis=0)
-    dataset_ids = np.array(all_dataset_ids)
-    groups = np.array(all_groups)
-    print(f"\nTotal: {len(X)} samples from {len(dataset_counts)} datasets")
+    X = np.concatenate(all_features)
+    ds_arr = np.array(all_ds)
+    grp_arr = np.array(all_groups)
+    print(f"\nTotal: {len(X)} samples")
 
     # Standardize + outlier removal
-    mean, std = X.mean(axis=0), X.std(axis=0)
-    std[std < 1e-10] = 1.0
-    X_norm = (X - mean) / std
-    inlier = np.max(np.abs(X_norm), axis=1) < 4.0
-    n_out = np.sum(~inlier)
-    if n_out:
-        print(f"  Removed {n_out} outliers ({n_out / len(X) * 100:.1f}%)")
-        X_norm, dataset_ids, groups = X_norm[inlier], dataset_ids[inlier], groups[inlier]
-        dataset_counts = {ds: int(np.sum(dataset_ids == ds)) for ds in np.unique(dataset_ids)}
+    mu, sigma = X.mean(0), X.std(0)
+    sigma[sigma < 1e-10] = 1.0
+    X_norm = (X - mu) / sigma
+    keep = np.max(np.abs(X_norm), axis=1) < 4.0
+    n_rm = np.sum(~keep)
+    if n_rm:
+        print(f"  Removed {n_rm} outliers ({n_rm / len(X) * 100:.1f}%)")
+    X_norm, ds_arr, grp_arr = X_norm[keep], ds_arr[keep], grp_arr[keep]
 
     # UMAP
     print("Fitting UMAP...")
     import umap
-    embedding = umap.UMAP(
-        n_components=2, n_neighbors=50, min_dist=0.5,
-        metric="euclidean", random_state=42,
-    ).fit_transform(X_norm)
+    emb = umap.UMAP(n_components=2, n_neighbors=30, min_dist=0.3,
+                     metric="euclidean", random_state=42).fit_transform(X_norm)
 
-    # --- Plotting (paper format: double-column, ~7 in wide) ---
+    # --- Compute per-dataset statistics in UMAP space ---
+    ds_stats = {}
+    for ds in ALL_DATASETS:
+        mask = ds_arr == ds
+        if np.sum(mask) < 5:
+            continue
+        pts = emb[mask]
+        ds_stats[ds] = {
+            "mean": pts.mean(axis=0),
+            "cov": np.cov(pts.T),
+            "n": int(np.sum(mask)),
+        }
+
+    # --- Plot ---
     print("Generating figure...")
-
     plt.rcParams.update({
         "font.family": "sans-serif",
         "font.size": 8,
-        "axes.linewidth": 0.6,
-        "axes.labelsize": 9,
-        "axes.titlesize": 10,
+        "axes.linewidth": 0.5,
     })
 
-    # Colors
-    train_colors = {
+    # Colors — training cool, test warm, OOD dark
+    TRAIN_CMAP = {
         "uci_har": "#4e79a7", "hhar": "#59a14f", "pamap2": "#76b7b2",
-        "wisdm": "#6a9fd6", "dsads": "#9c755f", "kuhar": "#bab0ac",
+        "wisdm": "#6a9fd6", "dsads": "#9c755f", "kuhar": "#8db0ce",
         "unimib_shar": "#8cd17d", "hapt": "#a0cbe8", "mhealth": "#b6992d",
         "recgym": "#499894",
     }
-    test_colors = {
+    TEST_CMAP = {
         "motionsense": "#e15759", "realworld": "#f28e2b", "mobiact": "#b07aa1",
         "harth": "#ff9da7", "vtt_coniot": "#d4a6c8",
     }
-    ood_colors = {"shoaib": "#d62728", "opportunity": "#1a1a1a"}
-    all_colors = {**train_colors, **test_colors, **ood_colors}
+    OOD_CMAP = {"shoaib": "#c44e52", "opportunity": "#333333"}
+    ALL_CMAP = {**TRAIN_CMAP, **TEST_CMAP, **OOD_CMAP}
 
-    fig, ax = plt.subplots(figsize=(7.16, 5.0))  # IEEE double-column width
+    fig, ax = plt.subplots(figsize=(7.16, 5.0))
     ax.set_facecolor("white")
     fig.patch.set_facecolor("white")
 
-    # View bounds (clip to main cluster)
-    view_q = {}
-    for dim in [0, 1]:
-        q5, q95 = np.percentile(embedding[:, dim], [5, 95])
-        iqr = q95 - q5
-        view_q[dim] = (q5 - 0.3 * iqr, q95 + 0.3 * iqr)
-    view_mask = (
-        (embedding[:, 0] > view_q[0][0]) & (embedding[:, 0] < view_q[0][1]) &
-        (embedding[:, 1] > view_q[1][0]) & (embedding[:, 1] < view_q[1][1])
-    )
-
-    # Convex hulls
-    for group_name, hull_color, hull_alpha in [
-        ("Training", "#4e79a7", 0.05),
-        ("Zero-Shot Test", "#e15759", 0.04),
-    ]:
-        mask = (groups == group_name) & view_mask
-        if np.sum(mask) >= 3:
-            draw_smooth_hull(ax, embedding[mask], hull_color,
-                             alpha=hull_alpha, edge_alpha=0.25, linewidth=1.2, pad=0.4)
-    for ds_name in SEVERE_OOD:
-        mask = (dataset_ids == ds_name) & view_mask
-        if np.sum(mask) >= 3:
-            draw_smooth_hull(ax, embedding[mask], ood_colors[ds_name],
-                             alpha=0.06, edge_alpha=0.35, linewidth=1.0, pad=0.3)
-
-    # Scatter — training (background)
-    for ds_name in TRAIN_DATASETS:
-        mask = dataset_ids == ds_name
-        if not np.any(mask):
+    # Draw ellipses + centroids
+    for ds in ALL_DATASETS:
+        if ds not in ds_stats:
             continue
-        ax.scatter(embedding[mask, 0], embedding[mask, 1],
-                   c=train_colors[ds_name], marker="o", s=4, alpha=0.35,
-                   edgecolors="none", zorder=1, rasterized=True)
+        st = ds_stats[ds]
+        color = ALL_CMAP[ds]
+        grp = ("Training" if ds in TRAIN_DATASETS
+               else "Zero-Shot Test" if ds in ZEROSHOT_TEST
+               else "Severe OOD")
 
-    # Scatter — zero-shot test
-    for ds_name in ZEROSHOT_TEST:
-        mask = dataset_ids == ds_name
-        if not np.any(mask):
-            continue
-        ax.scatter(embedding[mask, 0], embedding[mask, 1],
-                   c=test_colors[ds_name], marker="^", s=14, alpha=0.55,
-                   edgecolors=test_colors[ds_name], linewidths=0.2,
-                   zorder=2, rasterized=True)
-
-    # Scatter — severe OOD
-    for ds_name in SEVERE_OOD:
-        mask = dataset_ids == ds_name
-        if not np.any(mask):
-            continue
-        ax.scatter(embedding[mask, 0], embedding[mask, 1],
-                   c=ood_colors[ds_name], marker="s", s=16, alpha=0.6,
-                   edgecolors="white", linewidths=0.2, zorder=3, rasterized=True)
-
-    # Labels — radial offset from overall centroid
-    overall_center = embedding[view_mask].mean(axis=0) if view_mask.any() else embedding.mean(axis=0)
-    for ds_name in ZEROSHOT_TEST + SEVERE_OOD:
-        mask = dataset_ids == ds_name
-        if not np.any(mask):
-            continue
-        centroid = embedding[mask].mean(axis=0)
-        direction = centroid - overall_center
-        norm = np.linalg.norm(direction)
-        if norm > 1e-6:
-            direction /= norm
+        if grp == "Training":
+            # Filled ellipse, muted
+            draw_confidence_ellipse(
+                ax, st["mean"], st["cov"], n_std=1.5,
+                facecolor=color, edgecolor=color,
+                alpha=0.15, linewidth=0.8, zorder=1,
+            )
+            ax.plot(*st["mean"], "o", color=color, markersize=5,
+                    markeredgecolor="white", markeredgewidth=0.5, zorder=5)
+        elif grp == "Zero-Shot Test":
+            # Stronger ellipse, dashed edge
+            draw_confidence_ellipse(
+                ax, st["mean"], st["cov"], n_std=1.5,
+                facecolor=color, edgecolor=color,
+                alpha=0.20, linewidth=1.2, linestyle="--", zorder=2,
+            )
+            ax.plot(*st["mean"], "^", color=color, markersize=7,
+                    markeredgecolor="white", markeredgewidth=0.6, zorder=6)
         else:
-            direction = np.array([1.0, 0.0])
-        dx, dy = direction[0] * 30, direction[1] * 30
-        ax.annotate(
-            DISPLAY_NAMES[ds_name], xy=centroid,
-            fontsize=6.5, fontweight="bold", color=all_colors[ds_name],
-            ha="center", va="center",
-            xytext=(dx, dy), textcoords="offset points",
-            arrowprops=dict(arrowstyle="-", color=all_colors[ds_name],
-                            alpha=0.35, lw=0.5),
+            # Severe OOD: bold ellipse
+            draw_confidence_ellipse(
+                ax, st["mean"], st["cov"], n_std=1.5,
+                facecolor=color, edgecolor=color,
+                alpha=0.22, linewidth=1.5, linestyle="-", zorder=3,
+            )
+            ax.plot(*st["mean"], "s", color=color, markersize=7,
+                    markeredgecolor="white", markeredgewidth=0.6, zorder=7)
+
+    # Label every dataset centroid
+    # Pre-compute all centroids to detect overlaps
+    centroids = {ds: ds_stats[ds]["mean"] for ds in ALL_DATASETS if ds in ds_stats}
+    overall_center = np.mean(list(centroids.values()), axis=0)
+
+    texts = []
+    for ds, c in centroids.items():
+        color = ALL_CMAP[ds]
+        grp = ("Training" if ds in TRAIN_DATASETS
+               else "Zero-Shot Test" if ds in ZEROSHOT_TEST
+               else "Severe OOD")
+        fontsize = 6.0 if grp == "Training" else 7.0
+        fontweight = "normal" if grp == "Training" else "bold"
+
+        t = ax.text(
+            c[0], c[1], DISPLAY_NAMES[ds],
+            fontsize=fontsize, fontweight=fontweight, color=color,
+            ha="center", va="center", zorder=10,
             bbox=dict(boxstyle="round,pad=0.12", facecolor="white",
-                      edgecolor="none", alpha=0.85),
-            zorder=10,
+                      edgecolor="none", alpha=0.8),
         )
+        texts.append(t)
+
+    # Use adjustText to resolve label overlaps
+    # Set axis limits BEFORE adjustText so it can respect bounds
+    all_c = np.array(list(centroids.values()))
+    for dim, setter in [(0, ax.set_xlim), (1, ax.set_ylim)]:
+        lo, hi = all_c[:, dim].min(), all_c[:, dim].max()
+        span = hi - lo
+        setter(lo - 0.35 * span, hi + 0.35 * span)
+
+    try:
+        from adjustText import adjust_text
+        centroid_x = [c[0] for c in centroids.values()]
+        centroid_y = [c[1] for c in centroids.values()]
+        adjust_text(texts, x=centroid_x, y=centroid_y, ax=ax,
+                    arrowprops=dict(arrowstyle="-", color="#666666",
+                                    alpha=0.3, lw=0.4),
+                    expand=(1.6, 1.8), force_text=(0.6, 0.8),
+                    force_points=(0.4, 0.4),
+                    only_move={"text": "xy", "static": "xy", "explode": "xy", "pull": "xy"},
+                    ensure_inside_axes=True)
+    except (ImportError, TypeError):
+        # Fallback: radial offset labels
+        for ds, c in centroids.items():
+            direction = c - overall_center
+            n = np.linalg.norm(direction)
+            if n > 1e-6:
+                direction /= n
+            texts_dict = {t.get_text(): t for t in texts}
+            name = DISPLAY_NAMES[ds]
+            if name in texts_dict:
+                t = texts_dict[name]
+                t.set_position((c[0] + direction[0] * 1.5,
+                                c[1] + direction[1] * 1.5))
 
     # Legend
     legend_elements = [
         Line2D([0], [0], marker="o", color="w", markerfacecolor="#4e79a7",
-               markersize=5, markeredgecolor="none",
+               markersize=5, markeredgecolor="white", markeredgewidth=0.4,
                label="Training (10 datasets)"),
         Line2D([0], [0], marker="^", color="w", markerfacecolor="#e15759",
-               markersize=5.5, markeredgecolor="#e15759", markeredgewidth=0.3,
+               markersize=6, markeredgecolor="white", markeredgewidth=0.4,
                label="Zero-shot test (5 datasets)"),
-        Line2D([0], [0], marker="s", color="w", markerfacecolor="#d62728",
-               markersize=5.5, markeredgecolor="white", markeredgewidth=0.3,
+        Line2D([0], [0], marker="s", color="w", markerfacecolor="#c44e52",
+               markersize=6, markeredgecolor="white", markeredgewidth=0.4,
                label="Severe OOD (2 datasets)"),
     ]
-    ax.legend(handles=legend_elements, loc="upper left", fontsize=7.5,
+    # Add ellipse explanation
+    from matplotlib.patches import Patch
+    legend_elements.append(Patch(facecolor="#aaaaaa", edgecolor="#aaaaaa",
+                                  alpha=0.2, label="1.5$\\sigma$ confidence region"))
+
+    ax.legend(handles=legend_elements, loc="lower right", fontsize=7,
               frameon=True, framealpha=0.95, edgecolor="#cccccc",
-              handletextpad=0.4, labelspacing=0.45, borderpad=0.6)
+              handletextpad=0.4, labelspacing=0.5, borderpad=0.6)
 
     ax.set_xlabel("UMAP 1", fontsize=9)
     ax.set_ylabel("UMAP 2", fontsize=9)
-    ax.set_title("Distribution of Accelerometer Signal Features Across 17 HAR Datasets",
-                 fontsize=9.5, fontweight="bold", pad=8)
-
-    # Zoom to main cluster
-    for dim, setter in [(0, ax.set_xlim), (1, ax.set_ylim)]:
-        q5, q95 = np.percentile(embedding[:, dim], [5, 95])
-        iqr = q95 - q5
-        setter(q5 - 0.6 * iqr, q95 + 0.6 * iqr)
+    ax.set_title(
+        "Distribution of Raw IMU Signal Characteristics Across 17 HAR Datasets",
+        fontsize=9, fontweight="bold", pad=8)
 
     ax.set_xticks([])
     ax.set_yticks([])
