@@ -47,11 +47,9 @@ TRAIN_DATASETS = [
 ]
 ZEROSHOT_TEST = [
     "motionsense", "realworld", "mobiact", "harth", "vtt_coniot",
-]
-SEVERE_OOD = [
     "shoaib", "opportunity",
 ]
-ALL_DATASETS = TRAIN_DATASETS + ZEROSHOT_TEST + SEVERE_OOD
+ALL_DATASETS = TRAIN_DATASETS + ZEROSHOT_TEST
 
 DISPLAY_NAMES = {
     "uci_har": "UCI HAR", "hhar": "HHAR", "pamap2": "PAMAP2",
@@ -186,8 +184,7 @@ def main():
             continue
         all_features.append(feats)
         all_ds.extend([ds] * len(feats))
-        grp = ("train" if ds in TRAIN_DATASETS
-               else "test" if ds in ZEROSHOT_TEST else "ood")
+        grp = "train" if ds in TRAIN_DATASETS else "test"
         all_groups.extend([grp] * len(feats))
 
     X = np.concatenate(all_features)
@@ -197,7 +194,7 @@ def main():
     mu, sig = X.mean(0), X.std(0)
     sig[sig < 1e-10] = 1.0
     Xn = (X - mu) / sig
-    # 4σ for training, 6σ for test/OOD (they're supposed to be outliers)
+    # 4σ for training, 6σ for test (they're supposed to be outliers)
     max_abs = np.max(np.abs(Xn), 1)
     keep = np.where(
         grp_arr == "train",
@@ -211,6 +208,16 @@ def main():
     import umap
     emb = umap.UMAP(n_components=2, n_neighbors=30, min_dist=0.3,
                      metric="euclidean", random_state=42).fit_transform(Xn)
+
+    # Radial log-compression: compress large distances from center,
+    # accentuate small ones. Preserves angles, just squashes radius.
+    center = np.median(emb, axis=0)
+    offsets = emb - center
+    dists = np.linalg.norm(offsets, axis=1, keepdims=True)
+    dists_safe = np.maximum(dists, 1e-8)
+    unit_dirs = offsets / dists_safe
+    compressed = np.log1p(dists)  # log(1 + d): compresses large, stretches small
+    emb = center + unit_dirs * compressed
 
     # Per-dataset stats
     ds_stats = {}
@@ -229,7 +236,7 @@ def main():
     TEST_COLORS = {
         "motionsense": "#e15759", "realworld": "#f28e2b", "mobiact": "#b07aa1",
         "harth": "#ff9da7", "vtt_coniot": "#59a14f",
-        "shoaib": "#c44e52", "opportunity": "#333333",
+        "shoaib": "#edc948", "opportunity": "#333333",
     }
 
     fig, ax = plt.subplots(figsize=(7.16, 5.0))
@@ -258,39 +265,34 @@ def main():
     except Exception:
         pass
 
-    # ---- Layer 3: Each test/OOD dataset as filled ellipse ----
-    for ds in ZEROSHOT_TEST + SEVERE_OOD:
+    # ---- Layer 3: Each test dataset as filled ellipse ----
+    for ds in ZEROSHOT_TEST:
         if ds not in ds_stats:
             continue
         st = ds_stats[ds]
         color = TEST_COLORS[ds]
-        is_ood = ds in SEVERE_OOD
 
         # Filled confidence ellipse
         confidence_ellipse(
             ax, st["mean"], st["cov"], n_std=1.5,
             facecolor=color, edgecolor=color,
-            alpha=0.25 if not is_ood else 0.30,
-            linewidth=1.5 if not is_ood else 2.0,
-            linestyle="--" if not is_ood else "-",
+            alpha=0.25, linewidth=1.5, linestyle="--",
             zorder=4,
         )
         # Centroid marker
-        marker = "s" if is_ood else "^"
-        ax.plot(*st["mean"], marker=marker, color=color, markersize=7,
+        ax.plot(*st["mean"], marker="^", color=color, markersize=7,
                 markeredgecolor="white", markeredgewidth=0.7, zorder=8)
 
-    # ---- Layer 4: Labels for test/OOD datasets ----
+    # ---- Layer 4: Labels for test datasets ----
     test_centroids = {ds: ds_stats[ds]["mean"]
-                      for ds in ZEROSHOT_TEST + SEVERE_OOD if ds in ds_stats}
+                      for ds in ZEROSHOT_TEST if ds in ds_stats}
     overall_c = emb.mean(0)
 
     texts = []
     for ds, c in test_centroids.items():
         color = TEST_COLORS[ds]
-        is_ood = ds in SEVERE_OOD
         t = ax.text(c[0], c[1], DISPLAY_NAMES[ds],
-                    fontsize=7.5 if is_ood else 7.0,
+                    fontsize=7.0,
                     fontweight="bold",
                     color=color, ha="center", va="center", zorder=10,
                     bbox=dict(boxstyle="round,pad=0.15", facecolor="white",
@@ -332,10 +334,7 @@ def main():
               linewidth=1.5, label="Training (10 datasets)"),
         Line2D([0], [0], marker="^", color="w", markerfacecolor="#e15759",
                markersize=7, markeredgecolor="white", markeredgewidth=0.5,
-               label="Zero-shot test (5)"),
-        Line2D([0], [0], marker="s", color="w", markerfacecolor="#c44e52",
-               markersize=7, markeredgecolor="white", markeredgewidth=0.5,
-               label="Severe OOD (2)"),
+               label="Zero-shot test (7)"),
     ]
     ax.legend(handles=legend_handles, loc="lower right", fontsize=7.5,
               frameon=True, framealpha=0.95, edgecolor="#cccccc",
