@@ -12,6 +12,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pad_sequence
 from typing import List, Optional, Dict, Tuple
 
 
@@ -19,16 +20,16 @@ class TokenTextEncoder(nn.Module):
     """
     Frozen text encoder outputting token-level embeddings (not pooled).
 
-    Model: all-MiniLM-L6-v2
-    - 384 dimensions (matches d_model)
-    - 22M parameters (lightweight)
-    - Max 256 tokens
+    Supports configurable SentenceBERT backend:
+    - all-MiniLM-L6-v2: 384-dim, 22M params (default)
+    - all-mpnet-base-v2: 768-dim, 109M params (scaled)
     """
 
-    def __init__(self, max_length: int = 64):
+    def __init__(self, model_name: str = 'all-MiniLM-L6-v2', max_length: int = 64):
         super().__init__()
+        self.model_name = model_name
         self.max_length = max_length
-        self.hidden_dim = 384  # all-MiniLM-L6-v2 dimension
+        self.hidden_dim = None  # Set on lazy init
 
         # Lazy initialization
         self._model = None
@@ -44,7 +45,8 @@ class TokenTextEncoder(nn.Module):
 
         from sentence_transformers import SentenceTransformer
 
-        sbert = SentenceTransformer('all-MiniLM-L6-v2')
+        sbert = SentenceTransformer(self.model_name)
+        self.hidden_dim = sbert.get_sentence_embedding_dimension()
         transformer = sbert[0]  # Get underlying transformer
 
         # Store without registering as submodule (keeps out of state_dict)
@@ -55,7 +57,7 @@ class TokenTextEncoder(nn.Module):
         for p in self._model.parameters():
             p.requires_grad = False
 
-        print(f"Loaded all-MiniLM-L6-v2 (384-dim, frozen)")
+        print(f"Loaded {self.model_name} ({self.hidden_dim}-dim, frozen)")
 
     def encode(
         self,
@@ -103,17 +105,16 @@ class TokenTextEncoder(nn.Module):
                 outputs = self._model(input_ids=input_ids, attention_mask=attention_mask)
                 token_embeddings = outputs.last_hidden_state
 
-            # Cache newly encoded texts
+            # Cache newly encoded texts (keep on GPU to avoid CPU→GPU transfers every batch)
             for i, text in enumerate(unique_uncached):
-                self._cache[text] = (token_embeddings[i].cpu(), attention_mask[i].cpu())
+                self._cache[text] = (token_embeddings[i].detach(), attention_mask[i].detach())
 
-        # Assemble full batch from cache using pad_sequence (vectorized padding)
-        from torch.nn.utils.rnn import pad_sequence
+        # Assemble full batch from cache (already on correct device)
         cached_embs = [self._cache[t][0] for t in texts]
         cached_masks = [self._cache[t][1] for t in texts]
 
-        embs = pad_sequence(cached_embs, batch_first=True, padding_value=0.0).to(device)
-        masks = pad_sequence(cached_masks, batch_first=True, padding_value=0).to(device).bool()
+        embs = pad_sequence(cached_embs, batch_first=True, padding_value=0.0)
+        masks = pad_sequence(cached_masks, batch_first=True, padding_value=0).bool()
         return embs, masks
 
     def clear_cache(self):
@@ -360,10 +361,11 @@ class ChannelTextFusion(nn.Module):
         )
 
         # Gate: control how much text info to incorporate per sensor token
-        self.gate = nn.Sequential(
-            nn.Linear(d_model * 2, d_model),
-            nn.Sigmoid()
-        )
+        # Split into two linear projections to avoid materializing (B, P, C, 2*D) concat tensor
+        # Mathematically equivalent to Linear(cat(sensor, channel), d_model) since
+        # W @ [a; b] = W_a @ a + W_b @ b when W is split column-wise
+        self.gate_sensor = nn.Linear(d_model, d_model, bias=False)
+        self.gate_channel = nn.Linear(d_model, d_model, bias=True)  # bias on one is sufficient
 
     def forward(
         self,
@@ -422,7 +424,8 @@ class ChannelTextFusion(nn.Module):
         channel_embs = channel_embs.reshape(B, C, D).unsqueeze(1)
 
         # Gated fusion: sensor tokens control how much text to incorporate
-        gate = self.gate(torch.cat([sensor_tokens, channel_embs.expand(B, P, -1, -1)], dim=-1))
+        # Uses split linear projections to avoid materializing (B, P, C, 2*D) concat tensor
+        gate = torch.sigmoid(self.gate_sensor(sensor_tokens) + self.gate_channel(channel_embs))
         fused = sensor_tokens + gate * channel_embs
 
         return fused
@@ -481,8 +484,9 @@ class LearnableLabelBank(nn.Module):
 
     def __init__(
         self,
-        model_name: str = 'all-MiniLM-L6-v2',  # Ignored, for API compat
+        model_name: str = 'all-MiniLM-L6-v2',
         device: Optional[torch.device] = None,
+        d_model: int = 384,
         num_heads: int = 4,
         num_queries: int = 4,
         num_prototypes: int = 1,
@@ -495,7 +499,7 @@ class LearnableLabelBank(nn.Module):
         self.use_mean_pooling = use_mean_pooling
         self.num_prototypes = num_prototypes
 
-        self.text_encoder = text_encoder if text_encoder is not None else TokenTextEncoder()
+        self.text_encoder = text_encoder if text_encoder is not None else TokenTextEncoder(model_name=model_name)
 
         if use_mean_pooling:
             # No learnable pooling - use mean pooling like default SentenceBERT
@@ -503,7 +507,7 @@ class LearnableLabelBank(nn.Module):
             print("LearnableLabelBank: Using MEAN POOLING (no learnable parameters)")
         elif num_prototypes > 1:
             self.pooling = MultiPrototypeLabelPooling(
-                d_model=384,
+                d_model=d_model,
                 num_heads=num_heads,
                 num_queries=num_queries,
                 num_prototypes=num_prototypes,
@@ -513,7 +517,7 @@ class LearnableLabelBank(nn.Module):
             print(f"LearnableLabelBank: Using {num_prototypes} prototypes per label")
         else:
             self.pooling = LabelAttentionPooling(
-                d_model=384,
+                d_model=d_model,
                 num_heads=num_heads,
                 num_queries=num_queries,
                 dropout=dropout

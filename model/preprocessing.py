@@ -60,7 +60,7 @@ def create_patches(
     patches = patches.squeeze(0)  # (channels, num_patches, patch_timesteps)
     patches = patches.permute(1, 2, 0)  # (num_patches, patch_timesteps, channels)
 
-    return patches.contiguous().float()
+    return patches.contiguous()
 
 
 def interpolate_patches(
@@ -115,7 +115,7 @@ def interpolate_patches(
         x = F.interpolate(x, size=target_size, mode='linear', align_corners=False)
 
     # Back to (num_patches, target_size, num_channels)
-    return x.permute(0, 2, 1).contiguous().float()
+    return x.permute(0, 2, 1).contiguous()
 
 
 def normalize_patches(

@@ -79,6 +79,27 @@ LARGE_CONFIG: Dict[str, Any] = {
 }
 
 
+# Scaled-up configuration (d=768, 8 layers, mpnet text encoder)
+SCALED_CONFIG: Dict[str, Any] = {
+    "d_model": 768,
+    "num_heads": 12,  # 64 dims per head
+    "num_temporal_layers": 8,
+    "dim_feedforward": 3072,  # 4x d_model
+    "dropout": 0.1,
+    "use_cross_channel": True,
+    "cnn_channels": [64, 128],
+    "cnn_kernel_sizes": [5],
+    "target_patch_size": 64,
+    "normalization_method": "zscore",
+    "interpolation_method": "linear",
+    "temporal_init_scale": 0.1,
+    "channel_init_scale": 0.1,
+    "use_channel_encoding": True,
+    "sentence_bert_model": "all-mpnet-base-v2",  # 768-dim embeddings
+    "max_patches": 5000
+}
+
+
 def get_config(size: str = "default") -> Dict[str, Any]:
     """
     Get a model configuration by size.
@@ -96,7 +117,8 @@ def get_config(size: str = "default") -> Dict[str, Any]:
     configs = {
         "small": SMALL_CONFIG,
         "default": DEFAULT_CONFIG,
-        "large": LARGE_CONFIG
+        "large": LARGE_CONFIG,
+        "scaled": SCALED_CONFIG
     }
 
     if size not in configs:

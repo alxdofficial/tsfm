@@ -141,20 +141,21 @@ PATCH_SIZE_PER_DATASET = {
 MAX_PATCHES_PER_SAMPLE = 48
 MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
-# Encoder configuration (must match pretrained model)
-D_MODEL = 384
-NUM_HEADS = 8
-NUM_TEMPORAL_LAYERS = 4
-DIM_FEEDFORWARD = 1536
+# Encoder configuration
+# --- Scaled-up model: d=768, 8 layers, all-mpnet-base-v2 (768-dim text) ---
+D_MODEL = 768
+NUM_HEADS = 12  # 64 dims per head
+NUM_TEMPORAL_LAYERS = 8
+DIM_FEEDFORWARD = 3072  # 4x d_model
 DROPOUT = 0.1
 USE_CROSS_CHANNEL = True
-CNN_CHANNELS = [32, 64]  # MUST match checkpoint: good_20251124_193747
-CNN_KERNEL_SIZES = [5]  # MUST match checkpoint: single kernel (not multi-scale)
+CNN_CHANNELS = [64, 128]
+CNN_KERNEL_SIZES = [5]
 TARGET_PATCH_SIZE = 64  # Fixed timesteps per patch after interpolation
 
 # Semantic alignment configuration
-D_MODEL_FUSED = 384  # Dimension after cross-channel fusion (match D_MODEL to avoid bottleneck)
-SEMANTIC_DIM = 384  # Final embedding dimension (must match SentenceBERT)
+D_MODEL_FUSED = 768  # Dimension after cross-channel fusion (match D_MODEL to avoid bottleneck)
+SEMANTIC_DIM = 768  # Final embedding dimension (must match SentenceBERT)
 NUM_SEMANTIC_TEMPORAL_LAYERS = 2  # Temporal attention layers in semantic head
 
 # Multi-query fusion/pooling configuration (symmetric architecture)
@@ -164,12 +165,12 @@ NUM_POOL_QUERIES = 4  # Query tokens for temporal pooling (patches → 1 vector)
 USE_POOL_SELF_ATTENTION = True  # Pooling queries coordinate via self-attention
 
 # Text encoder configuration
-SENTENCE_BERT_MODEL = 'all-MiniLM-L6-v2'  # 384-dim embeddings, fast
+SENTENCE_BERT_MODEL = 'all-mpnet-base-v2'  # 768-dim embeddings, scaled
 
 # Training configuration
 OUTPUT_DIR = "training_output/semantic_alignment"  # Note: plots go to semantic_alignment/<timestamp>/plots/
 CHECKPOINT_DIR = None  # Will be set in main()
-PRETRAINED_ENCODER_PATH = "training_output/imu_pretraining/20260104_085259/latest.pt"  # Pretrained tokenizer
+PRETRAINED_ENCODER_PATH = None  # No pretrained encoder for scaled model (d=768 != d=384 checkpoint)
 FREEZE_ENCODER = False  # Unfreeze encoder to learn discriminative representations
 SAVE_EVERY = 5
 
@@ -181,8 +182,8 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
 EPOCHS = 100
-BATCH_SIZE = 32  # Micro-batch size (BS=64 OOMs on 24GB RTX 4090, BS=32 fits)
-ACCUMULATION_STEPS = 16  # Effective batch = 32 × 16 = 512
+BATCH_SIZE = 64  # Micro-batch size (optimal throughput for d=768 full pipeline on RTX 4090, ~15 GB peak)
+ACCUMULATION_STEPS = 7  # Effective batch = 64 × 7 = 448
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
 WARMUP_EPOCHS = 3
 
@@ -680,13 +681,18 @@ def _compute_per_layer_grad_norms(model, criterion=None, label_bank=None):
         'projection_head': 'semantic_head.projection_head',
     }
 
-    for name, prefix in components.items():
-        grad_norm = sum(
-            p.grad.norm().item() ** 2
-            for n, p in model.named_parameters()
-            if prefix in n and p.grad is not None
-        ) ** 0.5
-        grad_norms[name] = grad_norm
+    # Single walk of parameter tree, accumulate squared norms per component
+    sq_sums = {name: 0.0 for name in components}
+    for n, p in model.named_parameters():
+        if p.grad is None:
+            continue
+        norm_sq = p.grad.norm().item() ** 2
+        for name, prefix in components.items():
+            if prefix in n:
+                sq_sums[name] += norm_sq
+                break  # each param belongs to at most one component
+    for name in components:
+        grad_norms[name] = sq_sums[name] ** 0.5
 
     # Track logit_scale gradient (learnable temperature)
     if criterion is not None and hasattr(criterion, 'infonce'):
@@ -744,8 +750,15 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
 
     pbar = tqdm(dataloader, desc=f"[{stage}] Epoch {epoch} Training")
 
+    # Cache parameter lists for gradient clipping (avoid rebuilding every optimizer step)
+    _model_and_bank_params = (
+        [p for p in model.parameters() if p.requires_grad] +
+        list(label_bank.parameters())
+    )
+    _logit_scale_params = list(criterion.parameters())
+
     # Initialize gradients at start of epoch
-    optimizer.zero_grad()
+    optimizer.zero_grad(set_to_none=True)
 
     # Track accumulation steps for proper gradient logging
     accum_step_count = 0
@@ -804,15 +817,6 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
             # This ensures we actually capture gradients when they exist (after accumulation)
             should_log_grads = accum_step_count % DEBUG_METRIC_FREQUENCY == 0
 
-            # Collect trainable parameters for gradient clipping
-            # Clip model/label_bank params separately from logit_scale to prevent
-            # temperature gradient from dominating and starving model updates
-            model_and_bank_params = (
-                list(filter(lambda p: p.requires_grad, model.parameters())) +
-                list(label_bank.parameters())
-            )
-            logit_scale_params = list(criterion.parameters())
-
             if scaler is not None:
                 scaler.unscale_(optimizer)
 
@@ -822,8 +826,8 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
 
                 # Separate clipping: model/label_bank get their own budget,
                 # logit_scale can't steal it even if its gradient spikes
-                grad_norm = torch.nn.utils.clip_grad_norm_(model_and_bank_params, max_norm=MAX_GRAD_NORM)
-                torch.nn.utils.clip_grad_norm_(logit_scale_params, max_norm=MAX_GRAD_NORM)
+                grad_norm = torch.nn.utils.clip_grad_norm_(_model_and_bank_params, max_norm=MAX_GRAD_NORM)
+                torch.nn.utils.clip_grad_norm_(_logit_scale_params, max_norm=MAX_GRAD_NORM)
                 scaler.step(optimizer)
                 scaler.update()
             else:
@@ -831,12 +835,12 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
                 if should_log_grads:
                     batch_grad_norms = _compute_per_layer_grad_norms(model, criterion, label_bank)
 
-                grad_norm = torch.nn.utils.clip_grad_norm_(model_and_bank_params, max_norm=MAX_GRAD_NORM)
-                torch.nn.utils.clip_grad_norm_(logit_scale_params, max_norm=MAX_GRAD_NORM)
+                grad_norm = torch.nn.utils.clip_grad_norm_(_model_and_bank_params, max_norm=MAX_GRAD_NORM)
+                torch.nn.utils.clip_grad_norm_(_logit_scale_params, max_norm=MAX_GRAD_NORM)
                 optimizer.step()
 
             # Reset gradients for next accumulation window
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
 
             # Increment accumulation step counter
             accum_step_count += 1
@@ -1235,8 +1239,8 @@ def main():
         num_pool_queries=NUM_POOL_QUERIES, use_pool_self_attention=USE_POOL_SELF_ATTENTION
     ).to(device)
 
-    # Create shared text encoder (one MiniLM instance for model + label_bank, saves ~100MB GPU)
-    shared_text_encoder = TokenTextEncoder()
+    # Create shared text encoder (one instance for model + label_bank, saves GPU memory)
+    shared_text_encoder = TokenTextEncoder(model_name=SENTENCE_BERT_MODEL)
 
     print("Using token-level text encoding with cross-attention")
     model = SemanticAlignmentModel(
@@ -1277,13 +1281,15 @@ def main():
     pooling_type = "MEAN POOLING (ablation)" if USE_MEAN_POOLING else "learnable attention pooling"
     print(f"Initializing label bank ({pooling_type})...")
     label_bank = LearnableLabelBank(
+        model_name=SENTENCE_BERT_MODEL,
         device=device,
+        d_model=SEMANTIC_DIM,
         num_heads=TOKEN_TEXT_NUM_HEADS,
         num_queries=TOKEN_TEXT_NUM_QUERIES,
         num_prototypes=NUM_PROTOTYPES,
         dropout=0.0,  # Zero dropout: contrastive text targets must be deterministic
         use_mean_pooling=USE_MEAN_POOLING,
-        text_encoder=shared_text_encoder  # Share MiniLM with model
+        text_encoder=shared_text_encoder  # Share text encoder with model
     )
     print(f"✓ Label bank initialized (embedding_dim={label_bank.embedding_dim}, pooling={pooling_type})")
 
@@ -1418,9 +1424,12 @@ def main():
                 unseen_dataset,
                 batch_size=BATCH_SIZE,
                 shuffle=False,
-                num_workers=0,
+                num_workers=4,
+                prefetch_factor=2,
+                persistent_workers=True,
                 collate_fn=IMUPretrainingDataset.collate_patches_fn,
-                pin_memory=True
+                pin_memory=True,
+                worker_init_fn=worker_init_fn
             )
             print(f"Loaded unseen dataset '{UNSEEN_DATASET}' with {len(unseen_dataset)} samples")
         except Exception as e:

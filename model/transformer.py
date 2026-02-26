@@ -119,13 +119,9 @@ class TemporalSelfAttention(nn.Module):
         # (batch_channels, num_heads, num_patches, head_dim)
         attn_output = torch.matmul(attn_weights, V)
 
-        # Reshape back
-        # (batch_channels, num_patches, num_heads, head_dim)
-        attn_output = attn_output.transpose(1, 2).contiguous()
-
-        # Concatenate heads
+        # Reshape back and concatenate heads
         # (batch_channels, num_patches, d_model)
-        attn_output = attn_output.view(batch_channels, num_patches, d_model)
+        attn_output = attn_output.transpose(1, 2).reshape(batch_channels, num_patches, d_model)
 
         # Final projection
         output = self.out_proj(attn_output)
@@ -242,13 +238,9 @@ class CrossChannelSelfAttention(nn.Module):
         # (batch_patches, num_heads, num_channels, head_dim)
         attn_output = torch.matmul(attn_weights, V)
 
-        # Reshape back
-        # (batch_patches, num_channels, num_heads, head_dim)
-        attn_output = attn_output.transpose(1, 2).contiguous()
-
-        # Concatenate heads
+        # Reshape back and concatenate heads
         # (batch_patches, num_channels, d_model)
-        attn_output = attn_output.view(batch_patches, num_channels, d_model)
+        attn_output = attn_output.transpose(1, 2).reshape(batch_patches, num_channels, d_model)
 
         # Final projection
         output = self.out_proj(attn_output)
