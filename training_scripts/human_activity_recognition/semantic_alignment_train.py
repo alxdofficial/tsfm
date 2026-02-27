@@ -139,7 +139,7 @@ PATCH_SIZE_PER_DATASET = {
     'harth': 1.5,         # 50 Hz — zero-shot (acc only, back+thigh)
 }
 
-MAX_PATCHES_PER_SAMPLE = 48  # Restored from 32: GradCache reduces peak memory enough for full context
+MAX_PATCHES_PER_SAMPLE = 64  # No truncation: actual max is 59 (pamap2 48ch @ 1.0s augmented patch size)
 MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
 # ---- Architecture configuration (single source of truth: model/config.py) ----
@@ -193,8 +193,8 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
 EPOCHS = 100
-BATCH_SIZE = 14  # Micro-batch size: max that fits worst-case 52ch/48p on RTX 4090 24GB
-ACCUMULATION_STEPS = 32  # Effective batch = 14 × 32 = 448
+BATCH_SIZE = 12  # Micro-batch size: fits worst-case 48ch/64p on RTX 4090 24GB (21.8GB peak, 2GB margin)
+ACCUMULATION_STEPS = 37  # Effective batch = 12 × 37 = 444 (~448)
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
 WARMUP_EPOCHS = 3
 
