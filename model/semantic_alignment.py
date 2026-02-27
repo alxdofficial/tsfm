@@ -98,7 +98,7 @@ class MultiQueryAttention(nn.Module):
 
         # Self-attention
         if self.use_self_attention:
-            self_out, _ = self.self_attn(query=attended, key=attended, value=attended)
+            self_out, _ = self.self_attn(query=attended, key=attended, value=attended, need_weights=False)
             attended = self.norm2(attended + self_out)
 
         # Combine: concat + project + residual

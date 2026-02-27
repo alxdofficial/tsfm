@@ -198,6 +198,7 @@ LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encod
 WARMUP_EPOCHS = 3
 
 # Shared parameters
+VAL_BATCH_SIZE = 32  # Larger batch for validation/eval (no gradients = lower memory)
 NUM_WORKERS = 8  # Increased from 4 for better CPU parallelism with large batches
 PREFETCH_FACTOR = 4  # Prefetch 4 batches per worker (32 total batches ahead)
 PERSISTENT_WORKERS = True  # Keep workers alive between epochs
@@ -777,7 +778,7 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         else:
             imu_queue, text_queue = None, None
 
-        with autocast('cuda', enabled=device.type == 'cuda'):
+        with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
             imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
             loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
                                      return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
@@ -989,8 +990,8 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             mb_metadata = mb_batch['metadata']
             mb_channel_descriptions = [m['channel_descriptions'] for m in mb_metadata]
 
-            with torch.no_grad():
-                with autocast('cuda', enabled=device.type == 'cuda'):
+            with torch.inference_mode():
+                with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
                     mb_imu_emb = model(mb_patches, mb_channel_descriptions, mb_channel_mask, mb_patch_mask)
                 mb_text_emb = label_bank.encode(mb_label_texts, normalize=True)
 
@@ -1010,7 +1011,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         all_imu_cached = torch.cat(cached_imu, dim=0).requires_grad_(True)
         all_text_cached = torch.cat(cached_text, dim=0).requires_grad_(True)
 
-        with autocast('cuda', enabled=device.type == 'cuda'):
+        with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
             loss, metrics = criterion.forward_cached(
                 all_imu_cached, all_text_cached,
                 cached_label_texts, return_metrics=True,
@@ -1032,7 +1033,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         if accum_step_count % DEBUG_METRIC_FREQUENCY == 0:
             with torch.no_grad():
                 first_mb = micro_batch_data[0]
-                with autocast('cuda', enabled=device.type == 'cuda'):
+                with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
                     dbg_imu = model(first_mb['patches'], first_mb['channel_descriptions'],
                                     first_mb['channel_mask'], first_mb['patch_mask'])
                 dbg_text = label_bank.encode(first_mb['label_texts'], normalize=True)
@@ -1042,7 +1043,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         for mb_idx, mb_data in enumerate(micro_batch_data):
             mb_text_emb = label_bank.encode(mb_data['label_texts'], normalize=True)
 
-            with autocast('cuda', enabled=device.type == 'cuda'):
+            with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
                 mb_imu_emb = model(
                     mb_data['patches'], mb_data['channel_descriptions'],
                     mb_data['channel_mask'], mb_data['patch_mask']
@@ -1204,7 +1205,7 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
     all_labels = []
     pbar = tqdm(dataloader, desc=f"[{stage}] Epoch {epoch} Validation")
 
-    with torch.no_grad():
+    with torch.inference_mode():
         for batch in pbar:
             patches = batch['patches'].to(device, non_blocking=True)
             channel_mask = batch['channel_mask'].to(device, non_blocking=True)
@@ -1216,7 +1217,7 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
 
             text_embeddings = label_bank.encode(label_texts, normalize=True)
 
-            with autocast('cuda', enabled=device.type == 'cuda'):
+            with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
                 imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
                 _, metrics = criterion(imu_embeddings, text_embeddings, label_texts, return_metrics=True)
 
@@ -1313,7 +1314,7 @@ def evaluate_unseen(model, label_bank, dataloader, device, epoch):
     all_imu_embeddings = []
     all_labels = []
 
-    with torch.no_grad():
+    with torch.inference_mode():
         for batch in tqdm(dataloader, desc=f"[Epoch {epoch}] Unseen eval", leave=False):
             patches = batch['patches'].to(device)
             channel_mask = batch['channel_mask'].to(device)
@@ -1323,7 +1324,7 @@ def evaluate_unseen(model, label_bank, dataloader, device, epoch):
 
             channel_descriptions = [m['channel_descriptions'] for m in metadata]
 
-            with autocast('cuda', enabled=device.type == 'cuda'):
+            with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
                 imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
 
             all_imu_embeddings.append(imu_embeddings)
@@ -1723,7 +1724,7 @@ def main():
     # Create val dataloader (no balancing needed)
     val_loader = DataLoader(
         val_dataset,
-        batch_size=BATCH_SIZE,
+        batch_size=VAL_BATCH_SIZE,
         shuffle=False,
         num_workers=NUM_WORKERS,
         prefetch_factor=PREFETCH_FACTOR,
@@ -1748,7 +1749,7 @@ def main():
             )
             unseen_loader = DataLoader(
                 unseen_dataset,
-                batch_size=BATCH_SIZE,
+                batch_size=VAL_BATCH_SIZE,
                 shuffle=False,
                 num_workers=4,
                 prefetch_factor=2,
@@ -1829,7 +1830,7 @@ def main():
             return 0.01 + 0.99 * (1 + math.cos(math.pi * progress)) / 2
 
     scheduler = LambdaLR(optimizer, lr_lambda=warmup_cosine_schedule)
-    scaler = GradScaler('cuda') if device.type == 'cuda' else None
+    scaler = None  # BF16 has same exponent range as FP32, no GradScaler needed
     best_val_loss = float('inf')
 
     # Load optimizer/scheduler states if resuming

@@ -7,6 +7,7 @@ Processes each channel independently (channel-independent temporal attention).
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import Optional
 
 
@@ -87,37 +88,23 @@ class TemporalSelfAttention(nn.Module):
         K = K.transpose(1, 2)
         V = V.transpose(1, 2)
 
-        # Compute attention scores
-        # (batch_channels, num_heads, num_patches, num_patches)
-        attn_scores = torch.matmul(Q, K.transpose(-2, -1)) * self.scale
-
-        # Apply mask if provided
+        # Build attention mask for SDPA (True = attend, False = masked)
+        attn_mask = None
         if mask is not None:
-            attn_scores = attn_scores.masked_fill(mask == 0, float('-inf'))
-
-        # Apply patch padding mask (same pattern as cross-channel attention)
+            attn_mask = mask.bool()  # (num_patches, num_patches)
         if key_padding_mask is not None:
-            # Mask attention TO padded patches (column mask)
+            # Column mask: prevent attention TO padded patches
             # (batch_channels, num_patches) -> (batch_channels, 1, 1, num_patches)
-            mask_to = key_padding_mask.unsqueeze(1).unsqueeze(2)
-            attn_scores = attn_scores.masked_fill(~mask_to, float('-inf'))
+            key_mask = key_padding_mask.unsqueeze(1).unsqueeze(2)
+            attn_mask = key_mask if attn_mask is None else (attn_mask & key_mask)
 
-            # Mask attention FROM padded patches (row mask)
-            # (batch_channels, num_patches) -> (batch_channels, 1, num_patches, 1)
-            mask_from = key_padding_mask.unsqueeze(1).unsqueeze(3)
-            attn_scores = attn_scores.masked_fill(~mask_from, float('-inf'))
-
-        # Softmax to get attention weights
-        attn_weights = torch.softmax(attn_scores, dim=-1)
-
-        # Replace NaNs with zeros (happens when entire row is -inf, e.g. padded patches)
-        attn_weights = torch.nan_to_num(attn_weights, nan=0.0)
-
-        attn_weights = self.dropout(attn_weights)
-
-        # Apply attention to values
-        # (batch_channels, num_heads, num_patches, head_dim)
-        attn_output = torch.matmul(attn_weights, V)
+        # Use PyTorch's fused attention (dispatches to Flash Attention / memory-efficient backend)
+        attn_output = F.scaled_dot_product_attention(
+            Q, K, V,
+            attn_mask=attn_mask,
+            dropout_p=self.dropout.p if self.training else 0.0,
+            scale=self.scale,
+        )
 
         # Reshape back and concatenate heads
         # (batch_channels, num_patches, d_model)
@@ -207,36 +194,20 @@ class CrossChannelSelfAttention(nn.Module):
         K = K.transpose(1, 2)
         V = V.transpose(1, 2)
 
-        # Compute attention scores
-        # (batch_patches, num_heads, num_channels, num_channels)
-        attn_scores = torch.matmul(Q, K.transpose(-2, -1)) * self.scale
-
-        # Apply channel mask if provided
-        # Mask out attention to padded channels
+        # Build attention mask for SDPA (True = attend, False = masked)
+        attn_mask = None
         if channel_mask is not None:
-            # Expand mask for attention matrix
+            # Column mask: prevent attention TO padded channels
             # (batch_patches, num_channels) -> (batch_patches, 1, 1, num_channels)
-            mask_expanded = channel_mask.unsqueeze(1).unsqueeze(2)
+            attn_mask = channel_mask.unsqueeze(1).unsqueeze(2)
 
-            # Mask attention to padded channels (set to -inf so softmax gives 0)
-            attn_scores = attn_scores.masked_fill(~mask_expanded, float('-inf'))
-
-            # Also mask attention FROM padded channels
-            # (batch_patches, num_channels) -> (batch_patches, 1, num_channels, 1)
-            mask_from = channel_mask.unsqueeze(1).unsqueeze(3)
-            attn_scores = attn_scores.masked_fill(~mask_from, float('-inf'))
-
-        # Softmax to get attention weights
-        attn_weights = torch.softmax(attn_scores, dim=-1)
-
-        # Replace NaNs with zeros (happens when entire row is -inf)
-        attn_weights = torch.nan_to_num(attn_weights, nan=0.0)
-
-        attn_weights = self.dropout(attn_weights)
-
-        # Apply attention to values
-        # (batch_patches, num_heads, num_channels, head_dim)
-        attn_output = torch.matmul(attn_weights, V)
+        # Use PyTorch's fused attention (dispatches to Flash Attention / memory-efficient backend)
+        attn_output = F.scaled_dot_product_attention(
+            Q, K, V,
+            attn_mask=attn_mask,
+            dropout_p=self.dropout.p if self.training else 0.0,
+            scale=self.scale,
+        )
 
         # Reshape back and concatenate heads
         # (batch_patches, num_channels, d_model)

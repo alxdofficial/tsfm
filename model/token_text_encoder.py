@@ -194,7 +194,8 @@ class LabelAttentionPooling(nn.Module):
             query=queries,
             key=token_embeddings,
             value=token_embeddings,
-            key_padding_mask=key_padding_mask
+            key_padding_mask=key_padding_mask,
+            need_weights=False
         )
 
         attn_out = self.norm(attn_out)
@@ -298,7 +299,8 @@ class MultiPrototypeLabelPooling(nn.Module):
                 query=queries_k,
                 key=token_embeddings,
                 value=token_embeddings,
-                key_padding_mask=key_padding_mask
+                key_padding_mask=key_padding_mask,
+                need_weights=False
             )
             attn_out = self.norm(attn_out)
 
@@ -412,7 +414,8 @@ class ChannelTextFusion(nn.Module):
             query=queries,
             key=text_tokens_flat,
             value=text_tokens_flat,
-            key_padding_mask=~text_mask_bool
+            key_padding_mask=~text_mask_bool,
+            need_weights=False
         )
         attn_out = self.norm1(queries + attn_out)
 
