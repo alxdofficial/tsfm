@@ -362,11 +362,112 @@ class InfoNCELoss(nn.Module):
         return loss, metrics
 
 
+class SigLIPLoss(nn.Module):
+    """
+    SigLIP (Sigmoid Loss for Language-Image Pre-training) contrastive loss.
+
+    Uses independent sigmoid per pair instead of softmax over all negatives.
+    Works well even at small batch sizes because each pair provides an
+    independent gradient signal, unlike InfoNCE which needs many negatives
+    for stable softmax gradients.
+
+    Reference: Zhai et al., "Sigmoid Loss for Language Image Pre-Training" (2023)
+    """
+
+    def __init__(self, temperature: float = 0.1):
+        super().__init__()
+        # Learnable temperature and bias (SigLIP-style)
+        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1/temperature))
+        self.logit_bias = nn.Parameter(torch.zeros([]))
+
+    def _get_logit_scale(self):
+        """Get clamped logit scale."""
+        return self.logit_scale.exp().clamp(1, 100)
+
+    def forward(
+        self,
+        imu_embeddings: torch.Tensor,
+        text_embeddings: torch.Tensor,
+        label_texts: Optional[list] = None,
+        return_metrics: bool = True,
+        imu_queue: Optional[torch.Tensor] = None,
+        text_queue: Optional[torch.Tensor] = None
+    ) -> tuple[torch.Tensor, Optional[Dict[str, float]]]:
+        """
+        Compute SigLIP loss.
+
+        Works with both single-prototype (2D) and multi-prototype (3D) text embeddings.
+        Queue embeddings are ignored (SigLIP doesn't need them — each pair is independent).
+        """
+        batch_size = imu_embeddings.shape[0]
+        logit_scale = self._get_logit_scale()
+
+        # Handle multi-prototype: select best prototype per sample
+        if text_embeddings.dim() == 3:
+            pos_sims = torch.einsum('bd,bkd->bk', imu_embeddings, text_embeddings)
+            best_proto_idx = pos_sims.argmax(dim=1)
+            text_for_loss = text_embeddings[torch.arange(batch_size), best_proto_idx]
+        else:
+            text_for_loss = text_embeddings
+
+        # Pairwise logits: (B, B) — all IMU vs all text
+        logits = torch.matmul(imu_embeddings, text_for_loss.T) * logit_scale + self.logit_bias
+
+        # Labels: +1 for positive pairs (diagonal), -1 for negative pairs
+        labels = 2 * torch.eye(batch_size, device=imu_embeddings.device) - 1
+
+        # SigLIP loss: -log_sigmoid(labels * logits)
+        # = log(1 + exp(-labels * logits))
+        loss = -F.logsigmoid(labels * logits).mean()
+
+        metrics = None
+        if return_metrics:
+            with torch.no_grad():
+                pos_logits = torch.diagonal(logits)
+                neg_mask = ~torch.eye(batch_size, dtype=torch.bool, device=imu_embeddings.device)
+                neg_logits = logits[neg_mask]
+
+                raw_sim = torch.matmul(imu_embeddings, text_for_loss.T)
+                positive_sim = torch.diagonal(raw_sim).mean().item()
+
+                # Label-aware negative similarity
+                if label_texts is not None and len(label_texts) == batch_size:
+                    from val_scripts.human_activity_recognition.evaluation_metrics import get_label_to_group_mapping
+                    label_to_group = get_label_to_group_mapping()
+                    label_groups = [label_to_group.get(lbl, lbl) for lbl in label_texts]
+                    same_label_mask = torch.zeros(batch_size, batch_size, dtype=torch.bool, device=raw_sim.device)
+                    for i in range(batch_size):
+                        for j in range(batch_size):
+                            same_label_mask[i, j] = (label_groups[i] == label_groups[j])
+                else:
+                    same_label_mask = torch.eye(batch_size, dtype=torch.bool, device=raw_sim.device)
+
+                diff_label_mask = ~same_label_mask
+                true_neg_sim = raw_sim[diff_label_mask].mean().item() if diff_label_mask.any() else 0.0
+
+                metrics = {
+                    'loss': loss.item(),
+                    'loss_imu_to_text': loss.item(),  # SigLIP is symmetric
+                    'loss_text_to_imu': loss.item(),
+                    'positive_similarity': positive_sim,
+                    'negative_similarity': true_neg_sim,
+                    'similarity_gap': positive_sim - true_neg_sim,
+                    'logit_scale': logit_scale.item(),
+                    'logits_mean': logits.mean().item(),
+                    'logits_std': logits.std().item(),
+                    'logits_max': logits.max().item(),
+                    'logits_min': logits.min().item(),
+                }
+
+        return loss, metrics
+
+
 class SemanticAlignmentLoss(nn.Module):
     """
     Combined loss for semantic alignment training.
 
     Supports multiple loss components that can be weighted.
+    Supports both InfoNCE and SigLIP loss functions.
     """
 
     def __init__(
@@ -374,22 +475,40 @@ class SemanticAlignmentLoss(nn.Module):
         temperature: float = 0.1,
         use_soft_targets: bool = True,
         soft_target_temperature: float = 0.5,
-        soft_target_weight: float = 0.5
+        soft_target_weight: float = 0.5,
+        loss_type: str = "infonce"
     ):
         """
         Args:
-            temperature: Temperature for InfoNCE
-            use_soft_targets: Whether to use soft targets based on label similarity
+            temperature: Temperature for contrastive loss
+            use_soft_targets: Whether to use soft targets based on label similarity (InfoNCE only)
             soft_target_temperature: Temperature for computing soft target distribution
             soft_target_weight: Weight for soft targets (0=hard, 1=pure soft, 0.5=balanced)
+            loss_type: "infonce" or "siglip"
         """
         super().__init__()
-        self.infonce = InfoNCELoss(
-            temperature=temperature,
-            use_soft_targets=use_soft_targets,
-            soft_target_temperature=soft_target_temperature,
-            soft_target_weight=soft_target_weight
-        )
+        self.loss_type = loss_type
+        if loss_type == "siglip":
+            self.loss_fn = SigLIPLoss(temperature=temperature)
+        else:
+            self.loss_fn = InfoNCELoss(
+                temperature=temperature,
+                use_soft_targets=use_soft_targets,
+                soft_target_temperature=soft_target_temperature,
+                soft_target_weight=soft_target_weight
+            )
+
+    def load_state_dict(self, state_dict, strict=True):
+        """Load state dict with backward compatibility for old 'infonce.*' keys."""
+        # Remap old 'infonce.*' keys to new 'loss_fn.*' keys
+        remapped = {}
+        for key, value in state_dict.items():
+            if key.startswith('infonce.'):
+                new_key = 'loss_fn.' + key[len('infonce.'):]
+                remapped[new_key] = value
+            else:
+                remapped[key] = value
+        return super().load_state_dict(remapped, strict=strict)
 
     def forward(
         self,
@@ -415,7 +534,41 @@ class SemanticAlignmentLoss(nn.Module):
             loss: Scalar loss value
             metrics: Optional dict with metrics
         """
-        return self.infonce(imu_embeddings, text_embeddings, label_texts, return_metrics,
+        return self.loss_fn(imu_embeddings, text_embeddings, label_texts, return_metrics,
                            imu_queue, text_queue)
+
+    def forward_cached(
+        self,
+        all_imu_embeddings: torch.Tensor,
+        all_text_embeddings: torch.Tensor,
+        all_label_texts: Optional[list] = None,
+        return_metrics: bool = True,
+    ) -> tuple[torch.Tensor, Optional[Dict[str, float]]]:
+        """
+        Compute loss over pre-gathered (cached) embeddings from all micro-batches.
+
+        Used by GradCache: all micro-batch embeddings are concatenated into one large
+        batch and loss is computed over the full set, giving N-1 fresh in-batch negatives
+        instead of micro_batch_size-1.
+
+        No memory bank queue is used — with GradCache providing hundreds of fresh
+        negatives, stale queue embeddings are unnecessary.
+
+        Args:
+            all_imu_embeddings: Concatenated IMU embeddings from all micro-batches (N, D)
+            all_text_embeddings: Concatenated text embeddings (N, D) or (N, K, D)
+            all_label_texts: Optional concatenated label texts
+            return_metrics: Whether to return metrics
+
+        Returns:
+            loss: Scalar loss value
+            metrics: Optional dict with metrics
+        """
+        # Compute loss without queue (all negatives are fresh in-batch)
+        return self.loss_fn(
+            all_imu_embeddings, all_text_embeddings,
+            all_label_texts, return_metrics,
+            imu_queue=None, text_queue=None
+        )
 
 
