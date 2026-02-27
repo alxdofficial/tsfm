@@ -8,11 +8,25 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 # Debug flag - set to True to enable NaN debugging
 DEBUG_NAN = False  # Set to True to enable verbose NaN debugging
 _nan_debug_count = 0  # Track how many times we've printed debug info
+
+
+def _build_same_label_mask(label_texts: List[str], batch_size: int, device: torch.device) -> torch.Tensor:
+    """Build a same-label mask using vectorized broadcast comparison.
+
+    Returns (batch_size, batch_size) bool tensor where True means same label group.
+    """
+    from val_scripts.human_activity_recognition.evaluation_metrics import get_label_to_group_mapping
+    label_to_group = get_label_to_group_mapping()
+    label_groups = [label_to_group.get(lbl, lbl) for lbl in label_texts]
+    # Map group strings to integer IDs for vectorized comparison
+    unique_groups = {g: i for i, g in enumerate(sorted(set(label_groups)))}
+    group_ids = torch.tensor([unique_groups[g] for g in label_groups], device=device)
+    return group_ids[:, None] == group_ids[None, :]
 
 
 def _check_tensor_health(tensor: torch.Tensor, name: str) -> dict:
@@ -102,8 +116,14 @@ class InfoNCELoss(nn.Module):
         """Check if a non-empty queue is provided."""
         return imu_queue is not None and text_queue is not None and len(imu_queue) > 0
 
-    def _forward_single_prototype(self, imu_embeddings, text_embeddings, imu_queue, text_queue):
+    def _forward_single_prototype(self, imu_embeddings, text_embeddings, imu_queue, text_queue,
+                                    frozen_text_embeddings=None):
         """Compute loss for single-prototype (2D) text embeddings.
+
+        Args:
+            frozen_text_embeddings: Optional frozen SBERT mean-pool embeddings for soft targets.
+                When provided, soft targets are computed from these instead of learnable embeddings,
+                preventing the model from gaming the target distribution.
 
         Returns: (loss, logits, logits_t2i, targets, sim_mean_for_metrics)
         """
@@ -124,12 +144,38 @@ class InfoNCELoss(nn.Module):
         # Compute targets
         sim_mean_for_metrics = None
         if self.use_soft_targets:
-            text_similarity_full = torch.matmul(text_embeddings, all_text.T)
+            # Use frozen SBERT embeddings for soft targets if available.
+            # This prevents the learnable label bank from gaming the target distribution
+            # by making all text embeddings artificially similar.
+            if frozen_text_embeddings is not None:
+                soft_text = frozen_text_embeddings
+                # No queue for frozen embeddings — use only in-batch similarities
+                soft_text_all = soft_text
+            else:
+                soft_text = text_embeddings
+                soft_text_all = all_text
+
+            text_similarity_full = torch.matmul(soft_text, soft_text_all.T)
             sim_mean = text_similarity_full.mean()
             sim_std = text_similarity_full.std().clamp(min=0.1)
             sim_mean_for_metrics = sim_mean.item()
             text_similarity_full = (text_similarity_full - sim_mean) / sim_std / self.soft_target_temperature
-            soft_targets_full = F.softmax(text_similarity_full, dim=1)
+
+            if frozen_text_embeddings is not None:
+                # Frozen soft targets: (B, B) — in-batch only, no queue dimension
+                soft_targets_inbatch = F.softmax(text_similarity_full, dim=1)
+                queue_size = all_text.shape[0] - batch_size
+                if queue_size > 0:
+                    # Pad soft targets to match logit dimensions (B, B+Q)
+                    # Queue entries get zero soft-target weight
+                    soft_targets_full = torch.cat([
+                        soft_targets_inbatch,
+                        torch.zeros(batch_size, queue_size, device=imu_embeddings.device),
+                    ], dim=1)
+                else:
+                    soft_targets_full = soft_targets_inbatch
+            else:
+                soft_targets_full = F.softmax(text_similarity_full, dim=1)
 
             queue_size = all_text.shape[0] - batch_size
             hard_targets_full = torch.cat([
@@ -251,13 +297,7 @@ class InfoNCELoss(nn.Module):
 
         # Label-aware negative similarity
         if label_texts is not None and len(label_texts) == batch_size:
-            from val_scripts.human_activity_recognition.evaluation_metrics import get_label_to_group_mapping
-            label_to_group = get_label_to_group_mapping()
-            label_groups = [label_to_group.get(lbl, lbl) for lbl in label_texts]
-            same_label_mask = torch.zeros(batch_size, batch_size, dtype=torch.bool, device=raw_sim.device)
-            for i in range(batch_size):
-                for j in range(batch_size):
-                    same_label_mask[i, j] = (label_groups[i] == label_groups[j])
+            same_label_mask = _build_same_label_mask(label_texts, batch_size, raw_sim.device)
         else:
             same_label_mask = torch.eye(batch_size, dtype=torch.bool, device=raw_sim.device)
 
@@ -308,7 +348,8 @@ class InfoNCELoss(nn.Module):
         label_texts: Optional[list] = None,
         return_metrics: bool = True,
         imu_queue: Optional[torch.Tensor] = None,
-        text_queue: Optional[torch.Tensor] = None
+        text_queue: Optional[torch.Tensor] = None,
+        frozen_text_embeddings: Optional[torch.Tensor] = None
     ) -> tuple[torch.Tensor, Optional[Dict[str, float]]]:
         """
         Compute InfoNCE loss with optional soft targets and memory bank queue.
@@ -321,6 +362,8 @@ class InfoNCELoss(nn.Module):
             return_metrics: Whether to return additional metrics
             imu_queue: Optional queue of past IMU embeddings (queue_size, D)
             text_queue: Optional queue of past text embeddings (queue_size, D)
+            frozen_text_embeddings: Optional frozen SBERT mean-pool embeddings (batch_size, D)
+                for computing soft targets that can't be gamed by the learnable label bank
 
         Returns:
             loss: Scalar loss value
@@ -334,7 +377,8 @@ class InfoNCELoss(nn.Module):
             text_for_metrics = best_text
         else:
             loss, logits, logits_t2i, targets, sim_mean = \
-                self._forward_single_prototype(imu_embeddings, text_embeddings, imu_queue, text_queue)
+                self._forward_single_prototype(imu_embeddings, text_embeddings, imu_queue, text_queue,
+                                               frozen_text_embeddings=frozen_text_embeddings)
             text_for_metrics = text_embeddings
 
         # NaN debugging
@@ -391,13 +435,15 @@ class SigLIPLoss(nn.Module):
         label_texts: Optional[list] = None,
         return_metrics: bool = True,
         imu_queue: Optional[torch.Tensor] = None,
-        text_queue: Optional[torch.Tensor] = None
+        text_queue: Optional[torch.Tensor] = None,
+        frozen_text_embeddings: Optional[torch.Tensor] = None
     ) -> tuple[torch.Tensor, Optional[Dict[str, float]]]:
         """
         Compute SigLIP loss.
 
         Works with both single-prototype (2D) and multi-prototype (3D) text embeddings.
         Queue embeddings are ignored (SigLIP doesn't need them — each pair is independent).
+        frozen_text_embeddings is accepted for API compatibility but not used (SigLIP has no soft targets).
         """
         batch_size = imu_embeddings.shape[0]
         logit_scale = self._get_logit_scale()
@@ -432,13 +478,7 @@ class SigLIPLoss(nn.Module):
 
                 # Label-aware negative similarity
                 if label_texts is not None and len(label_texts) == batch_size:
-                    from val_scripts.human_activity_recognition.evaluation_metrics import get_label_to_group_mapping
-                    label_to_group = get_label_to_group_mapping()
-                    label_groups = [label_to_group.get(lbl, lbl) for lbl in label_texts]
-                    same_label_mask = torch.zeros(batch_size, batch_size, dtype=torch.bool, device=raw_sim.device)
-                    for i in range(batch_size):
-                        for j in range(batch_size):
-                            same_label_mask[i, j] = (label_groups[i] == label_groups[j])
+                    same_label_mask = _build_same_label_mask(label_texts, batch_size, raw_sim.device)
                 else:
                     same_label_mask = torch.eye(batch_size, dtype=torch.bool, device=raw_sim.device)
 
@@ -517,7 +557,8 @@ class SemanticAlignmentLoss(nn.Module):
         label_texts: Optional[list] = None,
         return_metrics: bool = True,
         imu_queue: Optional[torch.Tensor] = None,
-        text_queue: Optional[torch.Tensor] = None
+        text_queue: Optional[torch.Tensor] = None,
+        frozen_text_embeddings: Optional[torch.Tensor] = None
     ) -> tuple[torch.Tensor, Optional[Dict[str, float]]]:
         """
         Compute semantic alignment loss.
@@ -529,13 +570,14 @@ class SemanticAlignmentLoss(nn.Module):
             return_metrics: Whether to return additional metrics
             imu_queue: Optional queue of past IMU embeddings (queue_size, embedding_dim)
             text_queue: Optional queue of past text embeddings (queue_size, embedding_dim)
+            frozen_text_embeddings: Optional frozen SBERT mean-pool embeddings for soft targets
 
         Returns:
             loss: Scalar loss value
             metrics: Optional dict with metrics
         """
         return self.loss_fn(imu_embeddings, text_embeddings, label_texts, return_metrics,
-                           imu_queue, text_queue)
+                           imu_queue, text_queue, frozen_text_embeddings=frozen_text_embeddings)
 
     def forward_cached(
         self,
@@ -543,6 +585,7 @@ class SemanticAlignmentLoss(nn.Module):
         all_text_embeddings: torch.Tensor,
         all_label_texts: Optional[list] = None,
         return_metrics: bool = True,
+        all_frozen_text_embeddings: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, Optional[Dict[str, float]]]:
         """
         Compute loss over pre-gathered (cached) embeddings from all micro-batches.
@@ -559,6 +602,7 @@ class SemanticAlignmentLoss(nn.Module):
             all_text_embeddings: Concatenated text embeddings (N, D) or (N, K, D)
             all_label_texts: Optional concatenated label texts
             return_metrics: Whether to return metrics
+            all_frozen_text_embeddings: Optional frozen SBERT embeddings for soft targets (N, D)
 
         Returns:
             loss: Scalar loss value
@@ -568,7 +612,8 @@ class SemanticAlignmentLoss(nn.Module):
         return self.loss_fn(
             all_imu_embeddings, all_text_embeddings,
             all_label_texts, return_metrics,
-            imu_queue=None, text_queue=None
+            imu_queue=None, text_queue=None,
+            frozen_text_embeddings=all_frozen_text_embeddings
         )
 
 

@@ -544,24 +544,44 @@ class LearnableLabelBank(nn.Module):
             normalize: L2 normalize output
 
         Returns:
-            embeddings: (batch, 384) when num_prototypes=1
-                        (batch, K, 384) when num_prototypes > 1
+            embeddings: (batch, d_model) when num_prototypes=1
+                        (batch, K, d_model) when num_prototypes > 1
         """
         tokens, mask = self.text_encoder.encode(label_texts, self.device)
 
         if self.use_mean_pooling:
-            # Mean pooling over valid tokens (SentenceBERT default)
-            # mask: (batch, seq_len) - True for valid tokens
-            mask_expanded = mask.unsqueeze(-1).float()  # (batch, seq_len, 1)
-            sum_embeddings = (tokens * mask_expanded).sum(dim=1)  # (batch, 384)
-            sum_mask = mask_expanded.sum(dim=1).clamp(min=1e-9)  # (batch, 1)
-            embeddings = sum_embeddings / sum_mask  # (batch, 384)
-
-            if normalize:
-                embeddings = F.normalize(embeddings, p=2, dim=-1)
-            return embeddings
+            return self._mean_pool(tokens, mask, normalize)
         else:
             return self.pooling(tokens, mask, normalize)
+
+    def encode_frozen(self, label_texts: List[str], normalize: bool = True) -> torch.Tensor:
+        """
+        Encode labels using frozen mean-pooling only (no learnable parameters).
+
+        Used for computing soft targets that can't be gamed by the learnable label bank.
+        The frozen SBERT token embeddings are mean-pooled without any learnable attention.
+
+        Args:
+            label_texts: List of label strings
+            normalize: L2 normalize output
+
+        Returns:
+            embeddings: (batch, text_dim) — frozen SBERT dimension, not d_model
+        """
+        tokens, mask = self.text_encoder.encode(label_texts, self.device)
+        return self._mean_pool(tokens, mask, normalize)
+
+    @staticmethod
+    def _mean_pool(tokens: torch.Tensor, mask: torch.Tensor, normalize: bool) -> torch.Tensor:
+        """Mean-pool token embeddings over valid positions."""
+        mask_expanded = mask.unsqueeze(-1).float()  # (batch, seq_len, 1)
+        sum_embeddings = (tokens * mask_expanded).sum(dim=1)  # (batch, D)
+        sum_mask = mask_expanded.sum(dim=1).clamp(min=1e-9)  # (batch, 1)
+        embeddings = sum_embeddings / sum_mask  # (batch, D)
+
+        if normalize:
+            embeddings = F.normalize(embeddings, p=2, dim=-1)
+        return embeddings
 
     @property
     def embedding_dim(self) -> int:

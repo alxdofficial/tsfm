@@ -775,6 +775,9 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         channel_descriptions = [m['channel_descriptions'] for m in metadata]
 
         text_embeddings = label_bank.encode(label_texts, normalize=True)
+        # Frozen mean-pool embeddings for soft targets (can't be gamed)
+        with torch.no_grad():
+            frozen_text_embeddings = label_bank.encode_frozen(label_texts, normalize=True)
 
         if memory_bank is not None and USE_MEMORY_BANK:
             with torch.no_grad():
@@ -785,7 +788,8 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
             imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
             loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
-                                     return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
+                                     return_metrics=True, imu_queue=imu_queue, text_queue=text_queue,
+                                     frozen_text_embeddings=frozen_text_embeddings)
 
         scaled_loss = loss / ACCUMULATION_STEPS
 
@@ -983,6 +987,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         # --- Phase 1: Cache embeddings (forward all micro-batches, detach) ---
         cached_imu = []
         cached_text = []
+        cached_frozen_text = []
         cached_label_texts = []
         micro_batch_data = []
 
@@ -998,15 +1003,21 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
                 with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
                     mb_imu_emb = model(mb_patches, mb_channel_descriptions, mb_channel_mask, mb_patch_mask)
                 mb_text_emb = label_bank.encode(mb_label_texts, normalize=True)
+                # Frozen mean-pool embeddings for soft targets (no learnable params, can't be gamed)
+                mb_frozen_text = label_bank.encode_frozen(mb_label_texts, normalize=True)
 
             cached_imu.append(mb_imu_emb)
             cached_text.append(mb_text_emb)
+            cached_frozen_text.append(mb_frozen_text)
             cached_label_texts.extend(mb_label_texts)
 
+            # CPU stash: move tensors to CPU-pinned memory to free GPU during Phase 1.
+            # With 56 micro-batches, keeping all on GPU wastes ~56x micro-batch memory.
+            # pin_memory=True enables fast async H2D transfer in Phase 3.
             micro_batch_data.append({
-                'patches': mb_patches,
-                'channel_mask': mb_channel_mask,
-                'patch_mask': mb_patch_mask,
+                'patches': mb_patches.cpu().pin_memory(),
+                'channel_mask': mb_channel_mask.cpu().pin_memory(),
+                'patch_mask': mb_patch_mask.cpu().pin_memory(),
                 'label_texts': mb_label_texts,
                 'channel_descriptions': mb_channel_descriptions,
             })
@@ -1014,11 +1025,13 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         # --- Phase 2: Compute loss over ALL cached embeddings ---
         all_imu_cached = torch.cat(cached_imu, dim=0).requires_grad_(True)
         all_text_cached = torch.cat(cached_text, dim=0).requires_grad_(True)
+        all_frozen_text = torch.cat(cached_frozen_text, dim=0)  # No grad needed (frozen)
 
         with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
             loss, metrics = criterion.forward_cached(
                 all_imu_cached, all_text_cached,
                 cached_label_texts, return_metrics=True,
+                all_frozen_text_embeddings=all_frozen_text,
             )
 
         if scaler is not None:
@@ -1030,27 +1043,36 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         imu_grad_chunks = all_imu_cached.grad.split([c.shape[0] for c in cached_imu])
         text_grad_chunks = all_text_cached.grad.split([c.shape[0] for c in cached_text])
 
-        del all_imu_cached, all_text_cached, cached_imu, cached_text
+        del all_imu_cached, all_text_cached, all_frozen_text, cached_imu, cached_text, cached_frozen_text
 
         # Debug metrics
         debug_metrics = {}
         if accum_step_count % DEBUG_METRIC_FREQUENCY == 0:
             with torch.no_grad():
                 first_mb = micro_batch_data[0]
+                # Move from CPU-pinned back to GPU for debug forward pass
+                dbg_patches = first_mb['patches'].to(device, non_blocking=True)
+                dbg_ch_mask = first_mb['channel_mask'].to(device, non_blocking=True)
+                dbg_p_mask = first_mb['patch_mask'].to(device, non_blocking=True)
                 with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
-                    dbg_imu = model(first_mb['patches'], first_mb['channel_descriptions'],
-                                    first_mb['channel_mask'], first_mb['patch_mask'])
+                    dbg_imu = model(dbg_patches, first_mb['channel_descriptions'],
+                                    dbg_ch_mask, dbg_p_mask)
                 dbg_text = label_bank.encode(first_mb['label_texts'], normalize=True)
                 debug_metrics = compute_debug_metrics(dbg_imu, dbg_text)
 
         # --- Phase 3: Re-forward each micro-batch, backprop with cached gradients ---
         for mb_idx, mb_data in enumerate(micro_batch_data):
+            # Stream from CPU-pinned memory to GPU (async transfer)
+            mb_patches = mb_data['patches'].to(device, non_blocking=True)
+            mb_channel_mask = mb_data['channel_mask'].to(device, non_blocking=True)
+            mb_patch_mask = mb_data['patch_mask'].to(device, non_blocking=True)
+
             mb_text_emb = label_bank.encode(mb_data['label_texts'], normalize=True)
 
             with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
                 mb_imu_emb = model(
-                    mb_data['patches'], mb_data['channel_descriptions'],
-                    mb_data['channel_mask'], mb_data['patch_mask']
+                    mb_patches, mb_data['channel_descriptions'],
+                    mb_channel_mask, mb_patch_mask
                 )
 
             surrogate_targets = [mb_imu_emb, mb_text_emb]
