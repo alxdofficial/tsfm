@@ -193,8 +193,8 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
 EPOCHS = 100
-BATCH_SIZE = 8  # Micro-batch size (d=768 medium model on RTX 4090 24GB)
-ACCUMULATION_STEPS = 56  # Effective batch = 8 × 56 = 448
+BATCH_SIZE = 14  # Micro-batch size: max that fits worst-case 52ch/48p on RTX 4090 24GB
+ACCUMULATION_STEPS = 32  # Effective batch = 14 × 32 = 448
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
 WARMUP_EPOCHS = 3
 
