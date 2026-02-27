@@ -337,16 +337,21 @@ class ChannelTextFusion(nn.Module):
         d_model: int = 384,
         num_heads: int = 4,
         num_queries: int = 4,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        text_dim: int = None
     ):
         super().__init__()
         self.d_model = d_model
         self.num_queries = num_queries
+        text_dim = text_dim or d_model
+
+        # Project text tokens to d_model when text encoder dim differs (e.g. small_wide: 768→384)
+        self.text_proj = nn.Linear(text_dim, d_model) if text_dim != d_model else nn.Identity()
 
         # Learnable queries to pool text tokens (one set shared across channels)
         self.queries = nn.Parameter(torch.randn(num_queries, d_model) * 0.02)
 
-        # Cross-attention: queries attend to text tokens
+        # Cross-attention: queries attend to (projected) text tokens
         self.cross_attn = nn.MultiheadAttention(
             embed_dim=d_model,
             num_heads=num_heads,
@@ -394,7 +399,8 @@ class ChannelTextFusion(nn.Module):
         S = text_tokens.shape[2]  # seq_len
 
         # Flatten batch and channel dims for batched cross-attention: (B*C, ...)
-        text_tokens_flat = text_tokens.reshape(B * C, S, D)
+        text_tokens_flat = text_tokens.reshape(B * C, S, -1)
+        text_tokens_flat = self.text_proj(text_tokens_flat)  # (B*C, S, d_model)
         text_mask_flat = text_mask.reshape(B * C, S)
         text_mask_bool = text_mask_flat.bool()
 

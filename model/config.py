@@ -42,6 +42,7 @@ SMALL_CONFIG: Dict[str, Any] = {
 
     # --- Text encoder (frozen, not deployed on-device) ---
     "sentence_bert_model": "all-MiniLM-L6-v2",   # 384-dim embeddings
+    "text_dim": 384,                              # Text encoder output dimension
 
     # --- Semantic alignment head ---
     "semantic_dim": 384,                   # Final embedding dim (matches SBERT)
@@ -59,6 +60,53 @@ SMALL_CONFIG: Dict[str, Any] = {
     "label_bank_num_heads": 4,             # Attention heads for label pooling
     "label_bank_num_queries": 4,           # Learnable query tokens per label
     "label_bank_num_prototypes": 1,        # Prototype embeddings per label
+}
+
+
+# ---------------------------------------------------------------------------
+# Small-Wide: d=384, 4 layers (same encoder as Small), but 768-dim semantic space.
+# Trainable: ~36M | Inference: ~36M
+# Tests whether wider representation space helps without scaling the encoder.
+# Small encoder = low VRAM → can train at BS=32+ (vs BS=8 for Medium).
+# ---------------------------------------------------------------------------
+SMALL_WIDE_CONFIG: Dict[str, Any] = {
+    # --- Encoder (identical to SMALL — cheap, proven) ---
+    "d_model": 384,
+    "num_heads": 8,              # 48 dims per head
+    "num_temporal_layers": 4,
+    "dim_feedforward": 1536,     # 4x d_model
+    "dropout": 0.1,
+    "use_cross_channel": True,
+    "cnn_channels": [32, 64],
+    "cnn_kernel_sizes": [5],
+    "target_patch_size": 64,
+    "normalization_method": "zscore",
+    "interpolation_method": "linear",
+    "temporal_init_scale": 0.1,
+    "channel_init_scale": 0.1,
+    "use_channel_encoding": True,
+    "max_patches": 5000,
+
+    # --- Text encoder (frozen, 768-dim for richer label representations) ---
+    "sentence_bert_model": "all-mpnet-base-v2",   # 768-dim embeddings
+    "text_dim": 768,                               # Text encoder output dimension
+
+    # --- Semantic alignment head (WIDER: 768-dim semantic space) ---
+    "semantic_dim": 768,                   # 2x Small — more room for fine-grained distinctions
+    "d_model_fused": 768,                  # CrossChannelFusion projects 384→768
+    "num_semantic_temporal_layers": 3,     # Between Small(2) and Medium(4)
+    "num_fusion_queries": 4,               # Same as Small (proven)
+    "use_fusion_self_attention": True,
+    "num_pool_queries": 4,                 # Same as Small
+    "use_pool_self_attention": True,
+
+    # --- Channel-text fusion ---
+    "channel_text_num_heads": 4,           # Same as Small
+
+    # --- Label bank (768-dim to match semantic space) ---
+    "label_bank_num_heads": 8,             # 768/8=96 dims per head
+    "label_bank_num_queries": 4,           # Same as Small
+    "label_bank_num_prototypes": 1,
 }
 
 
@@ -87,6 +135,7 @@ MEDIUM_CONFIG: Dict[str, Any] = {
 
     # --- Text encoder (frozen, not deployed on-device) ---
     "sentence_bert_model": "all-mpnet-base-v2",   # 768-dim embeddings
+    "text_dim": 768,                               # Text encoder output dimension
 
     # --- Semantic alignment head ---
     "semantic_dim": 768,
@@ -132,6 +181,7 @@ LARGE_CONFIG: Dict[str, Any] = {
 
     # --- Text encoder (frozen, not deployed on-device) ---
     "sentence_bert_model": "BAAI/bge-large-en-v1.5",  # 1024-dim embeddings
+    "text_dim": 1024,                                   # Text encoder output dimension
 
     # --- Semantic alignment head ---
     "semantic_dim": 1024,
@@ -174,6 +224,7 @@ TINY_CONFIG: Dict[str, Any] = {
 
     # --- Downstream (minimal for tests) ---
     "sentence_bert_model": "all-MiniLM-L6-v2",
+    "text_dim": 384,
     "semantic_dim": 64,
     "d_model_fused": 64,
     "num_semantic_temporal_layers": 1,
@@ -206,6 +257,7 @@ def get_config(size: str = "small") -> Dict[str, Any]:
     configs = {
         "tiny": TINY_CONFIG,
         "small": SMALL_CONFIG,
+        "small_wide": SMALL_WIDE_CONFIG,
         "medium": MEDIUM_CONFIG,
         "large": LARGE_CONFIG,
     }

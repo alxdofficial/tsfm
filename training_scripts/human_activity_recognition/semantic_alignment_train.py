@@ -171,6 +171,7 @@ SENTENCE_BERT_MODEL = _cfg["sentence_bert_model"]
 
 # Channel-text fusion
 CHANNEL_TEXT_NUM_HEADS = _cfg["channel_text_num_heads"]
+TEXT_DIM = _cfg.get("text_dim", D_MODEL)  # Text encoder output dim (may differ from d_model)
 
 # Label bank
 LABEL_BANK_NUM_HEADS = _cfg["label_bank_num_heads"]
@@ -332,7 +333,8 @@ class SemanticAlignmentModel(nn.Module):
         dropout: float = 0.1,
         use_patch_augmentation: bool = False,
         min_patches_per_sample: int = 2,
-        text_encoder: Optional['TokenTextEncoder'] = None
+        text_encoder: Optional['TokenTextEncoder'] = None,
+        text_dim: int = None
     ):
         super().__init__()
         self.encoder = encoder
@@ -346,11 +348,13 @@ class SemanticAlignmentModel(nn.Module):
 
         # Channel text fusion (learnable cross-attention)
         # Use encoder's d_model (not the module-level global) so this works
-        # when loading checkpoints trained at a different model size
+        # when loading checkpoints trained at a different model size.
+        # text_dim allows text_encoder_dim != d_model (e.g. small_wide: d=384, text=768)
         self.channel_fusion = ChannelTextFusion(
             d_model=encoder.d_model,
             num_heads=num_heads,
-            dropout=dropout
+            dropout=dropout,
+            text_dim=text_dim
         )
 
     def _get_valid_patch_size(
@@ -1346,7 +1350,7 @@ def main():
     global D_MODEL_FUSED, SEMANTIC_DIM, NUM_SEMANTIC_TEMPORAL_LAYERS
     global NUM_FUSION_QUERIES, USE_FUSION_SELF_ATTENTION
     global NUM_POOL_QUERIES, USE_POOL_SELF_ATTENTION
-    global SENTENCE_BERT_MODEL, CHANNEL_TEXT_NUM_HEADS
+    global SENTENCE_BERT_MODEL, CHANNEL_TEXT_NUM_HEADS, TEXT_DIM
     global LABEL_BANK_NUM_HEADS, LABEL_BANK_NUM_QUERIES, LABEL_BANK_NUM_PROTOTYPES
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -1393,6 +1397,7 @@ def main():
                 USE_POOL_SELF_ATTENTION = saved_cfg['use_pool_self_attention']
                 SENTENCE_BERT_MODEL = saved_cfg['sentence_bert_model']
                 CHANNEL_TEXT_NUM_HEADS = saved_cfg['channel_text_num_heads']
+                TEXT_DIM = saved_cfg.get('text_dim', D_MODEL)
                 LABEL_BANK_NUM_HEADS = saved_cfg['label_bank_num_heads']
                 LABEL_BANK_NUM_QUERIES = saved_cfg['label_bank_num_queries']
                 LABEL_BANK_NUM_PROTOTYPES = saved_cfg['label_bank_num_prototypes']
@@ -1570,7 +1575,8 @@ def main():
         dropout=DROPOUT,
         use_patch_augmentation=USE_PATCH_SIZE_AUGMENTATION,
         min_patches_per_sample=MIN_PATCHES_PER_SAMPLE,
-        text_encoder=shared_text_encoder
+        text_encoder=shared_text_encoder,
+        text_dim=TEXT_DIM
     ).to(device)
 
     if USE_PATCH_SIZE_AUGMENTATION:
