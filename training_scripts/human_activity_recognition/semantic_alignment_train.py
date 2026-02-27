@@ -41,19 +41,26 @@ class ChannelBucketBatchSampler:
     """
     Batch sampler that groups samples by channel count to minimize padding waste.
 
+    Uses per-bucket batch sizes to maximize GPU utilization: small-channel buckets
+    (e.g., 6ch) get large batch sizes (BS=91), while large-channel buckets (e.g., 48ch)
+    get small batch sizes (BS=11). This dramatically reduces the number of micro-batches
+    needed per GradCache window for the majority of training data.
+
     Maintains class-balanced weighted sampling within each bucket.
     Replaces WeightedRandomSampler + default BatchSampler.
 
     Channel count distribution across datasets:
         3: unimib_shar | 6: hhar, hapt, kuhar, recgym | 9: uci_har, dsads
-        12: wisdm | 21: mhealth | 52: pamap2
+        12: wisdm | 21: mhealth | 48: pamap2
 
     Without bucketing: joint patch×channel utilization ~11% (89% wasted compute).
     With bucketing: channel utilization ~80-100% within each bucket.
     """
 
-    def __init__(self, channel_counts, sample_weights, batch_size, num_samples=None):
-        self.batch_size = batch_size
+    def __init__(self, channel_counts, sample_weights, batch_size_per_bucket,
+                 default_batch_size, num_samples=None):
+        self.batch_size_per_bucket = batch_size_per_bucket
+        self.default_batch_size = default_batch_size
 
         # Group indices by channel count
         self.buckets = {}
@@ -68,10 +75,6 @@ class ChannelBucketBatchSampler:
             idx_tensor = torch.tensor(indices, dtype=torch.long)
             self.bucket_weights[ch_count] = sample_weights[idx_tensor]
 
-        # Total batches per epoch
-        total_samples = num_samples if num_samples is not None else len(channel_counts)
-        self.num_batches = total_samples // batch_size if total_samples >= batch_size else 0
-
         # Bucket selection probabilities (proportional to sum of sample weights,
         # not bucket size, to preserve global group-balanced weighting intent)
         self.bucket_keys = list(self.buckets.keys())
@@ -81,9 +84,20 @@ class ChannelBucketBatchSampler:
         )
         self.bucket_probs = bucket_weight_sums / bucket_weight_sums.sum()
 
+        # Total batches per epoch: account for variable batch sizes
+        total_samples = num_samples if num_samples is not None else len(channel_counts)
+        expected_bs = sum(
+            self.bucket_probs[i].item() * self.batch_size_per_bucket.get(k, default_batch_size)
+            for i, k in enumerate(self.bucket_keys)
+        )
+        self.num_batches = int(total_samples / expected_bs) if expected_bs > 0 else 0
+
         # Log bucket info
         for k in sorted(self.bucket_keys):
-            print(f"  Channel bucket {k:2d}ch: {len(self.buckets[k]):5d} samples")
+            bs = self.batch_size_per_bucket.get(k, default_batch_size)
+            print(f"  Channel bucket {k:2d}ch: {len(self.buckets[k]):5d} samples  (micro-BS={bs})")
+        print(f"  Expected avg micro-batch size: {expected_bs:.1f}")
+        print(f"  Batches per epoch: {self.num_batches}")
 
     def __iter__(self):
         if self.num_batches == 0 or len(self.bucket_keys) == 0:
@@ -95,8 +109,11 @@ class ChannelBucketBatchSampler:
             indices = self.buckets[ch_count]
             weights = self.bucket_weights[ch_count]
 
+            # Per-bucket batch size
+            bs = self.batch_size_per_bucket.get(ch_count, self.default_batch_size)
+
             # Weighted sample within bucket (replacement=True for class balance)
-            sampled = torch.multinomial(weights, self.batch_size, replacement=True)
+            sampled = torch.multinomial(weights, bs, replacement=True)
             yield [indices[i] for i in sampled.tolist()]
 
     def __len__(self):
@@ -193,8 +210,22 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
 EPOCHS = 100
-BATCH_SIZE = 12  # Micro-batch size: fits worst-case 48ch/64p on RTX 4090 24GB (21.8GB peak, 2GB margin)
-ACCUMULATION_STEPS = 37  # Effective batch = 12 × 37 = 444 (~448)
+TARGET_EFFECTIVE_BATCH = 444  # Target samples per GradCache window (~448)
+DEFAULT_MICRO_BATCH_SIZE = 12  # Fallback for channel counts not in MAX_BS_PER_BUCKET
+# Per-channel-bucket max micro-batch sizes (RTX 4090 24GB, MAX_PATCHES=64)
+# ~80% of tested max to leave headroom for GradCache overhead + memory fragmentation
+# Larger batches for fewer channels = fewer micro-batches per window = faster training
+MAX_BS_PER_BUCKET = {
+    48: 10,   # pamap2 (5% of data)      — max tested: 13
+    21: 24,   # mhealth (8% of data)     — max tested: 30
+    12: 40,   # wisdm (10% of data)      — max tested: 51
+    9: 52,    # uci_har, dsads (20% of data) — max tested: 66
+    6: 72,    # hhar, hapt, kuhar, recgym (47% of data) — max tested: 93
+    3: 128,   # unimib_shar (10% of data) — max tested: 159
+}
+# Legacy aliases for backward compatibility
+BATCH_SIZE = DEFAULT_MICRO_BATCH_SIZE
+ACCUMULATION_STEPS = TARGET_EFFECTIVE_BATCH // DEFAULT_MICRO_BATCH_SIZE
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
 WARMUP_EPOCHS = 3
 
@@ -219,7 +250,7 @@ SOFT_TARGET_WEIGHT = 1.0  # Pure soft targets with adaptive recalibration
 # Phase 1: Forward-pass all micro-batches, cache embeddings (detached)
 # Phase 2: Compute loss over ALL cached embeddings (full effective batch)
 # Phase 3: Backprop per micro-batch using cached gradients
-# With BS=8 and ACCUMULATION_STEPS=56, gives 448 fresh in-batch negatives (vs 7 without).
+# With per-bucket batch sizes, gives ~444 fresh in-batch negatives per window.
 USE_GRAD_CACHE = True
 
 # Loss function type: "infonce" (default) or "siglip"
@@ -635,7 +666,7 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
     
     # Calculate how many batches needed to fill queue
     if num_batches is None:
-        batch_size = dataloader.batch_size or BATCH_SIZE  # batch_size is None with batch_sampler
+        batch_size = dataloader.batch_size or DEFAULT_MICRO_BATCH_SIZE  # batch_size is None with batch_sampler
         num_batches = math.ceil(memory_bank.queue_size / batch_size)
     
     num_batches = min(num_batches, len(dataloader))
@@ -765,6 +796,8 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
 
     pbar = tqdm(dataloader, desc=f"[{stage}] Epoch {epoch} Training")
     optimizer.zero_grad(set_to_none=True)
+    window_samples = 0
+    window_micro_batches = 0
 
     for batch_idx, batch in enumerate(pbar):
         patches = batch['patches'].to(device, non_blocking=True)
@@ -773,6 +806,7 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         label_texts = batch['label_texts']
         metadata = batch['metadata']
         channel_descriptions = [m['channel_descriptions'] for m in metadata]
+        current_bs = patches.shape[0]
 
         text_embeddings = label_bank.encode(label_texts, normalize=True)
         # Frozen mean-pool embeddings for soft targets (can't be gamed)
@@ -791,7 +825,11 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
                                      return_metrics=True, imu_queue=imu_queue, text_queue=text_queue,
                                      frozen_text_embeddings=frozen_text_embeddings)
 
-        scaled_loss = loss / ACCUMULATION_STEPS
+        window_samples += current_bs
+        window_micro_batches += 1
+        # Scale loss by number of micro-batches in this window (estimated)
+        estimated_micro_batches = max(1, TARGET_EFFECTIVE_BATCH // current_bs)
+        scaled_loss = loss / estimated_micro_batches
 
         debug_metrics = {}
         if batch_idx % DEBUG_METRIC_FREQUENCY == 0:
@@ -805,10 +843,10 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
 
         grad_norm = torch.tensor(0.0)
         batch_grad_norms = {k: 0.0 for k in total_grad_norms}
-        is_accumulation_step = (batch_idx + 1) % ACCUMULATION_STEPS == 0
+        is_window_full = window_samples >= TARGET_EFFECTIVE_BATCH
         is_last_batch = (batch_idx + 1) == len(dataloader)
 
-        if is_accumulation_step or is_last_batch:
+        if is_window_full or is_last_batch:
             should_log_grads = accum_step_count % DEBUG_METRIC_FREQUENCY == 0
             if scaler is not None:
                 scaler.unscale_(optimizer)
@@ -827,6 +865,8 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
 
             optimizer.zero_grad(set_to_none=True)
             accum_step_count += 1
+            window_samples = 0
+            window_micro_batches = 0
 
             if plotter is not None:
                 global_batch_for_grad = (epoch - 1) * len(dataloader) + batch_idx
@@ -937,11 +977,14 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
     GradCache training loop: two-phase gradient computation.
 
     Decouples contrastive loss batch size from GPU memory constraints.
-    With BS=8 and ACCUMULATION_STEPS=56, computes InfoNCE over 448 samples
-    instead of 8, giving 447 fresh in-batch negatives per loss computation.
+    Accumulates micro-batches until TARGET_EFFECTIVE_BATCH samples are collected,
+    then computes loss over all samples in the window.
+
+    With per-bucket batch sizes, most windows complete in fewer micro-batches
+    (e.g., 5 micro-batches of BS=91 for 6ch data vs 37 of BS=12).
 
     Algorithm:
-        For each accumulation window of ACCUMULATION_STEPS micro-batches:
+        For each accumulation window (until ~TARGET_EFFECTIVE_BATCH samples):
         Phase 1 (Cache): Forward-pass all micro-batches, cache embeddings (detached)
         Phase 2 (Loss):  Compute single loss over ALL cached embeddings
         Phase 3 (Grad):  For each micro-batch, re-forward and propagate cached gradients
@@ -970,15 +1013,17 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
 
     # Collect micro-batches for the current accumulation window
     window_batches = []
+    window_samples = 0  # Track accumulated sample count
 
     for batch_idx, batch in enumerate(pbar):
         window_batches.append(batch)
+        window_samples += batch['patches'].shape[0]
 
-        is_accumulation_step = (batch_idx + 1) % ACCUMULATION_STEPS == 0
+        is_window_full = window_samples >= TARGET_EFFECTIVE_BATCH
         is_last_batch = (batch_idx + 1) == len(dataloader)
 
-        if not (is_accumulation_step or is_last_batch):
-            pbar.set_postfix({'collecting': f"{len(window_batches)}/{ACCUMULATION_STEPS}"})
+        if not (is_window_full or is_last_batch):
+            pbar.set_postfix({'collecting': f"{window_samples}/{TARGET_EFFECTIVE_BATCH}"})
             continue
 
         # ===== ACCUMULATION WINDOW COMPLETE: Run GradCache =====
@@ -1112,7 +1157,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         batch_loss = metrics['loss']
         if math.isnan(batch_loss):
             print(f"\n[NaN DETECTED] GradCache window ending at batch {batch_idx}, Epoch {epoch}")
-            print(f"  Window size: {num_micro} micro-batches, Total samples: {num_micro * BATCH_SIZE}")
+            print(f"  Window size: {num_micro} micro-batches, Total samples: {window_samples}")
             batch_loss = 0.0
 
         total_loss += batch_loss
@@ -1137,7 +1182,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             'sim_gap': f"{metrics['similarity_gap']:.3f}",
             'pos_sim': f"{metrics['positive_similarity']:.3f}",
             'grad': f"{grad_norm.item():.2f}",
-            'neg': f"{num_micro * BATCH_SIZE - 1}"
+            'neg': f"{window_samples - 1}"
         })
 
         # Batch-level plotting
@@ -1148,7 +1193,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
                 for comp_name, comp_grad_norm in batch_grad_norms.items():
                     plotter.add_scalar(f'batch/debug_{stage}_{comp_name}_grad_norm', comp_grad_norm, global_batch)
 
-            if accum_step_count % max(1, PLOT_EVERY_N_BATCHES // ACCUMULATION_STEPS) == 0:
+            if accum_step_count % 2 == 0:  # Plot every 2 optimizer steps
                 plotter.add_scalar(f'batch/{stage}_loss', batch_loss, global_batch)
                 plotter.add_scalar(f'batch/{stage}_positive_similarity', metrics['positive_similarity'], global_batch)
                 plotter.add_scalar(f'batch/{stage}_negative_similarity', metrics['negative_similarity'], global_batch)
@@ -1172,6 +1217,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
 
         # Clear window for next accumulation
         window_batches = []
+        window_samples = 0
 
     num_loss_computations = max(num_loss_computations, 1)
     debug_metric_count = max((num_optimizer_steps + DEBUG_METRIC_FREQUENCY - 1) // DEBUG_METRIC_FREQUENCY, 1)
@@ -1529,8 +1575,8 @@ def main():
             'use_memory_bank': USE_MEMORY_BANK, 'memory_bank_size': MEMORY_BANK_SIZE,
         },
         'training': {
-            'epochs': EPOCHS, 'batch_size': BATCH_SIZE, 'accumulation_steps': ACCUMULATION_STEPS,
-            'effective_batch_size': BATCH_SIZE * ACCUMULATION_STEPS,
+            'epochs': EPOCHS, 'target_effective_batch': TARGET_EFFECTIVE_BATCH,
+            'max_bs_per_bucket': MAX_BS_PER_BUCKET, 'default_micro_batch_size': DEFAULT_MICRO_BATCH_SIZE,
             'use_grad_cache': USE_GRAD_CACHE,
             'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS, 'max_grad_norm': MAX_GRAD_NORM,
         },
@@ -1663,17 +1709,17 @@ def main():
 
     print("\n" + "="*70)
     print("End-to-End Training: Encoder + Semantic Head")
-    effective_batch = BATCH_SIZE * ACCUMULATION_STEPS
-    print(f"Gradient accumulation: {ACCUMULATION_STEPS} steps (micro-batch={BATCH_SIZE}, effective={effective_batch})")
+    print(f"Dynamic micro-batch sizes: {MAX_BS_PER_BUCKET} (default={DEFAULT_MICRO_BATCH_SIZE})")
+    print(f"Target effective batch: {TARGET_EFFECTIVE_BATCH} samples per window")
     print(f"Loss function: {LOSS_TYPE}")
     if USE_GRAD_CACHE:
-        print(f"GradCache ENABLED: {effective_batch} fresh in-batch negatives per loss computation")
+        print(f"GradCache ENABLED: ~{TARGET_EFFECTIVE_BATCH} fresh in-batch negatives per loss computation")
     else:
-        print(f"GradCache disabled: {BATCH_SIZE - 1} fresh in-batch negatives per loss computation")
+        print(f"GradCache disabled: micro-batch negatives only per loss computation")
     if USE_SOFT_TARGETS:
         print(f"Using pairwise soft targets (temperature={SOFT_TARGET_TEMPERATURE}, weight={SOFT_TARGET_WEIGHT})")
     if USE_MEMORY_BANK:
-        print(f"Using memory bank with {MEMORY_BANK_SIZE} queue size (negatives per step: {BATCH_SIZE + MEMORY_BANK_SIZE})")
+        print(f"Using memory bank with {MEMORY_BANK_SIZE} queue size")
     print("="*70)
 
     # Create datasets
@@ -1709,12 +1755,14 @@ def main():
 
         # Channel-bucketed batch sampler: groups same-channel-count samples
         # to minimize padding waste (joint util ~11% → ~80-100%)
+        # Uses per-bucket batch sizes for maximum GPU utilization
         channel_counts = train_dataset.get_channel_counts()
-        print(f"\n=== Channel-Bucketed + Group-Balanced Sampling ===")
+        print(f"\n=== Channel-Bucketed + Group-Balanced Sampling (Dynamic BS) ===")
         bucket_sampler = ChannelBucketBatchSampler(
             channel_counts=channel_counts,
             sample_weights=sample_weights,
-            batch_size=BATCH_SIZE,
+            batch_size_per_bucket=MAX_BS_PER_BUCKET,
+            default_batch_size=DEFAULT_MICRO_BATCH_SIZE,
             num_samples=len(train_dataset)
         )
         train_loader = DataLoader(
@@ -1739,7 +1787,7 @@ def main():
     else:
         train_loader = DataLoader(
             train_dataset,
-            batch_size=BATCH_SIZE,
+            batch_size=DEFAULT_MICRO_BATCH_SIZE,
             shuffle=True,
             num_workers=NUM_WORKERS,
             prefetch_factor=PREFETCH_FACTOR,
