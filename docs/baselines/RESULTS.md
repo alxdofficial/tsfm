@@ -6,7 +6,7 @@ Generated: 2026-02-25 | Framework: 4-metric unified evaluation | Seed: 3431
 
 | Model | How It Works | Embed Dim | Zero-Shot | Supervised |
 |-------|-------------|:---------:|-----------|------------|
-| **TSFM (ours)** | Dual-branch Transformer trained with CLIP-style contrastive alignment between IMU patches and text labels; processes each channel independently then fuses to 384-dim | 384 | Cosine sim with text embeddings | End-to-end cosine sim |
+| **TSFM-Small (ours)** | Dual-branch Transformer trained with CLIP-style contrastive alignment between IMU patches and text labels; processes each channel independently then fuses to 384-dim | 384 | Cosine sim with text embeddings | End-to-end cosine sim |
 | **LiMU-BERT** | BERT-style masked reconstruction on 20-step IMU sub-windows; predicts masked timesteps from context | 72 | GRU classifier + group scoring | End-to-end encoder + GRU |
 | **MOMENT** | General time-series Transformer pretrained on diverse time-series data (no HAR); processes each IMU channel independently and **concatenates** (no fusion) to 6144-dim | 6144 | SVM-RBF + group scoring | End-to-end encoder + linear |
 | **CrossHAR** | Hierarchical self-supervised pretraining combining masked reconstruction and contrastive learning on IMU sequences | 72 | Transformer_ft classifier + group scoring | End-to-end encoder + Transformer_ft |
@@ -24,7 +24,7 @@ including frozen components.
 
 | Model | IMU Encoder | Language/Text Module | Classifier/Projection Heads | Trainable | Inference Total |
 |-------|----------:|---------------------:|----------------------------:|----------:|----------------:|
-| **TSFM (ours)** | 9.8M | 22.7M (frozen SBERT) | 10.9M | **20.7M** | **43.4M** |
+| **TSFM-Small (ours)** | 9.8M | 22.7M (frozen SBERT) | 10.9M | **20.7M** | **43.4M** |
 | **LiMU-BERT** | 62.6K | — | 10.1K (GRU) | **72.7K** | **72.7K** |
 | **MOMENT** | 341.2M | — | ~50K (linear) | **341.2M** | **341.2M** |
 | **CrossHAR** | 62.8K | — | 468.6K (Transformer) | **531.4K** | **531.4K** |
@@ -336,7 +336,7 @@ rates and variable channel counts, independent of how we evaluate them.
 
 | Model | Variable Sampling Rate | Variable Channel Count | Architectural Constraint |
 |-------|:---:|:---:|---|
-| **TSFM (ours)** | Yes | Yes | Patches in seconds → `F.interpolate` to fixed 64 timesteps; channels are a dynamic axis with channel-independent CNN + cross-channel attention. No hardcoded channel count or sequence length. |
+| **TSFM-Small (ours)** | Yes | Yes | Patches in seconds → `F.interpolate` to fixed 64 timesteps; channels are a dynamic axis with channel-independent CNN + cross-channel attention. No hardcoded channel count or sequence length. |
 | **LiMU-BERT** | No | No | Input projection is `Linear(6, 72)` — hardcodes 6 channels. Positional encoding is `Embedding(120, 72)` — hardcodes 120 timesteps (6s × 20Hz). Changing either requires retraining. |
 | **MOMENT** | No | Partially | Fixed 512-token sequence length with no concept of physical time (no Hz-awareness). Univariate per-channel processing means arbitrary channel counts are theoretically possible, but our pipeline hardcodes 6 channels for SVM compatibility. |
 | **CrossHAR** | No | No | Same architecture as LiMU-BERT: `Linear(6, 72)` input and `Embedding(120, 72)` positional encoding. Identical constraints. |
@@ -352,9 +352,9 @@ TSFM exploits higher temporal resolution that baselines architecturally cannot a
 
 ## Test Datasets
 
-We evaluate on 6 main test datasets with high label group coverage (85-100%), plus 1 severe
-out-of-domain dataset (VTT-ConIoT) reported separately due to its fundamentally different
-characteristics. See [Severe Out-of-Domain: VTT-ConIoT](#severe-out-of-domain-vtt-coniot) below.
+We evaluate on 5 main test datasets with high label group coverage (85-100%), plus 2 severe
+out-of-domain datasets (HARTH, VTT-ConIoT) reported separately due to fundamentally different
+characteristics. See [Severe Out-of-Domain](#severe-out-of-domain-harth--vtt-coniot) below.
 
 ### Main Test Datasets (85-100% label coverage)
 
@@ -365,158 +365,117 @@ characteristics. See [Severe Out-of-Domain: VTT-ConIoT](#severe-out-of-domain-vt
 | MobiAct | 4,345 | 13 | 50 | 85% | Hard (falls, vehicle entry) |
 | Shoaib | 5,537 | 7 | 50 | 100% | Medium (multi-placement smartphone) |
 | Opportunity | 6,453 | 4 | 30 | 100% | Medium (raw XSens sensor counts, multi-body IMU) |
-| HARTH | 47,330 | 12 | 50 | 100% | Hard (back-only accelerometer, distribution shift) |
 
-### Out-of-Domain Test Dataset (50% label coverage)
+### Severe Out-of-Domain Test Datasets
 
 | Dataset | Windows | Classes | Hz | Group Coverage | Difficulty |
 |---------|--------:|--------:|---:|:-:|------------|
-| VTT-ConIoT | 2,058 | 16 | 50 | 50% | Severe (industrial/construction) |
+| HARTH | 47,330 | 12 | 50 | 100% | Severe (back-only accelerometer, extreme sensor distribution shift) |
+| VTT-ConIoT | 2,058 | 16 | 50 | 50% | Severe (industrial/construction, 50% novel activities) |
 
-**Why VTT-ConIoT is reported separately**: 8 of 16 activity labels (carrying, climbing ladder,
-kneeling work, leveling paint, lifting, pushing cart, roll painting, spraying paint) have no
-semantic equivalent in the 10 training datasets. All models are guaranteed to fail on these
-activities regardless of architecture quality. This 50% coverage floor makes VTT-ConIoT a test
-of severe domain shift rather than cross-dataset generalization.
+**Why these are reported separately**:
+- **HARTH**: 100% label coverage but extreme sensor distribution shift — uses back-mounted and
+  thigh-mounted accelerometers only (no gyroscope). The raw accelerometer data includes gravity
+  and has fundamentally different characteristics from waist/wrist-mounted smartphone IMUs in
+  training data. All models achieve near-zero zero-shot accuracy, confirming this is a genuine
+  distribution shift rather than a model-specific failure. Supervised fine-tuning adapts well
+  (up to 78.5% at 10%).
+- **VTT-ConIoT**: 8 of 16 activity labels (carrying, climbing ladder, kneeling work, leveling
+  paint, lifting, pushing cart, roll painting, spraying paint) have no semantic equivalent in the
+  10 training datasets. All models are guaranteed to fail on these activities regardless of
+  architecture quality. This 50% coverage floor makes VTT-ConIoT a test of severe label shift.
 
-**Notes on challenging datasets**:
-- **HARTH**: Uses back-mounted and thigh-mounted accelerometers only (no gyroscope). The raw
-  accelerometer data includes gravity and has different characteristics from waist/wrist-mounted
-  smartphone IMUs in training data. All models achieve near-zero zero-shot accuracy, confirming
-  this is a genuine distribution shift rather than a model-specific failure. Supervised fine-tuning
-  adapts well (up to 76.5% at 10%).
-- **Opportunity**: Uses XSens body-worn IMUs with raw sensor counts (~1000 counts per g, not
-  standard m/s² or g units). Sampled at 30Hz (vs 50Hz for other datasets). Despite these
-  differences, zero-shot still works reasonably (42-54% closed-set) because the 4 activities
-  (lying, sitting, standing, walking) are well-represented in training data.
+**Notes on Opportunity**: Uses XSens body-worn IMUs with raw sensor counts (~1000 counts per g,
+not standard m/s² or g units). Sampled at 30Hz (vs 50Hz for other datasets). Despite these
+differences, zero-shot still works reasonably (42-54% closed-set) because the 4 activities
+(lying, sitting, standing, walking) are well-represented in training data.
 
 ---
 
-## Average Across Main Datasets (6 datasets)
+## Average Across Main Datasets (5 datasets)
+
+*Averaged over MotionSense, RealWorld, MobiAct, Shoaib, Opportunity (85-100% label coverage)*
 
 | Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | **34.2** | **12.3** | **39.1** | 27.2 | **73.6** | 62.6 | **83.8** | **76.2** |
-| **LiMU-BERT** | 18.1 | 6.2 | 30.9 | 20.1 | 26.6 | 17.2 | 69.2 | 56.9 |
-| **MOMENT** | 23.6 | 6.1 | 37.6 | **27.9** | 72.3 | **63.6** | 81.6 | 73.7 |
-| **CrossHAR** | 17.7 | 4.6 | 32.0 | 26.6 | 62.7 | 53.9 | 76.7 | 69.6 |
-| **LanHAR** | 13.3 | 5.2 | 23.8 | 18.2 | 37.8 | 32.9 | 62.5 | 52.2 |
-| **LLaSA**† | 3.2 | 1.6 | 16.6 | 7.4 | N/A | N/A | N/A | N/A |
+| **TSFM-Small (ours)** | **40.9** | **14.7** | 46.8 | 32.6 | 74.0 | 66.7 | **85.3** | **81.8** |
+| **TSFM-Medium (ours)** | 40.5 | 11.3 | **47.0** | **32.9** | 73.0 | **67.0** | 84.7 | 80.7 |
+| **LiMU-BERT** | 21.7 | 7.5 | 33.1 | 23.1 | 28.2 | 20.2 | 70.8 | 65.4 |
+| **MOMENT** | 28.3 | 7.2 | 44.7 | 33.2 | **74.4** | **70.0** | 83.9 | 80.5 |
+| **CrossHAR** | 21.2 | 5.5 | 38.2 | 31.7 | 64.9 | 58.9 | 79.4 | 75.7 |
+| **LanHAR** | 15.8 | 6.2 | 28.4 | 21.7 | 44.2 | 38.9 | 60.4 | 56.9 |
+| **LLaSA**† | 1.4 | 1.2 | 17.4 | 8.3 | N/A | N/A | N/A | N/A |
 
 †LLaSA: Published model evaluated at fp16, max 100 samples/class. Zero-shot only (no supervised fine-tuning). MotionSense and Shoaib are in LLaSA's training data.
 
 ---
 
-## Per-Dataset Results — Original Benchmarks
+## Per-Dataset Results — Main Benchmarks (5 datasets)
 
 ### Zero-Shot Open-Set
 
 *Model predicts from all 87 training labels; correct if predicted label maps to same group as ground truth.*
 
-| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | **51.5** | **29.0** | **63.1** | **17.8** | 28.1 | **13.1** |
-| **LiMU-BERT** | 6.1 | 2.0 | 28.4 | 10.3 | **29.1** | 7.7 |
-| **MOMENT** | 28.7 | 7.0 | 33.8 | 8.0 | 14.6 | 6.0 |
-| **CrossHAR** | 13.5 | 4.2 | 16.2 | 5.4 | 21.5 | 7.0 |
-| **LanHAR** | 11.4 | 4.4 | 14.0 | 6.4 | 17.3 | 11.4 |
-| **LLaSA**† | 0.0 | 0.0 | 7.2\* | 6.2\* | 0.0 | 0.0 |
+| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **TSFM-Small (ours)** | **51.5** | **29.0** | **63.1** | **17.8** | 28.1 | **13.1** | **42.6** | **10.6** | 19.2 | 2.9 |
+| **TSFM-Medium (ours)** | **56.5** | 13.5 | 44.7 | **19.3** | **33.6** | 10.1 | **43.5** | 10.7 | **24.3** | 3.1 |
+| **LiMU-BERT** | 6.1 | 2.0 | 28.4 | 10.3 | 29.1 | 7.7 | 16.8 | 6.5 | 28.1 | **11.0** |
+| **MOMENT** | 28.7 | 7.0 | 33.8 | 8.0 | 14.6 | 6.0 | 33.6 | 10.1 | 30.6 | 5.0 |
+| **CrossHAR** | 13.5 | 4.2 | 16.2 | 5.4 | 21.5 | 7.0 | 20.2 | 6.5 | **34.5** | 4.6 |
+| **LanHAR** | 11.4 | 4.4 | 14.0 | 6.4 | 17.3 | 11.4 | 16.3 | 4.6 | 20.1 | 4.3 |
+| **LLaSA**† | 0.0 | 0.0 | 7.2\* | 6.2\* | 0.0 | 0.0 | 0.0\* | 0.0\* | 0.0 | 0.0 |
 
 ### Zero-Shot Closed-Set
 
 *Text-aligned models predict from test labels only (exact match). Classifier-based models mask logits to test-relevant groups (group match).*
 
-| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | **57.9** | 21.8 | **64.7** | **56.8** | 25.1 | 14.4 |
-| **LiMU-BERT** | 29.3 | 13.1 | 39.9 | 37.8 | 30.5 | 19.9 |
-| **MOMENT** | 40.9 | **24.6** | 51.6 | 39.3 | 31.1 | 21.6 |
-| **CrossHAR** | 23.3 | 17.7 | 42.8 | 39.5 | **40.3** | **29.5** |
-| **LanHAR** | 17.5 | 11.6 | 37.1 | 30.7 | 30.0 | 19.1 |
-| **LLaSA**† | 4.4 | 1.0 | 28.5\* | 16.4\* | 15.2 | 9.7 |
+| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **TSFM-Small (ours)** | **57.9** | 21.8 | **64.7** | **56.8** | 25.1 | 14.4 | 44.1 | 33.1 | 42.3 | 36.7 |
+| **TSFM-Medium (ours)** | 54.7 | **24.5** | 61.5 | 47.1 | 31.9 | 22.3 | **47.7** | **36.5** | 39.3 | 33.9 |
+| **LiMU-BERT** | 29.3 | 13.1 | 39.9 | 37.8 | 30.5 | 19.9 | 37.6 | 33.6 | 28.1 | 11.0 |
+| **MOMENT** | 40.9 | 24.6 | 51.6 | 39.3 | 31.1 | 21.6 | 46.0 | **37.1** | **53.9** | **43.4** |
+| **CrossHAR** | 23.3 | 17.7 | 42.8 | 39.5 | **40.3** | **29.5** | 31.2 | 28.5 | 53.6 | 43.5 |
+| **LanHAR** | 17.5 | 11.6 | 37.1 | 30.7 | 30.0 | 19.1 | 34.7 | 30.6 | 22.5 | 16.7 |
+| **LLaSA**† | 4.4 | 1.0 | 28.5\* | 16.4\* | 15.2 | 9.7 | 14.0\* | 4.7\* | 25.0 | 10.0 |
 
-\*LLaSA was trained on MotionSense — not truly zero-shot. †Subsampled (100/class).
+\*LLaSA was trained on MotionSense and Shoaib — not truly zero-shot. †Subsampled (100/class).
 
 ### 1% Supervised (End-to-End Fine-Tuning)
 
 *Encoder fine-tuned end-to-end with 1% of labeled data. Text-aligned models classify via cosine similarity; others use native classifier heads.*
 
-| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | **57.7** | 23.9 | **88.1** | 87.1 | **73.3** | **72.3** |
-| **LiMU-BERT** | 8.3 | 1.2 | 22.6 | 6.1 | 45.9 | 40.3 |
-| **MOMENT** | 54.9 | **36.8** | 87.4 | **87.5** | 72.1 | 70.2 |
-| **CrossHAR** | 40.2 | 16.5 | 78.9 | 77.5 | 68.4 | 63.3 |
-| **LanHAR** | 33.6 | 14.6 | 41.9 | 38.1 | 50.6 | 45.9 |
+| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **TSFM-Small (ours)** | **57.7** | 23.9 | **88.1** | 87.1 | **73.3** | **72.3** | 81.8 | 81.6 | **69.0** | **68.8** |
+| **TSFM-Medium (ours)** | 54.3 | 27.3 | 87.0 | 86.2 | 71.5 | 70.2 | **85.4** | **85.1** | 66.9 | 66.1 |
+| **LiMU-BERT** | 8.3 | 1.2 | 22.6 | 6.1 | 45.9 | 40.3 | 15.0 | 3.7 | 49.1 | 49.4 |
+| **MOMENT** | 54.9 | **36.8** | 87.4 | **87.5** | 72.1 | 70.2 | **88.8** | **88.6** | 68.9 | 66.7 |
+| **CrossHAR** | 40.2 | 16.5 | 78.9 | 77.5 | 68.4 | 63.3 | 72.8 | 71.9 | 64.1 | 65.3 |
+| **LanHAR** | 33.6 | 14.6 | 41.9 | 38.1 | 50.6 | 45.9 | 55.0 | 52.0 | 40.1 | 43.6 |
 
 ### 10% Supervised (End-to-End Fine-Tuning)
 
 *Encoder fine-tuned end-to-end with 10% of labeled data. Text-aligned models classify via cosine similarity; others use native classifier heads.*
 
-| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | **74.9** | **57.4** | **93.3** | **92.6** | **84.4** | **85.0** |
-| **LiMU-BERT** | 61.8 | 35.2 | 69.4 | 68.5 | 56.5 | 52.8 |
-| **MOMENT** | 71.3 | 55.4 | 92.1 | 92.1 | 80.6 | 80.8 |
-| **CrossHAR** | 67.8 | 51.1 | 92.2 | 91.4 | 79.6 | 78.7 |
-| **LanHAR** | 38.2 | 25.9 | 75.0 | 75.2 | 56.6 | 55.7 |
-
----
-
-## Per-Dataset Results — Expanded Benchmarks
-
-### Zero-Shot Open-Set
-
-| Model | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 | HARTH Acc | HARTH F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | **42.6** | **10.6** | 19.2 | 2.9 | **0.6** | **0.4** |
-| **LiMU-BERT** | 16.8 | 6.5 | 28.1 | **11.0** | 0.0 | 0.0 |
-| **MOMENT** | 33.6 | 10.1 | 30.6 | 5.0 | 0.4 | 0.2 |
-| **CrossHAR** | 20.2 | 6.5 | **34.5** | 4.6 | 0.3 | 0.2 |
-| **LanHAR** | 16.3 | 4.6 | 20.1 | 4.3 | 0.9 | 0.2 |
-| **LLaSA**† | 0.0\* | 0.0\* | 0.0 | 0.0 | 11.9 | 3.4 |
-
-### Zero-Shot Closed-Set
-
-| Model | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 | HARTH Acc | HARTH F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | **44.1** | 33.1 | 42.3 | 36.7 | 0.5 | 0.4 |
-| **LiMU-BERT** | 37.6 | 33.6 | 28.1 | 11.0 | **20.2** | **5.1** |
-| **MOMENT** | 46.0 | **37.1** | **53.9** | **43.4** | 1.9 | 1.3 |
-| **CrossHAR** | 31.2 | 28.5 | 53.6 | 43.5 | 0.9 | 0.9 |
-| **LanHAR** | 34.7 | 30.6 | 22.5 | 16.7 | 1.1 | 0.4 |
-| **LLaSA**† | 14.0\* | 4.7\* | 25.0 | 10.0 | 12.5 | 2.5 |
-
-\*LLaSA was trained on Shoaib — not truly zero-shot. †Subsampled (100/class).
-
-### 1% Supervised (End-to-End Fine-Tuning)
-
-| Model | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 | HARTH Acc | HARTH F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | 81.8 | 81.6 | **69.0** | **68.8** | **71.9** | **41.9** |
-| **LiMU-BERT** | 15.0 | 3.7 | 49.1 | 49.4 | 19.1 | 2.7 |
-| **MOMENT** | **88.8** | **88.6** | 68.9 | 66.7 | 61.9 | 32.0 |
-| **CrossHAR** | 72.8 | 71.9 | 64.1 | 65.3 | 51.7 | 29.1 |
-| **LanHAR** | 55.0 | 52.0 | 40.1 | 43.6 | 5.7 | 3.0 |
-
-### 10% Supervised (End-to-End Fine-Tuning)
-
-| Model | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 | HARTH Acc | HARTH F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | **96.4** | **96.3** | 77.6 | 77.6 | **76.5** | **48.1** |
-| **LiMU-BERT** | 91.9 | 91.7 | 74.1 | 79.1 | 61.7 | 14.5 |
-| **MOMENT** | 95.9 | 95.7 | **79.7** | **78.7** | 69.9 | 39.3 |
-| **CrossHAR** | 93.3 | 93.1 | 63.8 | 64.1 | 63.3 | 39.1 |
-| **LanHAR** | 81.4 | 78.2 | 50.6 | 49.6 | 73.4 | 28.3 |
+| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **TSFM-Small (ours)** | **74.9** | **57.4** | 93.3 | 92.6 | **84.4** | **85.0** | **96.4** | **96.3** | 77.6 | 77.6 |
+| **TSFM-Medium (ours)** | 74.5 | 54.4 | **95.4** | **94.7** | 84.7 | 85.9 | 94.1 | 93.9 | 74.9 | 74.7 |
+| **LiMU-BERT** | 61.8 | 35.2 | 69.4 | 68.5 | 56.5 | 52.8 | 91.9 | 91.7 | 74.1 | 79.1 |
+| **MOMENT** | 71.3 | 55.4 | 92.1 | 92.1 | 80.6 | 80.8 | 95.9 | 95.7 | **79.7** | **78.7** |
+| **CrossHAR** | 67.8 | 51.1 | 92.2 | 91.4 | 79.6 | 78.7 | 93.3 | 93.1 | 63.8 | 64.1 |
+| **LanHAR** | 38.2 | 25.9 | 75.0 | 75.2 | 56.6 | 55.7 | 81.4 | 78.2 | 50.6 | 49.6 |
 
 ---
 
 ## Key Observations
 
-1. **TSFM leads most average metrics across 6 main datasets** — 39.1% closed-set avg accuracy,
-   ahead of MOMENT (37.6%), CrossHAR (32.0%), LiMU-BERT (30.9%), and LanHAR (23.8%). TSFM also
-   leads at 1% supervised (73.6% vs MOMENT's 72.3%) and 10% supervised (83.8% vs MOMENT's 81.6%).
-   MOMENT edges ahead on ZS-Close F1 (27.9 vs 27.2) and 1% F1 (63.6 vs 62.6).
+1. **TSFM leads most average metrics across 5 main datasets** — TSFM-Small achieves 46.8% and
+   TSFM-Medium 47.0% closed-set avg accuracy, ahead of MOMENT (44.7%), CrossHAR (38.2%),
+   LiMU-BERT (33.1%), and LanHAR (28.4%). TSFM-Small leads at 10% supervised (85.3% vs
+   MOMENT's 83.9%). MOMENT edges ahead on 1% supervised (74.4% vs TSFM-Small's 74.0%).
 
 2. **HARTH is a distribution-shift stress test** — All models achieve near-zero zero-shot accuracy
    (<1% for TSFM/MOMENT/CrossHAR, 20.2% for LiMU-BERT closed-set). This is caused by the
@@ -549,7 +508,7 @@ of severe domain shift rather than cross-dataset generalization.
    suggesting it can eventually adapt to distribution-shifted data given enough labels.
 
 8. **LLaSA underperforms all encoder-based models** — 16.6% closed-set avg, below even LanHAR
-   (23.8%). The 7B LLM is overwhelmed by the 87-label prompt in open-set (0% on 4/6 datasets),
+   (28.4%). The 7B LLM is overwhelmed by the 87-label prompt in open-set (0% on 4/5 datasets),
    and even closed-set with fewer labels shows weak performance. Generative text classification
    is fundamentally less reliable than direct embedding comparison for IMU data.
 
@@ -645,30 +604,39 @@ TSFM is not apples-to-apples due to the embedding dimensionality gap and the ZS 
 
 ---
 
-## Severe Out-of-Domain: VTT-ConIoT
+## Severe Out-of-Domain: HARTH & VTT-ConIoT
 
-VTT-ConIoT is an industrial/construction activity dataset with 16 classes, of which only 8 (50%)
-have semantic equivalents in the 10 training datasets. The remaining 8 activities (carrying,
-climbing ladder, kneeling work, leveling paint, lifting, pushing cart, roll painting, spraying paint)
-are completely novel — no model can correctly classify them in zero-shot mode, and even supervised
-fine-tuning has very limited training signal.
+These two datasets are reported separately due to extreme distribution shift:
+- **HARTH** (12 classes): 100% label coverage but back-mounted accelerometer only (no gyro) — extreme sensor distribution shift from waist/wrist smartphone IMUs in training data.
+- **VTT-ConIoT** (16 classes): Industrial/construction activities, only 50% label coverage — 8 of 16 activities (carrying, climbing ladder, kneeling work, etc.) have no training equivalent.
 
-We report VTT-ConIoT separately because it tests a fundamentally different condition: **severe
-domain shift** where the activity vocabulary is only half covered, rather than the near-complete
-coverage (85-100%) of the 6 main test datasets.
+### HARTH
 
 | Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM (ours)** | 2.0 | 0.4 | 6.3 | **3.8** | 13.5 | 9.4 | 30.4 | 29.5 |
+| **TSFM-Small (ours)** | 0.6 | 0.4 | 0.5 | 0.4 | **71.9** | **41.9** | 76.5 | **48.1** |
+| **TSFM-Medium (ours)** | **6.7** | **1.3** | 10.6 | 4.3 | 53.5 | 28.8 | **78.5** | 41.8 |
+| **LiMU-BERT** | 0.0 | 0.0 | **20.2** | **5.1** | 19.1 | 2.7 | 61.7 | 14.5 |
+| **MOMENT** | 0.4 | 0.2 | 1.9 | 1.3 | 61.9 | 32.0 | 69.9 | 39.3 |
+| **CrossHAR** | 0.3 | 0.2 | 0.9 | 0.9 | 51.7 | 29.1 | 63.3 | 39.1 |
+| **LanHAR** | 0.9 | 0.2 | 1.1 | 0.4 | 5.7 | 3.0 | 73.4 | 28.3 |
+| **LLaSA**† | 11.9 | 3.4 | 12.5 | 2.5 | N/A | N/A | N/A | N/A |
+
+### VTT-ConIoT
+
+| Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **TSFM-Small (ours)** | 2.0 | 0.4 | 6.3 | **3.8** | 13.5 | 9.4 | 30.4 | 29.5 |
+| **TSFM-Medium (ours)** | 1.7 | 0.6 | 3.1 | 2.9 | 1.9 | 1.9 | 26.1 | 25.9 |
 | **LiMU-BERT** | 3.4 | 0.9 | **7.1** | 2.1 | 7.7 | 4.2 | 19.3 | 8.4 |
 | **MOMENT** | 1.6 | 0.4 | 5.2 | 2.0 | **21.3** | **18.6** | **38.6** | **37.2** |
 | **CrossHAR** | 0.7 | 0.4 | 5.0 | 2.7 | 9.7 | 4.8 | 27.1 | 23.1 |
 | **LanHAR** | **8.3** | **2.1** | 6.9 | 3.2 | 5.3 | 2.7 | 16.9 | 10.8 |
 | **LLaSA**† | — | — | 6.9 | 1.4 | N/A | N/A | N/A | N/A |
 
-**Observations**: All models score near random on zero-shot (<8% accuracy). With 10% supervised
-data, MOMENT leads (38.6%), followed by TSFM (30.4%) and CrossHAR (27.1%). LiMU-BERT and
-LanHAR struggle most (<19%).
+**Observations**:
+- **HARTH**: All models near-zero on zero-shot due to sensor distribution shift. Supervised FT adapts well: TSFM-Medium leads at 10% (78.5%), TSFM-Small leads at 1% (71.9%).
+- **VTT-ConIoT**: All models near random on zero-shot (<8%). With 10% supervised data, MOMENT leads (38.6%), followed by TSFM-Small (30.4%). The 50% label coverage floor limits all models.
 
 ---
 

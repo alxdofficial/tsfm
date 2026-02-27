@@ -12,7 +12,7 @@
 #   - data/ (36GB raw dataset downloads + session data)
 #   - benchmark_data/raw/ (8GB intermediate CSVs)
 #   - training_output epoch checkpoints (13GB, only best.pt kept)
-#   - auxiliary_repos embed/ and dataset/ dirs (7.7GB, regenerated during eval)
+#   - auxiliary_repos embed/ and dataset/ dirs (8.6GB, regenerated during eval)
 #   - .git/ history
 #   - .venv/ virtual environment
 #
@@ -58,8 +58,9 @@ EXCLUDES=(
 
     # LiMU-BERT pre-extracted embeddings (7.2GB — regenerated during eval)
     "auxiliary_repos/LIMU-BERT-Public/embed/*"
-    # LiMU-BERT original dataset copies (525MB — we use benchmark_data/ instead)
+    # Baseline dataset copies (we use benchmark_data/ instead)
     "auxiliary_repos/LIMU-BERT-Public/dataset/*"
+    "auxiliary_repos/CrossHAR/dataset/*"
     # Reference papers
     "auxiliary_repos/papers/*"
     "auxiliary_repos/papers_txt/*"

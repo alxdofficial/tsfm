@@ -139,7 +139,7 @@ PATCH_SIZE_PER_DATASET = {
     'harth': 1.5,         # 50 Hz — zero-shot (acc only, back+thigh)
 }
 
-MAX_PATCHES_PER_SAMPLE = 48
+MAX_PATCHES_PER_SAMPLE = 32  # Reduced from 48 for d=768 medium model (memory)
 MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
 # ---- Architecture configuration (single source of truth: model/config.py) ----
@@ -192,8 +192,8 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
 EPOCHS = 100
-BATCH_SIZE = 64  # Micro-batch size (optimal throughput for d=768 full pipeline on RTX 4090, ~15 GB peak)
-ACCUMULATION_STEPS = 7  # Effective batch = 64 × 7 = 448
+BATCH_SIZE = 8  # Micro-batch size (d=768 medium model on RTX 4090 24GB)
+ACCUMULATION_STEPS = 56  # Effective batch = 8 × 56 = 448
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
 WARMUP_EPOCHS = 3
 
@@ -1140,6 +1140,13 @@ def evaluate_unseen(model, label_bank, dataloader, device, epoch):
 def main():
     """Main training function."""
     global CHECKPOINT_DIR
+    global D_MODEL, NUM_HEADS, NUM_TEMPORAL_LAYERS, DIM_FEEDFORWARD, DROPOUT
+    global USE_CROSS_CHANNEL, CNN_CHANNELS, CNN_KERNEL_SIZES, TARGET_PATCH_SIZE
+    global D_MODEL_FUSED, SEMANTIC_DIM, NUM_SEMANTIC_TEMPORAL_LAYERS
+    global NUM_FUSION_QUERIES, USE_FUSION_SELF_ATTENTION
+    global NUM_POOL_QUERIES, USE_POOL_SELF_ATTENTION
+    global SENTENCE_BERT_MODEL, CHANNEL_TEXT_NUM_HEADS
+    global LABEL_BANK_NUM_HEADS, LABEL_BANK_NUM_QUERIES, LABEL_BANK_NUM_PROTOTYPES
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
