@@ -85,7 +85,7 @@ CHECKPOINT_PATH = os.environ.get("TSFM_CHECKPOINT", _find_latest_checkpoint())
 
 # Data specs
 DATA_CHANNELS = 6          # 6-channel IMU (3 accel + 3 gyro)
-TSFM_EMB_DIM = 384         # TSFM embedding dimension
+TSFM_EMB_DIM = None        # Auto-detected from model (set after loading)
 TSFM_BATCH_SIZE = 32       # Batch size for embedding extraction
 
 # Fixed patch size for evaluation
@@ -731,6 +731,10 @@ def main():
     model, checkpoint, hyperparams_path = load_tsfm_model(CHECKPOINT_PATH, device)
     label_bank = load_label_bank(checkpoint, device, hyperparams_path)
     print("Model and label bank loaded successfully")
+
+    # Auto-detect embedding dim from model
+    global TSFM_EMB_DIM
+    TSFM_EMB_DIM = model.semantic_dim
 
     # Run scoring on each test dataset
     all_results = {}

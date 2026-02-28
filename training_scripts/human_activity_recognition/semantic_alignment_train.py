@@ -160,7 +160,7 @@ MAX_PATCHES_PER_SAMPLE = 64  # No truncation: actual max is 59 (pamap2 48ch @ 1.
 MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
 # ---- Architecture configuration (single source of truth: model/config.py) ----
-MODEL_SIZE = "medium"  # Options: "tiny", "small", "medium", "large"
+MODEL_SIZE = "small"  # Options: "tiny", "small", "medium", "large" -- DIAGNOSTIC: testing if small collapses under current code
 _cfg = get_config(MODEL_SIZE)
 
 # Encoder
@@ -213,15 +213,15 @@ EPOCHS = 100
 TARGET_EFFECTIVE_BATCH = 444  # Target samples per GradCache window (~448)
 DEFAULT_MICRO_BATCH_SIZE = 12  # Fallback for channel counts not in MAX_BS_PER_BUCKET
 # Per-channel-bucket max micro-batch sizes (RTX 4090 24GB, MAX_PATCHES=64)
-# ~80% of tested max to leave headroom for GradCache overhead + memory fragmentation
+# ~80% of tested max to leave headroom for memory fragmentation during long training
 # Larger batches for fewer channels = fewer micro-batches per window = faster training
 MAX_BS_PER_BUCKET = {
-    48: 10,   # pamap2 (5% of data)      — max tested: 13
-    21: 24,   # mhealth (8% of data)     — max tested: 30
-    12: 40,   # wisdm (10% of data)      — max tested: 51
-    9: 52,    # uci_har, dsads (20% of data) — max tested: 66
-    6: 72,    # hhar, hapt, kuhar, recgym (47% of data) — max tested: 93
-    3: 128,   # unimib_shar (10% of data) — max tested: 159
+    48: 8,    # pamap2 (5% of data)      — 48ch×64patches=3072 tokens, huge attention
+    21: 24,   # mhealth (8% of data)     — proven stable in 100-epoch GradCache run
+    12: 40,   # wisdm (10% of data)      — proven stable
+    9: 52,    # uci_har, dsads (20% of data) — proven stable
+    6: 72,    # hhar, hapt, kuhar, recgym (47% of data) — proven stable
+    3: 128,   # unimib_shar (10% of data) — proven stable
 }
 # Legacy aliases for backward compatibility
 BATCH_SIZE = DEFAULT_MICRO_BATCH_SIZE
@@ -251,17 +251,15 @@ SOFT_TARGET_WEIGHT = 1.0  # Pure soft targets with adaptive recalibration
 # Phase 2: Compute loss over ALL cached embeddings (full effective batch)
 # Phase 3: Backprop per micro-batch using cached gradients
 # With per-bucket batch sizes, gives ~444 fresh in-batch negatives per window.
-USE_GRAD_CACHE = True
+USE_GRAD_CACHE = False
 
 # Loss function type: "infonce" (default) or "siglip"
 # SigLIP uses independent sigmoid per pair, works well even at small batch sizes.
 LOSS_TYPE = "infonce"
 
 # Memory bank configuration (MoCo-style queue for more negatives)
-# With GradCache providing 448+ fresh negatives, the memory bank is unnecessary.
-# Disable when using GradCache for cleaner gradient signal.
-USE_MEMORY_BANK = False  # Disabled: GradCache provides sufficient fresh negatives
-MEMORY_BANK_SIZE = 256  # Only used when USE_MEMORY_BANK=True
+USE_MEMORY_BANK = True  # MoCo-style queue: provides 256 additional negatives per micro-batch
+MEMORY_BANK_SIZE = 512  # Queue size for additional negatives per micro-batch
 
 # Class balancing configuration
 # Caps oversampling to prevent rare labels from dominating training
@@ -809,9 +807,6 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         current_bs = patches.shape[0]
 
         text_embeddings = label_bank.encode(label_texts, normalize=True)
-        # Frozen mean-pool embeddings for soft targets (can't be gamed)
-        with torch.no_grad():
-            frozen_text_embeddings = label_bank.encode_frozen(label_texts, normalize=True)
 
         if memory_bank is not None and USE_MEMORY_BANK:
             with torch.no_grad():
@@ -822,8 +817,7 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
             imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
             loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
-                                     return_metrics=True, imu_queue=imu_queue, text_queue=text_queue,
-                                     frozen_text_embeddings=frozen_text_embeddings)
+                                     return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
 
         window_samples += current_bs
         window_micro_batches += 1
@@ -900,7 +894,7 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         total_neg_sim += metrics['negative_similarity']
         total_sim_gap += metrics['similarity_gap']
 
-        if is_accumulation_step or is_last_batch:
+        if is_window_full or is_last_batch:
             total_grad_norm += grad_norm.item()
             num_optimizer_steps += 1
 
@@ -911,7 +905,7 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
             if 'queue_diversity' in debug_metrics:
                 total_queue_diversity += debug_metrics['queue_diversity']
 
-        if is_accumulation_step or is_last_batch:
+        if is_window_full or is_last_batch:
             should_log_grads_here = (accum_step_count - 1) % DEBUG_METRIC_FREQUENCY == 0
             if should_log_grads_here:
                 for k in total_grad_norms:
@@ -1032,7 +1026,6 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         # --- Phase 1: Cache embeddings (forward all micro-batches, detach) ---
         cached_imu = []
         cached_text = []
-        cached_frozen_text = []
         cached_label_texts = []
         micro_batch_data = []
 
@@ -1048,12 +1041,9 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
                 with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
                     mb_imu_emb = model(mb_patches, mb_channel_descriptions, mb_channel_mask, mb_patch_mask)
                 mb_text_emb = label_bank.encode(mb_label_texts, normalize=True)
-                # Frozen mean-pool embeddings for soft targets (no learnable params, can't be gamed)
-                mb_frozen_text = label_bank.encode_frozen(mb_label_texts, normalize=True)
 
             cached_imu.append(mb_imu_emb)
             cached_text.append(mb_text_emb)
-            cached_frozen_text.append(mb_frozen_text)
             cached_label_texts.extend(mb_label_texts)
 
             # CPU stash: move tensors to CPU-pinned memory to free GPU during Phase 1.
@@ -1070,13 +1060,11 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         # --- Phase 2: Compute loss over ALL cached embeddings ---
         all_imu_cached = torch.cat(cached_imu, dim=0).requires_grad_(True)
         all_text_cached = torch.cat(cached_text, dim=0).requires_grad_(True)
-        all_frozen_text = torch.cat(cached_frozen_text, dim=0)  # No grad needed (frozen)
 
         with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
             loss, metrics = criterion.forward_cached(
                 all_imu_cached, all_text_cached,
                 cached_label_texts, return_metrics=True,
-                all_frozen_text_embeddings=all_frozen_text,
             )
 
         if scaler is not None:
@@ -1088,7 +1076,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         imu_grad_chunks = all_imu_cached.grad.split([c.shape[0] for c in cached_imu])
         text_grad_chunks = all_text_cached.grad.split([c.shape[0] for c in cached_text])
 
-        del all_imu_cached, all_text_cached, all_frozen_text, cached_imu, cached_text, cached_frozen_text
+        del all_imu_cached, all_text_cached, cached_imu, cached_text
 
         # Debug metrics
         debug_metrics = {}
@@ -1907,17 +1895,17 @@ def main():
 
     scheduler = LambdaLR(optimizer, lr_lambda=warmup_cosine_schedule)
     scaler = None  # BF16 has same exponent range as FP32, no GradScaler needed
-    best_val_loss = float('inf')
+    best_val_acc = 0.0
 
     # Load optimizer/scheduler states if resuming
     if resume_checkpoint is not None:
         optimizer.load_state_dict(resume_checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(resume_checkpoint['scheduler_state_dict'])
-        # Get best_val_loss from checkpoint's val_metrics
+        # Get best_val_acc from checkpoint's val_metrics
         if 'val_metrics' in resume_checkpoint and resume_checkpoint['val_metrics']:
-            best_val_loss = resume_checkpoint['val_metrics'].get('loss', float('inf'))
+            best_val_acc = resume_checkpoint['val_metrics'].get('accuracy', 0.0)
         print("✓ Loaded optimizer and scheduler states")
-        print(f"  Best val loss so far: {best_val_loss:.4f}")
+        print(f"  Best val accuracy so far: {best_val_acc:.4f}")
 
         # Load criterion state if available (for learnable temperature)
         if 'criterion_state_dict' in resume_checkpoint:
@@ -2039,7 +2027,8 @@ def main():
         plotter.plot_all()
 
         # Save checkpoints
-        if epoch % SAVE_EVERY == 0 or val_metrics['loss'] < best_val_loss:
+        val_acc = val_metrics.get('accuracy', 0.0)
+        if epoch % SAVE_EVERY == 0 or val_acc > best_val_acc:
             # Strip _orig_mod. prefix from compiled modules so checkpoints
             # are compatible with both compiled and uncompiled models
             raw_state = model.state_dict()
@@ -2059,10 +2048,10 @@ def main():
             }
             torch.save(checkpoint, CHECKPOINT_DIR / f'epoch_{epoch}.pt')
 
-            if val_metrics['loss'] < best_val_loss:
-                best_val_loss = val_metrics['loss']
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
                 torch.save(checkpoint, CHECKPOINT_DIR / 'best.pt')
-                print(f"  ✓ Saved best model (val_loss: {best_val_loss:.4f})")
+                print(f"  ✓ Saved best model (val_acc: {best_val_acc:.1%})")
 
     plotter.close()
     print("\n" + "="*70)
