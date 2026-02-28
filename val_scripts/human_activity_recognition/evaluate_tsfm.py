@@ -44,14 +44,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "tools" / "models"))
 
-from datasets.imu_pretraining_dataset.label_groups import (
-    LABEL_GROUPS,
-    get_label_to_group_mapping,
-)
 from val_scripts.human_activity_recognition.model_loading import load_model, load_label_bank
 from val_scripts.human_activity_recognition.evaluation_metrics import compute_similarity
 from val_scripts.human_activity_recognition.grouped_zero_shot import (
     map_local_to_global_labels,
+    score_exact,
+    score_with_groups_from_names,
 )
 from training_scripts.human_activity_recognition.semantic_alignment_train import SemanticAlignmentModel
 from model.token_text_encoder import LearnableLabelBank
@@ -399,9 +397,8 @@ def evaluate_zero_shot_open_set(
     """True zero-shot open-set: cosine similarity against all 87 training labels.
 
     No classifier training. Uses label bank to encode ALL training labels as
-    text embeddings, then argmax cosine similarity. Match via synonym groups.
+    text embeddings, then argmax cosine similarity. Reports both exact and group match.
     """
-    label_to_group = get_label_to_group_mapping()
     test_activities = get_dataset_labels(test_dataset)
 
     print(f"  [Zero-shot open-set] Encoding {len(GLOBAL_LABELS)} training labels...")
@@ -415,30 +412,34 @@ def evaluate_zero_shot_open_set(
     similarity = compute_similarity(test_emb_t, label_embeddings)  # (N, 87)
     pred_indices = similarity.argmax(dim=1).cpu().numpy()
 
-    # Map through synonym groups
-    pred_groups = []
-    gt_groups = []
+    # Build predicted and ground-truth label name lists
+    pred_names = []
+    gt_names = []
     for i in range(len(test_labels)):
         local_idx = test_labels[i]
         if local_idx < len(test_activities):
             gt_name = test_activities[local_idx]
         else:
             continue
-        gt_group = label_to_group.get(gt_name, gt_name)
 
         pred_idx = pred_indices[i]
         pred_name = GLOBAL_LABELS[pred_idx] if pred_idx < len(GLOBAL_LABELS) else "unknown"
-        pred_group = label_to_group.get(pred_name, pred_name)
 
-        gt_groups.append(gt_group)
-        pred_groups.append(pred_group)
+        gt_names.append(gt_name)
+        pred_names.append(pred_name)
 
-    acc = accuracy_score(gt_groups, pred_groups) * 100
-    f1 = f1_score(gt_groups, pred_groups, average='macro', zero_division=0) * 100
-    f1_w = f1_score(gt_groups, pred_groups, average='weighted', zero_division=0) * 100
+    # Exact match scoring
+    exact = score_exact(pred_names, gt_names)
+    # Group match scoring
+    group = score_with_groups_from_names(pred_names, gt_names)
 
-    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_groups),
-            'n_classes_train': len(GLOBAL_LABELS)}
+    return {
+        'accuracy_exact': exact['accuracy'], 'f1_macro_exact': exact['f1_macro'],
+        'f1_weighted_exact': exact['f1_weighted'],
+        'accuracy_group': group['accuracy'], 'f1_macro_group': group['f1_macro'],
+        'f1_weighted_group': group['f1_weighted'],
+        'n_samples': exact['n_samples'], 'n_classes_train': len(GLOBAL_LABELS),
+    }
 
 
 def evaluate_zero_shot_closed_set(
@@ -478,18 +479,18 @@ def evaluate_zero_shot_closed_set(
         pred_idx = pred_indices[i]
         pred_names.append(test_activities[pred_idx] if pred_idx < len(test_activities) else "unknown")
 
-    acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(
-        gt_names, pred_names, labels=test_activities,
-        average='macro', zero_division=0,
-    ) * 100
-    f1_w = f1_score(
-        gt_names, pred_names, labels=test_activities,
-        average='weighted', zero_division=0,
-    ) * 100
+    # Exact match scoring
+    exact = score_exact(pred_names, gt_names)
+    # Group match scoring
+    group = score_with_groups_from_names(pred_names, gt_names)
 
-    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_names),
-            'n_classes': num_test_classes}
+    return {
+        'accuracy_exact': exact['accuracy'], 'f1_macro_exact': exact['f1_macro'],
+        'f1_weighted_exact': exact['f1_weighted'],
+        'accuracy_group': group['accuracy'], 'f1_macro_group': group['f1_macro'],
+        'f1_weighted_group': group['f1_weighted'],
+        'n_samples': exact['n_samples'], 'n_classes': num_test_classes,
+    }
 
 
 def evaluate_supervised_finetune(
@@ -678,17 +679,17 @@ def evaluate_supervised_finetune(
 def print_results_table(all_results):
     """Print results table."""
     print()
-    print("=" * 130)
+    print("=" * 170)
     print("TSFM EVALUATION RESULTS")
-    print("=" * 130)
+    print("=" * 170)
 
     header = (f"{'Dataset':<16}"
-              f"{'ZS-Open Acc':>13}{'ZS-Open F1':>13}"
-              f"{'ZS-Close Acc':>14}{'ZS-Close F1':>13}"
+              f"{'Open Exact':>12}{'Open Group':>12}"
+              f"{'Close Exact':>13}{'Close Group':>13}"
               f"{'1%FT Acc':>11}{'1%FT F1':>10}"
               f"{'10%FT Acc':>12}{'10%FT F1':>11}")
     print(header)
-    print("-" * 130)
+    print("-" * 170)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
@@ -699,12 +700,12 @@ def print_results_table(all_results):
             return r.get(key, {}).get(metric, 0.0)
 
         print(f"{ds:<16}"
-              f"{g('zero_shot_open_set','accuracy'):>12.1f}%{g('zero_shot_open_set','f1_macro'):>12.1f}%"
-              f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>12.1f}%"
+              f"{g('zero_shot_open_set','accuracy_exact'):>11.1f}%{g('zero_shot_open_set','accuracy_group'):>11.1f}%"
+              f"{g('zero_shot_closed_set','accuracy_exact'):>12.1f}%{g('zero_shot_closed_set','accuracy_group'):>12.1f}%"
               f"{g('1pct_supervised','accuracy'):>10.1f}%{g('1pct_supervised','f1_macro'):>9.1f}%"
               f"{g('10pct_supervised','accuracy'):>11.1f}%{g('10pct_supervised','f1_macro'):>10.1f}%")
 
-    print("=" * 130)
+    print("=" * 170)
     print()
     print("Details:")
     print(f"  Checkpoint: {CHECKPOINT_PATH}")
@@ -779,15 +780,17 @@ def main():
         print(f"\n  --- Zero-shot Open-Set (cosine sim) ---")
         ds_results['zero_shot_open_set'] = evaluate_zero_shot_open_set(
             test_emb, test_labels, test_ds, label_bank, device)
-        print(f"  ZS Open-set: Acc={ds_results['zero_shot_open_set']['accuracy']:.1f}%, "
-              f"F1={ds_results['zero_shot_open_set']['f1_macro']:.1f}%")
+        zs_open = ds_results['zero_shot_open_set']
+        print(f"  ZS Open-set: Exact={zs_open['accuracy_exact']:.1f}%, "
+              f"Group={zs_open['accuracy_group']:.1f}%")
 
         # 2. Zero-shot closed-set (cosine similarity)
         print(f"\n  --- Zero-shot Closed-Set (cosine sim) ---")
         ds_results['zero_shot_closed_set'] = evaluate_zero_shot_closed_set(
             test_emb, test_labels, test_ds, label_bank, device)
-        print(f"  ZS Closed-set: Acc={ds_results['zero_shot_closed_set']['accuracy']:.1f}%, "
-              f"F1={ds_results['zero_shot_closed_set']['f1_macro']:.1f}%")
+        zs_close = ds_results['zero_shot_closed_set']
+        print(f"  ZS Closed-set: Exact={zs_close['accuracy_exact']:.1f}%, "
+              f"Group={zs_close['accuracy_group']:.1f}%")
 
         # 3. 1% supervised (end-to-end fine-tuning)
         print(f"\n  --- 1% Supervised (End-to-End Fine-Tuning) ---")

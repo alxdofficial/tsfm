@@ -42,6 +42,7 @@ sys.path.insert(0, str(LIMUBERT_REPO))
 from val_scripts.human_activity_recognition.grouped_zero_shot import (
     load_global_labels, map_local_to_global_labels,
     get_closed_set_mask, score_with_groups,
+    score_exact, aggregate_logits_to_test_labels,
 )
 
 # =============================================================================
@@ -405,7 +406,7 @@ def predict_gru(model, data, batch_size=CLASSIFIER_BATCH_SIZE, device=None):
 
 
 def predict_gru_global(model, data, device, logit_mask=None,
-                       batch_size=CLASSIFIER_BATCH_SIZE):
+                       batch_size=CLASSIFIER_BATCH_SIZE, return_logits=False):
     """Predict global label indices using GRU classifier.
 
     Args:
@@ -414,9 +415,11 @@ def predict_gru_global(model, data, device, logit_mask=None,
         device: torch device
         logit_mask: Optional (87,) bool mask for closed-set scoring.
             If provided, masked-out logits are set to -inf before argmax.
+        return_logits: If True, also return raw (M, 87) logits.
 
     Returns:
         pred_global_indices: (M,) predicted global label indices
+        If return_logits=True, also returns: all_logits: (M, 87) raw logits
     """
     model.train(False)
     ds = TensorDataset(torch.from_numpy(data).float())
@@ -426,15 +429,20 @@ def predict_gru_global(model, data, device, logit_mask=None,
         mask_tensor = torch.from_numpy(logit_mask).bool().to(device)
 
     all_preds = []
+    all_logits_list = []
     with torch.no_grad():
         for (batch_data,) in loader:
             batch_data = batch_data.to(device)
             logits = model(batch_data, training=False)
+            if return_logits:
+                all_logits_list.append(logits.cpu().numpy())
             if logit_mask is not None:
                 logits[:, ~mask_tensor] = float('-inf')
             preds = logits.argmax(dim=1).cpu().numpy()
             all_preds.extend(preds)
 
+    if return_logits:
+        return np.array(all_preds), np.concatenate(all_logits_list, axis=0)
     return np.array(all_preds)
 
 
@@ -692,17 +700,17 @@ def load_limubert_training_embeddings(global_labels, device):
 def print_results_table(all_results: Dict):
     """Print results table."""
     print()
-    print("=" * 130)
+    print("=" * 170)
     print("LIMU-BERT EVALUATION RESULTS")
-    print("=" * 130)
+    print("=" * 170)
 
     header = (f"{'Dataset':<16}"
-              f"{'ZS-Open Acc':>13}{'ZS-Open F1':>12}"
-              f"{'ZS-Close Acc':>14}{'ZS-Close F1':>13}"
+              f"{'Open Exact':>12}{'Open Group':>12}"
+              f"{'Close Exact':>13}{'Close Group':>13}"
               f"{'1%FT Acc':>11}{'1%FT F1':>10}"
               f"{'10%FT Acc':>12}{'10%FT F1':>11}")
     print(header)
-    print("-" * 130)
+    print("-" * 170)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
@@ -713,12 +721,12 @@ def print_results_table(all_results: Dict):
             return r.get(key, {}).get(metric, 0.0)
 
         print(f"{ds:<16}"
-              f"{g('zero_shot_open_set','accuracy'):>12.1f}%{g('zero_shot_open_set','f1_macro'):>11.1f}%"
-              f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>12.1f}%"
+              f"{g('zero_shot_open_set','accuracy_exact'):>11.1f}%{g('zero_shot_open_set','accuracy_group'):>11.1f}%"
+              f"{g('zero_shot_closed_set','accuracy_exact'):>12.1f}%{g('zero_shot_closed_set','accuracy_group'):>12.1f}%"
               f"{g('1pct_supervised','accuracy'):>10.1f}%{g('1pct_supervised','f1_macro'):>9.1f}%"
               f"{g('10pct_supervised','accuracy'):>11.1f}%{g('10pct_supervised','f1_macro'):>10.1f}%")
 
-    print("=" * 130)
+    print("=" * 170)
     print()
     print("Details:")
     print(f"  Zero-shot: GRU classifier on 10 training datasets (87 classes), sub-window format, group-matched scoring")
@@ -813,22 +821,65 @@ def main():
         print(f"\n  --- Zero-Shot Open-Set (GRU) ---")
         sub_pred_open = predict_gru_global(zs_classifier, test_sub_windows, device)
         pred_open = majority_vote_subwindows(sub_pred_open, parent_ids, n_windows)
-        ds_results['zero_shot_open_set'] = score_with_groups(
+        # Group match scoring (original)
+        group_scores = score_with_groups(
             pred_open, window_labels, test_ds, global_labels, DATASET_CONFIG)
+        # Exact match scoring
+        pred_open_names = [global_labels[idx] if idx < len(global_labels) else "unknown"
+                           for idx in pred_open]
+        gt_open_names = [test_activities[window_labels[i]]
+                         for i in range(len(window_labels))
+                         if window_labels[i] < len(test_activities)]
+        pred_open_names_filtered = [pred_open_names[i]
+                                    for i in range(len(window_labels))
+                                    if window_labels[i] < len(test_activities)]
+        exact_scores = score_exact(pred_open_names_filtered, gt_open_names)
+        ds_results['zero_shot_open_set'] = {
+            'accuracy_exact': exact_scores['accuracy'], 'f1_macro_exact': exact_scores['f1_macro'],
+            'f1_weighted_exact': exact_scores['f1_weighted'],
+            'accuracy_group': group_scores['accuracy'], 'f1_macro_group': group_scores['f1_macro'],
+            'f1_weighted_group': group_scores['f1_weighted'],
+            'n_samples': group_scores['n_samples'],
+        }
         zs_open = ds_results['zero_shot_open_set']
-        print(f"  ZS Open-set: Acc={zs_open['accuracy']:.1f}%, F1={zs_open['f1_macro']:.1f}%")
+        print(f"  ZS Open-set: Exact={zs_open['accuracy_exact']:.1f}%, "
+              f"Group={zs_open['accuracy_group']:.1f}%")
 
         # 1. Zero-shot closed-set (GRU with masked logits → majority vote → window-level)
         print(f"\n  --- Zero-Shot Closed-Set (GRU) ---")
         mask = get_closed_set_mask(test_ds, global_labels, DATASET_CONFIG)
+        # Group match: original path (mask logits, argmax, majority vote, group scoring)
         sub_pred_closed = predict_gru_global(zs_classifier, test_sub_windows, device, logit_mask=mask)
         pred_closed = majority_vote_subwindows(sub_pred_closed, parent_ids, n_windows)
-        ds_results['zero_shot_closed_set'] = score_with_groups(
+        group_scores = score_with_groups(
             pred_closed, window_labels, test_ds, global_labels, DATASET_CONFIG)
-        ds_results['zero_shot_closed_set']['n_allowed'] = int(mask.sum())
-        ds_results['zero_shot_closed_set']['n_masked'] = int((~mask).sum())
+        # Exact match: get raw logits, aggregate to C test labels, argmax per sub-window, majority vote
+        _, sub_logits_87 = predict_gru_global(
+            zs_classifier, test_sub_windows, device, return_logits=True)
+        sub_agg_logits = aggregate_logits_to_test_labels(
+            sub_logits_87, global_labels, test_activities, DATASET_CONFIG, test_ds)
+        sub_pred_test_idx = sub_agg_logits.argmax(axis=1)
+        pred_closed_test = majority_vote_subwindows(sub_pred_test_idx, parent_ids, n_windows)
+        pred_closed_names = [test_activities[idx] if idx < len(test_activities) else "unknown"
+                             for idx in pred_closed_test]
+        gt_closed_names = [test_activities[window_labels[i]]
+                           for i in range(len(window_labels))
+                           if window_labels[i] < len(test_activities)]
+        pred_closed_names_filtered = [pred_closed_names[i]
+                                      for i in range(len(window_labels))
+                                      if window_labels[i] < len(test_activities)]
+        exact_scores = score_exact(pred_closed_names_filtered, gt_closed_names)
+        ds_results['zero_shot_closed_set'] = {
+            'accuracy_exact': exact_scores['accuracy'], 'f1_macro_exact': exact_scores['f1_macro'],
+            'f1_weighted_exact': exact_scores['f1_weighted'],
+            'accuracy_group': group_scores['accuracy'], 'f1_macro_group': group_scores['f1_macro'],
+            'f1_weighted_group': group_scores['f1_weighted'],
+            'n_samples': group_scores['n_samples'],
+            'n_allowed': int(mask.sum()), 'n_masked': int((~mask).sum()),
+        }
         zs_close = ds_results['zero_shot_closed_set']
-        print(f"  ZS Closed-set: Acc={zs_close['accuracy']:.1f}%, F1={zs_close['f1_macro']:.1f}% "
+        print(f"  ZS Closed-set: Exact={zs_close['accuracy_exact']:.1f}%, "
+              f"Group={zs_close['accuracy_group']:.1f}% "
               f"({zs_close['n_allowed']}/{len(global_labels)} labels allowed)")
 
         # 3. 1% supervised (end-to-end fine-tuning)

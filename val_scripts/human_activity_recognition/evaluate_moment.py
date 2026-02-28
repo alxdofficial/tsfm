@@ -40,6 +40,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from val_scripts.human_activity_recognition.grouped_zero_shot import (
     load_global_labels, map_local_to_global_labels,
     get_closed_set_mask, score_with_groups,
+    score_exact, score_with_groups_from_names,
+    aggregate_logits_to_test_labels,
 )
 
 # =============================================================================
@@ -303,7 +305,7 @@ def train_svm_classifier(train_data, train_labels, verbose=False):
     return grid_search.best_estimator_
 
 
-def predict_svm_global(svm_model, data, logit_mask=None):
+def predict_svm_global(svm_model, data, logit_mask=None, return_logits=False):
     """Predict global label indices using the SVM classifier.
 
     Args:
@@ -311,16 +313,18 @@ def predict_svm_global(svm_model, data, logit_mask=None):
         data: (N, 6144) embedding vectors
         logit_mask: Optional (87,) bool mask for closed-set. If provided,
             uses decision_function scores masked to allowed classes.
+        return_logits: If True, also return (N, 87) raw decision scores
+            (columns for classes not seen by SVM are -inf).
 
     Returns:
         pred_global_indices: (N,) predicted global label indices
+        If return_logits=True, also returns: logits_87: (N, 87) scores
     """
-    if logit_mask is None:
+    if logit_mask is None and not return_logits:
         # Open-set: simple predict
         return svm_model.predict(data).astype(np.int64)
 
-    # Closed-set: use decision_function to get per-class scores,
-    # mask disallowed classes, then argmax
+    # Get decision_function scores for all modes that need them
     scores = svm_model.decision_function(data)  # (N, n_svm_classes)
     svm_classes = svm_model.classes_  # global label indices the SVM knows
 
@@ -328,16 +332,25 @@ def predict_svm_global(svm_model, data, logit_mask=None):
     if scores.ndim == 1:
         scores = scores.reshape(-1, 1)
 
-    # Build mask over SVM's class columns (not all 87)
-    # svm_classes[j] is the global label index for column j
-    col_mask = np.array([logit_mask[c] for c in svm_classes], dtype=bool)
+    # Build full 87-class logits if requested
+    logits_87 = None
+    if return_logits:
+        N = data.shape[0]
+        logits_87 = np.full((N, 87), -np.inf, dtype=np.float64)
+        for j, c in enumerate(svm_classes):
+            logits_87[:, c] = scores[:, j]
 
-    # Mask disallowed columns to -inf
-    scores[:, ~col_mask] = -np.inf
+    if logit_mask is not None:
+        # Build mask over SVM's class columns (not all 87)
+        col_mask = np.array([logit_mask[c] for c in svm_classes], dtype=bool)
+        scores[:, ~col_mask] = -np.inf
 
     # Argmax over SVM columns, map back through svm_classes
     best_col = np.argmax(scores, axis=1)
     pred_global = svm_classes[best_col].astype(np.int64)
+
+    if return_logits:
+        return pred_global, logits_87
     return pred_global
 
 
@@ -651,17 +664,17 @@ def load_moment_training_embeddings(model, global_labels, device):
 def print_results_table(all_results):
     """Print results table."""
     print()
-    print("=" * 130)
+    print("=" * 170)
     print("MOMENT EVALUATION RESULTS")
-    print("=" * 130)
+    print("=" * 170)
 
     header = (f"{'Dataset':<16}"
-              f"{'ZS-Open Acc':>13}{'ZS-Open F1':>12}"
-              f"{'ZS-Close Acc':>14}{'ZS-Close F1':>13}"
+              f"{'Open Exact':>12}{'Open Group':>12}"
+              f"{'Close Exact':>13}{'Close Group':>13}"
               f"{'1%FT Acc':>11}{'1%FT F1':>10}"
               f"{'10%FT Acc':>12}{'10%FT F1':>11}")
     print(header)
-    print("-" * 130)
+    print("-" * 170)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
@@ -672,12 +685,12 @@ def print_results_table(all_results):
             return r.get(key, {}).get(metric, 0.0)
 
         print(f"{ds:<16}"
-              f"{g('zero_shot_open_set','accuracy'):>12.1f}%{g('zero_shot_open_set','f1_macro'):>11.1f}%"
-              f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>12.1f}%"
+              f"{g('zero_shot_open_set','accuracy_exact'):>11.1f}%{g('zero_shot_open_set','accuracy_group'):>11.1f}%"
+              f"{g('zero_shot_closed_set','accuracy_exact'):>12.1f}%{g('zero_shot_closed_set','accuracy_group'):>12.1f}%"
               f"{g('1pct_supervised','accuracy'):>10.1f}%{g('1pct_supervised','f1_macro'):>9.1f}%"
               f"{g('10pct_supervised','accuracy'):>11.1f}%{g('10pct_supervised','f1_macro'):>10.1f}%")
 
-    print("=" * 130)
+    print("=" * 170)
     print()
     print("Details:")
     print(f"  Model: {MOMENT_MODEL_NAME}")
@@ -752,21 +765,63 @@ def main():
         # 0. Zero-shot open-set (SVM on flat 6144-dim vectors)
         print(f"\n  --- Zero-Shot Open-Set (SVM-RBF) ---")
         pred_open = predict_svm_global(zs_svm, test_emb)
-        ds_results['zero_shot_open_set'] = score_with_groups(
+        # Group match scoring (original)
+        group_scores = score_with_groups(
             pred_open, test_labels, test_ds, global_labels, DATASET_CONFIG)
+        # Exact match scoring: map predictions and GT to label names
+        pred_open_names = [global_labels[idx] if idx < len(global_labels) else "unknown"
+                           for idx in pred_open]
+        gt_open_names = [test_activities[test_labels[i]]
+                         for i in range(len(test_labels))
+                         if test_labels[i] < len(test_activities)]
+        # Filter pred_open_names to match gt_open_names length (skip invalid GT)
+        pred_open_names_filtered = [pred_open_names[i]
+                                    for i in range(len(test_labels))
+                                    if test_labels[i] < len(test_activities)]
+        exact_scores = score_exact(pred_open_names_filtered, gt_open_names)
+        ds_results['zero_shot_open_set'] = {
+            'accuracy_exact': exact_scores['accuracy'], 'f1_macro_exact': exact_scores['f1_macro'],
+            'f1_weighted_exact': exact_scores['f1_weighted'],
+            'accuracy_group': group_scores['accuracy'], 'f1_macro_group': group_scores['f1_macro'],
+            'f1_weighted_group': group_scores['f1_weighted'],
+            'n_samples': group_scores['n_samples'],
+        }
         zs_open = ds_results['zero_shot_open_set']
-        print(f"  ZS Open-set: Acc={zs_open['accuracy']:.1f}%, F1={zs_open['f1_macro']:.1f}%")
+        print(f"  ZS Open-set: Exact={zs_open['accuracy_exact']:.1f}%, "
+              f"Group={zs_open['accuracy_group']:.1f}%")
 
         # 1. Zero-shot closed-set (SVM with masked decision scores)
         print(f"\n  --- Zero-Shot Closed-Set (SVM-RBF) ---")
         mask = get_closed_set_mask(test_ds, global_labels, DATASET_CONFIG)
+        # Group match: original path (mask logits, argmax, group scoring)
         pred_closed = predict_svm_global(zs_svm, test_emb, logit_mask=mask)
-        ds_results['zero_shot_closed_set'] = score_with_groups(
+        group_scores = score_with_groups(
             pred_closed, test_labels, test_ds, global_labels, DATASET_CONFIG)
-        ds_results['zero_shot_closed_set']['n_allowed'] = int(mask.sum())
-        ds_results['zero_shot_closed_set']['n_masked'] = int((~mask).sum())
+        # Exact match: aggregate to C test labels, argmax
+        _, logits_87 = predict_svm_global(zs_svm, test_emb, return_logits=True)
+        agg_logits = aggregate_logits_to_test_labels(
+            logits_87, global_labels, test_activities, DATASET_CONFIG, test_ds)
+        pred_test_idx = agg_logits.argmax(axis=1)
+        pred_closed_names = [test_activities[idx] if idx < len(test_activities) else "unknown"
+                             for idx in pred_test_idx]
+        gt_closed_names = [test_activities[test_labels[i]]
+                           for i in range(len(test_labels))
+                           if test_labels[i] < len(test_activities)]
+        pred_closed_names_filtered = [pred_closed_names[i]
+                                      for i in range(len(test_labels))
+                                      if test_labels[i] < len(test_activities)]
+        exact_scores = score_exact(pred_closed_names_filtered, gt_closed_names)
+        ds_results['zero_shot_closed_set'] = {
+            'accuracy_exact': exact_scores['accuracy'], 'f1_macro_exact': exact_scores['f1_macro'],
+            'f1_weighted_exact': exact_scores['f1_weighted'],
+            'accuracy_group': group_scores['accuracy'], 'f1_macro_group': group_scores['f1_macro'],
+            'f1_weighted_group': group_scores['f1_weighted'],
+            'n_samples': group_scores['n_samples'],
+            'n_allowed': int(mask.sum()), 'n_masked': int((~mask).sum()),
+        }
         zs_close = ds_results['zero_shot_closed_set']
-        print(f"  ZS Closed-set: Acc={zs_close['accuracy']:.1f}%, F1={zs_close['f1_macro']:.1f}% "
+        print(f"  ZS Closed-set: Exact={zs_close['accuracy_exact']:.1f}%, "
+              f"Group={zs_close['accuracy_group']:.1f}% "
               f"({zs_close['n_allowed']}/{len(global_labels)} labels allowed)")
 
         # 3. 1% supervised fine-tuning (encoder + linear head)

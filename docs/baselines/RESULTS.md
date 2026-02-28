@@ -7,9 +7,9 @@ Generated: 2026-02-25 | Framework: 4-metric unified evaluation | Seed: 3431
 | Model | How It Works | Embed Dim | Zero-Shot | Supervised |
 |-------|-------------|:---------:|-----------|------------|
 | **TSFM-Small (ours)** | Dual-branch Transformer trained with CLIP-style contrastive alignment between IMU patches and text labels; processes each channel independently then fuses to 384-dim | 384 | Cosine sim with text embeddings | End-to-end cosine sim |
-| **LiMU-BERT** | BERT-style masked reconstruction on 20-step IMU sub-windows; predicts masked timesteps from context | 72 | GRU classifier + group scoring | End-to-end encoder + GRU |
-| **MOMENT** | General time-series Transformer pretrained on diverse time-series data (no HAR); processes each IMU channel independently and **concatenates** (no fusion) to 6144-dim | 6144 | SVM-RBF + group scoring | End-to-end encoder + linear |
-| **CrossHAR** | Hierarchical self-supervised pretraining combining masked reconstruction and contrastive learning on IMU sequences | 72 | Transformer_ft classifier + group scoring | End-to-end encoder + Transformer_ft |
+| **LiMU-BERT** | BERT-style masked reconstruction on 20-step IMU sub-windows; predicts masked timesteps from context | 72 | GRU classifier | End-to-end encoder + GRU |
+| **MOMENT** | General time-series Transformer pretrained on diverse time-series data (no HAR); processes each IMU channel independently and **concatenates** (no fusion) to 6144-dim | 6144 | SVM-RBF | End-to-end encoder + linear |
+| **CrossHAR** | Hierarchical self-supervised pretraining combining masked reconstruction and contrastive learning on IMU sequences | 72 | Transformer_ft classifier | End-to-end encoder + Transformer_ft |
 | **LanHAR** | 2-stage CLIP-style alignment: (1) fine-tune SciBERT on activity text, (2) train a sensor Transformer to align with text space | 768 | Cosine sim with text embeddings | End-to-end cosine sim |
 | **LLaSA** | LIMU-BERT IMU encoder + Vicuna-7B LLM; classifies by prompting the LLM with sensor tokens and parsing the generated text response | 7B params | LLM prompt → parse text | N/A (7B LLM not fine-tunable with few labels) |
 
@@ -151,19 +151,20 @@ smartphone)"), while baselines use 20Hz resampled data with no channel metadata.
 **Zero-shot prediction mechanisms differ by model type**:
 - *Text-aligned models* (TSFM, LanHAR): Encode activity labels as text, predict via cosine similarity
   with sensor embeddings. **Truly training-data-free** — no classifier is fitted, no labeled data is
-  used at inference time. Open-set uses all 87 labels + group scoring; closed-set uses only test
-  labels + exact match.
+  used at inference time.
 - *Classifier-based models* (LiMU-BERT, MOMENT, CrossHAR): Train a native classifier on
   **training dataset** embeddings (87 global labels), then predict on test data. This is
   "zero-shot" in the sense of zero-shot *transfer to unseen datasets* — the classifier never sees
   test data, but it does use labeled training data to learn the embedding-to-label mapping.
-  LiMU-BERT uses a GRU, MOMENT uses SVM-RBF, CrossHAR uses a Transformer. Open-set uses all 87
-  logits + group scoring; closed-set masks logits to training labels whose group appears in the
-  test dataset + group scoring.
+  LiMU-BERT uses a GRU, MOMENT uses SVM-RBF, CrossHAR uses a Transformer.
 - *Generative model* (LLaSA): Prompts a 7B LLM with sensor tokens and activity list; parses the
   generated text response to extract the predicted label. Responses that cannot be matched to any
   valid label are counted as "unclear" (wrong). This is inherent to generative classification —
   other models always produce a valid prediction.
+
+**Zero-shot scoring is unified**: Both exact match and group match are reported for all models.
+This eliminates the previous scoring asymmetry where text-aligned models used exact match and
+classifier-based models used group match, making direct comparison unfair.
 
 **Supervised fine-tuning**: Each baseline fine-tunes its encoder end-to-end with its native
 classification mechanism. Text-aligned models (TSFM, LanHAR) classify via cosine similarity
@@ -200,7 +201,7 @@ The table below documents every significant deviation and its fairness rationale
 | **LLaSA** | 7B model (not 13B) | Paper uses Vicuna-13B | Vicuna-7B (from published HuggingFace weights) | 13B model requires >26GB VRAM; 7B is the published alternative. This may slightly *disadvantage* LLaSA |
 | **LLaSA** | Zero-shot only | Paper evaluates zero-shot classification | Zero-shot open-set and closed-set; no supervised fine-tuning | Fine-tuning a 7B LLM with 1%/10% labeled data is impractical and incomparable to fine-tuning smaller encoders |
 | **LLaSA** | Subsampled evaluation | Paper uses 10 samples per class | Up to 100 samples per class (vs full dataset for other baselines) | LLM inference at ~0.3s/sample makes full-dataset evaluation prohibitively slow. 100/class is 10x the paper's 10/class, giving LLaSA more evaluation signal |
-| **All** | Unified zero-shot protocol | Each paper has its own evaluation protocol (if any) | Standardized open-set (87 labels + group matching) and closed-set (test labels only) applied uniformly | Enables fair cross-model comparison on identical tasks |
+| **All** | Unified zero-shot protocol | Each paper has its own evaluation protocol (if any) | Standardized open-set (87 labels) and closed-set (test labels only), both reporting exact match and group match uniformly for all model types | Enables fair cross-model comparison on identical tasks with identical scoring |
 | **All** | Unified supervised protocol | Each paper has its own supervised setup | Standardized: 1% and 10% labeled data, 80/10/10 split, seed 3431, max 20 epochs, patience 5, val accuracy for model selection | Ensures identical data conditions across all baselines |
 | **All** | Unified batch sizes | Each paper uses its own batch size (typically 128) | 512 for zero-shot classifiers, 32 for fine-tuning | Speed optimization; applied uniformly across all baselines |
 
@@ -225,21 +226,39 @@ split 80/10/10 into train/val/test. Subsampling for 1% and 10% is applied only t
 portion (balanced across classes: `n_per_class = max(1, int(N_train * rate) // n_classes)`).
 Val and test sets are always the full 10% slice — never subsampled.
 
+### Scoring Modes: Exact Match vs Group Match
+
+All zero-shot results report **two scoring modes** uniformly across all models:
+
+- **Exact match**: The predicted label string must exactly equal the ground-truth label string.
+  Measures the model's actual discriminative ability with no leniency for synonyms.
+- **Group match**: Both predicted and ground-truth labels are mapped through synonym groups
+  (`label_to_group`) before comparison. Measures real-world usability where synonyms like
+  "jogging"/"running" are acceptable. Exact ≤ Group by definition.
+
+Both modes are applied identically to all model types (text-aligned, classifier-based, generative),
+enabling fair cross-model comparison. Previously, different model types used different scoring
+modes, making direct comparison unfair.
+
+**How classifier-based models produce exact-match predictions**: For closed-set exact match,
+classifier-based models (MOMENT, LiMU-BERT, CrossHAR) need to predict one of the C test labels
+exactly — not just a training label from the right group. We achieve this via **logit aggregation**:
+for each test label, find its synonym group, find all training labels in that group, take the MAX
+logit across those training labels. This gives each test label a single score. Argmax over the C
+test labels produces an exact prediction. For open-set exact match, the raw predicted global label
+is compared directly to the ground-truth test label.
+
 ### Zero-Shot Open-Set
 
-The model predicts from all 87 training labels. Scoring uses group matching: both the predicted
-label and the ground-truth label are mapped through `label_to_group`, then accuracy and F1 are
-computed on the group strings. This means test activities that share a group with any training
-label can be correctly predicted, while test activities with no matching group are guaranteed
-failures.
+The model predicts from all 87 training labels. Both exact and group scoring are reported.
 
 The prediction mechanism differs by model type:
 
 | Model Type | Mechanism |
 |-----------|-----------|
 | **Text-aligned** (TSFM, LanHAR) | Encode all 87 labels as text embeddings; predict via argmax cosine similarity against sensor embeddings. No classifier training needed. |
-| **Classifier-based** (LiMU-BERT, MOMENT, CrossHAR) | Train a native classifier on pre-extracted training embeddings (87-class). LiMU-BERT uses a GRU (Adam, lr=1e-3, 100 epochs, batch 512); MOMENT uses SVM-RBF (GridSearchCV, 5-fold, 9 C values); CrossHAR uses a Transformer classifier (Adam, lr=1e-3, 100 epochs, batch 512). Predict on test embeddings, argmax over all 87 logits, then group-match. |
-| **Generative** (LLaSA) | Prompt the LLM with all 87 labels plus sensor tokens; parse the generated text to extract a label; fuzzy string matching to map output to a valid label; group-match for scoring. |
+| **Classifier-based** (LiMU-BERT, MOMENT, CrossHAR) | Train a native classifier on pre-extracted training embeddings (87-class). LiMU-BERT uses a GRU (Adam, lr=1e-3, 100 epochs, batch 512); MOMENT uses SVM-RBF (GridSearchCV, 5-fold, 9 C values); CrossHAR uses a Transformer classifier (Adam, lr=1e-3, 100 epochs, batch 512). Predict on test embeddings, argmax over all 87 logits. |
+| **Generative** (LLaSA) | Prompt the LLM with all 87 labels plus sensor tokens; parse the generated text to extract a label; fuzzy string matching to map output to a valid label. |
 
 **Fairness note**: "Zero-shot" here means zero-shot *with respect to the test dataset* — no test
 data is ever used for classifier training. However, classifier-based models do use labeled
@@ -253,23 +272,14 @@ embedding.
 ### Zero-Shot Closed-Set
 
 The model predicts only from the test dataset's own activity labels. This removes the difficulty
-of selecting among 87 labels and focuses on discriminating test activities. Scoring differs between
-model types:
+of selecting among 87 labels and focuses on discriminating test activities. Both exact and group
+scoring are reported.
 
-| Model Type | Prediction | Scoring |
-|-----------|-----------|---------|
-| **Text-aligned** (TSFM, LanHAR) | Encode only the C test labels as text; argmax cosine similarity. | **Exact match**: predicted label must exactly equal the ground-truth label. |
-| **Classifier-based** (LiMU-BERT, MOMENT, CrossHAR) | Mask the 87-class classifier logits: set logits to -inf for any training label whose group does NOT appear in the test dataset. Argmax over remaining logits. | **Group match**: predicted training label is mapped through `label_to_group` and compared to ground-truth's group. |
-| **Generative** (LLaSA) | Prompt with only the C test labels; parse output. | **Exact match**: parsed label must match ground-truth exactly. |
-
-**Important closed-set scoring asymmetry**: Text-aligned models (TSFM, LanHAR) use exact match,
-which is strictly harder than the group matching used by classifier-based models. For example,
-on MobiAct, if the ground truth is "sitting_chair" and the classifier predicts the training
-label "sitting" (same group), classifier-based models score this as correct via group matching.
-Text-aligned models would need to predict exactly "sitting_chair" (the test label). This means
-**closed-set results are not directly comparable between model types** — text-aligned models face
-a harder test. We report both types as-is because the mechanisms are inherent to each model's
-architecture and cannot be unified without fundamentally changing how one type works.
+| Model Type | Prediction |
+|-----------|-----------|
+| **Text-aligned** (TSFM, LanHAR) | Encode only the C test labels as text; argmax cosine similarity. |
+| **Classifier-based** (LiMU-BERT, MOMENT, CrossHAR) | **Exact match path**: Raw 87-class logits → aggregate to C test labels via MAX per synonym group → argmax. **Group match path**: Mask logits to test-relevant groups → argmax → map through groups. |
+| **Generative** (LLaSA) | Prompt with only the C test labels; parse output. |
 
 ### Supervised Fine-Tuning (1% and 10%)
 
@@ -414,31 +424,63 @@ differences, zero-shot still works reasonably (42-54% closed-set) because the 4 
 
 ### Zero-Shot Open-Set
 
-*Model predicts from all 87 training labels; correct if predicted label maps to same group as ground truth.*
+*Model predicts from all 87 training labels. Both exact match and group match reported for all models.*
 
-| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM-Small (ours)** | **51.5** | **29.0** | **63.1** | **17.8** | 28.1 | **13.1** | **42.6** | **10.6** | 19.2 | 2.9 |
-| **TSFM-Medium (ours)** | **56.5** | 13.5 | 44.7 | **19.3** | **33.6** | 10.1 | **43.5** | 10.7 | **24.3** | 3.1 |
-| **LiMU-BERT** | 6.1 | 2.0 | 28.4 | 10.3 | 29.1 | 7.7 | 16.8 | 6.5 | 28.1 | **11.0** |
-| **MOMENT** | 28.7 | 7.0 | 33.8 | 8.0 | 14.6 | 6.0 | 33.6 | 10.1 | 30.6 | 5.0 |
-| **CrossHAR** | 13.5 | 4.2 | 16.2 | 5.4 | 21.5 | 7.0 | 20.2 | 6.5 | **34.5** | 4.6 |
-| **LanHAR** | 11.4 | 4.4 | 14.0 | 6.4 | 17.3 | 11.4 | 16.3 | 4.6 | 20.1 | 4.3 |
-| **LLaSA**† | 0.0 | 0.0 | 7.2\* | 6.2\* | 0.0 | 0.0 | 0.0\* | 0.0\* | 0.0 | 0.0 |
+**Group Match** (synonyms accepted):
+
+| Model | MobiAct | MotionSense | RealWorld | Shoaib | Opportunity |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| **TSFM-Small (ours)** | **51.5** | **63.1** | 28.1 | **42.6** | 19.2 |
+| **TSFM-Medium (ours)** | **56.5** | 44.7 | **33.6** | **43.5** | **24.3** |
+| **LiMU-BERT** | 6.1 | 28.4 | 29.1 | 16.8 | 28.1 |
+| **MOMENT** | 28.7 | 33.8 | 14.6 | 33.6 | 30.6 |
+| **CrossHAR** | 13.5 | 16.2 | 21.5 | 20.2 | **34.5** |
+| **LanHAR** | 11.4 | 14.0 | 17.3 | 16.3 | 20.1 |
+| **LLaSA**† | 0.0 | 7.2\* | 0.0 | 0.0\* | 0.0 |
+
+**Exact Match** (no synonym leniency):
+
+| Model | MobiAct | MotionSense | RealWorld | Shoaib | Opportunity |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| **TSFM-Small (ours)** | — | — | — | — | — |
+| **TSFM-Medium (ours)** | — | — | — | — | — |
+| **LiMU-BERT** | — | — | — | — | — |
+| **MOMENT** | — | — | — | — | — |
+| **CrossHAR** | — | — | — | — | — |
+| **LanHAR** | — | — | — | — | — |
+| **LLaSA**† | — | — | — | — | — |
+
+*Exact match values will be populated after re-running evaluations with the updated scoring.*
 
 ### Zero-Shot Closed-Set
 
-*Text-aligned models predict from test labels only (exact match). Classifier-based models mask logits to test-relevant groups (group match).*
+*Model predicts from test dataset labels only. Both exact match and group match reported uniformly for all models.*
 
-| Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM-Small (ours)** | **57.9** | 21.8 | **64.7** | **56.8** | 25.1 | 14.4 | 44.1 | 33.1 | 42.3 | 36.7 |
-| **TSFM-Medium (ours)** | 54.7 | **24.5** | 61.5 | 47.1 | 31.9 | 22.3 | **47.7** | **36.5** | 39.3 | 33.9 |
-| **LiMU-BERT** | 29.3 | 13.1 | 39.9 | 37.8 | 30.5 | 19.9 | 37.6 | 33.6 | 28.1 | 11.0 |
-| **MOMENT** | 40.9 | 24.6 | 51.6 | 39.3 | 31.1 | 21.6 | 46.0 | **37.1** | **53.9** | **43.4** |
-| **CrossHAR** | 23.3 | 17.7 | 42.8 | 39.5 | **40.3** | **29.5** | 31.2 | 28.5 | 53.6 | 43.5 |
-| **LanHAR** | 17.5 | 11.6 | 37.1 | 30.7 | 30.0 | 19.1 | 34.7 | 30.6 | 22.5 | 16.7 |
-| **LLaSA**† | 4.4 | 1.0 | 28.5\* | 16.4\* | 15.2 | 9.7 | 14.0\* | 4.7\* | 25.0 | 10.0 |
+**Group Match** (synonyms accepted):
+
+| Model | MobiAct | MotionSense | RealWorld | Shoaib | Opportunity |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| **TSFM-Small (ours)** | — | — | — | — | — |
+| **TSFM-Medium (ours)** | — | — | — | — | — |
+| **LiMU-BERT** | 29.3 | 39.9 | 30.5 | 37.6 | 28.1 |
+| **MOMENT** | 40.9 | 51.6 | 31.1 | 46.0 | **53.9** |
+| **CrossHAR** | 23.3 | 42.8 | **40.3** | 31.2 | 53.6 |
+| **LanHAR** | — | — | — | — | — |
+| **LLaSA**† | — | — | — | — | — |
+
+**Exact Match** (no synonym leniency):
+
+| Model | MobiAct | MotionSense | RealWorld | Shoaib | Opportunity |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| **TSFM-Small (ours)** | **57.9** | **64.7** | 25.1 | 44.1 | 42.3 |
+| **TSFM-Medium (ours)** | 54.7 | 61.5 | 31.9 | **47.7** | 39.3 |
+| **LiMU-BERT** | — | — | — | — | — |
+| **MOMENT** | — | — | — | — | — |
+| **CrossHAR** | — | — | — | — | — |
+| **LanHAR** | 17.5 | 37.1 | 30.0 | 34.7 | 22.5 |
+| **LLaSA**† | 4.4 | 28.5\* | 15.2 | 14.0\* | 25.0 |
+
+*Cells marked "—" will be populated after re-running evaluations with the updated dual scoring.*
 
 \*LLaSA was trained on MotionSense and Shoaib — not truly zero-shot. †Subsampled (100/class).
 
@@ -489,11 +531,12 @@ differences, zero-shot still works reasonably (42-54% closed-set) because the 4 
    MOMENT 53.9%, with supervised results up to 79.7% (MOMENT) and 77.6% (TSFM) at 10%.
 
 4. **MOMENT is consistently the closest competitor, partly due to structural advantages** —
-   Second-best on most metrics, and leads on Opportunity (53.9% ZS-Closed), Shoaib 1% (88.8%),
-   and has the best 1% F1 overall. However, MOMENT benefits from a 6144-dim embedding (16× TSFM's
-   384-dim), group-based ZS-closed scoring (vs TSFM's stricter exact match), and an SVM-RBF
-   classifier for ZS that is stronger than the GRU/Transformer classifiers used by LiMU-BERT and
-   CrossHAR. See [Note on MOMENT's Structural Advantages](#note-on-moments-structural-advantages).
+   Second-best on most metrics, and leads on Opportunity (53.9% ZS-Closed group), Shoaib 1% (88.8%),
+   and has the best 1% F1 overall. MOMENT benefits from a 6144-dim embedding (16× TSFM's 384-dim)
+   and an SVM-RBF classifier for ZS that is stronger than the GRU/Transformer classifiers used by
+   LiMU-BERT and CrossHAR. With unified scoring (both exact and group match reported for all models),
+   the scoring asymmetry is eliminated.
+   See [Note on MOMENT's Structural Advantages](#note-on-moments-structural-advantages).
 
 5. **CrossHAR is a strong third** — 76.7% at 10% supervised avg, competitive with MOMENT on
    MotionSense (92.2%) and Shoaib (93.3%), despite a much smaller embedding (72-dim). Shows an
@@ -557,13 +600,18 @@ This is most visible in the supervised results: MOMENT's `Linear(6144, C)` head 
 (88.8% on Shoaib, 87.4% on MotionSense) nearly matches TSFM despite having no text-based class
 prototypes to guide learning. The high dimensionality compensates for the lack of text alignment.
 
-### 2. ZS Closed-Set Scoring Asymmetry
+### 2. ZS Closed-Set Scoring (Now Unified)
 
-As documented in [Zero-Shot Closed-Set](#zero-shot-closed-set), classifier-based models (MOMENT,
-LiMU-BERT, CrossHAR) use **group-based matching** for ZS-closed scoring, while text-aligned
-models (TSFM, LanHAR) use **exact match**. This asymmetry systematically favors MOMENT.
+We now report **both exact match and group match** for all models uniformly. For classifier-based
+models, exact match predictions are obtained via **logit aggregation**: for each test label, the
+MAX logit across all training labels in the same synonym group is taken, producing C-class logits
+over the test labels. This lets us compute exact match for classifier-based models on the same
+C test labels that text-aligned models predict from.
 
-Concrete example of the closed-set mask expansion:
+The group-match path (mask logits → group scoring) is still reported for comparison. The
+difference between exact and group scores shows how much each model benefits from synonym leniency.
+
+Concrete example of the closed-set mask expansion (relevant to the group-match path):
 
 | Test Dataset | Test Classes | Allowed Training Labels (mask) | Expansion Factor |
 |---|:-:|:-:|:-:|
@@ -573,10 +621,6 @@ Concrete example of the closed-set mask expansion:
 | Shoaib | 7 | 25 | 3.6× |
 | Opportunity | 4 | 14 | 3.5× |
 | HARTH | 12 | 29 | 2.4× |
-
-MOMENT's SVM chooses among ~3× more allowed labels than TSFM sees, but any prediction within the
-correct group is scored as correct. TSFM must predict the exact test label. This means MOMENT
-gets multiple "chances" per group while TSFM gets exactly one.
 
 ### 3. SVM-RBF Is a Stronger ZS Classifier Than GRU/Transformer
 
@@ -593,14 +637,13 @@ and CrossHAR (32.0%) by a larger margin than the embedding dimensionality alone 
 ### 4. Combined Effect
 
 These advantages compound: MOMENT operates on 6144-dim embeddings (more capacity) with an
-SVM-RBF classifier (stronger learner) and group-based scoring (more lenient). Each factor
-individually provides a modest edge; combined, they make MOMENT appear close to TSFM despite
-fundamental architectural differences.
+SVM-RBF classifier (stronger learner). Each factor individually provides a modest edge; combined,
+they make MOMENT appear close to TSFM despite fundamental architectural differences.
 
 **This is fair in the sense that we follow MOMENT's published protocol** — per-channel processing
 and SVM-RBF are how MOMENT is designed to be used. We do not artificially inflate MOMENT's
-numbers. However, readers should be aware that direct numerical comparison between MOMENT and
-TSFM is not apples-to-apples due to the embedding dimensionality gap and the ZS scoring asymmetry.
+numbers. The scoring asymmetry has been resolved: both exact match and group match are now
+reported uniformly for all models, enabling fair direct comparison.
 
 ---
 
@@ -612,27 +655,31 @@ These two datasets are reported separately due to extreme distribution shift:
 
 ### HARTH
 
-| Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM-Small (ours)** | 0.6 | 0.4 | 0.5 | 0.4 | **71.9** | **41.9** | 76.5 | **48.1** |
-| **TSFM-Medium (ours)** | **6.7** | **1.3** | 10.6 | 4.3 | 53.5 | 28.8 | **78.5** | 41.8 |
-| **LiMU-BERT** | 0.0 | 0.0 | **20.2** | **5.1** | 19.1 | 2.7 | 61.7 | 14.5 |
-| **MOMENT** | 0.4 | 0.2 | 1.9 | 1.3 | 61.9 | 32.0 | 69.9 | 39.3 |
-| **CrossHAR** | 0.3 | 0.2 | 0.9 | 0.9 | 51.7 | 29.1 | 63.3 | 39.1 |
-| **LanHAR** | 0.9 | 0.2 | 1.1 | 0.4 | 5.7 | 3.0 | 73.4 | 28.3 |
-| **LLaSA**† | 11.9 | 3.4 | 12.5 | 2.5 | N/A | N/A | N/A | N/A |
+*ZS columns show group match accuracy. Exact match values will be populated after re-running evaluations.*
+
+| Model | ZS-Open Grp | ZS-Close Grp | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **TSFM-Small (ours)** | 0.6 | 0.5 | **71.9** | **41.9** | 76.5 | **48.1** |
+| **TSFM-Medium (ours)** | **6.7** | 10.6 | 53.5 | 28.8 | **78.5** | 41.8 |
+| **LiMU-BERT** | 0.0 | **20.2** | 19.1 | 2.7 | 61.7 | 14.5 |
+| **MOMENT** | 0.4 | 1.9 | 61.9 | 32.0 | 69.9 | 39.3 |
+| **CrossHAR** | 0.3 | 0.9 | 51.7 | 29.1 | 63.3 | 39.1 |
+| **LanHAR** | 0.9 | 1.1 | 5.7 | 3.0 | 73.4 | 28.3 |
+| **LLaSA**† | 11.9 | 12.5 | N/A | N/A | N/A | N/A |
 
 ### VTT-ConIoT
 
-| Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM-Small (ours)** | 2.0 | 0.4 | 6.3 | **3.8** | 13.5 | 9.4 | 30.4 | 29.5 |
-| **TSFM-Medium (ours)** | 1.7 | 0.6 | 3.1 | 2.9 | 1.9 | 1.9 | 26.1 | 25.9 |
-| **LiMU-BERT** | 3.4 | 0.9 | **7.1** | 2.1 | 7.7 | 4.2 | 19.3 | 8.4 |
-| **MOMENT** | 1.6 | 0.4 | 5.2 | 2.0 | **21.3** | **18.6** | **38.6** | **37.2** |
-| **CrossHAR** | 0.7 | 0.4 | 5.0 | 2.7 | 9.7 | 4.8 | 27.1 | 23.1 |
-| **LanHAR** | **8.3** | **2.1** | 6.9 | 3.2 | 5.3 | 2.7 | 16.9 | 10.8 |
-| **LLaSA**† | — | — | 6.9 | 1.4 | N/A | N/A | N/A | N/A |
+*ZS columns show group match accuracy. Exact match values will be populated after re-running evaluations.*
+
+| Model | ZS-Open Grp | ZS-Close Grp | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **TSFM-Small (ours)** | 2.0 | 6.3 | 13.5 | 9.4 | 30.4 | 29.5 |
+| **TSFM-Medium (ours)** | 1.7 | 3.1 | 1.9 | 1.9 | 26.1 | 25.9 |
+| **LiMU-BERT** | 3.4 | **7.1** | 7.7 | 4.2 | 19.3 | 8.4 |
+| **MOMENT** | 1.6 | 5.2 | **21.3** | **18.6** | **38.6** | **37.2** |
+| **CrossHAR** | 0.7 | 5.0 | 9.7 | 4.8 | 27.1 | 23.1 |
+| **LanHAR** | **8.3** | 6.9 | 5.3 | 2.7 | 16.9 | 10.8 |
+| **LLaSA**† | — | 6.9 | N/A | N/A | N/A | N/A |
 
 **Observations**:
 - **HARTH**: All models near-zero on zero-shot due to sensor distribution shift. Supervised FT adapts well: TSFM-Medium leads at 10% (78.5%), TSFM-Small leads at 1% (71.9%).

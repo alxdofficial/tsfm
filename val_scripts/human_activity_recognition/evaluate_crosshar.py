@@ -34,6 +34,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from val_scripts.human_activity_recognition.grouped_zero_shot import (
     load_global_labels, map_local_to_global_labels,
     get_closed_set_mask, score_with_groups,
+    score_exact, aggregate_logits_to_test_labels,
 )
 
 
@@ -544,7 +545,7 @@ def predict_transformer_classifier(model, data, batch_size=CLASSIFIER_BATCH_SIZE
 
 
 def predict_transformer_global(model, data, device, logit_mask=None,
-                               batch_size=CLASSIFIER_BATCH_SIZE):
+                               batch_size=CLASSIFIER_BATCH_SIZE, return_logits=False):
     """Predict global label indices using Transformer_ft classifier.
 
     Args:
@@ -553,9 +554,11 @@ def predict_transformer_global(model, data, device, logit_mask=None,
         device: torch device
         logit_mask: Optional (87,) bool mask for closed-set scoring.
             If provided, masked-out logits are set to -inf before argmax.
+        return_logits: If True, also return raw (N, 87) logits.
 
     Returns:
         pred_global_indices: (N,) predicted global label indices
+        If return_logits=True, also returns: all_logits: (N, 87) raw logits
     """
     model.train(False)
     ds = TensorDataset(torch.from_numpy(data).float())
@@ -565,15 +568,20 @@ def predict_transformer_global(model, data, device, logit_mask=None,
         mask_tensor = torch.from_numpy(logit_mask).bool().to(device)
 
     all_preds = []
+    all_logits_list = []
     with torch.no_grad():
         for (batch_data,) in loader:
             batch_data = batch_data.to(device)
             logits = model(batch_data)
+            if return_logits:
+                all_logits_list.append(logits.cpu().numpy())
             if logit_mask is not None:
                 logits[:, ~mask_tensor] = float('-inf')
             preds = logits.argmax(dim=1).cpu().numpy()
             all_preds.extend(preds)
 
+    if return_logits:
+        return np.array(all_preds), np.concatenate(all_logits_list, axis=0)
     return np.array(all_preds)
 
 
@@ -814,17 +822,17 @@ def score_supervised_finetune(
 
 def print_results_table(all_results):
     print()
-    print("=" * 130)
+    print("=" * 170)
     print("CROSSHAR BASELINE RESULTS")
-    print("=" * 130)
+    print("=" * 170)
 
     header = (f"{'Dataset':<16}"
-              f"{'ZS-Open Acc':>13}{'ZS-Open F1':>12}"
-              f"{'ZS-Close Acc':>14}{'ZS-Close F1':>13}"
+              f"{'Open Exact':>12}{'Open Group':>12}"
+              f"{'Close Exact':>13}{'Close Group':>13}"
               f"{'1% FT Acc':>12}{'1% FT F1':>12}"
               f"{'10% FT Acc':>13}{'10% FT F1':>13}")
     print(header)
-    print("-" * 130)
+    print("-" * 170)
 
     for ds in TEST_DATASETS:
         if ds not in all_results:
@@ -835,12 +843,12 @@ def print_results_table(all_results):
             return r.get(key, {}).get(metric, 0.0)
 
         print(f"{ds:<16}"
-              f"{g('zero_shot_open_set','accuracy'):>12.1f}%{g('zero_shot_open_set','f1_macro'):>11.1f}%"
-              f"{g('zero_shot_closed_set','accuracy'):>13.1f}%{g('zero_shot_closed_set','f1_macro'):>12.1f}%"
+              f"{g('zero_shot_open_set','accuracy_exact'):>11.1f}%{g('zero_shot_open_set','accuracy_group'):>11.1f}%"
+              f"{g('zero_shot_closed_set','accuracy_exact'):>12.1f}%{g('zero_shot_closed_set','accuracy_group'):>12.1f}%"
               f"{g('1pct_supervised','accuracy'):>11.1f}%{g('1pct_supervised','f1_macro'):>11.1f}%"
               f"{g('10pct_supervised','accuracy'):>12.1f}%{g('10pct_supervised','f1_macro'):>12.1f}%")
 
-    print("=" * 130)
+    print("=" * 170)
     print()
     print("Details:")
     print(f"  Model: CrossHAR (Masked Transformer + Contrastive)")
@@ -936,21 +944,63 @@ def main():
         # Zero-shot open-set (Transformer_ft on full sequences)
         print(f"\n  --- Zero-Shot Open-Set (Transformer_ft) ---")
         pred_open = predict_transformer_global(zs_classifier, test_emb, device)
-        ds_results['zero_shot_open_set'] = score_with_groups(
+        # Group match scoring (original)
+        group_scores = score_with_groups(
             pred_open, test_labels, test_ds, global_labels, DATASET_CONFIG)
+        # Exact match scoring
+        pred_open_names = [global_labels[idx] if idx < len(global_labels) else "unknown"
+                           for idx in pred_open]
+        gt_open_names = [test_activities[test_labels[i]]
+                         for i in range(len(test_labels))
+                         if test_labels[i] < len(test_activities)]
+        pred_open_names_filtered = [pred_open_names[i]
+                                    for i in range(len(test_labels))
+                                    if test_labels[i] < len(test_activities)]
+        exact_scores = score_exact(pred_open_names_filtered, gt_open_names)
+        ds_results['zero_shot_open_set'] = {
+            'accuracy_exact': exact_scores['accuracy'], 'f1_macro_exact': exact_scores['f1_macro'],
+            'f1_weighted_exact': exact_scores['f1_weighted'],
+            'accuracy_group': group_scores['accuracy'], 'f1_macro_group': group_scores['f1_macro'],
+            'f1_weighted_group': group_scores['f1_weighted'],
+            'n_samples': group_scores['n_samples'],
+        }
         zs_open = ds_results['zero_shot_open_set']
-        print(f"  ZS Open-set: Acc={zs_open['accuracy']:.1f}%, F1={zs_open['f1_macro']:.1f}%")
+        print(f"  ZS Open-set: Exact={zs_open['accuracy_exact']:.1f}%, "
+              f"Group={zs_open['accuracy_group']:.1f}%")
 
         # Zero-shot closed-set (Transformer_ft with masked logits)
         print(f"\n  --- Zero-Shot Closed-Set (Transformer_ft) ---")
         mask = get_closed_set_mask(test_ds, global_labels, DATASET_CONFIG)
+        # Group match: original path
         pred_closed = predict_transformer_global(zs_classifier, test_emb, device, logit_mask=mask)
-        ds_results['zero_shot_closed_set'] = score_with_groups(
+        group_scores = score_with_groups(
             pred_closed, test_labels, test_ds, global_labels, DATASET_CONFIG)
-        ds_results['zero_shot_closed_set']['n_allowed'] = int(mask.sum())
-        ds_results['zero_shot_closed_set']['n_masked'] = int((~mask).sum())
+        # Exact match: aggregate logits to C test labels
+        _, logits_87 = predict_transformer_global(
+            zs_classifier, test_emb, device, return_logits=True)
+        agg_logits = aggregate_logits_to_test_labels(
+            logits_87, global_labels, test_activities, DATASET_CONFIG, test_ds)
+        pred_test_idx = agg_logits.argmax(axis=1)
+        pred_closed_names = [test_activities[idx] if idx < len(test_activities) else "unknown"
+                             for idx in pred_test_idx]
+        gt_closed_names = [test_activities[test_labels[i]]
+                           for i in range(len(test_labels))
+                           if test_labels[i] < len(test_activities)]
+        pred_closed_names_filtered = [pred_closed_names[i]
+                                      for i in range(len(test_labels))
+                                      if test_labels[i] < len(test_activities)]
+        exact_scores = score_exact(pred_closed_names_filtered, gt_closed_names)
+        ds_results['zero_shot_closed_set'] = {
+            'accuracy_exact': exact_scores['accuracy'], 'f1_macro_exact': exact_scores['f1_macro'],
+            'f1_weighted_exact': exact_scores['f1_weighted'],
+            'accuracy_group': group_scores['accuracy'], 'f1_macro_group': group_scores['f1_macro'],
+            'f1_weighted_group': group_scores['f1_weighted'],
+            'n_samples': group_scores['n_samples'],
+            'n_allowed': int(mask.sum()), 'n_masked': int((~mask).sum()),
+        }
         zs_close = ds_results['zero_shot_closed_set']
-        print(f"  ZS Closed-set: Acc={zs_close['accuracy']:.1f}%, F1={zs_close['f1_macro']:.1f}% "
+        print(f"  ZS Closed-set: Exact={zs_close['accuracy_exact']:.1f}%, "
+              f"Group={zs_close['accuracy_group']:.1f}% "
               f"({zs_close['n_allowed']}/{len(global_labels)} labels allowed)")
 
         # 1% supervised (end-to-end fine-tuning)
