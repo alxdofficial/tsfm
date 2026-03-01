@@ -14,13 +14,13 @@ from typing import Optional, List, Dict, Tuple
 
 try:
     from .preprocessing import preprocess_imu_data
-    from .feature_extractor import FixedPatchCNN
+    from .feature_extractor import FixedPatchCNN, SpectralTemporalExtractor
     from .positional_encoding import IMUPositionalEncoding
     from .transformer import IMUTransformer
 except ImportError:
     # For running as script
     from preprocessing import preprocess_imu_data
-    from feature_extractor import FixedPatchCNN
+    from feature_extractor import FixedPatchCNN, SpectralTemporalExtractor
     from positional_encoding import IMUPositionalEncoding
     from transformer import IMUTransformer
 
@@ -76,6 +76,10 @@ class IMUActivityRecognitionEncoder(nn.Module):
         # Learnable token initialization
         mask_token_init_scale: float = 0.1,
 
+        # Feature extractor selection
+        feature_extractor_type: str = 'cnn',
+        spectral_ratio: float = 0.25,
+
         # Other
         max_patches: int = 5000
     ):
@@ -102,6 +106,9 @@ class IMUActivityRecognitionEncoder(nn.Module):
 
             mask_token_init_scale: Initialization scale for mask/pad tokens (scales with sqrt(d_model))
 
+            feature_extractor_type: 'cnn' (default) or 'spectral_temporal'
+            spectral_ratio: Fraction of d_model for spectral features (only for spectral_temporal)
+
             max_patches: Maximum number of patches to support
         """
         super().__init__()
@@ -111,15 +118,27 @@ class IMUActivityRecognitionEncoder(nn.Module):
         self.normalization_method = normalization_method
         self.interpolation_method = interpolation_method
         self.use_cross_channel = use_cross_channel
+        self.feature_extractor_type = feature_extractor_type
 
-        # Feature extractor (CNN)
-        self.feature_extractor = FixedPatchCNN(
-            d_model=d_model,
-            cnn_channels=cnn_channels,
-            kernel_sizes=cnn_kernel_sizes,
-            dropout=dropout,
-            patch_chunk_size=patch_chunk_size
-        )
+        # Feature extractor
+        if feature_extractor_type == 'spectral_temporal':
+            self.feature_extractor = SpectralTemporalExtractor(
+                d_model=d_model,
+                cnn_channels=cnn_channels,
+                kernel_sizes=cnn_kernel_sizes,
+                dropout=dropout,
+                patch_chunk_size=patch_chunk_size,
+                spectral_ratio=spectral_ratio,
+                target_patch_size=target_patch_size,
+            )
+        else:
+            self.feature_extractor = FixedPatchCNN(
+                d_model=d_model,
+                cnn_channels=cnn_channels,
+                kernel_sizes=cnn_kernel_sizes,
+                dropout=dropout,
+                patch_chunk_size=patch_chunk_size
+            )
 
         # Positional encoding (channel_projection=True always for better generalization)
         self.positional_encoding = IMUPositionalEncoding(

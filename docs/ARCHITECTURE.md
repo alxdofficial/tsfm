@@ -67,39 +67,58 @@ x_normalized = (x - mean) / std
 
 **Output shape**: `(batch, num_patches, 64, num_channels)`
 
-### 1.2 FixedPatchCNN (Feature Extraction)
+### 1.2 Feature Extraction (CNN or SpectralTemporalExtractor)
 
-A channel-independent 1D CNN extracts temporal features from each patch.
+Two channel-independent feature extractors are available, selectable via `feature_extractor_type`:
+
+#### FixedPatchCNN (default: `feature_extractor_type: "cnn"`)
+
+A channel-independent 1D CNN that extracts temporal features from each patch.
+
+```
+Input: (batch, patches, seq_len, channels)
+  → Channel-Independent Conv1d layers (kernel=5)
+  → AdaptiveAvgPool1d(1)
+  → Linear → d_model
+Output: (batch, patches, channels, d_model)
+```
+
+#### SpectralTemporalExtractor (`feature_extractor_type: "spectral_temporal"`)
+
+Hybrid extractor combining temporal CNN with frequency-domain features.
+Supports variable-length input (no fixed interpolation required).
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    FixedPatchCNN                             │
+│              SpectralTemporalExtractor                       │
 ├─────────────────────────────────────────────────────────────┤
-│  Input: (batch, patches, 64, channels)                       │
+│  Input: (batch, patches, seq_len, channels)                  │
+│  Reshape to (B*P*C, 1, seq_len) — channel-independent       │
 │                        │                                     │
+│              ┌─────────┴─────────┐                          │
+│              ▼                   ▼                           │
+│   ┌──────────────────┐  ┌────────────────────┐             │
+│   │  Temporal Branch │  │  Spectral Branch   │             │
+│   │  Conv1d layers   │  │  FFT(n=fft_size)   │             │
+│   │  (kernel=5)      │  │  → magnitude bins  │             │
+│   │  AdaptivePool(1) │  │  → 2-layer MLP     │             │
+│   │  → d_temporal    │  │  → d_spectral      │             │
+│   └──────────────────┘  └────────────────────┘             │
+│              │                   │                           │
+│              └─────────┬─────────┘                          │
 │                        ▼                                     │
-│    ┌───────────────────────────────────────┐                │
-│    │  Channel-Independent 1D Conv Layers   │                │
-│    │  - Conv1d(1 → 64, kernel=5)           │                │
-│    │  - BatchNorm + GELU + Dropout         │                │
-│    │  - Conv1d(64 → 128, kernel=5)         │                │
-│    │  - BatchNorm + GELU + Dropout         │                │
-│    └───────────────────────────────────────┘                │
-│                        │                                     │
-│                        ▼                                     │
-│    ┌───────────────────────────────────────┐                │
-│    │  Global Average Pooling               │                │
-│    │  (temporal_dim → 1)                   │                │
-│    └───────────────────────────────────────┘                │
-│                        │                                     │
-│                        ▼                                     │
-│    ┌───────────────────────────────────────┐                │
-│    │  Linear Projection (128 → d_model)    │                │
-│    └───────────────────────────────────────┘                │
-│                        │                                     │
+│              cat([temporal, spectral])                       │
+│              → (B*P*C, d_model)                             │
+│                                                              │
 │  Output: (batch, patches, channels, d_model)                 │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+- `d_spectral = d_model × spectral_ratio` (default 0.25), `d_temporal = d_model - d_spectral`
+- Temporal branch: reuses MultiScaleConv1D + AdaptiveAvgPool1d (handles any input length)
+- Spectral branch: `torch.fft.rfft(x, n=fft_size)` produces fixed frequency bins regardless
+  of input length (zero-pads short inputs, truncates long). torch.compile friendly.
+- FFT captures periodic structure: walking ~2Hz, running ~3Hz, cycling ~1Hz
 
 **Key Design Decision**: Channel-independent processing
 - Each sensor channel (acc_x, acc_y, gyro_z, etc.) is processed independently
@@ -645,7 +664,7 @@ The following features are implemented in code but disabled in the current train
 ```
 model/
 ├── encoder.py              # IMUActivityRecognitionEncoder
-├── feature_extractor.py    # FixedPatchCNN, ChannelIndependentCNN
+├── feature_extractor.py    # FixedPatchCNN, SpectralTemporalExtractor, ChannelIndependentCNN
 ├── positional_encoding.py  # IMUPositionalEncoding
 ├── transformer.py          # IMUTransformer, DualBranchTransformer
 ├── semantic_alignment.py   # SemanticAlignmentHead, MultiQueryAttention

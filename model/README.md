@@ -9,9 +9,9 @@ This encoder processes raw IMU sensor data through multiple stages to produce ri
 ### Key Features
 
 - **Variable input support**: Works with 6-52 channels and any sampling rate (20-200 Hz)
-- **Fixed patch size**: All patches interpolated to 64 timesteps for consistent architecture
+- **Fixed patch size**: All patches interpolated to 64 timesteps for consistent architecture (or variable-length with SpectralTemporalExtractor)
 - **Channel-independent processing**: Scales efficiently to many channels
-- **1D CNN feature extraction**: Channel-independent Conv1d (kernel=5) for temporal features
+- **Dual feature extraction**: CNN-only (`FixedPatchCNN`) or hybrid spectral-temporal (`SpectralTemporalExtractor`) with FFT frequency features
 - **Temporal attention**: Models dependencies across time patches
 - **Channel semantic encoding**: Optional encoding of channel meanings using Sentence-BERT
 
@@ -25,8 +25,9 @@ Raw IMU Data (timesteps × channels)
    - Interpolation: Resize to 64 timesteps
    - Normalization: Z-score per patch, per channel
     ↓
-2. Feature Extraction
-   - Channel-independent 1D CNN (kernel: 5)
+2. Feature Extraction (configurable)
+   - FixedPatchCNN: Channel-independent 1D CNN (kernel: 5)
+   - SpectralTemporalExtractor: CNN temporal branch + FFT spectral branch
    - Channel-independent processing
    - Output: (patches × channels × d_model)
     ↓
@@ -196,7 +197,7 @@ imu_activity_recognition_encoder/
 ├── __init__.py                 # Package initialization
 ├── encoder.py                  # Main encoder class
 ├── transformer.py              # Dual-branch transformer (temporal + cross-channel)
-├── feature_extractor.py        # Multi-scale 1D CNN
+├── feature_extractor.py        # FixedPatchCNN + SpectralTemporalExtractor
 ├── positional_encoding.py      # Temporal + channel semantic encoding
 ├── preprocessing.py            # Patching, interpolation, normalization
 ├── semantic_alignment.py       # Semantic alignment head + projection + label bank
@@ -214,8 +215,10 @@ imu_activity_recognition_encoder/
 - `dim_feedforward` (int): Hidden dimension in FFN (default: 1536)
 - `dropout` (float): Dropout probability (default: 0.1)
 
-### CNN Parameters
-- `cnn_channels` (List[int]): Channel progression (default: [32, 64])
+### Feature Extractor Parameters
+- `feature_extractor_type` (str): `"cnn"` for FixedPatchCNN or `"spectral_temporal"` for SpectralTemporalExtractor (default: `"cnn"`)
+- `spectral_ratio` (float): Fraction of d_model allocated to spectral features, only used when `feature_extractor_type="spectral_temporal"` (default: 0.25)
+- `cnn_channels` (List[int]): Channel progression for CNN layers (default: [32, 64])
 - `cnn_kernel_sizes` (List[int]): Convolution kernel sizes (default: [5])
 
 ### Preprocessing
@@ -248,6 +251,7 @@ The following features are fully implemented:
 2. **Masked autoencoding (MAE)**: Structured masking (random + span + channel dropout) for self-supervised pretraining
 3. **Semantic alignment**: Text-IMU alignment with learnable multi-prototype label bank
 4. **Channel text fusion**: Cross-attention between sensor tokens and channel description tokens
+5. **Spectral-temporal feature extraction**: Hybrid extractor combining CNN temporal features with FFT spectral features for frequency-domain awareness (walking ~2Hz, running ~3Hz). Supports variable-length input via fixed-size FFT.
 
 See [`training_scripts/human_activity_recognition/README.md`](../training_scripts/human_activity_recognition/README.md) for training details.
 

@@ -121,17 +121,29 @@ collapsing to 1.
 | Compatibility | Drop-in — output still `(B, P, C, d_model)` |
 | Risk | Low. Model can learn to ignore temporal positions if unhelpful. |
 
-### Option B: Add FFT Amplitude Features (LOW effort, MEDIUM impact)
+### Option B: Add FFT Amplitude Features (LOW effort, MEDIUM impact) — **IMPLEMENTED**
 
-Concatenate FFT amplitude spectrum to the CNN features before projection:
+> **Status**: Implemented as `SpectralTemporalExtractor` in `model/feature_extractor.py`.
+> Activated via `feature_extractor_type: "spectral_temporal"` in config.
+> Goes beyond the original proposal: parallel temporal + spectral branches with configurable
+> ratio (`spectral_ratio`, default 0.25) instead of simple concatenation.
 
 ```
-Current:  CNN(patch) → AvgPool → [64-dim] → Linear(64→384)
-Proposed: CNN(patch) → AvgPool → [64-dim] ⊕ FFT_amp(patch)[32-dim] → Linear(96→384)
+Implemented architecture:
+  Temporal branch: Conv1d layers → AdaptiveAvgPool1d(1) → Linear → d_temporal features
+  Spectral branch: FFT(input, n=fft_size).abs() → 2-layer MLP → d_spectral features
+  Output: cat([temporal, spectral]) → (B, P, C, d_model)
+
+  d_spectral = d_model * spectral_ratio (default 0.25)
+  d_temporal = d_model - d_spectral
 ```
 
-Compute FFT of each 64-timestep patch, take first 32 amplitude bins (up to Nyquist),
-concatenate with CNN features. The linear projection absorbs both.
+Additional improvements over the original proposal:
+- **Variable-length input**: Uses fixed `fft_size` parameter for `torch.fft.rfft(x, n=fft_size)`,
+  producing consistent frequency bins regardless of input patch length (zero-pads short, truncates long).
+  This means patches no longer need to be interpolated to a fixed 64 timesteps.
+- **torch.compile compatible**: Fixed FFT size avoids kernel recompilation with `dynamic=True`.
+- **Drop-in replacement**: Same `(B, P, C, d_model)` output shape as `FixedPatchCNN`.
 
 | Aspect | Details |
 |--------|---------|
@@ -195,7 +207,7 @@ triaxial processing.
 | Option | Effort | Impact | Risk | Recommendation |
 |--------|--------|--------|------|----------------|
 | **A: Replace AvgPool** | Low | High | Low | **Do first** — directly fixes the biggest bottleneck |
-| **B: Add FFT features** | Low | Medium | Very low | **Do second** — easy win, complementary to A |
+| **B: Add FFT features** | Low | Medium | Very low | **DONE** — implemented as `SpectralTemporalExtractor` |
 | **D: Triad rotation** | Low | Medium | Low | **Do alongside A** — orthogonal improvement |
 | **C: Wavelet tokenizer** | Medium | High | Medium | **Explore after A+B** — could replace CNN entirely and solve variable-rate handling |
 

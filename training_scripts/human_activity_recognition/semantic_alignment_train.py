@@ -160,7 +160,7 @@ MAX_PATCHES_PER_SAMPLE = 48  # Matches good small_v1_best checkpoint config
 MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
 # ---- Architecture configuration (single source of truth: model/config.py) ----
-MODEL_SIZE = "small"  # Options: "tiny", "small", "medium", "large"
+MODEL_SIZE = "medium"  # Options: "tiny", "small", "small_wide", "medium", "large"
 _cfg = get_config(MODEL_SIZE)
 
 # Encoder
@@ -173,6 +173,8 @@ USE_CROSS_CHANNEL = _cfg["use_cross_channel"]
 CNN_CHANNELS = _cfg["cnn_channels"]
 CNN_KERNEL_SIZES = _cfg["cnn_kernel_sizes"]
 TARGET_PATCH_SIZE = _cfg["target_patch_size"]
+FEATURE_EXTRACTOR_TYPE = "spectral_temporal"  # Override: use hybrid spectral-temporal extractor
+SPECTRAL_RATIO = _cfg.get("spectral_ratio", 0.25)
 
 # Semantic alignment head
 D_MODEL_FUSED = _cfg["d_model_fused"]
@@ -208,47 +210,62 @@ RESUME_FROM = None  # Set to folder path to resume, or None to start fresh
 SEED = 42
 MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
-# Training hyperparameters
+# ---- Model-size-aware training hyperparameters ----
+# Medium/large models need lower LR, softer temperature, and GradCache to avoid
+# representation collapse.  small_wide shares the small encoder so uses small's recipe.
 EPOCHS = 100
-BATCH_SIZE = 32  # Fixed micro-batch size (matches small_v1_best)
-ACCUMULATION_STEPS = 16  # Effective batch = 32 × 16 = 512
+WARMUP_EPOCHS = 3
+
+if MODEL_SIZE in ("small", "small_wide"):
+    # Proven recipe from small_v1_best
+    BATCH_SIZE = 32
+    ACCUMULATION_STEPS = 16        # effective = 512
+    LEARNING_RATE = 1e-4
+    TEMPERATURE = 0.07             # CLIP default
+    WEIGHT_DECAY = 1e-5
+    USE_GRAD_CACHE = False
+    USE_MEMORY_BANK = True
+    MEMORY_BANK_SIZE = 256
+elif MODEL_SIZE == "medium":
+    BATCH_SIZE = 8                 # fits 24GB VRAM with d=768 encoder
+    ACCUMULATION_STEPS = 32        # effective = 256 (plenty for 87 labels)
+    LEARNING_RATE = 3e-5           # scaled down for 122M params
+    TEMPERATURE = 0.1              # less sharp for 768-dim space
+    WEIGHT_DECAY = 5e-6            # less aggressive regularization
+    USE_GRAD_CACHE = True          # CRITICAL: ~512 fresh negatives
+    USE_MEMORY_BANK = False        # GradCache provides enough negatives
+    MEMORY_BANK_SIZE = 0
+else:  # large or unknown
+    BATCH_SIZE = 4
+    ACCUMULATION_STEPS = 128       # effective = 512
+    LEARNING_RATE = 2e-5
+    TEMPERATURE = 0.1
+    WEIGHT_DECAY = 5e-6
+    USE_GRAD_CACHE = True
+    USE_MEMORY_BANK = False
+    MEMORY_BANK_SIZE = 0
+
+TARGET_EFFECTIVE_BATCH = BATCH_SIZE * ACCUMULATION_STEPS  # e.g. 512
 # Per-channel-bucket batch size overrides (empty = use BATCH_SIZE for all buckets)
 MAX_BS_PER_BUCKET = {}
 DEFAULT_MICRO_BATCH_SIZE = BATCH_SIZE
-LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
-WARMUP_EPOCHS = 3
 
-# Shared parameters
+# Shared parameters (same across all model sizes)
 VAL_BATCH_SIZE = 32  # Larger batch for validation/eval (no gradients = lower memory)
-NUM_WORKERS = 8  # Increased from 4 for better CPU parallelism with large batches
-PREFETCH_FACTOR = 4  # Prefetch 4 batches per worker (32 total batches ahead)
-PERSISTENT_WORKERS = True  # Keep workers alive between epochs
-WEIGHT_DECAY = 1e-5  # Reduced from 0.01 - high weight decay causes representation collapse in contrastive learning (SimCLR uses 1e-6)
-TEMPERATURE = 0.07  # CLIP default - sharper discrimination for better gradient signal
+NUM_WORKERS = 8
+PREFETCH_FACTOR = 4
+PERSISTENT_WORKERS = True
 
 # Soft targets configuration
 # CRITICAL: Soft targets are ESSENTIAL for label augmentation to prevent treating synonyms as negatives
 # With augmentation, batch contains duplicates like "walking", "strolling", "person walking"
 # Hard targets treat these as negatives (contradictory!) → Soft targets weight by semantic similarity (correct!)
-USE_SOFT_TARGETS = True  # ENABLED: Essential for label augmentation (prevents collapse from contradictory gradients)
-SOFT_TARGET_TEMPERATURE = 0.5  # Sharpen soft targets - gives ~7x more weight to exact match
-SOFT_TARGET_WEIGHT = 1.0  # Pure soft targets with adaptive recalibration
-
-# GradCache configuration
-# Two-phase gradient computation that decouples contrastive loss batch size from GPU memory.
-# Phase 1: Forward-pass all micro-batches, cache embeddings (detached)
-# Phase 2: Compute loss over ALL cached embeddings (full effective batch)
-# Phase 3: Backprop per micro-batch using cached gradients
-# With per-bucket batch sizes, gives ~444 fresh in-batch negatives per window.
-USE_GRAD_CACHE = False
+USE_SOFT_TARGETS = True
+SOFT_TARGET_TEMPERATURE = 0.5
+SOFT_TARGET_WEIGHT = 1.0
 
 # Loss function type: "infonce" (default) or "siglip"
-# SigLIP uses independent sigmoid per pair, works well even at small batch sizes.
 LOSS_TYPE = "infonce"
-
-# Memory bank configuration (MoCo-style queue for more negatives)
-USE_MEMORY_BANK = True  # MoCo-style queue: provides 256 additional negatives per micro-batch
-MEMORY_BANK_SIZE = 256  # Queue size (matches small_v1_best)
 
 # Class balancing configuration
 # Caps oversampling to prevent rare labels from dominating training
@@ -728,13 +745,15 @@ def _compute_per_layer_grad_norms(model, criterion=None, label_bank=None):
     }
 
     # Single walk of parameter tree, accumulate squared norms per component
+    # Note: torch.compile wraps modules with _orig_mod prefix, so strip it for matching
     sq_sums = {name: 0.0 for name in components}
     for n, p in model.named_parameters():
         if p.grad is None:
             continue
         norm_sq = p.grad.norm().item() ** 2
+        n_stripped = n.replace('._orig_mod', '')  # handle torch.compile wrapper
         for name, prefix in components.items():
-            if prefix in n:
+            if prefix in n_stripped:
                 sq_sums[name] += norm_sq
                 break  # each param belongs to at most one component
     for name in components:
@@ -1392,6 +1411,7 @@ def main():
     global CHECKPOINT_DIR
     global D_MODEL, NUM_HEADS, NUM_TEMPORAL_LAYERS, DIM_FEEDFORWARD, DROPOUT
     global USE_CROSS_CHANNEL, CNN_CHANNELS, CNN_KERNEL_SIZES, TARGET_PATCH_SIZE
+    global FEATURE_EXTRACTOR_TYPE, SPECTRAL_RATIO
     global D_MODEL_FUSED, SEMANTIC_DIM, NUM_SEMANTIC_TEMPORAL_LAYERS
     global NUM_FUSION_QUERIES, USE_FUSION_SELF_ATTENTION
     global NUM_POOL_QUERIES, USE_POOL_SELF_ATTENTION
@@ -1433,6 +1453,8 @@ def main():
                 CNN_CHANNELS = saved_cfg['cnn_channels']
                 CNN_KERNEL_SIZES = saved_cfg['cnn_kernel_sizes']
                 TARGET_PATCH_SIZE = saved_cfg['target_patch_size']
+                FEATURE_EXTRACTOR_TYPE = saved_cfg.get('feature_extractor_type', 'cnn')
+                SPECTRAL_RATIO = saved_cfg.get('spectral_ratio', 0.25)
                 D_MODEL_FUSED = saved_cfg['d_model_fused']
                 SEMANTIC_DIM = saved_cfg['semantic_dim']
                 NUM_SEMANTIC_TEMPORAL_LAYERS = saved_cfg['num_semantic_temporal_layers']
@@ -1506,6 +1528,7 @@ def main():
         "dim_feedforward": DIM_FEEDFORWARD, "dropout": DROPOUT, "use_cross_channel": USE_CROSS_CHANNEL,
         "cnn_channels": CNN_CHANNELS, "cnn_kernel_sizes": CNN_KERNEL_SIZES,
         "target_patch_size": TARGET_PATCH_SIZE,
+        "feature_extractor_type": FEATURE_EXTRACTOR_TYPE, "spectral_ratio": SPECTRAL_RATIO,
         "normalization_method": "zscore", "interpolation_method": "linear",
         "temporal_init_scale": 0.1, "channel_init_scale": 0.1, "use_channel_encoding": True,
         "max_patches": 5000,
@@ -1527,6 +1550,7 @@ def main():
             'dim_feedforward': DIM_FEEDFORWARD, 'dropout': DROPOUT, 'use_cross_channel': USE_CROSS_CHANNEL,
             'cnn_channels': CNN_CHANNELS, 'cnn_kernel_sizes': CNN_KERNEL_SIZES,
             'target_patch_size': TARGET_PATCH_SIZE, 'use_channel_encoding': False,
+            'feature_extractor_type': FEATURE_EXTRACTOR_TYPE, 'spectral_ratio': SPECTRAL_RATIO,
         },
         'semantic_head': {
             'd_model_fused': D_MODEL_FUSED, 'semantic_dim': SEMANTIC_DIM,
@@ -1578,6 +1602,8 @@ def main():
         dropout=DROPOUT, use_cross_channel=USE_CROSS_CHANNEL,
         cnn_channels=CNN_CHANNELS, cnn_kernel_sizes=CNN_KERNEL_SIZES,
         use_channel_encoding=False,  # Disabled: ChannelTextFusion handles channel semantics
+        feature_extractor_type=FEATURE_EXTRACTOR_TYPE,
+        spectral_ratio=SPECTRAL_RATIO,
     ).to(device)
 
     if PRETRAINED_ENCODER_PATH and Path(PRETRAINED_ENCODER_PATH).exists():
@@ -1922,35 +1948,48 @@ def main():
     # NOTE: Cannot compile the full encoder because its positional_encoding path uses
     # SentenceTransformer which is incompatible with torch.dynamo tracing.
     # Instead, compile the heavy sub-modules: encoder's transformer, channel_fusion, semantic_head.
-    if False and device.type == 'cuda' and hasattr(torch, 'compile'):  # Disabled: dynamic shape assertions fail with BS=64
-        compile_backend = None
-        _test_model = None
+    # torch.compile: compile inner modules that see absorbed batch dims.
+    # The outer wrappers (encoder.forward, channel_fusion) reshape (B, P, C, D)
+    # into (B*C, P, D) before calling inner layers, so inner layers only have
+    # standard dynamic batch dims — safe for torch.compile.
+    # Do NOT compile the outer wrappers (variable channels cause recompilation).
+    if device.type == 'cuda' and hasattr(torch, 'compile'):
         try:
-            _test_model = torch.compile(torch.nn.Linear(8, 8).to(device), dynamic=True)
-            _test_model(torch.randn(2, 8, device=device))
-            compile_backend = 'inductor'
-        except Exception:
-            try:
-                _test_model = torch.compile(torch.nn.Linear(8, 8).to(device), backend='aot_eager', dynamic=True)
-                _test_model(torch.randn(2, 8, device=device))
-                compile_backend = 'aot_eager'
-            except Exception:
-                pass
-        del _test_model
+            _test = torch.compile(torch.nn.Linear(8, 8).to(device), dynamic=True)
+            _test(torch.randn(2, 8, device=device))
+            del _test
+            _compile_kw = dict(dynamic=True)
+            compiled = []
 
-        if compile_backend:
-            compile_kwargs = {'dynamic': True}
-            if compile_backend != 'inductor':
-                compile_kwargs['backend'] = compile_backend
-            print(f"\nApplying torch.compile (backend={compile_backend}, dynamic=True)...")
-            # Compile encoder's transformer (the heavy part) — skip positional_encoding (SentenceTransformer)
-            model.encoder.transformer = torch.compile(model.encoder.transformer, **compile_kwargs)
-            model.encoder.feature_extractor = torch.compile(model.encoder.feature_extractor, **compile_kwargs)
-            model.channel_fusion = torch.compile(model.channel_fusion, **compile_kwargs)
-            model.semantic_head = torch.compile(model.semantic_head, **compile_kwargs)
-            print("✓ torch.compile applied to transformer, feature_extractor, channel_fusion, semantic_head")
-        else:
-            print("\nWarning: torch.compile not available, using eager mode")
+            # 1. Feature extractor layers: see (N, 1, 96) — only batch dim varies
+            fe = model.encoder.feature_extractor
+            if hasattr(fe, 'cnn'):
+                # FixedPatchCNN path
+                for i, layer in enumerate(fe.cnn.layers):
+                    fe.cnn.layers[i] = torch.compile(layer, **_compile_kw)
+                fe.cnn.projection = torch.compile(fe.cnn.projection, **_compile_kw)
+                compiled.append("CNN layers+projection")
+            else:
+                # SpectralTemporalExtractor path
+                for i, layer in enumerate(fe.temporal_layers):
+                    fe.temporal_layers[i] = torch.compile(layer, **_compile_kw)
+                fe.temporal_proj = torch.compile(fe.temporal_proj, **_compile_kw)
+                fe.spectral_mlp = torch.compile(fe.spectral_mlp, **_compile_kw)
+                compiled.append("Spectral-temporal layers+proj+mlp")
+
+            # 2. Transformer layers: see (B*C, patches, d_model)
+            transformer = model.encoder.transformer.transformer  # ChannelIndependentTemporalTransformer
+            for i, layer in enumerate(transformer.layers):
+                transformer.layers[i] = torch.compile(layer, **_compile_kw)
+            compiled.append(f"Transformer ({len(transformer.layers)} layers)")
+
+            # 3. Semantic head: see (B, patches, d_model_fused)
+            model.semantic_head = torch.compile(model.semantic_head, **_compile_kw)
+            compiled.append("semantic_head")
+
+            print(f"\n✓ torch.compile (inductor, dynamic=True) applied to: {', '.join(compiled)}")
+        except Exception as e:
+            print(f"\nWarning: torch.compile failed ({e}), using eager mode")
 
     # Warmup memory bank if enabled (reduces early training volatility)
     # Skip if resuming since memory bank is restored from checkpoint

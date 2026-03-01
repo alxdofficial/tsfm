@@ -222,6 +222,148 @@ class ChannelIndependentCNN(nn.Module):
         return x
 
 
+class SpectralTemporalExtractor(nn.Module):
+    """
+    Hybrid spectral-temporal feature extractor for timestep patches.
+
+    Combines a temporal branch (reusing MultiScaleConv1D layers) with a spectral
+    branch (FFT magnitude + learned projection). The spectral branch captures
+    frequency-domain patterns (e.g., walking ~2Hz, running ~3Hz) that the
+    temporal CNN may miss.
+
+    Supports variable-length input: the temporal branch uses Conv1d +
+    AdaptiveAvgPool1d (length-agnostic), and the spectral branch uses a fixed
+    FFT size (torch.fft.rfft with n=fft_size) so the MLP always sees the same
+    number of frequency bins regardless of input length. torch.compile friendly.
+
+    Same input/output contract as FixedPatchCNN — drop-in replacement.
+    """
+
+    def __init__(
+        self,
+        d_model: int = 128,
+        cnn_channels: List[int] = [64, 128],
+        kernel_sizes: List[int] = [5],
+        dropout: float = 0.1,
+        patch_chunk_size: Optional[int] = None,
+        spectral_ratio: float = 0.25,
+        target_patch_size: int = 64,
+        fft_size: Optional[int] = None,
+    ):
+        """
+        Args:
+            d_model: Output feature dimension
+            cnn_channels: Channel progression through CNN layers
+            kernel_sizes: Kernel sizes for temporal convolutions
+            dropout: Dropout probability
+            patch_chunk_size: Process patches in chunks to save memory
+            spectral_ratio: Fraction of d_model allocated to spectral features
+            target_patch_size: Expected temporal length of each patch (legacy, used as
+                               fft_size fallback for backward compat)
+            fft_size: Fixed FFT size. Inputs shorter than this are zero-padded,
+                      longer inputs are truncated. Produces fft_size//2+1 frequency
+                      bins regardless of input length. Defaults to target_patch_size.
+        """
+        super().__init__()
+
+        self.d_model = d_model
+        self.patch_chunk_size = patch_chunk_size
+        self.num_scales = len(kernel_sizes)
+        self.fft_size = fft_size if fft_size is not None else target_patch_size
+
+        # Dimension split
+        self.d_spectral = int(d_model * spectral_ratio)
+        self.d_temporal = d_model - self.d_spectral
+
+        # --- Temporal branch (reuses MultiScaleConv1D) ---
+        # Conv1d + AdaptiveAvgPool1d: handles any input length
+        self.temporal_layers = nn.ModuleList()
+        self.temporal_layers.append(MultiScaleConv1D(
+            in_channels=1,
+            out_channels=cnn_channels[0],
+            kernel_sizes=kernel_sizes,
+            dropout=dropout,
+        ))
+        for i in range(1, len(cnn_channels)):
+            self.temporal_layers.append(MultiScaleConv1D(
+                in_channels=cnn_channels[i - 1] * self.num_scales,
+                out_channels=cnn_channels[i],
+                kernel_sizes=kernel_sizes,
+                dropout=dropout,
+            ))
+        final_cnn_channels = cnn_channels[-1] * self.num_scales
+        self.temporal_pool = nn.AdaptiveAvgPool1d(1)
+        self.temporal_proj = nn.Linear(final_cnn_channels, self.d_temporal)
+
+        # --- Spectral branch (FFT magnitude → 2-layer MLP) ---
+        # rfft with n=fft_size always produces fft_size//2+1 frequency bins
+        n_freq_bins = self.fft_size // 2 + 1
+        self.spectral_mlp = nn.Sequential(
+            nn.Linear(n_freq_bins, self.d_spectral * 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(self.d_spectral * 2, self.d_spectral),
+        )
+
+    def _process_chunk(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Process a chunk of flattened (B*P*C, 1, S) input through both branches.
+
+        Returns: (B*P*C, d_model)
+        """
+        # Temporal branch
+        t = x
+        for layer in self.temporal_layers:
+            t = layer(t)
+        t = self.temporal_pool(t).squeeze(-1)  # (N, final_cnn_ch)
+        t = self.temporal_proj(t)               # (N, d_temporal)
+
+        # Spectral branch — fixed FFT size: zero-pads short inputs, truncates long
+        mag = torch.fft.rfft(x.squeeze(1), n=self.fft_size, dim=-1).abs()  # (N, fft_size//2+1)
+        s = self.spectral_mlp(mag)                                          # (N, d_spectral)
+
+        return torch.cat([t, s], dim=-1)  # (N, d_model)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Extract features from timestep patches (variable or fixed length).
+
+        Args:
+            x: Input patches of shape (batch_size, num_patches, seq_len, num_channels)
+               seq_len can vary between calls — temporal branch uses AdaptiveAvgPool1d,
+               spectral branch uses fixed-n FFT.
+
+        Returns:
+            Features of shape (batch_size, num_patches, num_channels, d_model)
+        """
+        batch_size, num_patches, seq_len, num_channels = x.shape
+
+        # Permute to (batch, patches, channels, seq_len)
+        x = x.permute(0, 1, 3, 2)
+
+        if self.patch_chunk_size is not None and num_patches > self.patch_chunk_size:
+            all_features = []
+            for start_idx in range(0, num_patches, self.patch_chunk_size):
+                end_idx = min(start_idx + self.patch_chunk_size, num_patches)
+                chunk = x[:, start_idx:end_idx, :, :]
+                chunk_patches = end_idx - start_idx
+                chunk = chunk.reshape(batch_size * chunk_patches * num_channels, 1, seq_len)
+                chunk = self._process_chunk(chunk)
+                chunk = chunk.reshape(batch_size, chunk_patches, num_channels, self.d_model)
+                all_features.append(chunk)
+            x = torch.cat(all_features, dim=1)
+        else:
+            x = x.reshape(batch_size * num_patches * num_channels, 1, seq_len)
+            x = self._process_chunk(x)
+            x = x.reshape(batch_size, num_patches, num_channels, self.d_model)
+
+        return x
+
+    def get_output_dim(self) -> int:
+        """Get the output feature dimension."""
+        return self.d_model
+
+
 class FixedPatchCNN(nn.Module):
     """
     Fixed CNN architecture for fixed-length timestep patches.

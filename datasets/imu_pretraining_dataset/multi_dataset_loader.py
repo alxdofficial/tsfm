@@ -355,7 +355,10 @@ class IMUPretrainingDataset(Dataset):
         # Get dataset description for context
         dataset_desc = dataset_info['manifest'].get('description', '')
 
-        # Get channel descriptions with dataset context prepended
+        # Get patch size for this dataset (use per-dataset if available, otherwise default)
+        patch_size_sec = self.patch_size_per_dataset.get(dataset_name, self.patch_size_sec)
+
+        # Get channel descriptions with dataset context, sampling rate, and patch size
         channel_descriptions = []
         for ch in selected_channels:
             if ch in dataset_info['channel_info']:
@@ -369,10 +372,10 @@ class IMUPretrainingDataset(Dataset):
                 full_desc = f"{dataset_desc} {ch_desc}"
             else:
                 full_desc = ch_desc
-            channel_descriptions.append(full_desc)
 
-        # Get patch size for this dataset (use per-dataset if available, otherwise default)
-        patch_size_sec = self.patch_size_per_dataset.get(dataset_name, self.patch_size_sec)
+            # Append sampling rate and patch window size as metadata
+            full_desc = f"{full_desc} (sampled at {sampling_rate:.0f}Hz, {patch_size_sec:.1f}s window)"
+            channel_descriptions.append(full_desc)
 
         # Get patch size range for augmentation (if configured)
         # Format: (min_sec, max_sec, step_sec) or None
