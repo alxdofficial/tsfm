@@ -78,7 +78,6 @@ TEST_DATASETS = DATASET_CONFIG["zero_shot_datasets"]
 from val_scripts.human_activity_recognition.grouped_zero_shot import (
     load_global_labels, map_local_to_global_labels,
     get_closed_set_mask, score_with_groups,
-    score_exact, score_with_groups_from_names,
 )
 
 
@@ -257,16 +256,14 @@ def evaluate_dataset_closed_set(
         if pred_label == "unclear":
             n_unclear += 1
 
-    # Exact match scoring
-    exact = score_exact(y_pred, y_true)
-    # Group match scoring
-    group = score_with_groups_from_names(y_pred, y_true)
+    acc = accuracy_score(y_true, y_pred) * 100
+    f1_macro = f1_score(y_true, y_pred, average="macro", zero_division=0) * 100
+    f1_weighted = f1_score(y_true, y_pred, average="weighted", zero_division=0) * 100
 
     return {
-        "accuracy_exact": exact["accuracy"], "f1_macro_exact": exact["f1_macro"],
-        "f1_weighted_exact": exact["f1_weighted"],
-        "accuracy_group": group["accuracy"], "f1_macro_group": group["f1_macro"],
-        "f1_weighted_group": group["f1_weighted"],
+        "accuracy": acc,
+        "f1_macro": f1_macro,
+        "f1_weighted": f1_weighted,
         "n_samples": len(data),
         "n_unclear": n_unclear,
         "n_classes": len(activities),
@@ -280,6 +277,10 @@ def evaluate_dataset_open_set(
     global_labels = GLOBAL_LABELS
     idx_to_activity = {v: k for k, v in mapping["activity_to_idx"].items()}
     activity_indices = get_window_labels(labels)
+
+    # Get label-to-group mapping for group-based scoring
+    from datasets.imu_pretraining_dataset.label_groups import get_label_to_group_mapping
+    label_to_group = get_label_to_group_mapping()
 
     y_true = []
     y_pred = []
@@ -296,16 +297,18 @@ def evaluate_dataset_open_set(
         if pred_label == "unclear":
             n_unclear += 1
 
-    # Exact match scoring
-    exact = score_exact(y_pred, y_true)
-    # Group match scoring
-    group = score_with_groups_from_names(y_pred, y_true)
+    # Group-based scoring: map both true and predicted labels to groups
+    y_true_grouped = [label_to_group.get(l, l) for l in y_true]
+    y_pred_grouped = [label_to_group.get(l, l) for l in y_pred]
+
+    acc = accuracy_score(y_true_grouped, y_pred_grouped) * 100
+    f1_macro = f1_score(y_true_grouped, y_pred_grouped, average="macro", zero_division=0) * 100
+    f1_weighted = f1_score(y_true_grouped, y_pred_grouped, average="weighted", zero_division=0) * 100
 
     return {
-        "accuracy_exact": exact["accuracy"], "f1_macro_exact": exact["f1_macro"],
-        "f1_weighted_exact": exact["f1_weighted"],
-        "accuracy_group": group["accuracy"], "f1_macro_group": group["f1_macro"],
-        "f1_weighted_group": group["f1_weighted"],
+        "accuracy": acc,
+        "f1_macro": f1_macro,
+        "f1_weighted": f1_weighted,
         "n_samples": len(data),
         "n_unclear": n_unclear,
     }
@@ -317,23 +320,21 @@ def evaluate_dataset_open_set(
 
 def print_results_table(results: Dict):
     """Print results in a fixed-width table."""
-    header = (f"{'Dataset':<16} "
-              f"{'Open Exact':>11} {'Open Group':>11} "
-              f"{'Close Exact':>12} {'Close Group':>12}")
-    print(f"\n{'='*80}")
+    header = f"{'Dataset':<16} {'ZS-Open Acc':>11} {'ZS-Open F1':>10} {'ZS-Close Acc':>12} {'ZS-Close F1':>11}"
+    print(f"\n{'='*70}")
     print("LLaSA-7B Zero-Shot Results")
-    print(f"{'='*80}")
+    print(f"{'='*70}")
     print(header)
-    print("-" * 80)
+    print("-" * 70)
     for ds, metrics in results.items():
         zs_open = metrics.get("zero_shot_open_set", {})
         zs_close = metrics.get("zero_shot_closed_set", {})
         print(f"{ds:<16} "
-              f"{zs_open.get('accuracy_exact', 0):>10.1f}% "
-              f"{zs_open.get('accuracy_group', 0):>10.1f}% "
-              f"{zs_close.get('accuracy_exact', 0):>11.1f}% "
-              f"{zs_close.get('accuracy_group', 0):>11.1f}%")
-    print(f"{'='*80}")
+              f"{zs_open.get('accuracy', 0):>10.1f}% "
+              f"{zs_open.get('f1_macro', 0):>9.1f}% "
+              f"{zs_close.get('accuracy', 0):>11.1f}% "
+              f"{zs_close.get('f1_macro', 0):>10.1f}%")
+    print(f"{'='*70}")
 
 
 # =============================================================================
@@ -396,7 +397,7 @@ def main():
             model, tokenizer, data, labels, mapping, test_ds, device)
         elapsed = time.time() - t0
         r = ds_results["zero_shot_closed_set"]
-        print(f"  Exact={r['accuracy_exact']:.1f}%, Group={r['accuracy_group']:.1f}%, "
+        print(f"  Acc={r['accuracy']:.1f}%, F1={r['f1_macro']:.1f}%, "
               f"unclear={r['n_unclear']}/{r['n_samples']} ({elapsed:.0f}s)")
 
         # 2. Zero-shot open-set (optional, slower due to 87 labels in prompt)
@@ -407,7 +408,7 @@ def main():
                 model, tokenizer, data, labels, mapping, test_ds, device)
             elapsed = time.time() - t0
             r = ds_results["zero_shot_open_set"]
-            print(f"  Exact={r['accuracy_exact']:.1f}%, Group={r['accuracy_group']:.1f}%, "
+            print(f"  Acc={r['accuracy']:.1f}%, F1={r['f1_macro']:.1f}%, "
                   f"unclear={r['n_unclear']}/{r['n_samples']} ({elapsed:.0f}s)")
 
         all_results[test_ds] = ds_results

@@ -156,11 +156,11 @@ PATCH_SIZE_PER_DATASET = {
     'harth': 1.5,         # 50 Hz — zero-shot (acc only, back+thigh)
 }
 
-MAX_PATCHES_PER_SAMPLE = 64  # No truncation: actual max is 59 (pamap2 48ch @ 1.0s augmented patch size)
+MAX_PATCHES_PER_SAMPLE = 48  # Matches good small_v1_best checkpoint config
 MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
 # ---- Architecture configuration (single source of truth: model/config.py) ----
-MODEL_SIZE = "small"  # Options: "tiny", "small", "medium", "large" -- DIAGNOSTIC: testing if small collapses under current code
+MODEL_SIZE = "small"  # Options: "tiny", "small", "medium", "large"
 _cfg = get_config(MODEL_SIZE)
 
 # Encoder
@@ -210,22 +210,11 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # Training hyperparameters
 EPOCHS = 100
-TARGET_EFFECTIVE_BATCH = 444  # Target samples per GradCache window (~448)
-DEFAULT_MICRO_BATCH_SIZE = 12  # Fallback for channel counts not in MAX_BS_PER_BUCKET
-# Per-channel-bucket max micro-batch sizes (RTX 4090 24GB, MAX_PATCHES=64)
-# ~80% of tested max to leave headroom for memory fragmentation during long training
-# Larger batches for fewer channels = fewer micro-batches per window = faster training
-MAX_BS_PER_BUCKET = {
-    48: 8,    # pamap2 (5% of data)      — 48ch×64patches=3072 tokens, huge attention
-    21: 24,   # mhealth (8% of data)     — proven stable in 100-epoch GradCache run
-    12: 40,   # wisdm (10% of data)      — proven stable
-    9: 52,    # uci_har, dsads (20% of data) — proven stable
-    6: 72,    # hhar, hapt, kuhar, recgym (47% of data) — proven stable
-    3: 128,   # unimib_shar (10% of data) — proven stable
-}
-# Legacy aliases for backward compatibility
-BATCH_SIZE = DEFAULT_MICRO_BATCH_SIZE
-ACCUMULATION_STEPS = TARGET_EFFECTIVE_BATCH // DEFAULT_MICRO_BATCH_SIZE
+BATCH_SIZE = 32  # Fixed micro-batch size (matches small_v1_best)
+ACCUMULATION_STEPS = 16  # Effective batch = 32 × 16 = 512
+# Per-channel-bucket batch size overrides (empty = use BATCH_SIZE for all buckets)
+MAX_BS_PER_BUCKET = {}
+DEFAULT_MICRO_BATCH_SIZE = BATCH_SIZE
 LEARNING_RATE = 1e-4  # Reduced from 5e-4 - 5e-4 too aggressive for frozen encoder with batch_size=256
 WARMUP_EPOCHS = 3
 
@@ -259,7 +248,7 @@ LOSS_TYPE = "infonce"
 
 # Memory bank configuration (MoCo-style queue for more negatives)
 USE_MEMORY_BANK = True  # MoCo-style queue: provides 256 additional negatives per micro-batch
-MEMORY_BANK_SIZE = 512  # Queue size for additional negatives per micro-batch
+MEMORY_BANK_SIZE = 256  # Queue size (matches small_v1_best)
 
 # Class balancing configuration
 # Caps oversampling to prevent rare labels from dominating training
