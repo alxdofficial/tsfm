@@ -228,6 +228,9 @@ USE_MEMORY_BANK = False
 MEMORY_BANK_SIZE = 256
 
 TARGET_EFFECTIVE_BATCH = BATCH_SIZE * ACCUMULATION_STEPS  # e.g. 512
+# Per-patch mode: cap by total valid patches (not sessions) to control NxN logit matrix size.
+# 2048 patches → 2048x2048 logit matrix ≈ 16MB. Safe for 24GB GPU.
+TARGET_EFFECTIVE_PATCHES = 2048
 # Per-channel-bucket batch size overrides (empty = use BATCH_SIZE for all buckets)
 MAX_BS_PER_BUCKET = {}
 DEFAULT_MICRO_BATCH_SIZE = BATCH_SIZE
@@ -1083,17 +1086,28 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
 
     # Collect micro-batches for the current accumulation window
     window_batches = []
-    window_samples = 0  # Track accumulated sample count
+    window_samples = 0  # Track accumulated sample count (sessions)
+    window_patches = 0  # Track accumulated valid patches (for per-patch mode)
 
     for batch_idx, batch in enumerate(pbar):
         window_batches.append(batch)
         window_samples += batch['patches'].shape[0]
+        if PER_PATCH_PREDICTION:
+            window_patches += batch['patch_mask'].sum().item()
 
-        is_window_full = window_samples >= TARGET_EFFECTIVE_BATCH
+        # Per-patch mode: cap by total valid patches to control NxN logit matrix size.
+        # Non-per-patch mode: cap by sessions as before.
+        if PER_PATCH_PREDICTION:
+            is_window_full = window_patches >= TARGET_EFFECTIVE_PATCHES
+        else:
+            is_window_full = window_samples >= TARGET_EFFECTIVE_BATCH
         is_last_batch = (batch_idx + 1) == len(dataloader)
 
         if not (is_window_full or is_last_batch):
-            pbar.set_postfix({'collecting': f"{window_samples}/{TARGET_EFFECTIVE_BATCH}"})
+            if PER_PATCH_PREDICTION:
+                pbar.set_postfix({'collecting': f"{int(window_patches)}/{TARGET_EFFECTIVE_PATCHES} patches"})
+            else:
+                pbar.set_postfix({'collecting': f"{window_samples}/{TARGET_EFFECTIVE_BATCH}"})
             continue
 
         # ===== ACCUMULATION WINDOW COMPLETE: Run GradCache =====
@@ -1104,7 +1118,6 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         cached_text = []
         cached_frozen_text = []
         cached_label_texts = []
-        cached_patch_masks = []  # For per-patch flattening
         micro_batch_data = []
 
         for mb_batch in window_batches:
@@ -1121,12 +1134,25 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
                 mb_text_emb = label_bank.encode(mb_label_texts, normalize=True)
                 mb_frozen_text = label_bank.encode_frozen(mb_label_texts, normalize=True)
 
-            cached_imu.append(mb_imu_emb)
-            cached_text.append(mb_text_emb)
-            cached_frozen_text.append(mb_frozen_text)
-            cached_label_texts.extend(mb_label_texts)
             if PER_PATCH_PREDICTION:
-                cached_patch_masks.append(mb_patch_mask)
+                # Flatten per-patch (B, P, D) → (N_valid, D) per micro-batch.
+                # This avoids the cross-micro-batch P-dimension mismatch that would
+                # crash torch.cat when different micro-batches have different max_patches.
+                mb_flat_imu, mb_flat_text, mb_flat_labels = flatten_per_patch_embeddings(
+                    mb_imu_emb, mb_patch_mask, mb_label_texts, mb_text_emb
+                )
+                _, mb_flat_frozen, _ = flatten_per_patch_embeddings(
+                    mb_imu_emb, mb_patch_mask, mb_label_texts, mb_frozen_text
+                )
+                cached_imu.append(mb_flat_imu)         # (N_valid_i, D)
+                cached_text.append(mb_flat_text)        # (N_valid_i, D)
+                cached_frozen_text.append(mb_flat_frozen)
+                cached_label_texts.extend(mb_flat_labels)
+            else:
+                cached_imu.append(mb_imu_emb)           # (B_i, D)
+                cached_text.append(mb_text_emb)          # (B_i, D)
+                cached_frozen_text.append(mb_frozen_text)
+                cached_label_texts.extend(mb_label_texts)
 
             # CPU stash: move tensors to CPU-pinned memory to free GPU during Phase 1.
             # With 56 micro-batches, keeping all on GPU wastes ~56x micro-batch memory.
@@ -1140,28 +1166,13 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             })
 
         # --- Phase 2: Compute loss over ALL cached embeddings ---
-        all_frozen_text_cat = torch.cat(cached_frozen_text, dim=0)  # (N_total, D)
-        if PER_PATCH_PREDICTION:
-            # Flatten per-patch embeddings across all micro-batches
-            all_imu_3d = torch.cat(cached_imu, dim=0)      # (N_total, P, D)
-            all_text_2d = torch.cat(cached_text, dim=0)     # (N_total, D) or (N_total, K, D)
-            all_pmasks = torch.cat(cached_patch_masks, dim=0)  # (N_total, P)
-            flat_imu, flat_text, flat_labels = flatten_per_patch_embeddings(
-                all_imu_3d, all_pmasks, cached_label_texts, all_text_2d
-            )
-            # Expand frozen text to match flattened per-patch embeddings
-            _, flat_frozen, _ = flatten_per_patch_embeddings(
-                all_imu_3d, all_pmasks, cached_label_texts, all_frozen_text_cat
-            )
-            all_imu_cached = flat_imu.requires_grad_(True)
-            all_text_cached = flat_text.requires_grad_(True)
-            # Track valid-patch counts per micro-batch for gradient chunk splitting
-            valid_counts = [pm.bool().sum().item() for pm in cached_patch_masks]
-        else:
-            all_imu_cached = torch.cat(cached_imu, dim=0).requires_grad_(True)
-            all_text_cached = torch.cat(cached_text, dim=0).requires_grad_(True)
-            flat_labels = cached_label_texts
-            flat_frozen = all_frozen_text_cat
+        # Both per-patch and non-per-patch paths now cache flat (N, D) tensors,
+        # so torch.cat always works regardless of variable P dimensions.
+        all_frozen_text_cat = torch.cat(cached_frozen_text, dim=0)
+        all_imu_cached = torch.cat(cached_imu, dim=0).requires_grad_(True)
+        all_text_cached = torch.cat(cached_text, dim=0).requires_grad_(True)
+        flat_labels = cached_label_texts
+        flat_frozen = all_frozen_text_cat
 
         with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
             loss, metrics = criterion.forward_cached(
@@ -1176,14 +1187,11 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             loss.backward()
 
         # Extract per-micro-batch gradient chunks
-        if PER_PATCH_PREDICTION:
-            imu_grad_chunks = all_imu_cached.grad.split(valid_counts)
-            text_grad_chunks = all_text_cached.grad.split(valid_counts)
-        else:
-            imu_grad_chunks = all_imu_cached.grad.split([c.shape[0] for c in cached_imu])
-            text_grad_chunks = all_text_cached.grad.split([c.shape[0] for c in cached_text])
+        chunk_sizes = [c.shape[0] for c in cached_imu]
+        imu_grad_chunks = all_imu_cached.grad.split(chunk_sizes)
+        text_grad_chunks = all_text_cached.grad.split(chunk_sizes)
 
-        del all_imu_cached, all_text_cached, cached_imu, cached_text, cached_frozen_text, cached_patch_masks, flat_frozen, all_frozen_text_cat
+        del all_imu_cached, all_text_cached, cached_imu, cached_text, cached_frozen_text, flat_frozen, all_frozen_text_cat
 
         # Debug metrics
         debug_metrics = {}
@@ -1285,12 +1293,13 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
                 total_grad_norms[k] += batch_grad_norms[k]
             num_grad_computations += 1
 
+        effective_neg = sum(chunk_sizes) - 1 if PER_PATCH_PREDICTION else window_samples - 1
         pbar.set_postfix({
             'loss': f"{batch_loss:.4f}",
             'sim_gap': f"{metrics['similarity_gap']:.3f}",
             'pos_sim': f"{metrics['positive_similarity']:.3f}",
             'grad': f"{grad_norm.item():.2f}",
-            'neg': f"{window_samples - 1}"
+            'neg': f"{effective_neg}"
         })
 
         # Batch-level plotting
@@ -1326,6 +1335,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         # Clear window for next accumulation
         window_batches = []
         window_samples = 0
+        window_patches = 0
 
     num_loss_computations = max(num_loss_computations, 1)
     debug_metric_count = max((num_optimizer_steps + DEBUG_METRIC_FREQUENCY - 1) // DEBUG_METRIC_FREQUENCY, 1)
