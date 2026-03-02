@@ -400,15 +400,25 @@ class IMUPretrainingDataset(Dataset):
             use_templates=True
         )
 
-        # Apply SO(3) rotation augmentation before patching (operates on raw timestep data)
+        # Apply augmentations before patching (operates on raw timestep data)
         # This runs in DataLoader workers for free parallelism
-        if self.use_rotation_augmentation and self.split == 'train':
+        if self.split == 'train':
             from datasets.imu_pretraining_dataset.augmentations import IMUAugmentation
-            rot_aug = IMUAugmentation(aug_types=['rotation_3d'], aug_prob=0.8)
-            # Go through apply() so the aug_prob gate is respected
-            data = rot_aug.apply(
-                data.unsqueeze(0), None, channel_names=selected_channels
-            ).squeeze(0)
+
+            # SO(3) rotation augmentation for orientation invariance
+            if self.use_rotation_augmentation:
+                rot_aug = IMUAugmentation(aug_types=['rotation_3d'], aug_prob=0.8)
+                data = rot_aug.apply(
+                    data.unsqueeze(0), None, channel_names=selected_channels
+                ).squeeze(0)
+
+            # Jitter + scale augmentation for sensor noise/calibration invariance
+            if random.random() < 0.5:
+                jitter_aug = IMUAugmentation(aug_types=['jitter'], aug_prob=1.0)
+                data = jitter_aug.jitter(data.unsqueeze(0), sigma=0.05).squeeze(0)
+            if random.random() < 0.5:
+                scale_aug = IMUAugmentation(aug_types=['scale'], aug_prob=1.0)
+                data = scale_aug.scale(data.unsqueeze(0), scale_range=(0.9, 1.1)).squeeze(0)
 
         # If target_patch_size is set, preprocess patches here (parallelized across workers)
         if self.target_patch_size is not None:

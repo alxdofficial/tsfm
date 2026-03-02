@@ -216,15 +216,15 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # ---- Training hyperparameters ----
 # Both small and small_deep use the same proven recipe (384-dim contrastive dynamics).
-EPOCHS = 100
+EPOCHS = 200
 WARMUP_EPOCHS = 3
 BATCH_SIZE = 32
 ACCUMULATION_STEPS = 16        # effective = 512
 LEARNING_RATE = 1e-4
 TEMPERATURE = 0.07             # CLIP default
 WEIGHT_DECAY = 1e-5
-USE_GRAD_CACHE = False         # Memory bank provides negatives
-USE_MEMORY_BANK = True
+USE_GRAD_CACHE = True          # All-fresh negatives via gradient caching
+USE_MEMORY_BANK = False
 MEMORY_BANK_SIZE = 256
 
 TARGET_EFFECTIVE_BATCH = BATCH_SIZE * ACCUMULATION_STEPS  # e.g. 512
@@ -305,7 +305,7 @@ USE_GROUP_BALANCED_SAMPLING = True  # Default: enable group-balanced sampling
 # During training, randomly sample patch sizes from valid ranges per dataset
 # Ranges are constrained by session duration (need ≥2 patches per session)
 USE_PATCH_SIZE_AUGMENTATION = True  # Enable patch size augmentation for better generalization
-USE_ROTATION_AUGMENTATION = False  # Apply SO(3) rotation to sensor triads for orientation invariance
+USE_ROTATION_AUGMENTATION = True  # Apply SO(3) rotation to sensor triads for orientation invariance
 MIN_PATCHES_PER_SAMPLE = 1  # Minimum patches required per sample
 
 # Valid patch size ranges per dataset: (min_sec, max_sec, step_sec)
@@ -853,6 +853,10 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
 
         text_embeddings = label_bank.encode(label_texts, normalize=True)
 
+        # Frozen SBERT embeddings for stable soft targets (no grad, no learnable params)
+        with torch.no_grad():
+            frozen_text = label_bank.encode_frozen(label_texts, normalize=True)
+
         if memory_bank is not None and USE_MEMORY_BANK:
             with torch.no_grad():
                 imu_queue, text_queue = memory_bank.get_queue_embeddings(device)
@@ -866,11 +870,17 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
                 flat_imu, flat_text, flat_labels = flatten_per_patch_embeddings(
                     imu_embeddings, patch_mask, label_texts, text_embeddings
                 )
+                # Expand frozen text to match flattened per-patch embeddings
+                _, flat_frozen, _ = flatten_per_patch_embeddings(
+                    imu_embeddings, patch_mask, label_texts, frozen_text
+                )
                 loss, metrics = criterion(flat_imu, flat_text, flat_labels,
-                                         return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
+                                         return_metrics=True, imu_queue=imu_queue, text_queue=text_queue,
+                                         frozen_text_embeddings=flat_frozen)
             else:
                 loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
-                                         return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
+                                         return_metrics=True, imu_queue=imu_queue, text_queue=text_queue,
+                                         frozen_text_embeddings=frozen_text)
 
         window_samples += current_bs
         window_micro_batches += 1
@@ -1092,6 +1102,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         # --- Phase 1: Cache embeddings (forward all micro-batches, detach) ---
         cached_imu = []
         cached_text = []
+        cached_frozen_text = []
         cached_label_texts = []
         cached_patch_masks = []  # For per-patch flattening
         micro_batch_data = []
@@ -1108,9 +1119,11 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
                 with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
                     mb_imu_emb = model(mb_patches, mb_channel_descriptions, mb_channel_mask, mb_patch_mask)
                 mb_text_emb = label_bank.encode(mb_label_texts, normalize=True)
+                mb_frozen_text = label_bank.encode_frozen(mb_label_texts, normalize=True)
 
             cached_imu.append(mb_imu_emb)
             cached_text.append(mb_text_emb)
+            cached_frozen_text.append(mb_frozen_text)
             cached_label_texts.extend(mb_label_texts)
             if PER_PATCH_PREDICTION:
                 cached_patch_masks.append(mb_patch_mask)
@@ -1127,6 +1140,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             })
 
         # --- Phase 2: Compute loss over ALL cached embeddings ---
+        all_frozen_text_cat = torch.cat(cached_frozen_text, dim=0)  # (N_total, D)
         if PER_PATCH_PREDICTION:
             # Flatten per-patch embeddings across all micro-batches
             all_imu_3d = torch.cat(cached_imu, dim=0)      # (N_total, P, D)
@@ -1134,6 +1148,10 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             all_pmasks = torch.cat(cached_patch_masks, dim=0)  # (N_total, P)
             flat_imu, flat_text, flat_labels = flatten_per_patch_embeddings(
                 all_imu_3d, all_pmasks, cached_label_texts, all_text_2d
+            )
+            # Expand frozen text to match flattened per-patch embeddings
+            _, flat_frozen, _ = flatten_per_patch_embeddings(
+                all_imu_3d, all_pmasks, cached_label_texts, all_frozen_text_cat
             )
             all_imu_cached = flat_imu.requires_grad_(True)
             all_text_cached = flat_text.requires_grad_(True)
@@ -1143,11 +1161,13 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             all_imu_cached = torch.cat(cached_imu, dim=0).requires_grad_(True)
             all_text_cached = torch.cat(cached_text, dim=0).requires_grad_(True)
             flat_labels = cached_label_texts
+            flat_frozen = all_frozen_text_cat
 
         with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
             loss, metrics = criterion.forward_cached(
                 all_imu_cached, all_text_cached,
                 flat_labels, return_metrics=True,
+                all_frozen_text_embeddings=flat_frozen,
             )
 
         if scaler is not None:
@@ -1163,7 +1183,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             imu_grad_chunks = all_imu_cached.grad.split([c.shape[0] for c in cached_imu])
             text_grad_chunks = all_text_cached.grad.split([c.shape[0] for c in cached_text])
 
-        del all_imu_cached, all_text_cached, cached_imu, cached_text, cached_patch_masks
+        del all_imu_cached, all_text_cached, cached_imu, cached_text, cached_frozen_text, cached_patch_masks, flat_frozen
 
         # Debug metrics
         debug_metrics = {}
