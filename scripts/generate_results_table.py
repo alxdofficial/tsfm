@@ -32,11 +32,24 @@ BASELINE_FILES = [
 # Main test datasets (85-100% label coverage) — used for primary averages
 MAIN_DATASETS = ["mobiact", "motionsense", "realworld"]
 
+# Additional test datasets (variable label coverage)
+EXTRA_DATASETS = ["shoaib", "opportunity", "harth"]
+
 # Severe out-of-domain dataset (50% label coverage) — reported separately
 OOD_DATASETS = ["vtt_coniot"]
 
 # All metric keys in display order
 METRIC_TABLES = [
+    ("Zero-Shot Open-Set", "zero_shot_open_set"),
+    ("Zero-Shot Open-Set (Majority Vote)", "zero_shot_open_set_mv"),
+    ("Zero-Shot Closed-Set", "zero_shot_closed_set"),
+    ("Zero-Shot Closed-Set (Majority Vote)", "zero_shot_closed_set_mv"),
+    ("1% Supervised", "1pct_supervised"),
+    ("10% Supervised", "10pct_supervised"),
+]
+
+# Core metrics for average table (excludes MV variants to avoid double-counting)
+CORE_METRIC_TABLES = [
     ("Zero-Shot Open-Set", "zero_shot_open_set"),
     ("Zero-Shot Closed-Set", "zero_shot_closed_set"),
     ("1% Supervised", "1pct_supervised"),
@@ -81,6 +94,7 @@ def generate_table(results):
     for _, baseline_data in results:
         all_datasets.update(baseline_data.keys())
     main_ds = sorted(d for d in MAIN_DATASETS if d in all_datasets)
+    extra_ds = sorted(d for d in EXTRA_DATASETS if d in all_datasets)
     ood_ds = sorted(d for d in OOD_DATASETS if d in all_datasets)
 
     lines = []
@@ -89,6 +103,15 @@ def generate_table(results):
 
     # --- Per-dataset tables (main datasets only) ---
     for table_title, metric_key in METRIC_TABLES:
+        # Skip MV tables if no model has data for them
+        has_data = any(
+            metric_key in baseline_data.get(ds, {})
+            for _, baseline_data in results
+            for ds in main_ds
+        )
+        if not has_data:
+            continue
+
         lines.append(f"\n## {table_title}\n")
 
         # Header
@@ -115,7 +138,7 @@ def generate_table(results):
     lines.append(header)
     lines.append(separator)
 
-    all_metric_keys = [mk for _, mk in METRIC_TABLES]
+    all_metric_keys = [mk for _, mk in CORE_METRIC_TABLES]
 
     for baseline_name, baseline_data in results:
         row = f"| **{baseline_name}** |"
@@ -130,6 +153,26 @@ def generate_table(results):
             avg_f1 = sum(f1s) / len(f1s) if f1s else 0.0
             row += f" {avg_acc:.1f} | {avg_f1:.1f} |"
         lines.append(row)
+
+    # --- Additional test datasets ---
+    if extra_ds:
+        lines.append("\n## Additional Test Datasets\n")
+        lines.append("*Shoaib (multi-body), Opportunity (multi-body), HARTH (acc-only)*\n")
+
+        header = "| Model |"
+        separator = "| :--- |"
+        for ds in extra_ds:
+            header += f" {ds} Acc | {ds} F1 |"
+            separator += " ---: | ---: |"
+        lines.append(header)
+        lines.append(separator)
+
+        # Show core metrics for extra datasets
+        for table_title, metric_key in CORE_METRIC_TABLES:
+            for baseline_name, baseline_data in results:
+                row = f"| **{baseline_name}** ({table_title}) |"
+                row += _metric_row(baseline_name, baseline_data, metric_key, extra_ds)
+                lines.append(row)
 
     # --- VTT-ConIoT (severe out-of-domain) ---
     if ood_ds:

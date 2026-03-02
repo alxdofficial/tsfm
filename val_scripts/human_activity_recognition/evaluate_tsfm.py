@@ -122,30 +122,58 @@ TEST_DATASETS = DATASET_CONFIG["zero_shot_datasets"]
 
 
 def get_dataset_metadata(dataset_name: str) -> dict:
-    """Get native sampling rate and channel descriptions from manifest."""
+    """Get native sampling rate, channel descriptions, and gyro availability from manifest.
+
+    Uses dataset_config's core_channels mapping to resolve location-prefixed
+    manifest channel names (e.g. shoaib's right_pocket_acc_x → acc_x).
+    Appends sampling rate and patch size suffix to match training format.
+    """
     manifest_path = DATA_DIR / dataset_name / "manifest.json"
     with open(manifest_path) as f:
         manifest = json.load(f)
 
     sampling_rate = manifest['channels'][0]['sampling_rate_hz']
-
     dataset_desc = manifest.get('description', '')
 
+    # Build manifest channel name → description lookup
     ch_map = {ch['name']: ch['description'] for ch in manifest['channels']}
+
+    # Get core_channels mapping from dataset_config (standard_name → original_name)
+    ds_config = DATASET_CONFIG["datasets"][dataset_name]
+    core_channel_map = ds_config.get("core_channels", {})
+
+    # Determine which core channels are real (have actual sensor data)
+    has_gyro = "gyro_x" in core_channel_map
+
+    # Build descriptions for real channels only (model pads with [PAD] for missing)
+    real_channels = ["acc_x", "acc_y", "acc_z"]
+    if has_gyro:
+        real_channels += ["gyro_x", "gyro_y", "gyro_z"]
+
     channel_descriptions = []
-    for ch in CORE_CHANNELS:
-        ch_desc = ch_map.get(ch, f"Channel: {ch}")
-        # Prepend dataset description to match training format
-        # (multi_dataset_loader.py:368 does f"{dataset_desc} {ch_desc}")
+    for ch in real_channels:
+        # Use core_channels mapping to find the original manifest channel name
+        original_name = core_channel_map.get(ch, ch)
+        ch_desc = ch_map.get(original_name, ch_map.get(ch, f"Channel: {ch}"))
+
+        # Prepend dataset description for richer semantic context
+        # (matches multi_dataset_loader.py:378)
         if dataset_desc:
-            channel_descriptions.append(f"{dataset_desc} {ch_desc}")
+            full_desc = f"{dataset_desc} {ch_desc}"
         else:
-            channel_descriptions.append(ch_desc)
+            full_desc = ch_desc
+
+        # Append sampling rate and patch window size to match training format
+        # (matches multi_dataset_loader.py:383)
+        full_desc = f"{full_desc} (sampled at {sampling_rate:.0f}Hz, {PATCH_SIZE_SEC:.1f}s window)"
+        channel_descriptions.append(full_desc)
 
     return {
         'sampling_rate_hz': sampling_rate,
         'channel_descriptions': channel_descriptions,
         'dataset_description': dataset_desc,
+        'has_gyro': has_gyro,
+        'n_real_channels': len(real_channels),
     }
 
 
@@ -164,6 +192,7 @@ def extract_tsfm_embeddings(
     channel_descriptions: List[str],
     batch_size: int = TSFM_BATCH_SIZE,
     patch_size_sec: float = PATCH_SIZE_SEC,
+    has_gyro: bool = True,
 ) -> np.ndarray:
     """Extract TSFM embeddings from raw sensor data.
 
@@ -174,14 +203,15 @@ def extract_tsfm_embeddings(
         raw_data: (N, seq_len, 6) raw sensor data at native rate
         device: torch device
         sampling_rate: native sampling rate in Hz
-        channel_descriptions: per-channel descriptions from manifest
+        channel_descriptions: per-channel descriptions (3 for acc-only, 6 for acc+gyro)
         batch_size: batch size for inference
         patch_size_sec: patch duration in seconds
+        has_gyro: whether gyro channels are real (False = zero-padded, mask them out)
 
     Returns:
         embeddings: (N, D) L2-normalized session-level embeddings
     """
-    model.eval()
+    model.train(False)
     N = raw_data.shape[0]
     seq_len = raw_data.shape[1]
 
@@ -193,6 +223,8 @@ def extract_tsfm_embeddings(
         bs = batch_data.shape[0]
 
         channel_mask = torch.ones(bs, DATA_CHANNELS, dtype=torch.bool, device=device)
+        if not has_gyro:
+            channel_mask[:, 3:] = False  # Mask out zero-padded gyro channels
         attention_mask = torch.ones(bs, seq_len, dtype=torch.bool, device=device)
 
         channel_descs = [channel_descriptions[:] for _ in range(bs)]
@@ -219,6 +251,7 @@ def extract_tsfm_per_patch_embeddings(
     channel_descriptions: List[str],
     batch_size: int = TSFM_BATCH_SIZE,
     patch_size_sec: float = PATCH_SIZE_SEC,
+    has_gyro: bool = True,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Extract per-patch TSFM embeddings for majority-vote zero-shot.
 
@@ -242,6 +275,8 @@ def extract_tsfm_per_patch_embeddings(
         bs = batch_data.shape[0]
 
         channel_mask = torch.ones(bs, DATA_CHANNELS, dtype=torch.bool, device=device)
+        if not has_gyro:
+            channel_mask[:, 3:] = False  # Mask out zero-padded gyro channels
         attention_mask = torch.ones(bs, seq_len, dtype=torch.bool, device=device)
 
         channel_descs = [channel_descriptions[:] for _ in range(bs)]
@@ -390,7 +425,8 @@ def prepare_train_test_split(data, labels, training_rate=0.8, vali_rate=0.1,
 # End-to-End Fine-Tuning (cosine sim with frozen text embeddings)
 # =============================================================================
 
-def _forward_batch(model, batch_data, device, sampling_rate, channel_descriptions, seq_len):
+def _forward_batch(model, batch_data, device, sampling_rate, channel_descriptions, seq_len,
+                    has_gyro=True):
     """Run TSFM forward pass on a batch of raw data, returning embeddings.
 
     Args:
@@ -400,12 +436,15 @@ def _forward_batch(model, batch_data, device, sampling_rate, channel_description
         sampling_rate: native sampling rate in Hz
         channel_descriptions: per-channel descriptions from manifest
         seq_len: sequence length (timesteps per window)
+        has_gyro: whether gyro channels are real (False = zero-padded, mask them out)
 
     Returns:
         (B, 384) L2-normalized embeddings
     """
     bs = batch_data.shape[0]
     channel_mask = torch.ones(bs, DATA_CHANNELS, dtype=torch.bool, device=device)
+    if not has_gyro:
+        channel_mask[:, 3:] = False
     attention_mask = torch.ones(bs, seq_len, dtype=torch.bool, device=device)
     channel_descs = [channel_descriptions[:] for _ in range(bs)]
     sampling_rates = [sampling_rate] * bs
@@ -421,7 +460,8 @@ def _forward_batch(model, batch_data, device, sampling_rate, channel_description
 
 
 def compute_cosine_accuracy(model, data_loader, text_embs, device,
-                            sampling_rate, channel_descriptions, seq_len):
+                            sampling_rate, channel_descriptions, seq_len,
+                            has_gyro=True):
     """Compute cosine-similarity accuracy on a data loader.
 
     Args:
@@ -432,6 +472,7 @@ def compute_cosine_accuracy(model, data_loader, text_embs, device,
         sampling_rate: native sampling rate in Hz
         channel_descriptions: per-channel descriptions from manifest
         seq_len: sequence length (timesteps per window)
+        has_gyro: whether gyro channels are real
 
     Returns:
         accuracy (float, 0-1)
@@ -443,7 +484,8 @@ def compute_cosine_accuracy(model, data_loader, text_embs, device,
         for batch_data, batch_labels in data_loader:
             batch_data = batch_data.to(device)
             batch_labels = batch_labels.to(device)
-            emb = _forward_batch(model, batch_data, device, sampling_rate, channel_descriptions, seq_len)
+            emb = _forward_batch(model, batch_data, device, sampling_rate, channel_descriptions, seq_len,
+                                 has_gyro=has_gyro)
             logits = emb @ text_embs.T / FINETUNE_TEMPERATURE
             preds = logits.argmax(dim=1)
             correct += (preds == batch_labels).sum().item()
@@ -662,6 +704,7 @@ def evaluate_supervised_finetune(
     channel_descriptions: List[str],
     label_rate: float = 0.01,
     label_tag: str = "1%",
+    has_gyro: bool = True,
 ) -> Dict[str, float]:
     """Supervised evaluation via end-to-end fine-tuning with cosine similarity.
 
@@ -752,7 +795,8 @@ def evaluate_supervised_finetune(
 
             optimizer.zero_grad()
             seq_len = batch_data.shape[1]
-            emb = _forward_batch(ft_model, batch_data, device, sampling_rate, channel_descriptions, seq_len)  # (B, 384)
+            emb = _forward_batch(ft_model, batch_data, device, sampling_rate, channel_descriptions, seq_len,
+                                 has_gyro=has_gyro)  # (B, 384)
             logits = emb @ text_embs.T / FINETUNE_TEMPERATURE  # (B, C)
             loss = criterion(logits, batch_labels)
             scaler.scale(loss).backward()
@@ -765,7 +809,8 @@ def evaluate_supervised_finetune(
         # Validation
         seq_len = raw_data.shape[1]
         val_acc = compute_cosine_accuracy(ft_model, val_loader, text_embs, device,
-                                          sampling_rate, channel_descriptions, seq_len)
+                                          sampling_rate, channel_descriptions, seq_len,
+                                          has_gyro=has_gyro)
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
@@ -793,7 +838,8 @@ def evaluate_supervised_finetune(
         for batch_data, batch_labels in test_loader:
             batch_data = batch_data.to(device)
             seq_len = batch_data.shape[1]
-            emb = _forward_batch(ft_model, batch_data, device, sampling_rate, channel_descriptions, seq_len)
+            emb = _forward_batch(ft_model, batch_data, device, sampling_rate, channel_descriptions, seq_len,
+                                 has_gyro=has_gyro)
             logits = emb @ text_embs.T / FINETUNE_TEMPERATURE
             preds = logits.argmax(dim=1).cpu().numpy()
             all_preds.extend(preds)
@@ -919,8 +965,10 @@ def main():
         test_labels = get_window_labels(raw_labels)
         test_activities = get_dataset_labels(test_ds)
         ch_descs = meta['channel_descriptions']
+        has_gyro = meta['has_gyro']
 
         print(f"  Sampling rate: {sr}Hz, Seq len: {raw_data.shape[1]}, Patch: {PATCH_SIZE_SEC}s")
+        print(f"  Has gyro: {has_gyro}, Real channels: {meta['n_real_channels']}")
         print(f"  Channel descriptions: {ch_descs}")
 
         # Extract session-level embeddings (mean-pooled for per-patch models)
@@ -929,6 +977,7 @@ def main():
             sampling_rate=sr,
             channel_descriptions=ch_descs,
             patch_size_sec=PATCH_SIZE_SEC,
+            has_gyro=has_gyro,
         )
 
         # Also extract per-patch embeddings for majority voting (if per-patch model)
@@ -938,6 +987,7 @@ def main():
                 sampling_rate=sr,
                 channel_descriptions=ch_descs,
                 patch_size_sec=PATCH_SIZE_SEC,
+                has_gyro=has_gyro,
             )
             print(f"  Per-patch: {patch_embs.shape} (max {patch_masks.sum(1).float().mean():.1f} valid patches/sample)")
 
@@ -982,7 +1032,8 @@ def main():
         ds_results['1pct_supervised'] = evaluate_supervised_finetune(
             model, label_bank, raw_data, test_labels, test_ds, device,
             sampling_rate=sr, channel_descriptions=ch_descs,
-            label_rate=SUPERVISED_LABEL_RATE_1PCT, label_tag="1%")
+            label_rate=SUPERVISED_LABEL_RATE_1PCT, label_tag="1%",
+            has_gyro=has_gyro)
         print(f"  1% supervised: "
               f"Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['1pct_supervised']['f1_macro']:.1f}%")
@@ -992,7 +1043,8 @@ def main():
         ds_results['10pct_supervised'] = evaluate_supervised_finetune(
             model, label_bank, raw_data, test_labels, test_ds, device,
             sampling_rate=sr, channel_descriptions=ch_descs,
-            label_rate=SUPERVISED_LABEL_RATE_10PCT, label_tag="10%")
+            label_rate=SUPERVISED_LABEL_RATE_10PCT, label_tag="10%",
+            has_gyro=has_gyro)
         print(f"  10% supervised: "
               f"Acc={ds_results['10pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['10pct_supervised']['f1_macro']:.1f}%")

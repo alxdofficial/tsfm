@@ -364,8 +364,8 @@ class IMUPretrainingDataset(Dataset):
         # Get patch size for this dataset (use per-dataset if available, otherwise default)
         patch_size_sec = self.patch_size_per_dataset.get(dataset_name, self.patch_size_sec)
 
-        # Get channel descriptions with dataset context, sampling rate, and patch size
-        channel_descriptions = []
+        # Build base channel descriptions (Hz/patch suffix added after patch size is determined)
+        base_channel_descriptions = []
         for ch in selected_channels:
             if ch in dataset_info['channel_info']:
                 ch_desc = dataset_info['channel_info'][ch]['description']
@@ -379,9 +379,7 @@ class IMUPretrainingDataset(Dataset):
             else:
                 full_desc = ch_desc
 
-            # Append sampling rate and patch window size as metadata
-            full_desc = f"{full_desc} (sampled at {sampling_rate:.0f}Hz, {patch_size_sec:.1f}s window)"
-            channel_descriptions.append(full_desc)
+            base_channel_descriptions.append(full_desc)
 
         # Get patch size range for augmentation (if configured)
         # Format: (min_sec, max_sec, step_sec) or None
@@ -457,6 +455,12 @@ class IMUPretrainingDataset(Dataset):
             if len(patches) > self.max_patches_per_sample:
                 patches = patches[:self.max_patches_per_sample]
 
+            # Append Hz/patch suffix using ACTUAL patch size (after augmentation)
+            channel_descriptions = [
+                f"{desc} (sampled at {sampling_rate:.0f}Hz, {actual_patch_size:.1f}s window)"
+                for desc in base_channel_descriptions
+            ]
+
             return {
                 'patches': patches,  # (num_patches, target_patch_size, num_channels)
                 'label_text': label_text,
@@ -472,6 +476,12 @@ class IMUPretrainingDataset(Dataset):
                     'num_channels': num_channels
                 }
             }
+
+        # Raw path (no patching): use base patch size for suffix
+        channel_descriptions = [
+            f"{desc} (sampled at {sampling_rate:.0f}Hz, {patch_size_sec:.1f}s window)"
+            for desc in base_channel_descriptions
+        ]
 
         return {
             'data': data,
