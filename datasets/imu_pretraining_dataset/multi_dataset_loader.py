@@ -187,6 +187,12 @@ class IMUPretrainingDataset(Dataset):
         self.max_patches_per_sample = max_patches_per_sample
         self.use_rotation_augmentation = use_rotation_augmentation
 
+        # Pre-create augmentation objects (reused across __getitem__ calls)
+        if self.split == 'train':
+            from datasets.imu_pretraining_dataset.augmentations import IMUAugmentation
+            self._rotation_aug = IMUAugmentation(aug_types=['rotation_3d'], aug_prob=0.8)
+            self._jitter_scale_aug = IMUAugmentation(aug_types=[], aug_prob=1.0)
+
         # Set and store random seed (used by worker_init_fn)
         self.seed = seed
         random.seed(seed)
@@ -403,22 +409,17 @@ class IMUPretrainingDataset(Dataset):
         # Apply augmentations before patching (operates on raw timestep data)
         # This runs in DataLoader workers for free parallelism
         if self.split == 'train':
-            from datasets.imu_pretraining_dataset.augmentations import IMUAugmentation
-
             # SO(3) rotation augmentation for orientation invariance
             if self.use_rotation_augmentation:
-                rot_aug = IMUAugmentation(aug_types=['rotation_3d'], aug_prob=0.8)
-                data = rot_aug.apply(
+                data = self._rotation_aug.apply(
                     data.unsqueeze(0), None, channel_names=selected_channels
                 ).squeeze(0)
 
             # Jitter + scale augmentation for sensor noise/calibration invariance
             if random.random() < 0.5:
-                jitter_aug = IMUAugmentation(aug_types=['jitter'], aug_prob=1.0)
-                data = jitter_aug.jitter(data.unsqueeze(0), sigma=0.05).squeeze(0)
+                data = self._jitter_scale_aug.jitter(data.unsqueeze(0), sigma=0.05).squeeze(0)
             if random.random() < 0.5:
-                scale_aug = IMUAugmentation(aug_types=['scale'], aug_prob=1.0)
-                data = scale_aug.scale(data.unsqueeze(0), scale_range=(0.9, 1.1)).squeeze(0)
+                data = self._jitter_scale_aug.scale(data.unsqueeze(0), scale_range=(0.9, 1.1)).squeeze(0)
 
         # If target_patch_size is set, preprocess patches here (parallelized across workers)
         if self.target_patch_size is not None:

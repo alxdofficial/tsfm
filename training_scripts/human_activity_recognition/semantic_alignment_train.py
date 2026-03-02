@@ -1183,7 +1183,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             imu_grad_chunks = all_imu_cached.grad.split([c.shape[0] for c in cached_imu])
             text_grad_chunks = all_text_cached.grad.split([c.shape[0] for c in cached_text])
 
-        del all_imu_cached, all_text_cached, cached_imu, cached_text, cached_frozen_text, cached_patch_masks, flat_frozen
+        del all_imu_cached, all_text_cached, cached_imu, cached_text, cached_frozen_text, cached_patch_masks, flat_frozen, all_frozen_text_cat
 
         # Debug metrics
         debug_metrics = {}
