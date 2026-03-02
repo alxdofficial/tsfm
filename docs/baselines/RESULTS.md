@@ -117,7 +117,7 @@ supervised fine-tuning, SciBERT is unfrozen and all 122.9M parameters are update
    hierarchical SSL) and the number of transformer layers (4 shared vs 1). CrossHAR's larger
    classifier head (468.6K vs 10.1K) accounts for most of its parameter difference.
 
-4. **LanHAR's trainable portion (13.0M) is comparable to TSFM** (20.7M), but 89% of its inference
+4. **LanHAR's trainable portion (13.0M) is comparable to TSFM** (~35M), but most of its inference
    parameters come from the frozen SciBERT (109.9M). During supervised fine-tuning SciBERT is
    unfrozen, making the effective trainable count 122.9M.
 
@@ -367,7 +367,7 @@ characteristics. See [Severe Out-of-Domain](#severe-out-of-domain-harth--vtt-con
   and has fundamentally different characteristics from waist/wrist-mounted smartphone IMUs in
   training data. All models achieve near-zero zero-shot accuracy, confirming this is a genuine
   distribution shift rather than a model-specific failure. Supervised fine-tuning adapts well
-  (up to 75.0% at 10%).
+  (up to 79.1% at 10%).
 - **VTT-ConIoT**: 8 of 16 activity labels (carrying, climbing ladder, kneeling work, leveling
   paint, lifting, pushing cart, roll painting, spraying paint) have no semantic equivalent in the
   10 training datasets. All models are guaranteed to fail on these activities regardless of
