@@ -8,6 +8,7 @@ Includes:
 """
 
 import torch
+import torch.nn.functional as F
 import numpy as np
 from typing import Dict, List
 from sklearn.metrics import f1_score
@@ -321,5 +322,104 @@ def compute_group_accuracy(
                 reciprocal_ranks.append(0.0)
 
         metrics['mrr'] = sum(reciprocal_ranks) / len(reciprocal_ranks)
+
+    return metrics
+
+
+def compute_group_accuracy_majority_vote(
+    patch_embeddings: torch.Tensor,
+    patch_masks: torch.Tensor,
+    label_bank,
+    query_labels: List[str],
+    return_mrr: bool = True,
+    use_simple_groups: bool = False,
+) -> Dict[str, float]:
+    """
+    Compute group-aware classification accuracy using per-patch majority voting.
+
+    Each patch independently votes for a label. The session prediction is the
+    label (group) with the most votes across valid patches.
+
+    Args:
+        patch_embeddings: Per-patch embeddings (N, P, D), L2-normalized
+        patch_masks: Valid patch masks (N, P), True=valid
+        label_bank: LabelBank or LearnableLabelBank to encode labels
+        query_labels: Ground truth labels for each session (N,)
+        return_mrr: If True, also compute Mean Reciprocal Rank
+        use_simple_groups: If True, use LABEL_GROUPS_SIMPLE (coarser grouping)
+
+    Returns:
+        Dict with 'accuracy' and optionally 'mrr', 'f1_macro', 'f1_weighted'
+    """
+    patch_embeddings = patch_embeddings.float()
+    device = patch_embeddings.device
+    N, P, D = patch_embeddings.shape
+
+    # Get unique labels and encode them
+    unique_labels = sorted(set(query_labels))
+    label_embeddings = label_bank.encode(unique_labels, normalize=True)  # (L, D) or (L, K, D)
+    label_embeddings = label_embeddings.to(device)
+    L = len(unique_labels)
+
+    # Build label-to-group mapping
+    label_to_group = get_label_to_group_mapping(use_simple=use_simple_groups)
+    unique_groups = [label_to_group.get(lbl, lbl) for lbl in unique_labels]
+
+    correct = 0
+    pred_groups_list = []
+    gt_groups_list = []
+    reciprocal_ranks = []
+
+    for i in range(N):
+        valid_mask = patch_masks[i].bool()
+        patches_i = patch_embeddings[i, valid_mask]  # (P_valid, D)
+
+        if patches_i.shape[0] == 0:
+            # No valid patches — skip (shouldn't happen with data validation)
+            pred_groups_list.append("__none__")
+            gt_groups_list.append(label_to_group.get(query_labels[i], query_labels[i]))
+            if return_mrr:
+                reciprocal_ranks.append(0.0)
+            continue
+
+        # Compute similarity to all labels: (P_valid, L)
+        sims = compute_similarity(patches_i, label_embeddings)
+
+        # Per-patch vote: each patch picks its most similar label
+        votes = sims.argmax(dim=1)  # (P_valid,)
+
+        # Majority vote: count votes per label, pick the label with most votes
+        vote_counts = torch.zeros(L, device=device)
+        for v in votes:
+            vote_counts[v] += 1
+
+        pred_idx = vote_counts.argmax().item()
+        pred_group = unique_groups[pred_idx]
+        gt_group = label_to_group.get(query_labels[i], query_labels[i])
+
+        pred_groups_list.append(pred_group)
+        gt_groups_list.append(gt_group)
+
+        if pred_group == gt_group:
+            correct += 1
+
+        # MRR: rank labels by vote count, find rank of first correct group
+        if return_mrr:
+            _, sorted_indices = vote_counts.sort(descending=True)
+            for rank, idx in enumerate(sorted_indices, start=1):
+                if unique_groups[idx.item()] == gt_group:
+                    reciprocal_ranks.append(1.0 / rank)
+                    break
+            else:
+                reciprocal_ranks.append(0.0)
+
+    metrics = {'accuracy': correct / N if N > 0 else 0.0}
+
+    # F1 scores
+    metrics['f1_macro'] = f1_score(gt_groups_list, pred_groups_list, average='macro', zero_division=0)
+    metrics['f1_weighted'] = f1_score(gt_groups_list, pred_groups_list, average='weighted', zero_division=0)
+
+    if return_mrr:
+        metrics['mrr'] = sum(reciprocal_ranks) / len(reciprocal_ranks) if reciprocal_ranks else 0.0
 
     return metrics

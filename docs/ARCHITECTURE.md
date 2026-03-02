@@ -659,7 +659,49 @@ The following features are implemented in code but disabled in the current train
 
 ---
 
-## 10. File Structure
+## 10. Future Work: Streaming Inference & Per-Patch Predictions
+
+### Streaming Inference
+
+The model supports live streaming predictions via a sliding window approach:
+
+1. Maintain a buffer of the last N patches (e.g., N=8 → 8 seconds at 1s patch size)
+2. Each `patch_size_sec`, push a new patch into the buffer, drop the oldest
+3. Run inference on the buffer as a normal sample — the model handles variable patch counts
+4. The semantic alignment head pools all patches → one prediction per window
+
+```
+Time →  [1] [2] [3] [4] [5] [6] [7] [8]         → "walking"
+             [2] [3] [4] [5] [6] [7] [8] [9]     → "walking"
+                  [3] [4] [5] [6] [7] [8] [9] [10] → "running"
+```
+
+Prediction smoothing options for UI: exponential moving average on logits, majority vote
+over last K predictions, or hysteresis (require N consecutive new-activity predictions
+before switching the displayed label).
+
+### Per-Patch Predictions (planned)
+
+Currently all patch-channel tokens are pooled into a single embedding via attention pooling,
+then aligned to text labels. This loses per-patch granularity — at activity transitions,
+the pooled vector averages over two activities.
+
+**Alternative**: skip attention pooling at inference, produce per-patch embeddings (mean
+over channels), cosine-sim each to the label bank, then majority vote. This gives:
+- Correct per-patch predictions even at activity transitions
+- Robustness to short noisy patches (outvoted by majority)
+- Natural streaming: the vote shifts as new-activity patches enter the window
+
+**Training change needed**: add a per-patch contrastive loss alongside the pooled loss.
+Each patch inherits its session's activity label. The loss is applied to per-patch
+embeddings before the attention pooling step. This ensures per-patch embeddings are
+directly trained for text alignment, not just indirectly through the pooling layer.
+
+This would replace the current single-vector prediction as the default inference mode.
+
+---
+
+## 11. File Structure
 
 ```
 model/

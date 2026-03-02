@@ -360,7 +360,8 @@ class SemanticAlignmentHead(nn.Module):
         num_fusion_queries: int = 4,
         use_fusion_self_attention: bool = True,
         num_pool_queries: int = 4,
-        use_pool_self_attention: bool = True
+        use_pool_self_attention: bool = True,
+        per_patch_prediction: bool = False
     ):
         """
         Args:
@@ -375,9 +376,13 @@ class SemanticAlignmentHead(nn.Module):
             use_fusion_self_attention: Whether fusion queries coordinate via self-attention
             num_pool_queries: Number of query tokens for temporal pooling
             use_pool_self_attention: Whether pooling queries coordinate via self-attention
+            per_patch_prediction: If True, each patch independently produces an embedding
+                via the projection head (skipping temporal attention and pooling).
+                Output shape becomes (batch, patches, output_dim) instead of (batch, output_dim).
         """
         super().__init__()
         self.output_dim = output_dim
+        self.per_patch_prediction = per_patch_prediction
 
         # Multi-query channel fusion: fuses all channels into one vector per patch
         self.cross_channel_fusion = CrossChannelFusion(
@@ -446,16 +451,17 @@ class SemanticAlignmentHead(nn.Module):
         # Cross-channel fusion: (batch, patches, channels, d_model) -> (batch, patches, d_model_fused)
         fused = self.cross_channel_fusion(encoder_output, channel_mask)
 
-        # Temporal attention across patches
-        temporal = self.temporal_attention(fused, patch_mask)  # (batch, patches, d_model_fused)
-
-        # Multi-query pooling to single vector
-        pooled = self.attention_pooling(temporal, patch_mask)  # (batch, d_model_fused)
-
-        # Project to semantic space
-        embedding = self.projection_head(pooled, normalize=normalize)  # (batch, output_dim)
-
-        return embedding
+        if self.per_patch_prediction:
+            # Per-patch: each patch independently produces an embedding
+            B, P, d_f = fused.shape
+            projected = self.projection_head(fused.reshape(B * P, d_f), normalize=normalize)
+            return projected.reshape(B, P, -1)  # (batch, patches, output_dim)
+        else:
+            # Session-level: temporal attention → pooling → single embedding
+            temporal = self.temporal_attention(fused, patch_mask)  # (batch, patches, d_model_fused)
+            pooled = self.attention_pooling(temporal, patch_mask)  # (batch, d_model_fused)
+            embedding = self.projection_head(pooled, normalize=normalize)  # (batch, output_dim)
+            return embedding
 
     def get_attention_stats(
         self,

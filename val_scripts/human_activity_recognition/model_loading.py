@@ -41,6 +41,8 @@ def _load_hyperparams(hyperparams_path: Path) -> dict:
                 'cnn_kernel_sizes': cfg.get('cnn_kernel_sizes', [5]),
                 'target_patch_size': cfg.get('target_patch_size', 64),
                 'use_channel_encoding': False,
+                'feature_extractor_type': cfg.get('feature_extractor_type', 'cnn'),
+                'spectral_ratio': cfg.get('spectral_ratio', 0.25),
             },
             'semantic_head': {
                 'd_model_fused': cfg.get('d_model_fused', cfg['d_model']),
@@ -50,6 +52,7 @@ def _load_hyperparams(hyperparams_path: Path) -> dict:
                 'use_fusion_self_attention': cfg.get('use_fusion_self_attention', True),
                 'num_pool_queries': cfg.get('num_pool_queries', 4),
                 'use_pool_self_attention': cfg.get('use_pool_self_attention', True),
+                'per_patch_prediction': cfg.get('per_patch_prediction', False),
             },
             'channel_text_fusion': {
                 'num_heads': cfg.get('channel_text_num_heads', 4),
@@ -81,6 +84,8 @@ def _load_hyperparams(hyperparams_path: Path) -> dict:
             'cnn_kernel_sizes': enc.get('cnn_kernel_sizes', [5]),
             'target_patch_size': enc.get('target_patch_size', 64),
             'use_channel_encoding': enc.get('use_channel_encoding', False),
+            'feature_extractor_type': enc.get('feature_extractor_type', 'cnn'),
+            'spectral_ratio': enc.get('spectral_ratio', 0.25),
         },
         'semantic_head': {
             'd_model_fused': sem.get('d_model_fused', d_model),
@@ -159,6 +164,8 @@ def load_model(
         cnn_kernel_sizes=enc_cfg['cnn_kernel_sizes'],
         target_patch_size=enc_cfg['target_patch_size'],
         use_channel_encoding=enc_cfg['use_channel_encoding'],
+        feature_extractor_type=enc_cfg.get('feature_extractor_type', 'cnn'),
+        spectral_ratio=enc_cfg.get('spectral_ratio', 0.25),
     )
 
     # Create semantic head
@@ -174,6 +181,7 @@ def load_model(
         use_fusion_self_attention=head_cfg['use_fusion_self_attention'],
         num_pool_queries=head_cfg['num_pool_queries'],
         use_pool_self_attention=head_cfg['use_pool_self_attention'],
+        per_patch_prediction=head_cfg.get('per_patch_prediction', False),
     )
 
     # Create shared text encoder

@@ -14,6 +14,7 @@ sys.path.insert(0, str(project_root))
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 from torch.amp import autocast, GradScaler
@@ -33,7 +34,7 @@ from model.token_text_encoder import (
 from training_scripts.human_activity_recognition.semantic_loss import SemanticAlignmentLoss
 from val_scripts.human_activity_recognition.plot_utils import TrainingPlotter, EmbeddingVisualizer
 from training_scripts.human_activity_recognition.memory_bank import MemoryBank
-from val_scripts.human_activity_recognition.evaluation_metrics import compute_group_accuracy
+from val_scripts.human_activity_recognition.evaluation_metrics import compute_group_accuracy, compute_group_accuracy_majority_vote
 import random
 from typing import Tuple, Optional, List
 
@@ -160,7 +161,7 @@ MAX_PATCHES_PER_SAMPLE = 48  # Matches good small_v1_best checkpoint config
 MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
 # ---- Architecture configuration (single source of truth: model/config.py) ----
-MODEL_SIZE = "medium"  # Options: "tiny", "small", "small_wide", "medium", "large"
+MODEL_SIZE = "small_deep"  # Options: "small", "small_deep"
 _cfg = get_config(MODEL_SIZE)
 
 # Encoder
@@ -173,7 +174,7 @@ USE_CROSS_CHANNEL = _cfg["use_cross_channel"]
 CNN_CHANNELS = _cfg["cnn_channels"]
 CNN_KERNEL_SIZES = _cfg["cnn_kernel_sizes"]
 TARGET_PATCH_SIZE = _cfg["target_patch_size"]
-FEATURE_EXTRACTOR_TYPE = "spectral_temporal"  # Override: use hybrid spectral-temporal extractor
+FEATURE_EXTRACTOR_TYPE = _cfg.get("feature_extractor_type", "cnn")  # From config (no override)
 SPECTRAL_RATIO = _cfg.get("spectral_ratio", 0.25)
 
 # Semantic alignment head
@@ -197,6 +198,9 @@ LABEL_BANK_NUM_HEADS = _cfg["label_bank_num_heads"]
 LABEL_BANK_NUM_QUERIES = _cfg["label_bank_num_queries"]
 LABEL_BANK_NUM_PROTOTYPES = _cfg["label_bank_num_prototypes"]
 
+# Per-patch prediction (each patch predicts independently; majority vote at inference)
+PER_PATCH_PREDICTION = _cfg.get("per_patch_prediction", False)
+
 # Training configuration
 OUTPUT_DIR = "training_output/semantic_alignment"  # Note: plots go to semantic_alignment/<timestamp>/plots/
 CHECKPOINT_DIR = None  # Will be set in main()
@@ -206,44 +210,22 @@ SAVE_EVERY = 5
 
 # Resume configuration - set to a folder path to resume training from that checkpoint
 # Example: RESUME_FROM = "training_output/semantic_alignment/20251124_234942"
-RESUME_FROM = None  # Set to folder path to resume, or None to start fresh
+RESUME_FROM = None  # Fresh training with small_deep config
 SEED = 42
 MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
-# ---- Model-size-aware training hyperparameters ----
-# Medium/large models need lower LR, softer temperature, and GradCache to avoid
-# representation collapse.  small_wide shares the small encoder so uses small's recipe.
+# ---- Training hyperparameters ----
+# Both small and small_deep use the same proven recipe (384-dim contrastive dynamics).
 EPOCHS = 100
 WARMUP_EPOCHS = 3
-
-if MODEL_SIZE in ("small", "small_wide"):
-    # Proven recipe from small_v1_best
-    BATCH_SIZE = 32
-    ACCUMULATION_STEPS = 16        # effective = 512
-    LEARNING_RATE = 1e-4
-    TEMPERATURE = 0.07             # CLIP default
-    WEIGHT_DECAY = 1e-5
-    USE_GRAD_CACHE = False
-    USE_MEMORY_BANK = True
-    MEMORY_BANK_SIZE = 256
-elif MODEL_SIZE == "medium":
-    BATCH_SIZE = 8                 # fits 24GB VRAM with d=768 encoder
-    ACCUMULATION_STEPS = 32        # effective = 256 (plenty for 87 labels)
-    LEARNING_RATE = 3e-5           # scaled down for 122M params
-    TEMPERATURE = 0.1              # less sharp for 768-dim space
-    WEIGHT_DECAY = 5e-6            # less aggressive regularization
-    USE_GRAD_CACHE = True          # CRITICAL: ~512 fresh negatives
-    USE_MEMORY_BANK = False        # GradCache provides enough negatives
-    MEMORY_BANK_SIZE = 0
-else:  # large or unknown
-    BATCH_SIZE = 4
-    ACCUMULATION_STEPS = 128       # effective = 512
-    LEARNING_RATE = 2e-5
-    TEMPERATURE = 0.1
-    WEIGHT_DECAY = 5e-6
-    USE_GRAD_CACHE = True
-    USE_MEMORY_BANK = False
-    MEMORY_BANK_SIZE = 0
+BATCH_SIZE = 32
+ACCUMULATION_STEPS = 16        # effective = 512
+LEARNING_RATE = 1e-4
+TEMPERATURE = 0.07             # CLIP default
+WEIGHT_DECAY = 1e-5
+USE_GRAD_CACHE = False         # Memory bank provides negatives
+USE_MEMORY_BANK = True
+MEMORY_BANK_SIZE = 256
 
 TARGET_EFFECTIVE_BATCH = BATCH_SIZE * ACCUMULATION_STEPS  # e.g. 512
 # Per-channel-bucket batch size overrides (empty = use BATCH_SIZE for all buckets)
@@ -384,7 +366,7 @@ class SemanticAlignmentModel(nn.Module):
         # Channel text fusion (learnable cross-attention)
         # Use encoder's d_model (not the module-level global) so this works
         # when loading checkpoints trained at a different model size.
-        # text_dim allows text_encoder_dim != d_model (e.g. small_wide: d=384, text=768)
+        # text_dim allows text_encoder_dim != d_model
         self.channel_fusion = ChannelTextFusion(
             d_model=encoder.d_model,
             num_heads=num_heads,
@@ -556,12 +538,15 @@ class SemanticAlignmentModel(nn.Module):
         return batched_patches, patch_mask, batched_channel_mask, batched_channel_descs, valid_indices
 
     def forward_from_raw(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                         attention_mask=None):
+                         attention_mask=None, return_per_patch=False):
         """
         Forward pass from raw sensor data (for inference/evaluation).
 
         Preprocesses raw data per-sample (trim, patch, interpolate to TARGET_PATCH_SIZE),
         pads to uniform batch, then calls the efficient batched forward().
+
+        For per-patch models: by default, mean-pools patch embeddings back to session-level
+        (B, D) for API compatibility. Set return_per_patch=True to get raw (B, P, D) + masks.
 
         Args:
             data: (batch, max_timesteps, max_channels) raw sensor data
@@ -570,20 +555,37 @@ class SemanticAlignmentModel(nn.Module):
             sampling_rates: List of sampling rates per sample (Hz)
             patch_sizes: List of patch sizes per sample (seconds)
             attention_mask: Optional (batch, max_timesteps) boolean mask for valid timesteps
+            return_per_patch: If True and model is per-patch, return (embeddings, patch_mask)
+                             instead of mean-pooled session embeddings.
 
         Returns:
-            (num_valid, semantic_dim) L2-normalized embeddings for valid samples.
-            Samples that produce no valid patches are silently dropped.
+            If return_per_patch=False (default):
+                (num_valid, semantic_dim) L2-normalized embeddings for valid samples.
+            If return_per_patch=True and model is per-patch:
+                Tuple of (embeddings (B, P, D), patch_mask (B, P))
         """
         result = self._preprocess_raw_batch(
             data, channel_descriptions, channel_mask, sampling_rates, patch_sizes, attention_mask
         )
         if result is None:
             # No valid samples — return empty embeddings
+            if return_per_patch and self.semantic_head.per_patch_prediction:
+                return torch.zeros(0, 0, self.semantic_dim, device=data.device), torch.zeros(0, 0, dtype=torch.bool, device=data.device)
             return torch.zeros(0, self.semantic_dim, device=data.device)
 
         batched_patches, patch_mask, batched_channel_mask, batched_channel_descs, valid_indices = result
-        return self.forward(batched_patches, batched_channel_descs, batched_channel_mask, patch_mask)
+        embeddings = self.forward(batched_patches, batched_channel_descs, batched_channel_mask, patch_mask)
+
+        # Per-patch model: embeddings are (B, P, D)
+        if self.semantic_head.per_patch_prediction and embeddings.dim() == 3:
+            if return_per_patch:
+                return embeddings, patch_mask
+            # Mean-pool valid patches → session-level (B, D), then re-normalize
+            mask_expanded = patch_mask.unsqueeze(-1).float()  # (B, P, 1)
+            pooled = (embeddings.float() * mask_expanded).sum(1) / mask_expanded.sum(1).clamp(min=1)
+            return F.normalize(pooled, dim=-1)
+
+        return embeddings
 
     def get_attention_stats(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
                             attention_mask=None):
@@ -694,15 +696,22 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
             # Forward pass (no gradients)
             imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
 
-            # For multi-prototype: store the winning prototype (nearest to IMU)
-            text_for_queue = text_embeddings
-            if text_for_queue.dim() == 3:
-                sims = torch.einsum('bd,bkd->bk', imu_embeddings, text_for_queue)
-                best_idx = sims.argmax(dim=1)
-                text_for_queue = text_for_queue[torch.arange(text_for_queue.shape[0]), best_idx]
-
-            # Update memory bank with both embeddings
-            memory_bank.update(imu_embeddings, text_for_queue)
+            if PER_PATCH_PREDICTION:
+                flat_imu, flat_text, _ = flatten_per_patch_embeddings(
+                    imu_embeddings, patch_mask, label_texts, text_embeddings
+                )
+                if flat_text.dim() == 3:
+                    sims = torch.einsum('bd,bkd->bk', flat_imu, flat_text)
+                    flat_text = flat_text[torch.arange(flat_text.shape[0]), sims.argmax(1)]
+                memory_bank.update(flat_imu, flat_text)
+            else:
+                # For multi-prototype: store the winning prototype (nearest to IMU)
+                text_for_queue = text_embeddings
+                if text_for_queue.dim() == 3:
+                    sims = torch.einsum('bd,bkd->bk', imu_embeddings, text_for_queue)
+                    best_idx = sims.argmax(dim=1)
+                    text_for_queue = text_for_queue[torch.arange(text_for_queue.shape[0]), best_idx]
+                memory_bank.update(imu_embeddings, text_for_queue)
             
             # Print progress
             filled = min((batch_idx + 1) * len(label_texts), memory_bank.queue_size)
@@ -714,6 +723,30 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
     # Return model to training mode if it wasn't frozen
     if not FREEZE_ENCODER:
         model.train()
+
+
+def flatten_per_patch_embeddings(patch_embeddings, patch_mask, label_texts, text_embeddings):
+    """
+    Flatten (B, P, D) per-patch embeddings to (N_valid, D), expanding text/labels per valid patch.
+
+    Args:
+        patch_embeddings: (B, P, D) per-patch IMU embeddings
+        patch_mask: (B, P) bool mask — True = valid patch
+        label_texts: list of B label strings
+        text_embeddings: (B, D) or (B, K, D) text embeddings
+
+    Returns:
+        flat_imu: (N_valid, D)
+        flat_text: (N_valid, D) or (N_valid, K, D)
+        flat_labels: list of N_valid strings
+    """
+    B, P, D = patch_embeddings.shape
+    valid = patch_mask.bool()
+    flat_imu = patch_embeddings[valid]                                # (N_valid, D)
+    session_ids = torch.arange(B, device=patch_mask.device).unsqueeze(1).expand(B, P)[valid]
+    flat_text = text_embeddings[session_ids]                          # (N_valid, D) or (N_valid, K, D)
+    flat_labels = [label_texts[sid.item()] for sid in session_ids]
+    return flat_imu, flat_text, flat_labels
 
 
 def _compute_per_layer_grad_norms(model, criterion=None, label_bank=None):
@@ -742,6 +775,9 @@ def _compute_per_layer_grad_norms(model, criterion=None, label_bank=None):
         'temporal_attention': 'semantic_head.temporal_attention',
         'attention_pooling': 'semantic_head.attention_pooling',
         'projection_head': 'semantic_head.projection_head',
+        # Feature extractor branches (SpectralTemporalExtractor)
+        'fe_temporal': 'encoder.feature_extractor.temporal',
+        'fe_spectral': 'encoder.feature_extractor.spectral',
     }
 
     # Single walk of parameter tree, accumulate squared norms per component
@@ -796,6 +832,7 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         'cross_channel_fusion': 0.0, 'temporal_attention': 0.0,
         'attention_pooling': 0.0, 'projection_head': 0.0,
         'logit_scale': 0.0, 'label_pooling': 0.0,
+        'fe_temporal': 0.0, 'fe_spectral': 0.0,
     }
     num_grad_computations = 0
     accum_step_count = 0
@@ -824,8 +861,16 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
 
         with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
             imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
-            loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
-                                     return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
+
+            if PER_PATCH_PREDICTION:
+                flat_imu, flat_text, flat_labels = flatten_per_patch_embeddings(
+                    imu_embeddings, patch_mask, label_texts, text_embeddings
+                )
+                loss, metrics = criterion(flat_imu, flat_text, flat_labels,
+                                         return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
+            else:
+                loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
+                                         return_metrics=True, imu_queue=imu_queue, text_queue=text_queue)
 
         window_samples += current_bs
         window_micro_batches += 1
@@ -836,7 +881,10 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         debug_metrics = {}
         if batch_idx % DEBUG_METRIC_FREQUENCY == 0:
             with torch.no_grad():
-                debug_metrics = compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue, text_queue)
+                if PER_PATCH_PREDICTION:
+                    debug_metrics = compute_debug_metrics(flat_imu, flat_text, imu_queue, text_queue)
+                else:
+                    debug_metrics = compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue, text_queue)
 
         if scaler is not None:
             scaler.scale(scaled_loss).backward()
@@ -879,12 +927,21 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
 
         if memory_bank is not None and USE_MEMORY_BANK:
             with torch.no_grad():
-                text_for_queue = text_embeddings.detach()
-                if text_for_queue.dim() == 3:
-                    sims = torch.einsum('bd,bkd->bk', imu_embeddings.detach(), text_for_queue)
-                    best_idx = sims.argmax(dim=1)
-                    text_for_queue = text_for_queue[torch.arange(text_for_queue.shape[0]), best_idx]
-                memory_bank.update(imu_embeddings.detach(), text_for_queue)
+                if PER_PATCH_PREDICTION:
+                    flat_imu_q, flat_text_q, _ = flatten_per_patch_embeddings(
+                        imu_embeddings.detach(), patch_mask, label_texts, text_embeddings.detach()
+                    )
+                    if flat_text_q.dim() == 3:
+                        sims = torch.einsum('bd,bkd->bk', flat_imu_q, flat_text_q)
+                        flat_text_q = flat_text_q[torch.arange(flat_text_q.shape[0]), sims.argmax(1)]
+                    memory_bank.update(flat_imu_q, flat_text_q)
+                else:
+                    text_for_queue = text_embeddings.detach()
+                    if text_for_queue.dim() == 3:
+                        sims = torch.einsum('bd,bkd->bk', imu_embeddings.detach(), text_for_queue)
+                        best_idx = sims.argmax(dim=1)
+                        text_for_queue = text_for_queue[torch.arange(text_for_queue.shape[0]), best_idx]
+                    memory_bank.update(imu_embeddings.detach(), text_for_queue)
 
         batch_loss = metrics['loss']
         if math.isnan(batch_loss):
@@ -1005,6 +1062,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         'cross_channel_fusion': 0.0, 'temporal_attention': 0.0,
         'attention_pooling': 0.0, 'projection_head': 0.0,
         'logit_scale': 0.0, 'label_pooling': 0.0,
+        'fe_temporal': 0.0, 'fe_spectral': 0.0,
     }
     num_grad_computations = 0
     accum_step_count = 0
@@ -1035,6 +1093,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         cached_imu = []
         cached_text = []
         cached_label_texts = []
+        cached_patch_masks = []  # For per-patch flattening
         micro_batch_data = []
 
         for mb_batch in window_batches:
@@ -1053,6 +1112,8 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             cached_imu.append(mb_imu_emb)
             cached_text.append(mb_text_emb)
             cached_label_texts.extend(mb_label_texts)
+            if PER_PATCH_PREDICTION:
+                cached_patch_masks.append(mb_patch_mask)
 
             # CPU stash: move tensors to CPU-pinned memory to free GPU during Phase 1.
             # With 56 micro-batches, keeping all on GPU wastes ~56x micro-batch memory.
@@ -1066,13 +1127,27 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             })
 
         # --- Phase 2: Compute loss over ALL cached embeddings ---
-        all_imu_cached = torch.cat(cached_imu, dim=0).requires_grad_(True)
-        all_text_cached = torch.cat(cached_text, dim=0).requires_grad_(True)
+        if PER_PATCH_PREDICTION:
+            # Flatten per-patch embeddings across all micro-batches
+            all_imu_3d = torch.cat(cached_imu, dim=0)      # (N_total, P, D)
+            all_text_2d = torch.cat(cached_text, dim=0)     # (N_total, D) or (N_total, K, D)
+            all_pmasks = torch.cat(cached_patch_masks, dim=0)  # (N_total, P)
+            flat_imu, flat_text, flat_labels = flatten_per_patch_embeddings(
+                all_imu_3d, all_pmasks, cached_label_texts, all_text_2d
+            )
+            all_imu_cached = flat_imu.requires_grad_(True)
+            all_text_cached = flat_text.requires_grad_(True)
+            # Track valid-patch counts per micro-batch for gradient chunk splitting
+            valid_counts = [pm.bool().sum().item() for pm in cached_patch_masks]
+        else:
+            all_imu_cached = torch.cat(cached_imu, dim=0).requires_grad_(True)
+            all_text_cached = torch.cat(cached_text, dim=0).requires_grad_(True)
+            flat_labels = cached_label_texts
 
         with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
             loss, metrics = criterion.forward_cached(
                 all_imu_cached, all_text_cached,
-                cached_label_texts, return_metrics=True,
+                flat_labels, return_metrics=True,
             )
 
         if scaler is not None:
@@ -1081,10 +1156,14 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             loss.backward()
 
         # Extract per-micro-batch gradient chunks
-        imu_grad_chunks = all_imu_cached.grad.split([c.shape[0] for c in cached_imu])
-        text_grad_chunks = all_text_cached.grad.split([c.shape[0] for c in cached_text])
+        if PER_PATCH_PREDICTION:
+            imu_grad_chunks = all_imu_cached.grad.split(valid_counts)
+            text_grad_chunks = all_text_cached.grad.split(valid_counts)
+        else:
+            imu_grad_chunks = all_imu_cached.grad.split([c.shape[0] for c in cached_imu])
+            text_grad_chunks = all_text_cached.grad.split([c.shape[0] for c in cached_text])
 
-        del all_imu_cached, all_text_cached, cached_imu, cached_text
+        del all_imu_cached, all_text_cached, cached_imu, cached_text, cached_patch_masks
 
         # Debug metrics
         debug_metrics = {}
@@ -1099,7 +1178,13 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
                     dbg_imu = model(dbg_patches, first_mb['channel_descriptions'],
                                     dbg_ch_mask, dbg_p_mask)
                 dbg_text = label_bank.encode(first_mb['label_texts'], normalize=True)
-                debug_metrics = compute_debug_metrics(dbg_imu, dbg_text)
+                if PER_PATCH_PREDICTION:
+                    dbg_flat_imu, dbg_flat_text, _ = flatten_per_patch_embeddings(
+                        dbg_imu, dbg_p_mask, first_mb['label_texts'], dbg_text
+                    )
+                    debug_metrics = compute_debug_metrics(dbg_flat_imu, dbg_flat_text)
+                else:
+                    debug_metrics = compute_debug_metrics(dbg_imu, dbg_text)
 
         # --- Phase 3: Re-forward each micro-batch, backprop with cached gradients ---
         for mb_idx, mb_data in enumerate(micro_batch_data):
@@ -1116,7 +1201,14 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
                     mb_channel_mask, mb_patch_mask
                 )
 
-            surrogate_targets = [mb_imu_emb, mb_text_emb]
+            if PER_PATCH_PREDICTION:
+                # Flatten per-patch embeddings to match gradient chunk shapes
+                mb_flat_imu, mb_flat_text, _ = flatten_per_patch_embeddings(
+                    mb_imu_emb, mb_patch_mask, mb_data['label_texts'], mb_text_emb
+                )
+                surrogate_targets = [mb_flat_imu, mb_flat_text]
+            else:
+                surrogate_targets = [mb_imu_emb, mb_text_emb]
             surrogate_grads = [imu_grad_chunks[mb_idx], text_grad_chunks[mb_idx]]
 
             # Phase 2 already produced scaled gradients (via scaler.scale(loss).backward()),
@@ -1270,6 +1362,7 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
     total_neg_sim = 0.0
     total_sim_gap = 0.0
     all_imu_embeddings, all_text_embeddings = [], []
+    all_patch_masks = []  # For per-patch majority voting
     all_labels = []
     pbar = tqdm(dataloader, desc=f"[{stage}] Epoch {epoch} Validation")
 
@@ -1287,7 +1380,14 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
 
             with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
                 imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
-                _, metrics = criterion(imu_embeddings, text_embeddings, label_texts, return_metrics=True)
+
+                if PER_PATCH_PREDICTION:
+                    flat_imu, flat_text, flat_labels = flatten_per_patch_embeddings(
+                        imu_embeddings, patch_mask, label_texts, text_embeddings
+                    )
+                    _, metrics = criterion(flat_imu, flat_text, flat_labels, return_metrics=True)
+                else:
+                    _, metrics = criterion(imu_embeddings, text_embeddings, label_texts, return_metrics=True)
 
             # NaN detection for validation
             batch_loss = metrics['loss']
@@ -1303,6 +1403,8 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
             # Keep embeddings on GPU for faster concatenation
             all_imu_embeddings.append(imu_embeddings)
             all_text_embeddings.append(text_embeddings)
+            if PER_PATCH_PREDICTION:
+                all_patch_masks.append(patch_mask)
             all_labels.extend(label_texts)
 
             pbar.set_postfix({'loss': f"{metrics['loss']:.4f}", 'sim_gap': f"{metrics['similarity_gap']:.3f}"})
@@ -1320,15 +1422,36 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
 
     if need_concat and len(all_imu_embeddings) > 0:
         # Concatenate on GPU (faster than CPU→GPU transfer)
-        all_imu_cat = torch.cat(all_imu_embeddings, dim=0)
+        if PER_PATCH_PREDICTION:
+            # Pad per-patch embeddings to max P across all batches (P varies per batch)
+            max_P = max(e.shape[1] for e in all_imu_embeddings)
+            padded_imu = []
+            padded_masks = []
+            for emb, mask in zip(all_imu_embeddings, all_patch_masks):
+                pad_P = max_P - emb.shape[1]
+                if pad_P > 0:
+                    padded_imu.append(F.pad(emb, (0, 0, 0, pad_P)))  # pad patch dim
+                    padded_masks.append(F.pad(mask, (0, pad_P), value=False))
+                else:
+                    padded_imu.append(emb)
+                    padded_masks.append(mask)
+            all_imu_cat = torch.cat(padded_imu, dim=0)
+            all_pmasks_cat = torch.cat(padded_masks, dim=0)
+        else:
+            all_imu_cat = torch.cat(all_imu_embeddings, dim=0)
         all_text_cat = torch.cat(all_text_embeddings, dim=0)
 
         # Compute group-aware classification accuracy
         if compute_classification:
             with torch.no_grad():
-                class_metrics = compute_group_accuracy(
-                    all_imu_cat, label_bank, all_labels, return_mrr=True
-                )
+                if PER_PATCH_PREDICTION:
+                    class_metrics = compute_group_accuracy_majority_vote(
+                        all_imu_cat, all_pmasks_cat, label_bank, all_labels, return_mrr=True
+                    )
+                else:
+                    class_metrics = compute_group_accuracy(
+                        all_imu_cat, label_bank, all_labels, return_mrr=True
+                    )
             avg_metrics.update(class_metrics)
 
         # Generate embedding visualization if enabled
@@ -1343,9 +1466,16 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
                 'pos_sim': avg_metrics['positive_similarity'],
                 'sim_gap': avg_metrics['similarity_gap'],
             }
+            # For per-patch: mean-pool valid patches to session-level for visualization
+            if PER_PATCH_PREDICTION:
+                mask_expanded = all_pmasks_cat.unsqueeze(-1).float()
+                vis_imu = (all_imu_cat.float() * mask_expanded).sum(1) / mask_expanded.sum(1).clamp(min=1)
+                vis_imu = F.normalize(vis_imu, dim=-1)
+            else:
+                vis_imu = all_imu_cat
             # Existing 2D static plot
             visualizer.plot_embedding_alignment_2d(
-                imu_embeddings=all_imu_cat,
+                imu_embeddings=vis_imu,
                 text_embeddings=all_text_cat,
                 labels=all_labels,
                 epoch=epoch,
@@ -1353,7 +1483,7 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
             )
             # Interactive 3D HTML
             visualizer.plot_interactive_3d(
-                imu_embeddings=all_imu_cat,
+                imu_embeddings=vis_imu,
                 text_embeddings=all_text_cat,
                 labels=all_labels,
                 epoch=epoch,
@@ -1361,7 +1491,7 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
             )
             # Density contour static plot
             visualizer.plot_density_contours(
-                imu_embeddings=all_imu_cat,
+                imu_embeddings=vis_imu,
                 text_embeddings=all_text_cat,
                 labels=all_labels,
                 epoch=epoch,
@@ -1377,9 +1507,10 @@ def evaluate_unseen(model, label_bank, dataloader, device, epoch):
 
     Returns classification accuracy and MRR.
     """
-    model.eval()
-    label_bank.eval()
+    model.train(False)
+    label_bank.train(False)
     all_imu_embeddings = []
+    all_patch_masks = []
     all_labels = []
 
     with torch.inference_mode():
@@ -1396,11 +1527,32 @@ def evaluate_unseen(model, label_bank, dataloader, device, epoch):
                 imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
 
             all_imu_embeddings.append(imu_embeddings)
+            if PER_PATCH_PREDICTION:
+                all_patch_masks.append(patch_mask)
             all_labels.extend(label_texts)
 
     if len(all_imu_embeddings) > 0:
-        all_imu_cat = torch.cat(all_imu_embeddings, dim=0)
-        metrics = compute_group_accuracy(all_imu_cat, label_bank, all_labels, return_mrr=True)
+        if PER_PATCH_PREDICTION:
+            # Pad per-patch embeddings to max P across all batches (P varies per batch)
+            max_P = max(e.shape[1] for e in all_imu_embeddings)
+            padded_imu = []
+            padded_masks = []
+            for emb, mask in zip(all_imu_embeddings, all_patch_masks):
+                pad_P = max_P - emb.shape[1]
+                if pad_P > 0:
+                    padded_imu.append(F.pad(emb, (0, 0, 0, pad_P)))
+                    padded_masks.append(F.pad(mask, (0, pad_P), value=False))
+                else:
+                    padded_imu.append(emb)
+                    padded_masks.append(mask)
+            all_imu_cat = torch.cat(padded_imu, dim=0)
+            all_pmasks_cat = torch.cat(padded_masks, dim=0)
+            metrics = compute_group_accuracy_majority_vote(
+                all_imu_cat, all_pmasks_cat, label_bank, all_labels, return_mrr=True
+            )
+        else:
+            all_imu_cat = torch.cat(all_imu_embeddings, dim=0)
+            metrics = compute_group_accuracy(all_imu_cat, label_bank, all_labels, return_mrr=True)
         return metrics
 
     return {'accuracy': 0.0, 'mrr': 0.0}
@@ -1417,6 +1569,7 @@ def main():
     global NUM_POOL_QUERIES, USE_POOL_SELF_ATTENTION
     global SENTENCE_BERT_MODEL, CHANNEL_TEXT_NUM_HEADS, TEXT_DIM
     global LABEL_BANK_NUM_HEADS, LABEL_BANK_NUM_QUERIES, LABEL_BANK_NUM_PROTOTYPES
+    global PER_PATCH_PREDICTION
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
@@ -1468,6 +1621,7 @@ def main():
                 LABEL_BANK_NUM_HEADS = saved_cfg['label_bank_num_heads']
                 LABEL_BANK_NUM_QUERIES = saved_cfg['label_bank_num_queries']
                 LABEL_BANK_NUM_PROTOTYPES = saved_cfg['label_bank_num_prototypes']
+                PER_PATCH_PREDICTION = saved_cfg.get('per_patch_prediction', False)
                 print(f"  ✓ Loaded architecture config from checkpoint (d={D_MODEL}, "
                       f"layers={NUM_TEMPORAL_LAYERS}, sbert={SENTENCE_BERT_MODEL})")
             elif 'encoder' in resume_hp:
@@ -1541,6 +1695,7 @@ def main():
         "label_bank_num_heads": LABEL_BANK_NUM_HEADS,
         "label_bank_num_queries": LABEL_BANK_NUM_QUERIES,
         "label_bank_num_prototypes": LABEL_BANK_NUM_PROTOTYPES,
+        "per_patch_prediction": PER_PATCH_PREDICTION,
     }
     hyperparams = {
         'model_size': MODEL_SIZE,
@@ -1633,7 +1788,8 @@ def main():
         num_temporal_layers=NUM_SEMANTIC_TEMPORAL_LAYERS,
         num_heads=NUM_HEADS, dim_feedforward=D_MODEL_FUSED * 4, dropout=DROPOUT,
         num_fusion_queries=NUM_FUSION_QUERIES, use_fusion_self_attention=USE_FUSION_SELF_ATTENTION,
-        num_pool_queries=NUM_POOL_QUERIES, use_pool_self_attention=USE_POOL_SELF_ATTENTION
+        num_pool_queries=NUM_POOL_QUERIES, use_pool_self_attention=USE_POOL_SELF_ATTENTION,
+        per_patch_prediction=PER_PATCH_PREDICTION
     ).to(device)
 
     # Create shared text encoder (one instance for model + label_bank, saves GPU memory)
@@ -2035,7 +2191,7 @@ def main():
         plotter.add_scalar('epoch/debug_imu_diversity', train_metrics['imu_diversity'], epoch)
         plotter.add_scalar('epoch/debug_queue_diversity', train_metrics['queue_diversity'], epoch)
         # Log per-component gradient norms (including label_pooling for LearnableLabelBank)
-        for comp_name in ['cross_channel_fusion', 'temporal_attention', 'attention_pooling', 'projection_head', 'label_pooling']:
+        for comp_name in ['cross_channel_fusion', 'temporal_attention', 'attention_pooling', 'projection_head', 'label_pooling', 'fe_temporal', 'fe_spectral']:
             plotter.add_scalar(f'epoch/debug_{comp_name}_grad_norm', train_metrics[f'{comp_name}_grad_norm'], epoch)
 
         plotter.add_scalar('epoch/val_loss', val_metrics['loss'], epoch)

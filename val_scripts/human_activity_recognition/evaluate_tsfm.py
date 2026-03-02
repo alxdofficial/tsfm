@@ -69,7 +69,7 @@ GLOBAL_LABEL_PATH = LIMUBERT_DATA_DIR / "global_label_mapping.json"
 OUTPUT_DIR = PROJECT_ROOT / "test_output" / "baseline_evaluation"
 
 # TSFM checkpoint - set TSFM_CHECKPOINT env var, or update this default path
-_DEFAULT_CHECKPOINT = str(PROJECT_ROOT / "training_output" / "semantic_alignment" / "small_v1_best" / "best.pt")
+_DEFAULT_CHECKPOINT = str(PROJECT_ROOT / "training_output" / "semantic_alignment" / "small_v1_best_20260217" / "best.pt")
 CHECKPOINT_PATH = os.environ.get("TSFM_CHECKPOINT", _DEFAULT_CHECKPOINT)
 
 # Data specs
@@ -167,6 +167,8 @@ def extract_tsfm_embeddings(
 ) -> np.ndarray:
     """Extract TSFM embeddings from raw sensor data.
 
+    For per-patch models, forward_from_raw automatically mean-pools to session-level.
+
     Args:
         model: Loaded TSFM SemanticAlignmentModel
         raw_data: (N, seq_len, 6) raw sensor data at native rate
@@ -177,7 +179,7 @@ def extract_tsfm_embeddings(
         patch_size_sec: patch duration in seconds
 
     Returns:
-        embeddings: (N, 384) L2-normalized embeddings
+        embeddings: (N, D) L2-normalized session-level embeddings
     """
     model.eval()
     N = raw_data.shape[0]
@@ -207,6 +209,81 @@ def extract_tsfm_embeddings(
             all_embeddings.append(emb.float().cpu().numpy())
 
     return np.concatenate(all_embeddings, axis=0)
+
+
+def extract_tsfm_per_patch_embeddings(
+    model: SemanticAlignmentModel,
+    raw_data: np.ndarray,
+    device: torch.device,
+    sampling_rate: float,
+    channel_descriptions: List[str],
+    batch_size: int = TSFM_BATCH_SIZE,
+    patch_size_sec: float = PATCH_SIZE_SEC,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Extract per-patch TSFM embeddings for majority-vote zero-shot.
+
+    Only meaningful for per-patch models. Session-level models return (N, 1, D).
+
+    Returns:
+        patch_embeddings: (N, max_P, D) padded per-patch embeddings
+        patch_masks: (N, max_P) boolean masks (True=valid)
+    """
+    model.train(False)
+    is_per_patch = hasattr(model, 'semantic_head') and model.semantic_head.per_patch_prediction
+    N = raw_data.shape[0]
+    seq_len = raw_data.shape[1]
+
+    all_embeddings = []
+    all_masks = []
+    for start in tqdm(range(0, N, batch_size), desc="TSFM | Extracting per-patch embeddings",
+                      total=(N + batch_size - 1) // batch_size, leave=True):
+        end = min(start + batch_size, N)
+        batch_data = torch.from_numpy(raw_data[start:end]).float().to(device)
+        bs = batch_data.shape[0]
+
+        channel_mask = torch.ones(bs, DATA_CHANNELS, dtype=torch.bool, device=device)
+        attention_mask = torch.ones(bs, seq_len, dtype=torch.bool, device=device)
+
+        channel_descs = [channel_descriptions[:] for _ in range(bs)]
+        sampling_rates = [sampling_rate] * bs
+        patch_sizes = [patch_size_sec] * bs
+
+        with torch.no_grad():
+            with autocast('cuda', enabled=device.type == 'cuda'):
+                if is_per_patch:
+                    emb, pmask = model.forward_from_raw(
+                        batch_data, channel_descs, channel_mask,
+                        sampling_rates, patch_sizes,
+                        attention_mask=attention_mask,
+                        return_per_patch=True,
+                    )
+                else:
+                    emb = model.forward_from_raw(
+                        batch_data, channel_descs, channel_mask,
+                        sampling_rates, patch_sizes,
+                        attention_mask=attention_mask,
+                    )
+                    # Wrap session-level (B, D) as (B, 1, D) for uniform API
+                    emb = emb.unsqueeze(1)
+                    pmask = torch.ones(bs, 1, dtype=torch.bool, device=device)
+
+            all_embeddings.append(emb.float().cpu())
+            all_masks.append(pmask.cpu())
+
+    # Pad to max_P across all batches
+    max_P = max(e.shape[1] for e in all_embeddings)
+    padded_embs = []
+    padded_masks = []
+    for emb, mask in zip(all_embeddings, all_masks):
+        pad_P = max_P - emb.shape[1]
+        if pad_P > 0:
+            padded_embs.append(F.pad(emb, (0, 0, 0, pad_P)))
+            padded_masks.append(F.pad(mask, (0, pad_P), value=False))
+        else:
+            padded_embs.append(emb)
+            padded_masks.append(mask)
+
+    return torch.cat(padded_embs, dim=0), torch.cat(padded_masks, dim=0)
 
 
 # =============================================================================
@@ -481,6 +558,99 @@ def evaluate_zero_shot_closed_set(
             'n_classes': num_test_classes}
 
 
+def evaluate_zero_shot_majority_vote(
+    patch_embeddings: torch.Tensor,
+    patch_masks: torch.Tensor,
+    test_labels: np.ndarray,
+    test_dataset: str,
+    label_bank: LearnableLabelBank,
+    device: torch.device,
+    open_set: bool = True,
+) -> Dict[str, float]:
+    """Zero-shot via per-patch majority voting.
+
+    Each patch votes for a label via cosine similarity. The session prediction
+    is the label with the most votes. Works for both open-set and closed-set.
+
+    Args:
+        patch_embeddings: (N, P, D) padded per-patch embeddings
+        patch_masks: (N, P) boolean masks (True=valid)
+        test_labels: (N,) integer class indices
+        test_dataset: dataset name
+        label_bank: trained LearnableLabelBank
+        device: torch device
+        open_set: If True, match against all training labels via groups.
+                  If False, match against test dataset labels only (exact match).
+    """
+    label_to_group = get_label_to_group_mapping()
+    test_activities = get_dataset_labels(test_dataset)
+
+    if open_set:
+        candidate_labels = GLOBAL_LABELS
+        tag = "open-set MV"
+    else:
+        candidate_labels = test_activities
+        tag = "closed-set MV"
+
+    print(f"  [Zero-shot {tag}] Encoding {len(candidate_labels)} labels...")
+    with torch.no_grad():
+        label_embeddings = label_bank.encode(candidate_labels, normalize=True).to(device)
+
+    N = patch_embeddings.shape[0]
+    L = len(candidate_labels)
+
+    pred_groups = []
+    gt_groups = []
+    pred_names = []
+    gt_names = []
+
+    for i in range(N):
+        local_idx = test_labels[i]
+        if local_idx >= len(test_activities):
+            continue
+
+        gt_name = test_activities[local_idx]
+        gt_group = label_to_group.get(gt_name, gt_name)
+
+        # Get valid patches for this sample
+        valid = patch_masks[i].bool()
+        patches_i = patch_embeddings[i, valid].to(device)  # (P_valid, D)
+
+        if patches_i.shape[0] == 0:
+            continue
+
+        # Per-patch similarity and voting
+        sims = compute_similarity(patches_i, label_embeddings)  # (P_valid, L)
+        votes = sims.argmax(dim=1)  # (P_valid,)
+        vote_counts = torch.zeros(L, device=device)
+        for v in votes:
+            vote_counts[v] += 1
+        pred_idx = vote_counts.argmax().item()
+
+        pred_name = candidate_labels[pred_idx]
+        pred_group = label_to_group.get(pred_name, pred_name)
+
+        if open_set:
+            gt_groups.append(gt_group)
+            pred_groups.append(pred_group)
+        else:
+            gt_names.append(gt_name)
+            pred_names.append(pred_name)
+
+    if open_set:
+        acc = accuracy_score(gt_groups, pred_groups) * 100
+        f1 = f1_score(gt_groups, pred_groups, average='macro', zero_division=0) * 100
+        f1_w = f1_score(gt_groups, pred_groups, average='weighted', zero_division=0) * 100
+        return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_groups),
+                'n_classes_train': len(candidate_labels)}
+    else:
+        acc = accuracy_score(gt_names, pred_names) * 100
+        f1 = f1_score(gt_names, pred_names, labels=test_activities, average='macro', zero_division=0) * 100
+        f1_w = f1_score(gt_names, pred_names, labels=test_activities, average='weighted', zero_division=0) * 100
+        return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': len(gt_names),
+                'n_classes': len(test_activities)}
+
+
 def evaluate_supervised_finetune(
     model: SemanticAlignmentModel,
     label_bank: LearnableLabelBank,
@@ -721,9 +891,12 @@ def main():
     label_bank = load_label_bank(checkpoint, device, hyperparams_path)
     print("Model and label bank loaded successfully")
 
-    # Auto-detect embedding dim from model
+    # Auto-detect embedding dim and per-patch mode
     global TSFM_EMB_DIM
     TSFM_EMB_DIM = model.semantic_dim
+    is_per_patch = hasattr(model, 'semantic_head') and model.semantic_head.per_patch_prediction
+    if is_per_patch:
+        print(f"  Per-patch prediction model detected — will use majority voting for zero-shot")
 
     # Run scoring on each test dataset
     all_results = {}
@@ -750,7 +923,7 @@ def main():
         print(f"  Sampling rate: {sr}Hz, Seq len: {raw_data.shape[1]}, Patch: {PATCH_SIZE_SEC}s")
         print(f"  Channel descriptions: {ch_descs}")
 
-        # Extract embeddings with native rate and manifest channel descriptions
+        # Extract session-level embeddings (mean-pooled for per-patch models)
         test_emb = extract_tsfm_embeddings(
             model, raw_data, device,
             sampling_rate=sr,
@@ -758,27 +931,53 @@ def main():
             patch_size_sec=PATCH_SIZE_SEC,
         )
 
+        # Also extract per-patch embeddings for majority voting (if per-patch model)
+        if is_per_patch:
+            patch_embs, patch_masks = extract_tsfm_per_patch_embeddings(
+                model, raw_data, device,
+                sampling_rate=sr,
+                channel_descriptions=ch_descs,
+                patch_size_sec=PATCH_SIZE_SEC,
+            )
+            print(f"  Per-patch: {patch_embs.shape} (max {patch_masks.sum(1).float().mean():.1f} valid patches/sample)")
+
         print(f"  Test data: {test_emb.shape[0]} windows -> embeddings {test_emb.shape}, "
               f"{len(test_activities)} classes")
         print(f"  Classes: {test_activities}")
 
         ds_results = {'patch_size': PATCH_SIZE_SEC, 'sampling_rate_hz': sr}
 
-        # 1. Zero-shot open-set (cosine similarity)
-        print(f"\n  --- Zero-shot Open-Set (cosine sim) ---")
+        # 1. Zero-shot open-set (cosine similarity — mean-pooled)
+        print(f"\n  --- Zero-shot Open-Set (cosine sim, mean-pooled) ---")
         ds_results['zero_shot_open_set'] = evaluate_zero_shot_open_set(
             test_emb, test_labels, test_ds, label_bank, device)
-        print(f"  ZS Open-set: Acc={ds_results['zero_shot_open_set']['accuracy']:.1f}%, "
+        print(f"  ZS Open-set (pool): Acc={ds_results['zero_shot_open_set']['accuracy']:.1f}%, "
               f"F1={ds_results['zero_shot_open_set']['f1_macro']:.1f}%")
 
-        # 2. Zero-shot closed-set (cosine similarity)
-        print(f"\n  --- Zero-shot Closed-Set (cosine sim) ---")
+        # 1b. Zero-shot open-set majority vote (per-patch models only)
+        if is_per_patch:
+            print(f"\n  --- Zero-shot Open-Set (majority vote) ---")
+            ds_results['zero_shot_open_set_mv'] = evaluate_zero_shot_majority_vote(
+                patch_embs, patch_masks, test_labels, test_ds, label_bank, device, open_set=True)
+            print(f"  ZS Open-set (MV):   Acc={ds_results['zero_shot_open_set_mv']['accuracy']:.1f}%, "
+                  f"F1={ds_results['zero_shot_open_set_mv']['f1_macro']:.1f}%")
+
+        # 2. Zero-shot closed-set (cosine similarity — mean-pooled)
+        print(f"\n  --- Zero-shot Closed-Set (cosine sim, mean-pooled) ---")
         ds_results['zero_shot_closed_set'] = evaluate_zero_shot_closed_set(
             test_emb, test_labels, test_ds, label_bank, device)
-        print(f"  ZS Closed-set: Acc={ds_results['zero_shot_closed_set']['accuracy']:.1f}%, "
+        print(f"  ZS Closed-set (pool): Acc={ds_results['zero_shot_closed_set']['accuracy']:.1f}%, "
               f"F1={ds_results['zero_shot_closed_set']['f1_macro']:.1f}%")
 
-        # 3. 1% supervised (end-to-end fine-tuning)
+        # 2b. Zero-shot closed-set majority vote (per-patch models only)
+        if is_per_patch:
+            print(f"\n  --- Zero-shot Closed-Set (majority vote) ---")
+            ds_results['zero_shot_closed_set_mv'] = evaluate_zero_shot_majority_vote(
+                patch_embs, patch_masks, test_labels, test_ds, label_bank, device, open_set=False)
+            print(f"  ZS Closed-set (MV):  Acc={ds_results['zero_shot_closed_set_mv']['accuracy']:.1f}%, "
+                  f"F1={ds_results['zero_shot_closed_set_mv']['f1_macro']:.1f}%")
+
+        # 3. 1% supervised (end-to-end fine-tuning — uses mean-pooled embeddings)
         print(f"\n  --- 1% Supervised (End-to-End Fine-Tuning) ---")
         ds_results['1pct_supervised'] = evaluate_supervised_finetune(
             model, label_bank, raw_data, test_labels, test_ds, device,
@@ -788,7 +987,7 @@ def main():
               f"Acc={ds_results['1pct_supervised']['accuracy']:.1f}%, "
               f"F1={ds_results['1pct_supervised']['f1_macro']:.1f}%")
 
-        # 4. 10% supervised (end-to-end fine-tuning)
+        # 4. 10% supervised (end-to-end fine-tuning — uses mean-pooled embeddings)
         print(f"\n  --- 10% Supervised (End-to-End Fine-Tuning) ---")
         ds_results['10pct_supervised'] = evaluate_supervised_finetune(
             model, label_bank, raw_data, test_labels, test_ds, device,

@@ -305,6 +305,14 @@ class SpectralTemporalExtractor(nn.Module):
             nn.Linear(self.d_spectral * 2, self.d_spectral),
         )
 
+        # --- Branch normalization ---
+        # FFT magnitudes are unnormalized while temporal branch goes through
+        # GroupNorm+AvgPool, causing ~30x energy imbalance (spectral dominates
+        # 91% of feature energy despite being 25% of dimensions). LayerNorm
+        # ensures both branches contribute at the same scale.
+        self.temporal_norm = nn.LayerNorm(self.d_temporal)
+        self.spectral_norm = nn.LayerNorm(self.d_spectral)
+
     def _process_chunk(self, x: torch.Tensor) -> torch.Tensor:
         """
         Process a chunk of flattened (B*P*C, 1, S) input through both branches.
@@ -315,12 +323,12 @@ class SpectralTemporalExtractor(nn.Module):
         t = x
         for layer in self.temporal_layers:
             t = layer(t)
-        t = self.temporal_pool(t).squeeze(-1)  # (N, final_cnn_ch)
-        t = self.temporal_proj(t)               # (N, d_temporal)
+        t = self.temporal_pool(t).squeeze(-1)           # (N, final_cnn_ch)
+        t = self.temporal_norm(self.temporal_proj(t))    # (N, d_temporal), normalized
 
         # Spectral branch — fixed FFT size: zero-pads short inputs, truncates long
         mag = torch.fft.rfft(x.squeeze(1), n=self.fft_size, dim=-1).abs()  # (N, fft_size//2+1)
-        s = self.spectral_mlp(mag)                                          # (N, d_spectral)
+        s = self.spectral_norm(self.spectral_mlp(mag))                      # (N, d_spectral), normalized
 
         return torch.cat([t, s], dim=-1)  # (N, d_model)
 
