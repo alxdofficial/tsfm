@@ -58,7 +58,7 @@ def _load_hyperparams(hyperparams_path: Path) -> dict:
                 'num_heads': cfg.get('channel_text_num_heads', 4),
             },
             'label_bank': {
-                'sentence_bert_model': cfg.get('sentence_bert_model', 'all-MiniLM-L6-v2'),
+                'sentence_bert_model': cfg.get('contrastive_text_model', cfg.get('sentence_bert_model', 'all-MiniLM-L6-v2')),
                 'd_model': cfg.get('semantic_dim', cfg['d_model']),
                 'num_heads': cfg.get('label_bank_num_heads', 4),
                 'num_queries': cfg.get('label_bank_num_queries', 4),
@@ -100,7 +100,7 @@ def _load_hyperparams(hyperparams_path: Path) -> dict:
             'num_heads': tok.get('num_heads', 4),
         },
         'label_bank': {
-            'sentence_bert_model': sem.get('sentence_bert_model', 'all-MiniLM-L6-v2'),
+            'sentence_bert_model': sem.get('contrastive_text_model', sem.get('sentence_bert_model', 'all-MiniLM-L6-v2')),
             'd_model': sem.get('semantic_dim', d_model),
             'num_heads': tok.get('num_heads', 4),
             'num_queries': tok.get('num_queries', 4),
@@ -184,8 +184,9 @@ def load_model(
         per_patch_prediction=head_cfg.get('per_patch_prediction', False),
     )
 
-    # Create shared text encoder
+    # Create shared text encoder (contrastive model, may differ from encoder's positional SBERT)
     shared_text_encoder = TokenTextEncoder(model_name=lb_cfg['sentence_bert_model'])
+    contrastive_text_dim = lb_cfg['d_model']  # semantic_dim == text dim for contrastive space
 
     # Create full model with token-level text encoding
     model = SemanticAlignmentModel(
@@ -194,6 +195,7 @@ def load_model(
         num_heads=fusion_cfg['num_heads'],
         dropout=enc_cfg['dropout'],
         text_encoder=shared_text_encoder,
+        text_dim=contrastive_text_dim,
     )
 
     # Convert legacy combined gate weights to split gate format if needed

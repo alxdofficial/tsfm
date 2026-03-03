@@ -186,12 +186,16 @@ USE_FUSION_SELF_ATTENTION = _cfg["use_fusion_self_attention"]
 NUM_POOL_QUERIES = _cfg["num_pool_queries"]
 USE_POOL_SELF_ATTENTION = _cfg["use_pool_self_attention"]
 
-# Text encoder
+# Text encoder (for channel positional encoding — must match d_model)
 SENTENCE_BERT_MODEL = _cfg["sentence_bert_model"]
 
 # Channel-text fusion
 CHANNEL_TEXT_NUM_HEADS = _cfg["channel_text_num_heads"]
 TEXT_DIM = _cfg.get("text_dim", D_MODEL)  # Text encoder output dim (may differ from d_model)
+
+# Contrastive text encoder (for label bank + channel fusion — separate from positional encoding)
+CONTRASTIVE_TEXT_MODEL = _cfg.get("contrastive_text_model", SENTENCE_BERT_MODEL)
+CONTRASTIVE_TEXT_DIM = _cfg.get("contrastive_text_dim", TEXT_DIM)
 
 # Label bank
 LABEL_BANK_NUM_HEADS = _cfg["label_bank_num_heads"]
@@ -1578,6 +1582,7 @@ def main():
     global NUM_FUSION_QUERIES, USE_FUSION_SELF_ATTENTION
     global NUM_POOL_QUERIES, USE_POOL_SELF_ATTENTION
     global SENTENCE_BERT_MODEL, CHANNEL_TEXT_NUM_HEADS, TEXT_DIM
+    global CONTRASTIVE_TEXT_MODEL, CONTRASTIVE_TEXT_DIM
     global LABEL_BANK_NUM_HEADS, LABEL_BANK_NUM_QUERIES, LABEL_BANK_NUM_PROTOTYPES
     global PER_PATCH_PREDICTION
 
@@ -1628,6 +1633,8 @@ def main():
                 SENTENCE_BERT_MODEL = saved_cfg['sentence_bert_model']
                 CHANNEL_TEXT_NUM_HEADS = saved_cfg['channel_text_num_heads']
                 TEXT_DIM = saved_cfg.get('text_dim', D_MODEL)
+                CONTRASTIVE_TEXT_MODEL = saved_cfg.get('contrastive_text_model', SENTENCE_BERT_MODEL)
+                CONTRASTIVE_TEXT_DIM = saved_cfg.get('contrastive_text_dim', TEXT_DIM)
                 LABEL_BANK_NUM_HEADS = saved_cfg['label_bank_num_heads']
                 LABEL_BANK_NUM_QUERIES = saved_cfg['label_bank_num_queries']
                 LABEL_BANK_NUM_PROTOTYPES = saved_cfg['label_bank_num_prototypes']
@@ -1650,6 +1657,8 @@ def main():
                 D_MODEL_FUSED = sem.get('d_model_fused', D_MODEL_FUSED)
                 SEMANTIC_DIM = sem.get('semantic_dim', SEMANTIC_DIM)
                 SENTENCE_BERT_MODEL = sem.get('sentence_bert_model', SENTENCE_BERT_MODEL)
+                CONTRASTIVE_TEXT_MODEL = sem.get('contrastive_text_model', SENTENCE_BERT_MODEL)
+                CONTRASTIVE_TEXT_DIM = sem.get('contrastive_text_dim', SEMANTIC_DIM)
                 head = resume_hp.get('semantic_head', {})
                 NUM_SEMANTIC_TEMPORAL_LAYERS = head.get('num_temporal_layers', NUM_SEMANTIC_TEMPORAL_LAYERS)
                 NUM_FUSION_QUERIES = head.get('num_fusion_queries', NUM_FUSION_QUERIES)
@@ -1697,6 +1706,7 @@ def main():
         "temporal_init_scale": 0.1, "channel_init_scale": 0.1, "use_channel_encoding": True,
         "max_patches": 5000,
         "sentence_bert_model": SENTENCE_BERT_MODEL,
+        "contrastive_text_model": CONTRASTIVE_TEXT_MODEL, "contrastive_text_dim": CONTRASTIVE_TEXT_DIM,
         "semantic_dim": SEMANTIC_DIM, "d_model_fused": D_MODEL_FUSED,
         "num_semantic_temporal_layers": NUM_SEMANTIC_TEMPORAL_LAYERS,
         "num_fusion_queries": NUM_FUSION_QUERIES, "use_fusion_self_attention": USE_FUSION_SELF_ATTENTION,
@@ -1727,7 +1737,7 @@ def main():
             'num_heads': CHANNEL_TEXT_NUM_HEADS,
         },
         'label_bank': {
-            'sentence_bert_model': SENTENCE_BERT_MODEL,
+            'sentence_bert_model': CONTRASTIVE_TEXT_MODEL,
             'num_heads': LABEL_BANK_NUM_HEADS,
             'num_queries': LABEL_BANK_NUM_QUERIES,
             'num_prototypes': LABEL_BANK_NUM_PROTOTYPES,
@@ -1803,7 +1813,9 @@ def main():
     ).to(device)
 
     # Create shared text encoder (one instance for model + label_bank, saves GPU memory)
-    shared_text_encoder = TokenTextEncoder(model_name=SENTENCE_BERT_MODEL)
+    # Uses contrastive text model (MPNet 768-dim) for label bank + channel fusion,
+    # separate from encoder's positional encoding (MiniLM 384-dim, must match d_model)
+    shared_text_encoder = TokenTextEncoder(model_name=CONTRASTIVE_TEXT_MODEL)
 
     print("Using token-level text encoding with cross-attention")
     model = SemanticAlignmentModel(
@@ -1813,7 +1825,7 @@ def main():
         use_patch_augmentation=USE_PATCH_SIZE_AUGMENTATION,
         min_patches_per_sample=MIN_PATCHES_PER_SAMPLE,
         text_encoder=shared_text_encoder,
-        text_dim=TEXT_DIM
+        text_dim=CONTRASTIVE_TEXT_DIM
     ).to(device)
 
     if USE_PATCH_SIZE_AUGMENTATION:
@@ -1845,7 +1857,7 @@ def main():
     pooling_type = "MEAN POOLING (ablation)" if USE_MEAN_POOLING else "learnable attention pooling"
     print(f"Initializing label bank ({pooling_type})...")
     label_bank = LearnableLabelBank(
-        model_name=SENTENCE_BERT_MODEL,
+        model_name=CONTRASTIVE_TEXT_MODEL,
         device=device,
         d_model=SEMANTIC_DIM,
         num_heads=LABEL_BANK_NUM_HEADS,
