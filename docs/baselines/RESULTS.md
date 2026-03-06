@@ -7,6 +7,7 @@ Generated: 2026-03-02 | Framework: unified evaluation | Seed: 3431
 | Model | How It Works | Embed Dim | Zero-Shot | Supervised |
 |-------|-------------|:---------:|-----------|------------|
 | **TSFM-Small-Deep (ours)** | 8-layer dual-branch Transformer with per-patch prediction, trained with CLIP-style contrastive alignment between IMU patches and text labels; majority voting at inference; processes each channel independently then fuses to 384-dim | 384 | Cosine sim with text embeddings (majority vote) | End-to-end cosine sim |
+| **TSFM-Tiny (ours)** | Same architecture as Small-Deep but with d=192, 4 layers — lightweight edge model (~6M trainable); per-patch prediction with majority voting | 384 | Cosine sim with text embeddings (majority vote) | End-to-end cosine sim |
 | **LiMU-BERT** | BERT-style masked reconstruction on 20-step IMU sub-windows; predicts masked timesteps from context | 72 | GRU classifier | End-to-end encoder + GRU |
 | **MOMENT** | General time-series Transformer pretrained on diverse time-series data (no HAR); processes each IMU channel independently and **concatenates** (no fusion) to 6144-dim | 6144 | SVM-RBF | End-to-end encoder + linear |
 | **CrossHAR** | Hierarchical self-supervised pretraining combining masked reconstruction and contrastive learning on IMU sequences | 72 | Transformer_ft classifier | End-to-end encoder + Transformer_ft |
@@ -25,6 +26,7 @@ including frozen components.
 | Model | IMU Encoder | Language/Text Module | Classifier/Projection Heads | Trainable | Inference Total |
 |-------|----------:|---------------------:|----------------------------:|----------:|----------------:|
 | **TSFM-Small-Deep (ours)** | ~19M | 22.7M (frozen SBERT) | ~15M | **~35M** | **~58M** |
+| **TSFM-Tiny (ours)** | ~2.4M | 22.7M (frozen SBERT) | ~3.6M | **~6.0M** | **~28.7M** |
 | **LiMU-BERT** | 62.6K | — | 10.1K (GRU) | **72.7K** | **72.7K** |
 | **MOMENT** | 341.2M | — | ~50K (linear) | **341.2M** | **341.2M** |
 | **CrossHAR** | 62.8K | — | 468.6K (Transformer) | **531.4K** | **531.4K** |
@@ -49,6 +51,24 @@ supervised fine-tuning, SciBERT is unfrozen and all 122.9M parameters are update
 | **Trainable subtotal** | **~35M** | Saved in checkpoint |
 | all-MiniLM-L6-v2 (SentenceBERT, 6-layer, d=384) | 22.7M | Frozen text encoder for channel descriptions + labels |
 | **Inference total** | **~58M** | |
+
+**TSFM-Tiny (ours)** — Tiny config (d=192, 4 temporal layers, per-patch prediction):
+
+| Component | Parameters | Role |
+|-----------|----------:|------|
+| SpectralTemporal feature extractor (hybrid CNN+FFT, channel-independent) | ~28K | Temporal + spectral feature extraction per channel |
+| Positional encoding (sinusoidal temporal + channel semantic MLP 384→192) | ~74K | Time + sensor meaning encoding |
+| Dual-branch Transformer (4 layers, d=192, 4 heads, temporal + cross-channel) | ~2.4M | Core IMU encoder |
+| Semantic alignment head (2 temporal layers, 4 fusion queries, 4 pool queries) | ~2.3M | Per-patch embeddings, projects to semantic space |
+| Learnable label bank (attention pooling, 4 query tokens per label) | ~1.3M | Multi-prototype text embeddings per label |
+| **Trainable subtotal** | **~6.0M** | Saved in checkpoint |
+| all-MiniLM-L6-v2 (SentenceBERT, 6-layer, d=384) | 22.7M | Frozen text encoder for channel descriptions + labels |
+| **Inference total** | **~28.7M** | |
+
+Config: `TINY_CONFIG` in `model/config.py` — d_model=192, num_heads=4, num_temporal_layers=4,
+dim_feedforward=768, contrastive_text_model=all-MiniLM-L6-v2 (384-dim), semantic_dim=384,
+per_patch_prediction=True. Trained for 200 epochs with memory bank, jitter+scale augmentation.
+Checkpoint: `training_output/semantic_alignment/20260306_051235/best.pt` (epoch 172, val_acc=83.3%).
 
 **LiMU-BERT** — 72.7K at inference:
 
@@ -105,12 +125,14 @@ supervised fine-tuning, SciBERT is unfrozen and all 122.9M parameters are update
 
 1. **TSFM-Small-Deep is a compact model** (~35M trainable), smaller than MOMENT (341M) and LLaSA
    (~6.7B). Despite being ~10× smaller than MOMENT and ~190× smaller than LLaSA, TSFM leads on
-   all average evaluation metrics.
+   all average evaluation metrics. **TSFM-Tiny (~6M trainable) is ~57× smaller than MOMENT** yet
+   beats it on supervised fine-tuning (86.4% vs 81.3% at 10%), demonstrating that the architecture
+   is highly parameter-efficient.
 
-2. **MOMENT's 341.2M parameters are ~6× larger than TSFM's inference total** (~58M). Combined
-   with its 6144-dim embedding (vs TSFM's 384-dim), this partly explains why MOMENT performs close
-   to TSFM on some metrics without text alignment — the model has far more capacity to encode
-   discriminative patterns.
+2. **MOMENT's 341.2M parameters are ~6× larger than TSFM-Small-Deep's inference total** (~58M)
+   and ~12× larger than TSFM-Tiny's (~28.7M). Combined with its 6144-dim embedding (vs TSFM's
+   384-dim), this partly explains why MOMENT performs close to TSFM on some metrics without text
+   alignment — the model has far more capacity to encode discriminative patterns.
 
 3. **LiMU-BERT and CrossHAR share the same encoder architecture** (Linear(6→72), Embedding(120,72),
    d=72 transformer) — the main difference is pretraining strategy (masked reconstruction vs
@@ -324,7 +346,7 @@ rates and variable channel counts, independent of how we evaluate them.
 
 | Model | Variable Sampling Rate | Variable Channel Count | Architectural Constraint |
 |-------|:---:|:---:|---|
-| **TSFM-Small-Deep (ours)** | Yes | Yes | Patches in seconds → `F.interpolate` to fixed 64 timesteps; channels are a dynamic axis with channel-independent CNN + cross-channel attention. No hardcoded channel count or sequence length. |
+| **TSFM (ours)** | Yes | Yes | Patches in seconds → `F.interpolate` to fixed 64 timesteps; channels are a dynamic axis with channel-independent CNN + cross-channel attention. No hardcoded channel count or sequence length. Both Small-Deep and Tiny share this architecture. |
 | **LiMU-BERT** | No | No | Input projection is `Linear(6, 72)` — hardcodes 6 channels. Positional encoding is `Embedding(120, 72)` — hardcodes 120 timesteps (6s × 20Hz). Changing either requires retraining. |
 | **MOMENT** | No | Partially | Fixed 512-token sequence length with no concept of physical time (no Hz-awareness). Univariate per-channel processing means arbitrary channel counts are theoretically possible, but our pipeline hardcodes 6 channels for SVM compatibility. |
 | **CrossHAR** | No | No | Same architecture as LiMU-BERT: `Linear(6, 72)` input and `Embedding(120, 72)` positional encoding. Identical constraints. |
@@ -387,6 +409,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 | Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Small-Deep (ours)** | **46.0** | **16.9** | **53.4** | **39.4** | **77.5** | **71.4** | **85.3** | **81.8** |
+| **TSFM-Tiny (ours)** | 32.8 | 14.1 | 52.1 | 37.2 | 72.6 | 67.4 | 86.4 | 82.1 |
 | **LiMU-BERT** | 21.7 | 7.5 | 33.1 | 23.1 | 35.7 | 22.7 | 51.3 | 43.6 |
 | **MOMENT** | 28.3 | 7.2 | 44.7 | 33.2 | 73.8 | 69.8 | 81.3 | 76.8 |
 | **CrossHAR** | 21.2 | 5.5 | 38.2 | 31.7 | 61.1 | 55.2 | 78.6 | 75.2 |
@@ -406,6 +429,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 | Model | MobiAct | MotionSense | RealWorld | Shoaib | Opportunity |
 | :--- | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Small-Deep (ours)** | **49.8** | **57.4** | **49.8** | **46.0** | 27.2 |
+| **TSFM-Tiny (ours)** | 17.4 | 60.7 | 52.0 | 27.7 | 6.3 |
 | **LiMU-BERT** | 6.1 | 28.4 | 29.1 | 16.8 | 28.1 |
 | **MOMENT** | 28.7 | 33.8 | 14.6 | 33.6 | 30.6 |
 | **CrossHAR** | 13.5 | 16.2 | 21.5 | 20.2 | **34.5** |
@@ -419,6 +443,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 | Model | MobiAct | MotionSense | RealWorld | Shoaib | Opportunity |
 | :--- | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Small-Deep (ours)** | **59.3** | **62.9** | **46.3** | **48.0** | 50.4 |
+| **TSFM-Tiny (ours)** | 47.2 | 61.3 | 46.9 | 48.8 | 56.3 |
 | **LiMU-BERT** | 29.3 | 39.9 | 30.5 | 37.6 | 28.1 |
 | **MOMENT** | 40.9 | 51.6 | 31.1 | 46.0 | **53.9** |
 | **CrossHAR** | 23.3 | 42.8 | 40.3 | 31.2 | 53.6 |
@@ -434,6 +459,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 | Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Small-Deep (ours)** | **61.8** | 32.0 | **88.5** | 86.8 | **76.5** | **76.9** | **89.0** | **88.6** | 71.8 | **72.5** |
+| **TSFM-Tiny (ours)** | 46.7 | 24.1 | 89.7 | 88.7 | 74.9 | 74.7 | 81.8 | 80.8 | 69.8 | 68.8 |
 | **LiMU-BERT** | 30.6 | 6.2 | 23.2 | 8.1 | 28.1 | 12.0 | 42.7 | 32.4 | 53.7 | 54.8 |
 | **MOMENT** | 48.3 | **33.5** | 88.1 | **87.6** | 70.9 | 68.7 | 87.6 | 87.3 | **74.3** | 72.0 |
 | **CrossHAR** | 41.1 | 30.5 | 71.9 | 67.5 | 50.1 | 44.8 | 82.0 | 81.6 | 60.5 | 51.6 |
@@ -446,6 +472,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 | Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Small-Deep (ours)** | **74.9** | 55.7 | **94.9** | **94.5** | **84.9** | **85.8** | **95.3** | **95.1** | **76.5** | **77.8** |
+| **TSFM-Tiny (ours)** | 74.7 | 52.1 | 95.0 | 94.5 | 85.8 | 86.7 | 95.5 | 95.3 | 81.1 | 81.9 |
 | **LiMU-BERT** | 33.8 | 8.7 | 54.0 | 46.7 | 54.1 | 49.9 | 47.7 | 40.1 | 67.0 | 72.5 |
 | **MOMENT** | 72.2 | **56.0** | 91.1 | 91.4 | 76.9 | 75.6 | 92.8 | 92.5 | 73.4 | 68.3 |
 | **CrossHAR** | 63.7 | 47.5 | 90.0 | 89.7 | 78.8 | 76.7 | 94.2 | 94.0 | 66.3 | 68.1 |
@@ -589,6 +616,7 @@ These two datasets are reported separately due to extreme distribution shift:
 | Model | ZS-Open Acc | ZS-Close Acc | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Small-Deep (ours)** | **1.4** | 0.4 | **69.2** | **37.7** | **79.1** | **48.5** |
+| **TSFM-Tiny (ours)** | 2.7 | 3.8 | 65.8 | 36.9 | 77.8 | 47.5 |
 | **LiMU-BERT** | 0.0 | **20.2** | 54.4 | 5.9 | 19.1 | 2.7 |
 | **MOMENT** | 0.4 | 1.9 | 66.7 | 32.4 | 65.4 | 31.2 |
 | **CrossHAR** | 0.3 | 0.9 | 42.4 | 25.0 | 71.9 | 42.8 |
@@ -600,6 +628,7 @@ These two datasets are reported separately due to extreme distribution shift:
 | Model | ZS-Open Acc | ZS-Close Acc | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Small-Deep (ours)** | 1.9 | 6.3 | 10.6 | 4.0 | 26.1 | 23.3 |
+| **TSFM-Tiny (ours)** | 1.1 | 4.5 | 8.2 | 4.9 | 25.6 | 22.0 |
 | **LiMU-BERT** | 3.4 | **7.1** | 4.3 | 0.6 | 15.0 | 6.5 |
 | **MOMENT** | 1.6 | 5.2 | **18.4** | **17.0** | **34.8** | **29.9** |
 | **CrossHAR** | 0.7 | 5.0 | 10.6 | 3.5 | 30.9 | 24.9 |
