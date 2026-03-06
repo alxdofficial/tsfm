@@ -15,6 +15,8 @@ sys.path.insert(0, str(project_root))
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 from torch.amp import autocast, GradScaler
@@ -24,7 +26,7 @@ import json
 import math
 
 from datasets.imu_pretraining_dataset.multi_dataset_loader import IMUPretrainingDataset, worker_init_fn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, DistributedSampler
 from model.config import get_config
 from model.encoder import IMUActivityRecognitionEncoder
 from model.semantic_alignment import SemanticAlignmentHead
@@ -161,7 +163,7 @@ MAX_PATCHES_PER_SAMPLE = 48  # Matches good small_v1_best checkpoint config
 MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
 # ---- Architecture configuration (single source of truth: model/config.py) ----
-MODEL_SIZE = "small_deep"  # Options: "tiny", "small", "small_deep", "medium"
+MODEL_SIZE = "medium"  # Options: "tiny", "small", "small_deep", "medium"
 _cfg = get_config(MODEL_SIZE)
 
 # Encoder
@@ -222,8 +224,8 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 # Both small and small_deep use the same proven recipe (384-dim contrastive dynamics).
 EPOCHS = 200
 WARMUP_EPOCHS = 3
-BATCH_SIZE = 32
-ACCUMULATION_STEPS = 16        # effective = 512
+BATCH_SIZE = 16                    # Per-GPU batch size (DDP: 16x2=32 per step)
+ACCUMULATION_STEPS = 16            # effective = 16*16*2gpus = 512 total
 LEARNING_RATE = 1e-4
 TEMPERATURE = 0.07             # CLIP default
 WEIGHT_DECAY = 1e-5
@@ -1572,6 +1574,29 @@ def evaluate_unseen(model, label_bank, dataloader, device, epoch):
     return {'accuracy': 0.0, 'mrr': 0.0}
 
 
+def setup_ddp():
+    """Initialize DDP if launched with torchrun. Returns (rank, world_size, is_ddp)."""
+    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+        rank = int(os.environ['RANK'])
+        world_size = int(os.environ['WORLD_SIZE'])
+        local_rank = int(os.environ['LOCAL_RANK'])
+        dist.init_process_group(backend='nccl')
+        torch.cuda.set_device(local_rank)
+        return local_rank, rank, world_size, True
+    return 0, 0, 1, False
+
+
+def cleanup_ddp():
+    """Clean up DDP."""
+    if dist.is_initialized():
+        dist.destroy_process_group()
+
+
+def is_main_process():
+    """Returns True if this is rank 0 or non-DDP."""
+    return not dist.is_initialized() or dist.get_rank() == 0
+
+
 def main():
     """Main training function."""
     global CHECKPOINT_DIR
@@ -1586,8 +1611,10 @@ def main():
     global LABEL_BANK_NUM_HEADS, LABEL_BANK_NUM_QUERIES, LABEL_BANK_NUM_PROTOTYPES
     global PER_PATCH_PREDICTION
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
+    local_rank, rank, world_size, use_ddp = setup_ddp()
+    device = torch.device(f'cuda:{local_rank}' if torch.cuda.is_available() else 'cpu')
+    if is_main_process():
+        print(f"Using device: {device}" + (f" (DDP: {world_size} GPUs)" if use_ddp else ""))
 
     # Handle resume vs fresh start
     start_epoch = 1
@@ -1930,7 +1957,23 @@ def main():
     )
 
     # Create train dataloader with channel-bucketed + group-balanced sampling
-    if USE_GROUP_BALANCED_SAMPLING:
+    if use_ddp:
+        # DDP mode: use DistributedSampler (skip bucket sampler for simplicity)
+        train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True)
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=DEFAULT_MICRO_BATCH_SIZE,
+            sampler=train_sampler,
+            num_workers=NUM_WORKERS,
+            prefetch_factor=PREFETCH_FACTOR,
+            persistent_workers=PERSISTENT_WORKERS,
+            collate_fn=IMUPretrainingDataset.collate_patches_fn,
+            pin_memory=True,
+            worker_init_fn=worker_init_fn
+        )
+        if is_main_process():
+            print(f"\n=== DDP Training: DistributedSampler (BS={DEFAULT_MICRO_BATCH_SIZE} per GPU) ===")
+    elif USE_GROUP_BALANCED_SAMPLING:
         # Compute weights for group-balanced sampling (with capped oversampling)
         sample_weights = train_dataset.compute_group_weights(max_oversample_ratio=MAX_OVERSAMPLE_RATIO, sampling_temperature=SAMPLING_TEMPERATURE)
 
@@ -1938,7 +1981,8 @@ def main():
         # to minimize padding waste (joint util ~11% → ~80-100%)
         # Uses per-bucket batch sizes for maximum GPU utilization
         channel_counts = train_dataset.get_channel_counts()
-        print(f"\n=== Channel-Bucketed + Group-Balanced Sampling (Dynamic BS) ===")
+        if is_main_process():
+            print(f"\n=== Channel-Bucketed + Group-Balanced Sampling (Dynamic BS) ===")
         bucket_sampler = ChannelBucketBatchSampler(
             channel_counts=channel_counts,
             sample_weights=sample_weights,
@@ -1958,13 +2002,14 @@ def main():
         )
 
         # Log group distribution
-        group_dist = train_dataset.get_group_distribution()
-        print(f"Groups: {len(group_dist)}")
-        most_common = max(group_dist.items(), key=lambda x: x[1])
-        least_common = min(group_dist.items(), key=lambda x: x[1])
-        print(f"Most common: {most_common[0]} ({most_common[1]} samples)")
-        print(f"Least common: {least_common[0]} ({least_common[1]} samples)")
-        print(f"Imbalance ratio: {most_common[1] / least_common[1]:.1f}x → balanced to 1.0x")
+        if is_main_process():
+            group_dist = train_dataset.get_group_distribution()
+            print(f"Groups: {len(group_dist)}")
+            most_common = max(group_dist.items(), key=lambda x: x[1])
+            least_common = min(group_dist.items(), key=lambda x: x[1])
+            print(f"Most common: {most_common[0]} ({most_common[1]} samples)")
+            print(f"Least common: {least_common[0]} ({least_common[1]} samples)")
+            print(f"Imbalance ratio: {most_common[1] / least_common[1]:.1f}x → balanced to 1.0x")
     else:
         train_loader = DataLoader(
             train_dataset,
@@ -2169,6 +2214,12 @@ def main():
         except Exception as e:
             print(f"\nWarning: torch.compile failed ({e}), using eager mode")
 
+    # Wrap model in DDP if using distributed training
+    if use_ddp:
+        model = DDP(model, device_ids=[local_rank], find_unused_parameters=True)
+        if is_main_process():
+            print(f"✓ Wrapped model in DistributedDataParallel ({world_size} GPUs)")
+
     # Warmup memory bank if enabled (reduces early training volatility)
     # Skip if resuming since memory bank is restored from checkpoint
     if memory_bank is not None and USE_MEMORY_BANK and resume_checkpoint is None:
@@ -2176,6 +2227,12 @@ def main():
 
     # Training loop
     for epoch in range(start_epoch, EPOCHS + 1):
+        # Set epoch for distributed sampler (ensures different shuffling each epoch)
+        if use_ddp and hasattr(train_loader, 'sampler') and isinstance(train_loader.sampler, DistributedSampler):
+            train_loader.sampler.set_epoch(epoch)
+        elif use_ddp and hasattr(train_loader, 'batch_sampler') and hasattr(train_loader.batch_sampler, 'set_epoch'):
+            train_loader.batch_sampler.set_epoch(epoch)
+
         train_metrics = train_epoch(model, label_bank, train_loader, criterion, optimizer,
                                       device, epoch, scaler, plotter, "train", memory_bank)
         val_metrics = validate(model, label_bank, val_loader, criterion, device, epoch, "val", plot_dir)
@@ -2183,62 +2240,70 @@ def main():
         # Step scheduler every epoch (warmup is built into the schedule)
         scheduler.step()
 
-        # Log current learning rate
-        current_lr = optimizer.param_groups[0]['lr']
-        plotter.add_scalar('epoch/lr', current_lr, epoch)
+        if is_main_process():
+            # Log current learning rate
+            current_lr = optimizer.param_groups[0]['lr']
+            plotter.add_scalar('epoch/lr', current_lr, epoch)
 
-        print(f"\nEpoch {epoch}/{EPOCHS}")
-        print(f"  Train - Loss: {train_metrics['loss']:.4f}, Sim Gap: {train_metrics['similarity_gap']:.3f}, Pos Sim: {train_metrics['positive_similarity']:.3f}, Grad: {train_metrics['grad_norm']:.2f}")
-        print(f"  Debug - IMU std: {train_metrics['imu_std']:.3f}, Diversity: {train_metrics['imu_diversity']:.3f}, Proj grad: {train_metrics['projection_head_grad_norm']:.4f}")
-        val_acc_str = f", Acc: {val_metrics['accuracy']:.1%}" if 'accuracy' in val_metrics else ""
-        val_mrr_str = f", MRR: {val_metrics['mrr']:.3f}" if 'mrr' in val_metrics else ""
-        print(f"  Val   - Loss: {val_metrics['loss']:.4f}, Sim Gap: {val_metrics['similarity_gap']:.3f}, Pos Sim: {val_metrics['positive_similarity']:.3f}{val_acc_str}{val_mrr_str}")
+            print(f"\nEpoch {epoch}/{EPOCHS}")
+            print(f"  Train - Loss: {train_metrics['loss']:.4f}, Sim Gap: {train_metrics['similarity_gap']:.3f}, Pos Sim: {train_metrics['positive_similarity']:.3f}, Grad: {train_metrics['grad_norm']:.2f}")
+            print(f"  Debug - IMU std: {train_metrics['imu_std']:.3f}, Diversity: {train_metrics['imu_diversity']:.3f}, Proj grad: {train_metrics['projection_head_grad_norm']:.4f}")
+            val_acc_str = f", Acc: {val_metrics['accuracy']:.1%}" if 'accuracy' in val_metrics else ""
+            val_mrr_str = f", MRR: {val_metrics['mrr']:.3f}" if 'mrr' in val_metrics else ""
+            print(f"  Val   - Loss: {val_metrics['loss']:.4f}, Sim Gap: {val_metrics['similarity_gap']:.3f}, Pos Sim: {val_metrics['positive_similarity']:.3f}{val_acc_str}{val_mrr_str}")
 
-        # Evaluate on unseen dataset periodically
+        # Evaluate on unseen dataset periodically (rank 0 only)
         unseen_metrics = None
-        if unseen_loader is not None and epoch % EVAL_UNSEEN_EVERY == 0:
-            unseen_metrics = evaluate_unseen(model, label_bank, unseen_loader, device, epoch)
+        if is_main_process() and unseen_loader is not None and epoch % EVAL_UNSEEN_EVERY == 0:
+            # Use unwrapped model for eval
+            eval_model = model.module if use_ddp else model
+            unseen_metrics = evaluate_unseen(eval_model, label_bank, unseen_loader, device, epoch)
             print(f"  Unseen ({UNSEEN_DATASET}) - Acc: {unseen_metrics['accuracy']:.1%}, MRR: {unseen_metrics['mrr']:.3f}")
 
-        # Log comprehensive metrics
-        plotter.add_scalar('epoch/train_loss', train_metrics['loss'], epoch)
-        plotter.add_scalar('epoch/train_positive_similarity', train_metrics['positive_similarity'], epoch)
-        plotter.add_scalar('epoch/train_negative_similarity', train_metrics['negative_similarity'], epoch)
-        plotter.add_scalar('epoch/train_similarity_gap', train_metrics['similarity_gap'], epoch)
-        plotter.add_scalar('epoch/train_grad_norm', train_metrics['grad_norm'], epoch)
+        if is_main_process():
+            # Log comprehensive metrics
+            plotter.add_scalar('epoch/train_loss', train_metrics['loss'], epoch)
+            plotter.add_scalar('epoch/train_positive_similarity', train_metrics['positive_similarity'], epoch)
+            plotter.add_scalar('epoch/train_negative_similarity', train_metrics['negative_similarity'], epoch)
+            plotter.add_scalar('epoch/train_similarity_gap', train_metrics['similarity_gap'], epoch)
+            plotter.add_scalar('epoch/train_grad_norm', train_metrics['grad_norm'], epoch)
 
-        # Log debug metrics (collapse detection only - similarity_gap is from loss function above)
-        plotter.add_scalar('epoch/debug_imu_std', train_metrics['imu_std'], epoch)
-        plotter.add_scalar('epoch/debug_text_std', train_metrics['text_std'], epoch)
-        plotter.add_scalar('epoch/debug_imu_diversity', train_metrics['imu_diversity'], epoch)
-        plotter.add_scalar('epoch/debug_queue_diversity', train_metrics['queue_diversity'], epoch)
-        # Log per-component gradient norms (including label_pooling for LearnableLabelBank)
-        for comp_name in ['cross_channel_fusion', 'temporal_attention', 'attention_pooling', 'projection_head', 'label_pooling', 'fe_temporal', 'fe_spectral']:
-            plotter.add_scalar(f'epoch/debug_{comp_name}_grad_norm', train_metrics[f'{comp_name}_grad_norm'], epoch)
+            # Log debug metrics (collapse detection only - similarity_gap is from loss function above)
+            plotter.add_scalar('epoch/debug_imu_std', train_metrics['imu_std'], epoch)
+            plotter.add_scalar('epoch/debug_text_std', train_metrics['text_std'], epoch)
+            plotter.add_scalar('epoch/debug_imu_diversity', train_metrics['imu_diversity'], epoch)
+            plotter.add_scalar('epoch/debug_queue_diversity', train_metrics['queue_diversity'], epoch)
+            # Log per-component gradient norms (including label_pooling for LearnableLabelBank)
+            for comp_name in ['cross_channel_fusion', 'temporal_attention', 'attention_pooling', 'projection_head', 'label_pooling', 'fe_temporal', 'fe_spectral']:
+                plotter.add_scalar(f'epoch/debug_{comp_name}_grad_norm', train_metrics[f'{comp_name}_grad_norm'], epoch)
 
-        plotter.add_scalar('epoch/val_loss', val_metrics['loss'], epoch)
-        plotter.add_scalar('epoch/val_positive_similarity', val_metrics['positive_similarity'], epoch)
-        plotter.add_scalar('epoch/val_negative_similarity', val_metrics['negative_similarity'], epoch)
-        plotter.add_scalar('epoch/val_similarity_gap', val_metrics['similarity_gap'], epoch)
-        if 'accuracy' in val_metrics:
-            plotter.add_scalar('epoch/val_accuracy', val_metrics['accuracy'], epoch)
-        if 'mrr' in val_metrics:
-            plotter.add_scalar('epoch/val_mrr', val_metrics['mrr'], epoch)
+            plotter.add_scalar('epoch/val_loss', val_metrics['loss'], epoch)
+            plotter.add_scalar('epoch/val_positive_similarity', val_metrics['positive_similarity'], epoch)
+            plotter.add_scalar('epoch/val_negative_similarity', val_metrics['negative_similarity'], epoch)
+            plotter.add_scalar('epoch/val_similarity_gap', val_metrics['similarity_gap'], epoch)
+            if 'accuracy' in val_metrics:
+                plotter.add_scalar('epoch/val_accuracy', val_metrics['accuracy'], epoch)
+            if 'mrr' in val_metrics:
+                plotter.add_scalar('epoch/val_mrr', val_metrics['mrr'], epoch)
 
-        # Log unseen dataset metrics
-        if unseen_metrics is not None:
-            plotter.add_scalar('epoch/unseen_accuracy', unseen_metrics['accuracy'], epoch)
-            plotter.add_scalar('epoch/unseen_mrr', unseen_metrics['mrr'], epoch)
+            # Log unseen dataset metrics
+            if unseen_metrics is not None:
+                plotter.add_scalar('epoch/unseen_accuracy', unseen_metrics['accuracy'], epoch)
+                plotter.add_scalar('epoch/unseen_mrr', unseen_metrics['mrr'], epoch)
 
-        plotter.plot_all()
+            plotter.plot_all()
 
-        # Save checkpoints
+        # Save checkpoints (rank 0 only)
         val_acc = val_metrics.get('accuracy', 0.0)
-        if epoch % SAVE_EVERY == 0 or val_acc > best_val_acc:
-            # Strip _orig_mod. prefix from compiled modules so checkpoints
-            # are compatible with both compiled and uncompiled models
+        if is_main_process() and (epoch % SAVE_EVERY == 0 or val_acc > best_val_acc):
+            # Strip _orig_mod. and module. prefixes so checkpoints
+            # are compatible with both compiled/DDP and plain models
             raw_state = model.state_dict()
-            clean_state = {k.replace('_orig_mod.', ''): v for k, v in raw_state.items()}
+            clean_state = {}
+            for k, v in raw_state.items():
+                k = k.replace('_orig_mod.', '')
+                k = k.replace('module.', '')  # DDP prefix
+                clean_state[k] = v
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': clean_state,
@@ -2259,10 +2324,17 @@ def main():
                 torch.save(checkpoint, CHECKPOINT_DIR / 'best.pt')
                 print(f"  ✓ Saved best model (val_acc: {best_val_acc:.1%})")
 
-    plotter.close()
-    print("\n" + "="*70)
-    print(f"Training complete! Checkpoints: {CHECKPOINT_DIR}")
-    print("="*70)
+        # Synchronize all processes before next epoch
+        if use_ddp:
+            dist.barrier()
+
+    if is_main_process():
+        plotter.close()
+        print("\n" + "="*70)
+        print(f"Training complete! Checkpoints: {CHECKPOINT_DIR}")
+        print("="*70)
+
+    cleanup_ddp()
 
 
 if __name__ == "__main__":
