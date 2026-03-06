@@ -156,8 +156,10 @@ class ChannelSemanticEncoding(nn.Module):
         self.scale = nn.Parameter(torch.tensor(init_scale))
 
         # Learnable padding embedding for padded channels
-        # Will match Sentence-BERT dimension (384 for all-MiniLM-L6-v2)
         self.pad_channel_embedding = nn.Parameter(torch.randn(d_model) / math.sqrt(d_model))
+
+        # sbert_to_model projection: created lazily in _get_encoder() if sbert_dim != d_model
+        self.sbert_to_model = None
 
         # Learnable projection layer after frozen SentenceBERT
         # This allows task-specific adaptation while preserving pretrained semantics
@@ -187,12 +189,14 @@ class ChannelSemanticEncoding(nn.Module):
                 object.__setattr__(self, '_encoder', encoder)
                 self._sbert_dim = self._encoder.get_sentence_embedding_dimension()
 
-                # Verify d_model matches Sentence-BERT dimension
+                # If d_model != sbert_dim, create a linear projection
                 if self.d_model != self._sbert_dim:
-                    raise ValueError(
-                        f"d_model ({self.d_model}) must match Sentence-BERT dimension ({self._sbert_dim}). "
-                        f"For {self.sentence_bert_model}, use d_model={self._sbert_dim}"
-                    )
+                    self.sbert_to_model = nn.Linear(self._sbert_dim, self.d_model)
+                    nn.init.xavier_uniform_(self.sbert_to_model.weight)
+                    nn.init.zeros_(self.sbert_to_model.bias)
+                    # Move to same device as other parameters
+                    device = self.scale.device
+                    self.sbert_to_model = self.sbert_to_model.to(device)
 
                 # Freeze Sentence-BERT parameters - no need to fine-tune
                 for param in self._encoder.parameters():
@@ -267,7 +271,13 @@ class ChannelSemanticEncoding(nn.Module):
                 desc = non_pad_descriptions[i]
                 embeddings_list[idx] = self._sbert_embedding_cache[desc]
 
-        # Fill in padded embeddings with learned pad token
+        # Project sbert embeddings to d_model if dimensions differ
+        if self.sbert_to_model is not None:
+            for i in range(len(embeddings_list)):
+                if embeddings_list[i] is not None:
+                    embeddings_list[i] = self.sbert_to_model(embeddings_list[i])
+
+        # Fill in padded embeddings with learned pad token (already d_model dim)
         for i in range(len(embeddings_list)):
             if embeddings_list[i] is None:
                 embeddings_list[i] = self.pad_channel_embedding

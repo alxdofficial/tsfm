@@ -1,9 +1,11 @@
 """
 Model configuration tiers for TSFM.
 
-Two proven tiers:
-  - Small      (d=384, 4 layers)  : ~21M trainable  — baseline, proven 85% val_acc
-  - Small-Deep (d=384, 8 layers)  : per-patch prediction + majority voting
+Four tiers:
+  - Tiny       (d=192, 4 layers)  : ~5-6M trainable  — lightweight edge model
+  - Small      (d=384, 4 layers)  : ~21M trainable    — baseline, proven 85% val_acc
+  - Small-Deep (d=384, 8 layers)  : ~25M trainable    — per-patch prediction + majority voting
+  - Medium     (d=512, 12 layers) : ~55-60M trainable  — research/server model
 
 Text encoder weights are frozen and used only during training to produce
 channel/label embeddings. At inference, precomputed embeddings are stored
@@ -14,6 +16,61 @@ encoder, semantic head, channel-text fusion, and label bank.
 """
 
 from typing import Dict, Any
+
+
+# ---------------------------------------------------------------------------
+# Tiny: d=192, 4 layers, all-MiniLM-L6-v2 (384-dim → projected to 192)
+# Trainable: ~5-6M | Lightweight edge model
+# Uses sbert_to_model projection (384→192) in ChannelSemanticEncoding.
+# ---------------------------------------------------------------------------
+TINY_CONFIG: Dict[str, Any] = {
+    # --- Encoder ---
+    "d_model": 192,
+    "num_heads": 4,              # 48 dims per head
+    "num_temporal_layers": 4,
+    "dim_feedforward": 768,      # 4x d_model
+    "dropout": 0.1,
+    "use_cross_channel": True,
+    "cnn_channels": [32, 64],
+    "cnn_kernel_sizes": [5],
+    "target_patch_size": 64,
+    "feature_extractor_type": "spectral_temporal",
+    "spectral_ratio": 0.25,
+    "normalization_method": "zscore",
+    "interpolation_method": "linear",
+    "temporal_init_scale": 0.1,
+    "channel_init_scale": 0.1,
+    "use_channel_encoding": True,
+    "max_patches": 5000,
+
+    # --- Text encoder (MiniLM — 384-dim, projected to d_model=192 in positional encoding) ---
+    "sentence_bert_model": "all-MiniLM-L6-v2",
+    "text_dim": 384,
+
+    # --- Contrastive text encoder (MiniLM — keeps tiny model lightweight) ---
+    "contrastive_text_model": "all-MiniLM-L6-v2",
+    "contrastive_text_dim": 384,
+
+    # --- Semantic alignment head ---
+    "semantic_dim": 384,                   # Matches contrastive_text_dim
+    "d_model_fused": 192,                  # Matches d_model
+    "num_semantic_temporal_layers": 2,
+    "num_fusion_queries": 4,
+    "use_fusion_self_attention": True,
+    "num_pool_queries": 4,
+    "use_pool_self_attention": True,
+
+    # --- Channel-text fusion ---
+    "channel_text_num_heads": 4,
+
+    # --- Label bank ---
+    "label_bank_num_heads": 4,
+    "label_bank_num_queries": 4,
+    "label_bank_num_prototypes": 1,
+
+    # --- Per-patch prediction ---
+    "per_patch_prediction": True,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -121,12 +178,66 @@ SMALL_DEEP_CONFIG: Dict[str, Any] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Medium: d=512, 12 layers, all-mpnet-base-v2 (768-dim)
+# Trainable: ~55-60M | Research/server model for maximum accuracy.
+# ---------------------------------------------------------------------------
+MEDIUM_CONFIG: Dict[str, Any] = {
+    # --- Encoder (512-dim, 12 layers) ---
+    "d_model": 512,
+    "num_heads": 8,              # 64 dims per head
+    "num_temporal_layers": 12,
+    "dim_feedforward": 2048,     # 4x d_model
+    "dropout": 0.1,
+    "use_cross_channel": True,
+    "cnn_channels": [32, 64],
+    "cnn_kernel_sizes": [5],
+    "target_patch_size": 64,
+    "feature_extractor_type": "spectral_temporal",
+    "spectral_ratio": 0.25,
+    "normalization_method": "zscore",
+    "interpolation_method": "linear",
+    "temporal_init_scale": 0.1,
+    "channel_init_scale": 0.1,
+    "use_channel_encoding": True,
+    "max_patches": 5000,
+
+    # --- Text encoder (MiniLM — used for channel positional encoding, projected to d_model=512) ---
+    "sentence_bert_model": "all-MiniLM-L6-v2",
+    "text_dim": 384,
+
+    # --- Contrastive text encoder (MPNet — used for label bank + channel fusion) ---
+    "contrastive_text_model": "all-mpnet-base-v2",
+    "contrastive_text_dim": 768,
+
+    # --- Semantic alignment head ---
+    "semantic_dim": 768,                   # Matches contrastive_text_dim (MPNet output)
+    "d_model_fused": 512,                  # Matches d_model
+    "num_semantic_temporal_layers": 6,
+    "num_fusion_queries": 8,
+    "use_fusion_self_attention": True,
+    "num_pool_queries": 8,
+    "use_pool_self_attention": True,
+
+    # --- Channel-text fusion ---
+    "channel_text_num_heads": 8,
+
+    # --- Label bank ---
+    "label_bank_num_heads": 8,
+    "label_bank_num_queries": 8,
+    "label_bank_num_prototypes": 1,
+
+    # --- Per-patch prediction ---
+    "per_patch_prediction": True,
+}
+
+
 def get_config(size: str = "small") -> Dict[str, Any]:
     """
     Get a model configuration by size.
 
     Args:
-        size: One of "small", "small_deep"
+        size: One of "tiny", "small", "small_deep", "medium"
 
     Returns:
         Configuration dictionary containing all architecture hyperparameters
@@ -137,8 +248,10 @@ def get_config(size: str = "small") -> Dict[str, Any]:
         >>> encoder = IMUActivityRecognitionEncoder(**config)
     """
     configs = {
+        "tiny": TINY_CONFIG,
         "small": SMALL_CONFIG,
         "small_deep": SMALL_DEEP_CONFIG,
+        "medium": MEDIUM_CONFIG,
     }
 
     if size not in configs:

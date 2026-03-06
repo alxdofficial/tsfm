@@ -161,7 +161,7 @@ MAX_PATCHES_PER_SAMPLE = 48  # Matches good small_v1_best checkpoint config
 MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
 # ---- Architecture configuration (single source of truth: model/config.py) ----
-MODEL_SIZE = "small_deep"  # Options: "small", "small_deep"
+MODEL_SIZE = "small_deep"  # Options: "tiny", "small", "small_deep", "medium"
 _cfg = get_config(MODEL_SIZE)
 
 # Encoder
