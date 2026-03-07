@@ -504,6 +504,7 @@ class ChannelIndependentTemporalTransformer(nn.Module):
 
         self.d_model = d_model
         self.num_layers = num_layers
+        self.gradient_checkpointing = False
 
         # Stack of transformer blocks
         self.layers = nn.ModuleList([
@@ -556,7 +557,13 @@ class ChannelIndependentTemporalTransformer(nn.Module):
 
         # Apply transformer layers
         for layer in self.layers:
-            x = layer(x, mask, key_padding_mask=key_padding_mask)
+            if self.gradient_checkpointing and self.training:
+                x = torch.utils.checkpoint.checkpoint(
+                    layer, x, mask, key_padding_mask,
+                    use_reentrant=False
+                )
+            else:
+                x = layer(x, mask, key_padding_mask=key_padding_mask)
 
         # Reshape back to original format
         # (batch * channels, patches, d_model) -> (batch, patches, channels, d_model)

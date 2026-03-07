@@ -232,6 +232,7 @@ WEIGHT_DECAY = 1e-5
 USE_GRAD_CACHE = False
 USE_MEMORY_BANK = True
 MEMORY_BANK_SIZE = 256
+USE_GRADIENT_CHECKPOINTING = os.environ.get("TSFM_GRAD_CHECKPOINT", "0") == "1"
 
 TARGET_EFFECTIVE_BATCH = BATCH_SIZE * ACCUMULATION_STEPS  # e.g. 512
 # Per-patch mode: cap by total valid patches (not sessions) to control NxN logit matrix size.
@@ -1855,6 +1856,11 @@ def main():
         text_dim=CONTRASTIVE_TEXT_DIM
     ).to(device)
 
+    if USE_GRADIENT_CHECKPOINTING:
+        model.encoder.transformer.transformer.gradient_checkpointing = True
+        if is_main_process():
+            print("Gradient checkpointing enabled (transformer layers)")
+
     if USE_PATCH_SIZE_AUGMENTATION:
         print(f"\n=== Patch Size Augmentation Enabled ===")
         print(f"Min patches per sample: {MIN_PATCHES_PER_SAMPLE}")
@@ -2218,7 +2224,7 @@ def main():
 
     # Wrap model in DDP if using distributed training
     if use_ddp:
-        model = DDP(model, device_ids=[local_rank], find_unused_parameters=True)
+        model = DDP(model, device_ids=[local_rank], find_unused_parameters=True, static_graph=True)
         if is_main_process():
             print(f"✓ Wrapped model in DistributedDataParallel ({world_size} GPUs)")
 
