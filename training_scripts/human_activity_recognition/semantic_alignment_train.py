@@ -2177,7 +2177,8 @@ def main():
     # into (B*C, P, D) before calling inner layers, so inner layers only have
     # standard dynamic batch dims — safe for torch.compile.
     # Do NOT compile the outer wrappers (variable channels cause recompilation).
-    if device.type == 'cuda' and hasattr(torch, 'compile'):
+    use_compile = os.environ.get("TSFM_NO_COMPILE", "0") != "1"
+    if use_compile and device.type == 'cuda' and hasattr(torch, 'compile'):
         try:
             _test = torch.compile(torch.nn.Linear(8, 8).to(device), dynamic=True)
             _test(torch.randn(2, 8, device=device))
