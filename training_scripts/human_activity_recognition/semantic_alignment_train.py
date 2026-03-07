@@ -224,8 +224,8 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 # Both small and small_deep use the same proven recipe (384-dim contrastive dynamics).
 EPOCHS = 200
 WARMUP_EPOCHS = 3
-BATCH_SIZE = 16                    # Per-GPU batch size (DDP: 16x2=32 per step)
-ACCUMULATION_STEPS = 16            # effective = 16*16*2gpus = 512 total
+BATCH_SIZE = 12                    # Per-GPU batch size (4090 D has 23.55 GiB, BS=16 OOMs)
+ACCUMULATION_STEPS = 21            # effective = 12*21*2gpus ≈ 504 total
 LEARNING_RATE = 1e-4
 TEMPERATURE = 0.07             # CLIP default
 WEIGHT_DECAY = 1e-5
@@ -1973,6 +1973,7 @@ def main():
         )
         if is_main_process():
             print(f"\n=== DDP Training: DistributedSampler (BS={DEFAULT_MICRO_BATCH_SIZE} per GPU) ===")
+            print(f"  Dataset: {len(train_dataset)} samples, Sampler: {len(train_sampler)} per rank, Loader: {len(train_loader)} batches")
     elif USE_GROUP_BALANCED_SAMPLING:
         # Compute weights for group-balanced sampling (with capped oversampling)
         sample_weights = train_dataset.compute_group_weights(max_oversample_ratio=MAX_OVERSAMPLE_RATIO, sampling_temperature=SAMPLING_TEMPERATURE)
