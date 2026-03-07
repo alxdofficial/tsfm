@@ -2218,7 +2218,7 @@ def main():
 
     # Wrap model in DDP if using distributed training
     if use_ddp:
-        model = DDP(model, device_ids=[local_rank], find_unused_parameters=False)
+        model = DDP(model, device_ids=[local_rank], find_unused_parameters=True)
         if is_main_process():
             print(f"✓ Wrapped model in DistributedDataParallel ({world_size} GPUs)")
 
