@@ -26,24 +26,35 @@ echo "  $(date)"
 echo "============================================"
 
 # -----------------------------------------------
-# 1. TSFM (our model)
+# 1. TSFM (our model) — all training runs with best.pt
 # -----------------------------------------------
 TSFM_DIR="training_output/semantic_alignment"
-TSFM_RUN=$(ls -t "$TSFM_DIR" 2>/dev/null | head -1)
+TSFM_COUNT=0
 
-if [ -n "$TSFM_RUN" ] && [ -f "$TSFM_DIR/$TSFM_RUN/best.pt" ]; then
+if [ -d "$TSFM_DIR" ]; then
+    for RUN_DIR in "$TSFM_DIR"/*/; do
+        RUN_NAME=$(basename "$RUN_DIR")
+        if [ -f "$RUN_DIR/best.pt" ]; then
+            echo ""
+            echo ">>> TSFM checkpoint: $RUN_DIR/best.pt"
+            mkdir -p "$STAGING_DIR/tsfm/$RUN_NAME"
+            cp "$RUN_DIR/best.pt" "$STAGING_DIR/tsfm/$RUN_NAME/"
+            # Also copy hyperparameters if present
+            if [ -f "$RUN_DIR/hyperparameters.json" ]; then
+                cp "$RUN_DIR/hyperparameters.json" "$STAGING_DIR/tsfm/$RUN_NAME/"
+            fi
+            echo "    Copied."
+            TSFM_COUNT=$((TSFM_COUNT + 1))
+        fi
+    done
+fi
+
+if [ "$TSFM_COUNT" -eq 0 ]; then
     echo ""
-    echo ">>> TSFM checkpoint: $TSFM_DIR/$TSFM_RUN/best.pt"
-    mkdir -p "$STAGING_DIR/tsfm/$TSFM_RUN"
-    cp "$TSFM_DIR/$TSFM_RUN/best.pt" "$STAGING_DIR/tsfm/$TSFM_RUN/"
-    # Also copy hyperparams if present
-    if [ -f "$TSFM_DIR/$TSFM_RUN/hyperparams.json" ]; then
-        cp "$TSFM_DIR/$TSFM_RUN/hyperparams.json" "$STAGING_DIR/tsfm/$TSFM_RUN/"
-    fi
-    echo "    Copied."
+    echo ">>> TSFM: No checkpoints found in $TSFM_DIR (skipped)"
 else
     echo ""
-    echo ">>> TSFM: No checkpoint found in $TSFM_DIR (skipped)"
+    echo ">>> TSFM: Packaged $TSFM_COUNT model checkpoint(s)"
 fi
 
 # -----------------------------------------------

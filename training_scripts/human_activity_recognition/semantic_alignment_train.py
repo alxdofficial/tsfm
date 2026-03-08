@@ -163,7 +163,7 @@ MAX_PATCHES_PER_SAMPLE = 48  # Matches good small_v1_best checkpoint config
 MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
 # ---- Architecture configuration (single source of truth: model/config.py) ----
-MODEL_SIZE = "medium"  # Options: "tiny", "small", "small_deep", "medium"
+MODEL_SIZE = "medium"  # Options: "tiny", "small", "small_deep", "medium", "large"
 _cfg = get_config(MODEL_SIZE)
 
 # Encoder
@@ -224,7 +224,7 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 # Both small and small_deep use the same proven recipe (384-dim contrastive dynamics).
 EPOCHS = 200
 WARMUP_EPOCHS = 3
-BATCH_SIZE = 16                    # Per-GPU batch size (4090 D: 23.55 GiB, tight but fits on clean GPUs)
+BATCH_SIZE = 16                    # Per-GPU micro-batch size (peak 18.8GB on 4090, ~6GB headroom)
 ACCUMULATION_STEPS = 16            # effective = 16*16*2gpus = 512 total
 LEARNING_RATE = 1e-4
 TEMPERATURE = 0.07             # CLIP default
