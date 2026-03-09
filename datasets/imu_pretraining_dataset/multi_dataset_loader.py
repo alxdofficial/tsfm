@@ -260,7 +260,11 @@ class IMUPretrainingDataset(Dataset):
             print(f"Warning: Could not cache session index ({e})")
 
     def _load_datasets(self):
-        """Load metadata from all datasets (scans session directories)."""
+        """Load metadata from all datasets.
+
+        Uses labels.json keys as session index instead of scanning the filesystem.
+        This avoids 300K+ stat() calls on slow filesystems (network MFS, overlay FS).
+        """
         for dataset_name in self.datasets:
             dataset_path = self.data_root / dataset_name
 
@@ -273,7 +277,7 @@ class IMUPretrainingDataset(Dataset):
             with open(manifest_path, 'r') as f:
                 manifest = json.load(f)
 
-            # Load labels
+            # Load labels — keys are session IDs, no filesystem scan needed
             labels_path = dataset_path / "labels.json"
             with open(labels_path, 'r') as f:
                 labels = json.load(f)
@@ -288,22 +292,18 @@ class IMUPretrainingDataset(Dataset):
                 'sampling_rates': {ch['name']: ch['sampling_rate_hz'] for ch in manifest['channels']}
             }
 
-            # Collect all sessions
+            # Build session list from labels.json keys (no iterdir!)
             sessions_dir = dataset_path / "sessions"
-            all_session_dirs = sorted(
-                [d for d in sessions_dir.iterdir() if d.is_dir()]
-            )
-            total_count = len(all_session_dirs)
-
-            dataset_sessions = []
-            for session_dir in all_session_dirs:
-                session_id = session_dir.name
-                dataset_sessions.append({
+            total_count = len(labels)
+            dataset_sessions = [
+                {
                     'dataset': dataset_name,
                     'session_id': session_id,
-                    'path': session_dir / "data.parquet",
-                    'label': labels.get(session_id, ['unknown'])
-                })
+                    'path': sessions_dir / session_id / "data.parquet",
+                    'label': label,
+                }
+                for session_id, label in sorted(labels.items())
+            ]
 
             # Apply max_sessions_per_dataset limit if specified
             if self.max_sessions_per_dataset is not None and len(dataset_sessions) > self.max_sessions_per_dataset:
