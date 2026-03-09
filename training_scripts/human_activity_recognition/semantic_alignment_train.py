@@ -243,9 +243,9 @@ MAX_BS_PER_BUCKET = {}
 DEFAULT_MICRO_BATCH_SIZE = BATCH_SIZE
 
 # Shared parameters (same across all model sizes)
-VAL_BATCH_SIZE = 32  # Larger batch for validation/eval (no gradients = lower memory)
-NUM_WORKERS = 8
-PREFETCH_FACTOR = 4
+VAL_BATCH_SIZE = int(os.environ.get("TSFM_VAL_BATCH_SIZE", "64"))
+NUM_WORKERS = int(os.environ.get("TSFM_NUM_WORKERS", "8"))
+PREFETCH_FACTOR = int(os.environ.get("TSFM_PREFETCH_FACTOR", "4"))
 PERSISTENT_WORKERS = True
 
 # Soft targets configuration
