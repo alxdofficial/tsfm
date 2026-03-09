@@ -34,18 +34,28 @@ else
 fi
 
 # -----------------------------------------------
-# 2. Create venv and install deps
+# 2. Install deps (use system python on RunPod to keep pre-installed torch)
 # -----------------------------------------------
-if [ ! -d "$WORKDIR/.venv" ]; then
-    echo ">>> Creating virtual environment..."
-    python3 -m venv .venv
+# RunPod templates come with torch pre-installed. Using a venv would lose that.
+# Only create venv if no system torch is found.
+if python3 -c "import torch" 2>/dev/null; then
+    echo ">>> Using system Python (torch already installed)"
+else
+    if [ ! -d "$WORKDIR/.venv" ]; then
+        echo ">>> No system torch — creating virtual environment..."
+        python3 -m venv .venv
+    fi
+    source .venv/bin/activate
 fi
-source .venv/bin/activate
 
 echo ">>> Installing dependencies..."
 pip install --upgrade pip -q
-# Install torch first (RunPod usually has it, but ensure CUDA version)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124 -q 2>/dev/null || true
+# Install torch — detect ROCm vs CUDA from existing system install
+if python3 -c "import torch; assert torch.version.hip" 2>/dev/null; then
+    echo ">>> ROCm detected, skipping torch install (using system torch)"
+else
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124 -q 2>/dev/null || true
+fi
 pip install -r requirements.txt -q
 # gdown for Google Drive downloads
 pip install gdown -q
