@@ -277,7 +277,7 @@ SAMPLING_TEMPERATURE = 0.0  # Temperature for sampling: 0.0=balanced, 0.5=sqrt, 
 PLOT_EVERY_N_BATCHES = 50
 
 # Embedding visualization
-VISUALIZE_EMBEDDINGS = True  # Generate UMAP plots showing IMU-text alignment
+VISUALIZE_EMBEDDINGS = os.environ.get("TSFM_VISUALIZE", "1") == "1"  # Generate UMAP plots showing IMU-text alignment
 VISUALIZE_EVERY_N_EPOCHS = 10  # How often to generate embedding plots
 
 # Classification metrics during training
