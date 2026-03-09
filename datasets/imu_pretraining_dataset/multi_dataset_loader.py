@@ -17,6 +17,8 @@ Supported datasets:
 """
 
 import re
+import hashlib
+import pickle  # For caching session index (trusted local data only)
 import torch
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
@@ -198,18 +200,67 @@ class IMUPretrainingDataset(Dataset):
         random.seed(seed)
         np.random.seed(seed)
 
-        # Load dataset metadata
+        # Load dataset metadata (with session index cache for fast restarts)
         self.dataset_info = {}
         self.sessions = []
-        self._load_datasets()
+        self._load_datasets_cached()
 
         # Create splits
         self._create_splits()
 
         print(f"Loaded {len(self.sessions)} sessions for {split} split from {len(self.datasets)} datasets")
 
+    def _get_cache_key(self) -> str:
+        """Generate a cache key from dataset config (datasets, max_sessions, seed)."""
+        key_parts = sorted(self.datasets) + [str(self.max_sessions_per_dataset), str(self.seed)]
+        return hashlib.md5(",".join(key_parts).encode()).hexdigest()[:12]
+
+    def _load_datasets_cached(self):
+        """Load datasets with session index caching for fast restarts.
+
+        First run: scans all session directories (slow on network/overlay FS).
+        Subsequent runs: loads cached session index from pickle (~instant).
+        Cache is invalidated when datasets, max_sessions, or seed change.
+        """
+        cache_dir = self.data_root / ".cache"
+        cache_file = cache_dir / f"session_index_{self._get_cache_key()}.pkl"
+
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'rb') as f:
+                    cached = pickle.load(f)  # Trusted local data only
+                self.dataset_info = cached['dataset_info']
+                self.sessions = cached['sessions']
+                # Restore Path objects (pickle serializes them as strings)
+                for name, info in self.dataset_info.items():
+                    info['path'] = Path(info['path'])
+                for s in self.sessions:
+                    s['path'] = Path(s['path'])
+                print(f"Loaded session index from cache ({len(self.sessions)} sessions)")
+                return
+            except Exception as e:
+                print(f"Cache load failed ({e}), rebuilding...")
+
+        # Cache miss — scan directories
+        self._load_datasets()
+
+        # Save cache (convert Paths to strings for pickle)
+        try:
+            cache_dir.mkdir(exist_ok=True)
+            save_info = {}
+            for name, info in self.dataset_info.items():
+                save_info[name] = {**info, 'path': str(info['path'])}
+            save_sessions = [
+                {**s, 'path': str(s['path'])} for s in self.sessions
+            ]
+            with open(cache_file, 'wb') as f:
+                pickle.dump({'dataset_info': save_info, 'sessions': save_sessions}, f)
+            print(f"Session index cached to {cache_file}")
+        except Exception as e:
+            print(f"Warning: Could not cache session index ({e})")
+
     def _load_datasets(self):
-        """Load metadata from all datasets."""
+        """Load metadata from all datasets (scans session directories)."""
         for dataset_name in self.datasets:
             dataset_path = self.data_root / dataset_name
 
@@ -239,23 +290,27 @@ class IMUPretrainingDataset(Dataset):
 
             # Collect all sessions
             sessions_dir = dataset_path / "sessions"
+            all_session_dirs = sorted(
+                [d for d in sessions_dir.iterdir() if d.is_dir()]
+            )
+            total_count = len(all_session_dirs)
+
             dataset_sessions = []
-            for session_dir in sorted(sessions_dir.iterdir()):
-                if session_dir.is_dir():
-                    session_id = session_dir.name
-                    dataset_sessions.append({
-                        'dataset': dataset_name,
-                        'session_id': session_id,
-                        'path': session_dir / "data.parquet",
-                        'label': labels.get(session_id, ['unknown'])
-                    })
+            for session_dir in all_session_dirs:
+                session_id = session_dir.name
+                dataset_sessions.append({
+                    'dataset': dataset_name,
+                    'session_id': session_id,
+                    'path': session_dir / "data.parquet",
+                    'label': labels.get(session_id, ['unknown'])
+                })
 
             # Apply max_sessions_per_dataset limit if specified
             if self.max_sessions_per_dataset is not None and len(dataset_sessions) > self.max_sessions_per_dataset:
                 # Shuffle before limiting to get diverse samples
                 random.shuffle(dataset_sessions)
                 dataset_sessions = dataset_sessions[:self.max_sessions_per_dataset]
-                print(f"  {dataset_name}: limited to {self.max_sessions_per_dataset} sessions (from {len(list(sessions_dir.iterdir()))})")
+                print(f"  {dataset_name}: limited to {self.max_sessions_per_dataset} sessions (from {total_count})")
 
             self.sessions.extend(dataset_sessions)
 
