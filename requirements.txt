@@ -22,8 +22,8 @@ joblib>=1.3.0
 sentence-transformers>=2.2.0
 transformers>=4.30.0
 
-# MOMENT baseline
-momentfm>=1.0.0
+# MOMENT baseline (optional — only needed for evaluation, not training)
+# momentfm>=1.0.0
 
 # LLaSA baseline (optional — requires ~16GB VRAM)
 # accelerate>=0.20.0
