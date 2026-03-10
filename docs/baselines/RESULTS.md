@@ -410,7 +410,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 
 | Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM-Medium (ours)** | 37.8 | 13.1 | 47.7 | 37.8 | 72.6 | 69.2 | 84.5 | 80.8 |
+| **TSFM-Medium (ours)** | 40.7 | 18.8 | 44.8 | 36.2 | 72.2 | 67.5 | 85.3 | 81.1 |
 | **TSFM-Small-Deep (ours)** | **46.0** | **16.9** | **53.4** | **39.4** | **77.5** | **71.4** | **85.3** | **81.8** |
 | **TSFM-Tiny (ours)** | 32.8 | 14.1 | 52.1 | 37.2 | 72.6 | 67.4 | 86.4 | 82.1 |
 | **LiMU-BERT** | 21.7 | 7.5 | 33.1 | 23.1 | 35.7 | 22.7 | 51.3 | 43.6 |
@@ -431,7 +431,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 
 | Model | MobiAct | MotionSense | RealWorld | Shoaib | Opportunity |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| **TSFM-Medium (ours)** | 39.8 | 43.5 | 44.5 | 41.8 | 19.6 |
+| **TSFM-Medium (ours)** | 43.5 | 50.3 | 49.2 | 32.7 | 28.0 |
 | **TSFM-Small-Deep (ours)** | **49.8** | **57.4** | **49.8** | **46.0** | 27.2 |
 | **TSFM-Tiny (ours)** | 17.4 | 60.7 | 52.0 | 27.7 | 6.3 |
 | **LiMU-BERT** | 6.1 | 28.4 | 29.1 | 16.8 | 28.1 |
@@ -446,7 +446,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 
 | Model | MobiAct | MotionSense | RealWorld | Shoaib | Opportunity |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| **TSFM-Medium (ours)** | 38.0 | 59.5 | 46.7 | 48.6 | 45.8 |
+| **TSFM-Medium (ours)** | 37.5 | 62.8 | 48.1 | 36.9 | 38.7 |
 | **TSFM-Small-Deep (ours)** | **59.3** | **62.9** | **46.3** | **48.0** | 50.4 |
 | **TSFM-Tiny (ours)** | 47.2 | 61.3 | 46.9 | 48.8 | 56.3 |
 | **LiMU-BERT** | 29.3 | 39.9 | 30.5 | 37.6 | 28.1 |
@@ -463,7 +463,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 
 | Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM-Medium (ours)** | 57.0 | 38.4 | 83.9 | 82.6 | 72.7 | 72.8 | 84.5 | 84.2 | 65.0 | 68.0 |
+| **TSFM-Medium (ours)** | 52.4 | 32.1 | 89.5 | 87.9 | 75.0 | 75.1 | 82.9 | 82.3 | 61.3 | 60.1 |
 | **TSFM-Small-Deep (ours)** | **61.8** | 32.0 | **88.5** | 86.8 | **76.5** | **76.9** | **89.0** | **88.6** | 71.8 | **72.5** |
 | **TSFM-Tiny (ours)** | 46.7 | 24.1 | 89.7 | 88.7 | 74.9 | 74.7 | 81.8 | 80.8 | 69.8 | 68.8 |
 | **LiMU-BERT** | 30.6 | 6.2 | 23.2 | 8.1 | 28.1 | 12.0 | 42.7 | 32.4 | 53.7 | 54.8 |
@@ -477,7 +477,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 
 | Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM-Medium (ours)** | 73.3 | 54.0 | 93.4 | 92.4 | 85.1 | 86.0 | 94.4 | 94.2 | 76.3 | 77.5 |
+| **TSFM-Medium (ours)** | 75.6 | 54.9 | 95.0 | 94.5 | 84.7 | 85.3 | 96.4 | 96.3 | 74.6 | 74.5 |
 | **TSFM-Small-Deep (ours)** | **74.9** | 55.7 | **94.9** | **94.5** | **84.9** | **85.8** | **95.3** | **95.1** | **76.5** | **77.8** |
 | **TSFM-Tiny (ours)** | 74.7 | 52.1 | 95.0 | 94.5 | 85.8 | 86.7 | 95.5 | 95.3 | 81.1 | 81.9 |
 | **LiMU-BERT** | 33.8 | 8.7 | 54.0 | 46.7 | 54.1 | 49.9 | 47.7 | 40.1 | 67.0 | 72.5 |
@@ -622,7 +622,7 @@ These two datasets are reported separately due to extreme distribution shift:
 
 | Model | ZS-Open Acc | ZS-Close Acc | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM-Medium (ours)** | 1.9 | 2.0 | 63.5 | 38.5 | 77.4 | 48.6 |
+| **TSFM-Medium (ours)** | 1.6 | 1.1 | 66.9 | 21.8 | 82.4 | 48.6 |
 | **TSFM-Small-Deep (ours)** | **1.4** | 0.4 | **69.2** | **37.7** | **79.1** | **48.5** |
 | **TSFM-Tiny (ours)** | 2.7 | 3.8 | 65.8 | 36.9 | 77.8 | 47.5 |
 | **LiMU-BERT** | 0.0 | **20.2** | 54.4 | 5.9 | 19.1 | 2.7 |
@@ -635,7 +635,7 @@ These two datasets are reported separately due to extreme distribution shift:
 
 | Model | ZS-Open Acc | ZS-Close Acc | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM-Medium (ours)** | 2.4 | 3.9 | 9.2 | 5.2 | 29.0 | 26.3 |
+| **TSFM-Medium (ours)** | 5.2 | 6.7 | 11.1 | 7.2 | 21.3 | 18.6 |
 | **TSFM-Small-Deep (ours)** | 1.9 | 6.3 | 10.6 | 4.0 | 26.1 | 23.3 |
 | **TSFM-Tiny (ours)** | 1.1 | 4.5 | 8.2 | 4.9 | 25.6 | 22.0 |
 | **LiMU-BERT** | 3.4 | **7.1** | 4.3 | 0.6 | 15.0 | 6.5 |
