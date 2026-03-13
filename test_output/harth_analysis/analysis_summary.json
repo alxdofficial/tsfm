@@ -1,0 +1,83 @@
+{
+  "harth_n_samples": 47330,
+  "harth_n_classes": 12,
+  "harth_activities": [
+    "cycling_sit",
+    "cycling_stand",
+    "lying",
+    "running",
+    "shuffling",
+    "sitting",
+    "stairs_down",
+    "stairs_up",
+    "standing",
+    "transport_sit",
+    "transport_stand",
+    "walking"
+  ],
+  "centroid_cosine_similarity": 0.9754723906517029,
+  "embedding_norms": {
+    "harth_mean": 1.0,
+    "harth_std": 2.806077148420627e-08,
+    "train_mean": 1.0,
+    "train_std": 2.797822773459302e-08
+  },
+  "zero_shot_closed_set": {
+    "accuracy": 2.5058102683287555,
+    "prediction_distribution": {
+      "cycling_sit": 3937,
+      "cycling_stand": 791,
+      "lying": 595,
+      "running": 30,
+      "shuffling": 112,
+      "sitting": 6316,
+      "stairs_down": 7784,
+      "stairs_up": 494,
+      "standing": 17455,
+      "transport_sit": 131,
+      "transport_stand": 7,
+      "walking": 9678
+    }
+  },
+  "similarity_stats": {
+    "mean_correct_sim": 0.8361177444458008,
+    "std_correct_sim": 0.0561104379594326,
+    "mean_max_wrong_sim": 0.9536944627761841,
+    "std_max_wrong_sim": 0.025099867954850197,
+    "mean_margin": -0.11757668107748032,
+    "fraction_positive_margin": 0.025058102683287554,
+    "mean_max_overall_sim": 0.9539963006973267
+  },
+  "recovery_curve": {
+    "0.1%": {
+      "accuracy": 11.747306148320304,
+      "f1_macro": 12.091926440697783,
+      "n_train_samples": 32
+    },
+    "0.5%": {
+      "accuracy": 54.34185506021551,
+      "f1_macro": 43.74950732390482,
+      "n_train_samples": 184
+    },
+    "1.0%": {
+      "accuracy": 64.39890133107966,
+      "f1_macro": 47.61259431412737,
+      "n_train_samples": 376
+    },
+    "2.0%": {
+      "accuracy": 70.39932389604901,
+      "f1_macro": 54.8963223268506,
+      "n_train_samples": 752
+    },
+    "5.0%": {
+      "accuracy": 77.92098035072893,
+      "f1_macro": 68.83770392489899,
+      "n_train_samples": 1875
+    },
+    "10.0%": {
+      "accuracy": 77.26600464821466,
+      "f1_macro": 71.0503947740305,
+      "n_train_samples": 3359
+    }
+  }
+}
