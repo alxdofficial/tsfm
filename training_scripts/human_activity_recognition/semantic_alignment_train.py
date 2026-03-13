@@ -222,7 +222,7 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # ---- Training hyperparameters ----
 # Both small and small_deep use the same proven recipe (384-dim contrastive dynamics).
-EPOCHS = 200
+EPOCHS = 100
 WARMUP_EPOCHS = 3
 BATCH_SIZE = int(os.environ.get("TSFM_BATCH_SIZE", "32"))  # Per-GPU micro-batch size
 ACCUMULATION_STEPS = int(os.environ.get("TSFM_ACCUM_STEPS", "16"))  # effective = BS * ACCUM * N_gpus
@@ -231,7 +231,7 @@ TEMPERATURE = 0.07             # CLIP default
 WEIGHT_DECAY = 1e-5
 USE_GRAD_CACHE = os.environ.get("TSFM_GRAD_CACHE", "0") == "1"  # Off for small_deep, on for medium+
 USE_MEMORY_BANK = os.environ.get("TSFM_MEMORY_BANK", "1") == "1"
-MEMORY_BANK_SIZE = int(os.environ.get("TSFM_MEMORY_BANK_SIZE", "1024"))
+MEMORY_BANK_SIZE = int(os.environ.get("TSFM_MEMORY_BANK_SIZE", "512"))
 USE_GRADIENT_CHECKPOINTING = os.environ.get("TSFM_GRAD_CHECKPOINT", "0") == "1"
 
 TARGET_EFFECTIVE_BATCH = BATCH_SIZE * ACCUMULATION_STEPS  # e.g. 512
