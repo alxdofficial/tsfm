@@ -42,16 +42,22 @@ run_ablation() {
     env ABLATION_NAME="$name" $envs python "$TRAIN_SCRIPT"
 }
 
+# Collect TSFM_* env vars to forward to tmux sub-sessions
+_forward_envs() {
+    env | grep '^TSFM_' | tr '\n' ' '
+}
+
 run_in_tmux() {
     local name="$1"
     local envs="${ABLATION_ENVS[$name]}"
     local session="ablation_${name}"
+    local tsfm_envs="$(_forward_envs)"
 
     # Kill existing session if any
     tmux kill-session -t "$session" 2>/dev/null || true
 
     tmux new-session -d -s "$session" \
-        "cd $(pwd) && ABLATION_NAME=$name $envs python $TRAIN_SCRIPT 2>&1 | tee training_output/ablation_${name}.log; echo 'DONE: $name'; read"
+        "cd $(pwd) && $tsfm_envs ABLATION_NAME=$name $envs python $TRAIN_SCRIPT 2>&1 | tee training_output/ablation_${name}.log; echo 'DONE: $name'; read"
     echo "  Started tmux session: $session"
 }
 

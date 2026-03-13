@@ -229,7 +229,7 @@ ACCUMULATION_STEPS = int(os.environ.get("TSFM_ACCUM_STEPS", "16"))  # effective 
 LEARNING_RATE = float(os.environ.get("TSFM_LR", "8e-5"))  # Scaled down for medium (was 1e-4)
 TEMPERATURE = 0.07             # CLIP default
 WEIGHT_DECAY = 1e-5
-USE_GRAD_CACHE = os.environ.get("TSFM_GRAD_CACHE", "1") == "1"
+USE_GRAD_CACHE = os.environ.get("TSFM_GRAD_CACHE", "0") == "1"  # Off for small_deep, on for medium+
 USE_MEMORY_BANK = os.environ.get("TSFM_MEMORY_BANK", "1") == "1"
 MEMORY_BANK_SIZE = int(os.environ.get("TSFM_MEMORY_BANK_SIZE", "1024"))
 USE_GRADIENT_CHECKPOINTING = os.environ.get("TSFM_GRAD_CHECKPOINT", "0") == "1"
