@@ -67,8 +67,8 @@ echo ">>> Torch version: $(python3 -c 'import torch; print(f"{torch.__version__}
 echo ">>> Pre-caching sentence-transformers model..."
 python3 -c "
 from sentence_transformers import SentenceTransformer
-SentenceTransformer('all-mpnet-base-v2')
-print('  all-mpnet-base-v2 cached')
+SentenceTransformer('all-MiniLM-L6-v2')
+print('  all-MiniLM-L6-v2 cached')
 " 2>/dev/null
 
 # -----------------------------------------------
