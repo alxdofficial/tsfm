@@ -142,6 +142,8 @@ class IMUPretrainingDataset(Dataset):
         target_patch_size: Optional[int] = None,  # If set, preprocess patches in DataLoader (faster training)
         max_patches_per_sample: int = 48,  # Max patches per sample (only used when target_patch_size is set)
         use_rotation_augmentation: bool = False,  # Apply SO(3) rotation to sensor triads (Stage 2)
+        use_signal_augmentation: bool = True,  # Jitter + scale augmentation
+        use_text_augmentation: bool = True,  # Label synonyms/templates + Hz/window suffix
     ):
         """
         Args:
@@ -188,6 +190,8 @@ class IMUPretrainingDataset(Dataset):
         self.target_patch_size = target_patch_size
         self.max_patches_per_sample = max_patches_per_sample
         self.use_rotation_augmentation = use_rotation_augmentation
+        self.use_signal_augmentation = use_signal_augmentation
+        self.use_text_augmentation = use_text_augmentation
 
         # Pre-create augmentation objects (reused across __getitem__ calls)
         if self.split == 'train':
@@ -450,7 +454,10 @@ class IMUPretrainingDataset(Dataset):
 
         # Apply dataset-specific label augmentation (only for training split)
         # Uses synonyms and templates tailored to each dataset's activities
-        augmentation_rate = 0.8 if self.split == 'train' else 0.0
+        if self.use_text_augmentation:
+            augmentation_rate = 0.8 if self.split == 'train' else 0.0
+        else:
+            augmentation_rate = 0.0
         label_text = augment_label(
             label=base_label,
             dataset_name=dataset_name,
@@ -469,10 +476,11 @@ class IMUPretrainingDataset(Dataset):
                 ).squeeze(0)
 
             # Jitter + scale augmentation for sensor noise/calibration invariance
-            if random.random() < 0.5:
-                data = self._jitter_scale_aug.jitter(data.unsqueeze(0), sigma=0.05).squeeze(0)
-            if random.random() < 0.5:
-                data = self._jitter_scale_aug.scale(data.unsqueeze(0), scale_range=(0.9, 1.1)).squeeze(0)
+            if self.use_signal_augmentation:
+                if random.random() < 0.5:
+                    data = self._jitter_scale_aug.jitter(data.unsqueeze(0), sigma=0.05).squeeze(0)
+                if random.random() < 0.5:
+                    data = self._jitter_scale_aug.scale(data.unsqueeze(0), scale_range=(0.9, 1.1)).squeeze(0)
 
         # If target_patch_size is set, preprocess patches here (parallelized across workers)
         if self.target_patch_size is not None:
@@ -511,10 +519,13 @@ class IMUPretrainingDataset(Dataset):
                 patches = patches[:self.max_patches_per_sample]
 
             # Append Hz/patch suffix using ACTUAL patch size (after augmentation)
-            channel_descriptions = [
-                f"{desc} (sampled at {sampling_rate:.0f}Hz, {actual_patch_size:.1f}s window)"
-                for desc in base_channel_descriptions
-            ]
+            if self.use_text_augmentation:
+                channel_descriptions = [
+                    f"{desc} (sampled at {sampling_rate:.0f}Hz, {actual_patch_size:.1f}s window)"
+                    for desc in base_channel_descriptions
+                ]
+            else:
+                channel_descriptions = list(base_channel_descriptions)
 
             return {
                 'patches': patches,  # (num_patches, target_patch_size, num_channels)
@@ -533,10 +544,13 @@ class IMUPretrainingDataset(Dataset):
             }
 
         # Raw path (no patching): use base patch size for suffix
-        channel_descriptions = [
-            f"{desc} (sampled at {sampling_rate:.0f}Hz, {patch_size_sec:.1f}s window)"
-            for desc in base_channel_descriptions
-        ]
+        if self.use_text_augmentation:
+            channel_descriptions = [
+                f"{desc} (sampled at {sampling_rate:.0f}Hz, {patch_size_sec:.1f}s window)"
+                for desc in base_channel_descriptions
+            ]
+        else:
+            channel_descriptions = list(base_channel_descriptions)
 
         return {
             'data': data,

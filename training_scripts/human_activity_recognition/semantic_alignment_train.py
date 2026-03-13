@@ -163,7 +163,7 @@ MAX_PATCHES_PER_SAMPLE = 48  # Matches good small_v1_best checkpoint config
 MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
 # ---- Architecture configuration (single source of truth: model/config.py) ----
-MODEL_SIZE = "medium"  # Options: "tiny", "small", "small_deep", "medium", "large"
+MODEL_SIZE = "small_deep"  # Options: "tiny", "small", "small_deep", "medium", "large"
 _cfg = get_config(MODEL_SIZE)
 
 # Encoder
@@ -296,15 +296,22 @@ DEBUG_METRIC_FREQUENCY = 50  # Compute expensive debug metrics every N batches (
 # (num_heads, num_queries, num_prototypes now come from config via
 #  CHANNEL_TEXT_NUM_HEADS, LABEL_BANK_NUM_HEADS/QUERIES/PROTOTYPES)
 
-# Ablation: use mean pooling instead of learnable attention pooling
-# When True: uses SentenceBERT's default mean pooling (no learnable params)
-# When False: uses learnable attention pooling (LabelAttentionPooling)
-USE_MEAN_POOLING = False  # Default: learnable attention pooling (baseline)
+# =================================================================
+# ABLATION FLAGS — toggle individual innovations on/off
+# All default to baseline (True = enabled). Set via env vars for easy CLI control.
+# Example: ABLATION_CHANNEL_TEXT_FUSION=0 python semantic_alignment_train.py
+# =================================================================
+ABLATION_CHANNEL_TEXT_FUSION = os.environ.get("ABLATION_CHANNEL_TEXT_FUSION", "1") == "1"
+ABLATION_LEARNABLE_LABEL_BANK = os.environ.get("ABLATION_LEARNABLE_LABEL_BANK", "1") == "1"
+ABLATION_SOFT_TARGETS = os.environ.get("ABLATION_SOFT_TARGETS", "1") == "1"
+ABLATION_SIGNAL_AUG = os.environ.get("ABLATION_SIGNAL_AUG", "1") == "1"
+ABLATION_TEXT_AUG = os.environ.get("ABLATION_TEXT_AUG", "1") == "1"
 
-# Ablation: freeze label bank to test contribution of learnable text encoding
-# When True: LabelAttentionPooling weights are frozen (uses random init queries)
-# When False: LabelAttentionPooling is trainable (baseline)
-FREEZE_LABEL_BANK = False  # Default: trainable (baseline)
+# Derived from ablation flags (backward compat with existing code paths)
+USE_MEAN_POOLING = not ABLATION_LEARNABLE_LABEL_BANK  # Mean pooling when label bank disabled
+FREEZE_LABEL_BANK = False  # Only used with learnable label bank
+if not ABLATION_SOFT_TARGETS:
+    USE_SOFT_TARGETS = False
 
 # Class balancing configuration
 # Uses LABEL_GROUPS to balance sampling at the semantic group level
@@ -470,7 +477,8 @@ class SemanticAlignmentModel(nn.Module):
         text_masks = all_masks.reshape(batch_size, max_channels, seq_len)
 
         # Batched channel text fusion — single call replaces per-sample loop
-        encoded_batch = self.channel_fusion(encoded_batch, text_tokens, text_masks)
+        if ABLATION_CHANNEL_TEXT_FUSION:
+            encoded_batch = self.channel_fusion(encoded_batch, text_tokens, text_masks)
 
         return self.semantic_head(encoded_batch, channel_mask=channel_mask,
                                    patch_mask=patch_mask, normalize=True)
@@ -1734,11 +1742,34 @@ def main():
     else:
         # Fresh start with new timestamp folder
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        CHECKPOINT_DIR = Path(OUTPUT_DIR) / timestamp
+        # Include ablation tag in directory name for easy identification
+        ablation_tag = os.environ.get("ABLATION_NAME", "")
+        if ablation_tag:
+            folder_name = f"{timestamp}_ablation_{ablation_tag}"
+        else:
+            folder_name = timestamp
+        CHECKPOINT_DIR = Path(OUTPUT_DIR) / folder_name
         CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
         plot_dir = CHECKPOINT_DIR / "plots"
         plot_dir.mkdir(exist_ok=True)
         print(f"Output directory: {CHECKPOINT_DIR}")
+
+    # Print ablation configuration
+    ablation_flags = {
+        'Channel-Text Fusion': ABLATION_CHANNEL_TEXT_FUSION,
+        'Learnable Label Bank': ABLATION_LEARNABLE_LABEL_BANK,
+        'Soft Targets': ABLATION_SOFT_TARGETS,
+        'Signal Augmentation': ABLATION_SIGNAL_AUG,
+        'Text Augmentation': ABLATION_TEXT_AUG,
+    }
+    disabled = [k for k, v in ablation_flags.items() if not v]
+    if disabled:
+        print(f"\n=== ABLATION MODE ===")
+        for name in disabled:
+            print(f"  DISABLED: {name}")
+        print(f"====================\n")
+    else:
+        print(f"\nAll components enabled (baseline)\n")
 
     # Save hyperparameters — everything needed to reconstruct the model from scratch
     # Build config dict from local vars (which may have been overridden during resume)
@@ -1801,6 +1832,14 @@ def main():
             'max_bs_per_bucket': MAX_BS_PER_BUCKET, 'default_micro_batch_size': DEFAULT_MICRO_BATCH_SIZE,
             'use_grad_cache': USE_GRAD_CACHE,
             'lr': LEARNING_RATE, 'warmup_epochs': WARMUP_EPOCHS, 'max_grad_norm': MAX_GRAD_NORM,
+        },
+        'ablation': {
+            'name': os.environ.get("ABLATION_NAME", "baseline"),
+            'channel_text_fusion': ABLATION_CHANNEL_TEXT_FUSION,
+            'learnable_label_bank': ABLATION_LEARNABLE_LABEL_BANK,
+            'soft_targets': ABLATION_SOFT_TARGETS,
+            'signal_augmentation': ABLATION_SIGNAL_AUG,
+            'text_augmentation': ABLATION_TEXT_AUG,
         },
     }
     with open(CHECKPOINT_DIR / 'hyperparameters.json', 'w') as f:
@@ -1967,6 +2006,8 @@ def main():
         target_patch_size=TARGET_PATCH_SIZE,
         max_patches_per_sample=MAX_PATCHES_PER_SAMPLE,
         use_rotation_augmentation=USE_ROTATION_AUGMENTATION,
+        use_signal_augmentation=ABLATION_SIGNAL_AUG,
+        use_text_augmentation=ABLATION_TEXT_AUG,
     )
     val_dataset = IMUPretrainingDataset(
         data_root=DATA_ROOT,
