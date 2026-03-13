@@ -231,6 +231,12 @@ def load_model(
     if benign_unexpected and verbose:
         print(f"  Note: Ignored {len(benign_unexpected)} legacy channel_encoding keys")
 
+    # Check ablation flags from hyperparameters.json
+    raw_hp = json.load(open(hyperparams_path))
+    ablation_cfg = raw_hp.get('ablation', {})
+    use_fusion = ablation_cfg.get('channel_text_fusion', True)
+    model.use_channel_text_fusion = use_fusion
+
     model.train(False)
     model = model.to(device)
 
@@ -243,6 +249,8 @@ def load_model(
               f"layers={head_cfg['num_temporal_layers']}, "
               f"fusion_q={head_cfg['num_fusion_queries']}, "
               f"pool_q={head_cfg['num_pool_queries']}")
+        if not use_fusion:
+            print(f"  Ablation: channel_text_fusion DISABLED")
 
     return model, checkpoint, hyperparams_path
 
@@ -269,6 +277,14 @@ def load_label_bank(
     hp = _load_hyperparams(hyperparams_path)
     lb_cfg = hp['label_bank']
 
+    # Check ablation flags and mean pooling setting
+    raw_hp = json.load(open(hyperparams_path))
+    ablation_cfg = raw_hp.get('ablation', {})
+    use_learnable_lb = ablation_cfg.get('learnable_label_bank', True)
+    # use_mean_pooling is set when label bank is disabled (ablation)
+    raw_lb_cfg = raw_hp.get('label_bank', {})
+    use_mean_pooling = raw_lb_cfg.get('use_mean_pooling', not use_learnable_lb)
+
     label_bank = LearnableLabelBank(
         model_name=lb_cfg['sentence_bert_model'],
         device=device,
@@ -278,16 +294,21 @@ def load_label_bank(
         num_prototypes=lb_cfg['num_prototypes'],
         dropout=0.0,
         text_encoder=text_encoder,
+        use_mean_pooling=use_mean_pooling,
     )
 
-    if 'label_bank_state_dict' in checkpoint:
-        label_bank.load_state_dict(checkpoint['label_bank_state_dict'])
+    lb_state = checkpoint.get('label_bank_state_dict', {})
+    if lb_state and use_learnable_lb:
+        label_bank.load_state_dict(lb_state)
         if verbose:
             print(f"  Loaded LearnableLabelBank state (d={lb_cfg['d_model']}, "
                   f"heads={lb_cfg['num_heads']}, queries={lb_cfg['num_queries']})")
     else:
         if verbose:
-            print("  Warning: No label_bank_state_dict in checkpoint, using untrained weights")
+            if not use_learnable_lb:
+                print(f"  Ablation: learnable_label_bank DISABLED — using frozen SBERT embeddings")
+            else:
+                print("  Warning: No label_bank_state_dict in checkpoint, using untrained weights")
 
     label_bank.train(False)
     return label_bank

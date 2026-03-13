@@ -477,7 +477,8 @@ class SemanticAlignmentModel(nn.Module):
         text_masks = all_masks.reshape(batch_size, max_channels, seq_len)
 
         # Batched channel text fusion — single call replaces per-sample loop
-        if ABLATION_CHANNEL_TEXT_FUSION:
+        use_fusion = getattr(self, 'use_channel_text_fusion', ABLATION_CHANNEL_TEXT_FUSION)
+        if use_fusion:
             encoded_batch = self.channel_fusion(encoded_batch, text_tokens, text_masks)
 
         return self.semantic_head(encoded_batch, channel_mask=channel_mask,
