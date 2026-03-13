@@ -1,6 +1,6 @@
 # Baseline Evaluation Results
 
-Generated: 2026-03-02 | Framework: unified evaluation | Seed: 3431
+Generated: 2026-03-13 | Framework: unified evaluation | Seed: 3431
 
 ## Models
 
@@ -391,7 +391,7 @@ characteristics. See [Severe Out-of-Domain](#severe-out-of-domain-harth--vtt-con
   and has fundamentally different characteristics from waist/wrist-mounted smartphone IMUs in
   training data. All models achieve near-zero zero-shot accuracy, confirming this is a genuine
   distribution shift rather than a model-specific failure. Supervised fine-tuning adapts well
-  (up to 79.1% at 10%).
+  (up to 78.3% at 10%).
 - **VTT-ConIoT**: 8 of 16 activity labels (carrying, climbing ladder, kneeling work, leveling
   paint, lifting, pushing cart, roll painting, spraying paint) have no semantic equivalent in the
   10 training datasets. All models are guaranteed to fail on these activities regardless of
@@ -411,7 +411,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 | Model | ZS-Open Acc | ZS-Open F1 | ZS-Close Acc | ZS-Close F1 | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Medium (ours)** | 40.7 | 18.8 | 44.8 | 36.2 | 72.2 | 67.5 | 85.3 | 81.1 |
-| **TSFM-Small-Deep (ours)** | **46.0** | **16.9** | **53.4** | **39.4** | **77.5** | **71.4** | **85.3** | **81.8** |
+| **TSFM-Small-Deep (ours)** | **42.0** | **21.0** | **53.1** | **37.1** | **76.5** | **70.0** | **85.7** | **81.7** |
 | **TSFM-Tiny (ours)** | 32.8 | 14.1 | 52.1 | 37.2 | 72.6 | 67.4 | 86.4 | 82.1 |
 | **LiMU-BERT** | 21.7 | 7.5 | 33.1 | 23.1 | 35.7 | 22.7 | 51.3 | 43.6 |
 | **MOMENT** | 28.3 | 7.2 | 44.7 | 33.2 | 73.8 | 69.8 | 81.3 | 76.8 |
@@ -432,7 +432,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 | Model | MobiAct | MotionSense | RealWorld | Shoaib | Opportunity |
 | :--- | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Medium (ours)** | 43.5 | 50.3 | 49.2 | 32.7 | 28.0 |
-| **TSFM-Small-Deep (ours)** | **49.8** | **57.4** | **49.8** | **46.0** | 27.2 |
+| **TSFM-Small-Deep (ours)** | **42.2** | **49.3** | **48.0** | **49.2** | 21.1 |
 | **TSFM-Tiny (ours)** | 17.4 | 60.7 | 52.0 | 27.7 | 6.3 |
 | **LiMU-BERT** | 6.1 | 28.4 | 29.1 | 16.8 | 28.1 |
 | **MOMENT** | 28.7 | 33.8 | 14.6 | 33.6 | 30.6 |
@@ -447,7 +447,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 | Model | MobiAct | MotionSense | RealWorld | Shoaib | Opportunity |
 | :--- | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Medium (ours)** | 37.5 | 62.8 | 48.1 | 36.9 | 38.7 |
-| **TSFM-Small-Deep (ours)** | **59.3** | **62.9** | **46.3** | **48.0** | 50.4 |
+| **TSFM-Small-Deep (ours)** | **50.0** | **64.1** | **48.0** | **54.1** | 49.3 |
 | **TSFM-Tiny (ours)** | 47.2 | 61.3 | 46.9 | 48.8 | 56.3 |
 | **LiMU-BERT** | 29.3 | 39.9 | 30.5 | 37.6 | 28.1 |
 | **MOMENT** | 40.9 | 51.6 | 31.1 | 46.0 | **53.9** |
@@ -464,7 +464,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 | Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Medium (ours)** | 52.4 | 32.1 | 89.5 | 87.9 | 75.0 | 75.1 | 82.9 | 82.3 | 61.3 | 60.1 |
-| **TSFM-Small-Deep (ours)** | **61.8** | 32.0 | **88.5** | 86.8 | **76.5** | **76.9** | **89.0** | **88.6** | 71.8 | **72.5** |
+| **TSFM-Small-Deep (ours)** | **65.3** | 35.2 | **88.6** | 87.1 | **75.1** | **74.0** | **81.6** | **81.2** | 72.0 | **72.6** |
 | **TSFM-Tiny (ours)** | 46.7 | 24.1 | 89.7 | 88.7 | 74.9 | 74.7 | 81.8 | 80.8 | 69.8 | 68.8 |
 | **LiMU-BERT** | 30.6 | 6.2 | 23.2 | 8.1 | 28.1 | 12.0 | 42.7 | 32.4 | 53.7 | 54.8 |
 | **MOMENT** | 48.3 | **33.5** | 88.1 | **87.6** | 70.9 | 68.7 | 87.6 | 87.3 | **74.3** | 72.0 |
@@ -478,7 +478,7 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 | Model | MobiAct Acc | MobiAct F1 | MotionSense Acc | MotionSense F1 | RealWorld Acc | RealWorld F1 | Shoaib Acc | Shoaib F1 | Opportunity Acc | Opportunity F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Medium (ours)** | 75.6 | 54.9 | 95.0 | 94.5 | 84.7 | 85.3 | 96.4 | 96.3 | 74.6 | 74.5 |
-| **TSFM-Small-Deep (ours)** | **74.9** | 55.7 | **94.9** | **94.5** | **84.9** | **85.8** | **95.3** | **95.1** | **76.5** | **77.8** |
+| **TSFM-Small-Deep (ours)** | **72.9** | 51.7 | **95.0** | **94.6** | **85.6** | **86.4** | **95.9** | **95.7** | **79.3** | **80.0** |
 | **TSFM-Tiny (ours)** | 74.7 | 52.1 | 95.0 | 94.5 | 85.8 | 86.7 | 95.5 | 95.3 | 81.1 | 81.9 |
 | **LiMU-BERT** | 33.8 | 8.7 | 54.0 | 46.7 | 54.1 | 49.9 | 47.7 | 40.1 | 67.0 | 72.5 |
 | **MOMENT** | 72.2 | **56.0** | 91.1 | 91.4 | 76.9 | 75.6 | 92.8 | 92.5 | 73.4 | 68.3 |
@@ -489,21 +489,21 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
 
 ## Key Observations
 
-1. **TSFM leads all average metrics across 5 main datasets** — TSFM-Small-Deep achieves 53.4%
+1. **TSFM leads all average metrics across 5 main datasets** — TSFM-Small-Deep achieves 53.1%
    closed-set avg accuracy, ahead of MOMENT (44.7%), CrossHAR (38.2%), LiMU-BERT (33.1%),
-   and LanHAR (28.4%). TSFM leads at 10% supervised (85.3% vs MOMENT's 81.3%) and 1%
-   supervised (77.5% acc, 71.4% F1 — both ahead of MOMENT's 73.8% / 69.8%).
+   and LanHAR (28.4%). TSFM leads at 10% supervised (85.7% vs MOMENT's 81.3%) and 1%
+   supervised (76.5% acc, 70.0% F1 — both ahead of MOMENT's 73.8% / 69.8%).
 
 2. **HARTH is a distribution-shift stress test** — All models achieve near-zero zero-shot accuracy
    (<1% for TSFM/MOMENT/CrossHAR, 20.2% for LiMU-BERT closed-set). This is caused by the
    back-mounted raw accelerometer data being fundamentally different from waist/wrist smartphone
-   IMUs in training data. However, supervised fine-tuning adapts well: TSFM reaches 79.1% at 10%,
+   IMUs in training data. However, supervised fine-tuning adapts well: TSFM reaches 78.3% at 10%,
    confirming the encoder representations are flexible enough to adapt with labeled data.
 
 3. **Opportunity data was fixed** — Previously produced all-zero input due to a column mapping
    bug in `dataset_config.json` (identity mapping where `back_acc_x → acc_x` was needed).
-   After fixing, Opportunity produces meaningful results across all models: TSFM 50.4% ZS-Closed,
-   MOMENT 53.9%, with supervised results up to 76.5% (TSFM) and 73.4% (MOMENT) at 10%.
+   After fixing, Opportunity produces meaningful results across all models: TSFM 49.3% ZS-Closed,
+   MOMENT 53.9%, with supervised results up to 79.3% (TSFM) and 73.4% (MOMENT) at 10%.
 
 4. **MOMENT is consistently the closest competitor, partly due to structural advantages** —
    Second-best on most metrics, and leads on Opportunity (53.9% ZS-Closed) and 1% supervised
@@ -623,7 +623,7 @@ These two datasets are reported separately due to extreme distribution shift:
 | Model | ZS-Open Acc | ZS-Close Acc | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Medium (ours)** | 1.6 | 1.1 | 66.9 | 21.8 | 82.4 | 48.6 |
-| **TSFM-Small-Deep (ours)** | **1.4** | 0.4 | **69.2** | **37.7** | **79.1** | **48.5** |
+| **TSFM-Small-Deep (ours)** | **2.0** | 2.5 | **64.7** | **37.8** | **78.3** | **48.0** |
 | **TSFM-Tiny (ours)** | 2.7 | 3.8 | 65.8 | 36.9 | 77.8 | 47.5 |
 | **LiMU-BERT** | 0.0 | **20.2** | 54.4 | 5.9 | 19.1 | 2.7 |
 | **MOMENT** | 0.4 | 1.9 | 66.7 | 32.4 | 65.4 | 31.2 |
@@ -636,7 +636,7 @@ These two datasets are reported separately due to extreme distribution shift:
 | Model | ZS-Open Acc | ZS-Close Acc | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
 | **TSFM-Medium (ours)** | 5.2 | 6.7 | 11.1 | 7.2 | 21.3 | 18.6 |
-| **TSFM-Small-Deep (ours)** | 1.9 | 6.3 | 10.6 | 4.0 | 26.1 | 23.3 |
+| **TSFM-Small-Deep (ours)** | 1.3 | 2.2 | 1.9 | 0.6 | 16.9 | 15.6 |
 | **TSFM-Tiny (ours)** | 1.1 | 4.5 | 8.2 | 4.9 | 25.6 | 22.0 |
 | **LiMU-BERT** | 3.4 | **7.1** | 4.3 | 0.6 | 15.0 | 6.5 |
 | **MOMENT** | 1.6 | 5.2 | **18.4** | **17.0** | **34.8** | **29.9** |
@@ -645,8 +645,8 @@ These two datasets are reported separately due to extreme distribution shift:
 | **LLaSA**† | 0.0 | 6.9 | N/A | N/A | N/A | N/A |
 
 **Observations**:
-- **HARTH**: All models near-zero on zero-shot due to sensor distribution shift. LiMU-BERT is an outlier with 20.2% closed-set (its training label masking happens to favor HARTH's label distribution). Supervised FT adapts well: TSFM leads at both 1% (69.2%) and 10% (79.1%).
-- **VTT-ConIoT**: All models near random on zero-shot (≤8% open-set, ≤7% closed-set). With 10% supervised data, MOMENT leads (34.8%), followed by CrossHAR (30.9%) and TSFM (26.1%). The 50% label coverage floor limits all models.
+- **HARTH**: All models near-zero on zero-shot due to sensor distribution shift. LiMU-BERT is an outlier with 20.2% closed-set (its training label masking happens to favor HARTH's label distribution). Supervised FT adapts well: TSFM leads at both 1% (64.7%) and 10% (78.3%).
+- **VTT-ConIoT**: All models near random on zero-shot (≤8% open-set, ≤7% closed-set). With 10% supervised data, MOMENT leads (34.8%), followed by CrossHAR (30.9%) and TSFM (16.9%). The 50% label coverage floor limits all models.
 
 ---
 

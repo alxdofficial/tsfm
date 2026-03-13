@@ -149,16 +149,13 @@ SMALL_DEEP_CONFIG: Dict[str, Any] = {
     "use_channel_encoding": True,
     "max_patches": 5000,
 
-    # --- Text encoder (MiniLM — used for channel positional encoding, must match d_model=384) ---
+    # --- Text encoder (MiniLM — used for both channel encoding and contrastive alignment) ---
+    # TODO: try all-mpnet-base-v2 (768-dim) for richer contrastive text representations
     "sentence_bert_model": "all-MiniLM-L6-v2",
     "text_dim": 384,
 
-    # --- Contrastive text encoder (MPNet — used for label bank + channel fusion) ---
-    "contrastive_text_model": "all-mpnet-base-v2",  # 768-dim, richer label representations
-    "contrastive_text_dim": 768,
-
     # --- Semantic alignment head (scaled up from Small) ---
-    "semantic_dim": 768,                   # Matches contrastive_text_dim (MPNet output)
+    "semantic_dim": 384,                   # Matches MiniLM output dim
     "d_model_fused": 384,                  # Keep same as d_model
     "num_semantic_temporal_layers": 4,     # 2x Small
     "num_fusion_queries": 6,               # Scaled from 4
