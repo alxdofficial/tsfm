@@ -49,16 +49,21 @@ _forward_envs() {
 
 run_in_tmux() {
     local name="$1"
+    local gpu="${2:-}"
     local envs="${ABLATION_ENVS[$name]}"
     local session="ablation_${name}"
     local tsfm_envs="$(_forward_envs)"
+    local gpu_env=""
+    if [ -n "$gpu" ]; then
+        gpu_env="CUDA_VISIBLE_DEVICES=$gpu"
+    fi
 
     # Kill existing session if any
     tmux kill-session -t "$session" 2>/dev/null || true
 
     tmux new-session -d -s "$session" \
-        "cd $(pwd) && $tsfm_envs ABLATION_NAME=$name $envs python $TRAIN_SCRIPT 2>&1 | tee training_output/ablation_${name}.log; echo 'DONE: $name'; read"
-    echo "  Started tmux session: $session"
+        "cd $(pwd) && $tsfm_envs $gpu_env ABLATION_NAME=$name $envs python $TRAIN_SCRIPT 2>&1 | tee training_output/ablation_${name}.log; echo 'DONE: $name'; read"
+    echo "  Started tmux session: $session (GPU: ${gpu:-all})"
 }
 
 case "${1:-}" in
@@ -71,9 +76,17 @@ case "${1:-}" in
         done
         ;;
     parallel)
-        echo "=== Launching all ablations in parallel tmux sessions ==="
+        # Detect number of GPUs and assign one per run
+        NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l)
+        echo "=== Launching all ablations in parallel tmux sessions ($NUM_GPUS GPUs detected) ==="
+        GPU_IDX=0
         for name in baseline no_channel_fusion no_label_bank no_soft_targets no_signal_aug no_text_aug; do
-            run_in_tmux "$name"
+            if [ "$NUM_GPUS" -gt 1 ]; then
+                run_in_tmux "$name" "$GPU_IDX"
+                GPU_IDX=$(( (GPU_IDX + 1) % NUM_GPUS ))
+            else
+                run_in_tmux "$name"
+            fi
         done
         echo ""
         echo "All sessions launched. Monitor with:"
