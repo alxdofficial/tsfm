@@ -33,7 +33,6 @@ from tqdm import tqdm
 # Add project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "tools" / "models"))
 
 from val_scripts.human_activity_recognition.model_loading import load_model as load_tsfm_model, load_label_bank
 from val_scripts.human_activity_recognition.evaluation_metrics import compute_similarity
