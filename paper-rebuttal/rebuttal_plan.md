@@ -20,6 +20,7 @@ Companion: [`codebase_audit.md`](codebase_audit.md) (paper↔code discrepancies)
 | **D-3** | **C2:** open-set is synonym-group-scored for HALO too (paper says exact-match for text-aligned). | Add exact-match open-set column? | **Yes** (cheap). Defuses E's scoring concern; show ranking is preserved. |
 | **D-4** | **C11:** 46.0 (SCALING.md) vs 42.0 (deployed JSON) for the same model. | Which is canonical? | Use **42.0** (JSON-backed). Footnote/kill 46.0 before submission. |
 | **D-5** | Rebuttal format/length limit (single combined box seen in portal). | Confirm limit. | User to check HotCRP. |
+| **D-6** | **EXP-F found Table 7 (native-rate +11.4pp) is STALE** (old 4-layer ckpt); doesn't replicate on deployed model. | Re-run Table 7 on deployed model, or remove it & reframe conditioning as the fusion mechanism (generic identity suffices)? | **Recommend: replace Table 7** with the deployed 2×2 + the fairness-regime comparison (HALO@20Hz+generic +13.3pp vs MOMENT) — turns a stale claim into a stronger fairness result. |
 
 ---
 
@@ -66,6 +67,15 @@ heterogeneity," not "universal." **EXP-P3 quantifies exactly this split.**
 ---
 
 ## Findings log addendum
+
+- **EXP-F (fairness 2×2)** — branch `rebuttal/experiment/fairness-native-rate`. **(1) Fairness defense
+  airtight:** HALO in the baseline input regime (20Hz + generic descriptions) scores **41.56** 5-main
+  ZS-open, **+13.3pp over MOMENT (28.3)** — native-rate+metadata net **+0.41pp** → win is architectural.
+  **(2) NEW PAPER RISK — Table 7 is stale:** its +11.4pp native-rate benefit was computed on an old
+  4-layer ckpt (`tsfm_eval_native_rate.log`: `20260217_113136`, layers=4); does NOT replicate on
+  deployed model (combined +0.41, metadata **−3.27**). **(3)** channel-text *fusion* essential
+  (ablation −20pp) but generic channel identity ≥ rich placement text → temper conditioning framing.
+  → **D-6 below.**
 
 - **EXP-P2 (open-vocab eval)** — branch `rebuttal/experiment/open-vocab-eval`. (1) **Distractor
   robustness = clean win**: 6 absent-activity distractors change accuracy ≤0.2pp, selected 0–0.5% →
@@ -122,7 +132,7 @@ All outputs → `paper-rebuttal/experiments/<id>/`.
 | ID | Experiment | Addresses | Type | Where | Key files to change | Status |
 |----|-----------|-----------|------|-------|--------------------|--------|
 | **EXP-X** | **Exact-match open-set column** for HALO + LanHAR (vs group-match) | C2, E1, **D-3** | EVAL | local | `evaluate_tsfm.py:526–544`, `grouped_zero_shot.py` (`score_exact` vs `score_with_groups`) | ☑ **DONE** |
-| **EXP-F** | Fairness/native-rate: **HALO through 20Hz/120/6-ch** pipeline (all 5) + **LanHAR at native 50Hz** | C3, C7, A3, E1 | EVAL | local | `evaluate_tsfm.py` (20Hz data path exists), `evaluate_lanhar.py:1295` (load `data_native.npy`, fix filter fs) | ☐ |
+| **EXP-F** | Fairness/native-rate: **HALO through 20Hz/120/6-ch** pipeline (all 5) + **LanHAR at native 50Hz** | C3, C7, A3, E1 | EVAL | local | `evaluate_tsfm.py` (20Hz data path exists), `evaluate_lanhar.py:1295` (load `data_native.npy`, fix filter fs) | ☑ **HALO 2×2 DONE** · LanHAR-native = RunPod |
 | **EXP-P2** | Open-vocab eval: novel + paraphrase + fine-grained + distractor labels, split by synonym-distance | D2, E2 | EVAL | local | `evaluate_tsfm.py` candidate-set construction; `label_augmentation.py` | ☑ **DONE** |
 | **EXP-P3** | OOD failure analysis (HARTH **+ VTT**): confusion, nearest-text-label, per-activity, placement/modality/coverage breakdowns | A1, C3, D2, E3 | EVAL | local | generalize `harth_analysis.py` → VTT; add breakdowns | ☑ **DONE** |
 | **EXP-P5** | Scoring-protocol sensitivity (exact↔group, both directions, all models) | C2, E1 | EVAL | local | `grouped_zero_shot.py`, `evaluation_metrics.py` | ☐ |
