@@ -23,6 +23,17 @@ Companion: [`codebase_audit.md`](codebase_audit.md) (paper↔code discrepancies)
 
 ---
 
+## Findings log (completed experiments)
+
+- **EXP-X (exact-match scoring)** — branch `rebuttal/experiment/exact-match-scoring`. **HALO's open-set
+  lead survives and WIDENS under strict exact match.** 5-main: HALO group 41.97 / exact 38.63 (drop
+  −3.34, smallest among models); MOMENT group 28.28 / exact 20.68. Lead +13.7→**+17.95pp** under exact;
+  **HALO-exact (38.6) > every baseline's GROUP (≤28.3)**. Group leniency does not favor HALO. Validity:
+  HALO group reproduces deployed JSON to 0.000pp (all 7 ds); smoke gate passed. → defuses Reviewer E /
+  C2. Paper action: add exact-match column, fix scoring text. See experiment `README.md` + `results/`.
+
+---
+
 ## 1. Reviewer response map
 
 ### Reviewer A — Weak reject, knowledgeable → **CONVERT**
@@ -62,7 +73,7 @@ All outputs → `paper-rebuttal/experiments/<id>/`.
 
 | ID | Experiment | Addresses | Type | Where | Key files to change | Status |
 |----|-----------|-----------|------|-------|--------------------|--------|
-| **EXP-X** | **Exact-match open-set column** for HALO + LanHAR (vs group-match) | C2, E1, **D-3** | EVAL | local | `evaluate_tsfm.py:526–544`, `grouped_zero_shot.py` (`score_exact` vs `score_with_groups`) | ☐ |
+| **EXP-X** | **Exact-match open-set column** for HALO + LanHAR (vs group-match) | C2, E1, **D-3** | EVAL | local | `evaluate_tsfm.py:526–544`, `grouped_zero_shot.py` (`score_exact` vs `score_with_groups`) | ☑ **DONE** |
 | **EXP-F** | Fairness/native-rate: **HALO through 20Hz/120/6-ch** pipeline (all 5) + **LanHAR at native 50Hz** | C3, C7, A3, E1 | EVAL | local | `evaluate_tsfm.py` (20Hz data path exists), `evaluate_lanhar.py:1295` (load `data_native.npy`, fix filter fs) | ☐ |
 | **EXP-P2** | Open-vocab eval: novel + paraphrase + fine-grained + distractor labels, split by synonym-distance | D2, E2 | EVAL | local | `evaluate_tsfm.py` candidate-set construction; `label_augmentation.py` | ☐ |
 | **EXP-P3** | OOD failure analysis (HARTH **+ VTT**): confusion, nearest-text-label, per-activity, placement/modality/coverage breakdowns | A1, C3, D2, E3 | EVAL | local | generalize `harth_analysis.py` → VTT; add breakdowns | ☐ |
