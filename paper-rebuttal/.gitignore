@@ -1,0 +1,17 @@
+# Track rebuttal docs, designs, harnesses, and SMALL result artifacts (.md/.json/.py/.png/.csv/.log/.pdf).
+# Never commit large model/data binaries — copy only distilled metrics into experiments/<name>/results/.
+*.pt
+*.pth
+*.ckpt
+*.pkl
+*.npy
+*.npz
+*.bin
+*.safetensors
+# Scratch text extractions (regenerable from the PDFs)
+_paper_text.txt
+_reviews_text.txt
+# OS / editor
+.DS_Store
+__pycache__/
+*.pyc
