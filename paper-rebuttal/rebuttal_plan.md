@@ -67,6 +67,13 @@ heterogeneity," not "universal." **EXP-P3 quantifies exactly this split.**
 
 ## Findings log addendum
 
+- **EXP-P2 (open-vocab eval)** — branch `rebuttal/experiment/open-vocab-eval`. (1) **Distractor
+  robustness = clean win**: 6 absent-activity distractors change accuracy ≤0.2pp, selected 0–0.5% →
+  safe vocabulary expansion, no hallucination. (2) **Open-vocab demonstrated but phrasing-sensitive**:
+  novel strings absent from training retrieve at 98–133% retention for clear paraphrases
+  (standing→"standing still and upright"), degrade for poor ones (frozen-text-encoder artifact, ties
+  E5). T0 reproduces deployed closed-set JSON on all 5. Confirms E2/D2 with honest caveat.
+
 - **EXP-P3 (severe-OOD analysis)** — branch `rebuttal/experiment/ood-failure-analysis`. Root cause =
   **gravity** (raw gravity-laden acc, 132× motion; no/odd gyro; odd placement), an **alignment** failure
   not a representation one (HARTH↔train centroid cos 0.975; ranking inverts; recovers 2%→78% @0.5–5%).
@@ -116,7 +123,7 @@ All outputs → `paper-rebuttal/experiments/<id>/`.
 |----|-----------|-----------|------|-------|--------------------|--------|
 | **EXP-X** | **Exact-match open-set column** for HALO + LanHAR (vs group-match) | C2, E1, **D-3** | EVAL | local | `evaluate_tsfm.py:526–544`, `grouped_zero_shot.py` (`score_exact` vs `score_with_groups`) | ☑ **DONE** |
 | **EXP-F** | Fairness/native-rate: **HALO through 20Hz/120/6-ch** pipeline (all 5) + **LanHAR at native 50Hz** | C3, C7, A3, E1 | EVAL | local | `evaluate_tsfm.py` (20Hz data path exists), `evaluate_lanhar.py:1295` (load `data_native.npy`, fix filter fs) | ☐ |
-| **EXP-P2** | Open-vocab eval: novel + paraphrase + fine-grained + distractor labels, split by synonym-distance | D2, E2 | EVAL | local | `evaluate_tsfm.py` candidate-set construction; `label_augmentation.py` | ☐ |
+| **EXP-P2** | Open-vocab eval: novel + paraphrase + fine-grained + distractor labels, split by synonym-distance | D2, E2 | EVAL | local | `evaluate_tsfm.py` candidate-set construction; `label_augmentation.py` | ☑ **DONE** |
 | **EXP-P3** | OOD failure analysis (HARTH **+ VTT**): confusion, nearest-text-label, per-activity, placement/modality/coverage breakdowns | A1, C3, D2, E3 | EVAL | local | generalize `harth_analysis.py` → VTT; add breakdowns | ☑ **DONE** |
 | **EXP-P5** | Scoring-protocol sensitivity (exact↔group, both directions, all models) | C2, E1 | EVAL | local | `grouped_zero_shot.py`, `evaluation_metrics.py` | ☐ |
 | **EXP-P1** | Queue ablation: **none / hard-neg (current) / semantic-aware** queue | A2, E4 | TRAIN ×3 | RunPod | `memory_bank.py` (store label identity/text emb), `semantic_loss.py` (target matrix over queue), add `TSFM_QUEUE_MODE` | ☐ |
