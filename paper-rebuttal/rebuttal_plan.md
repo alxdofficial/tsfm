@@ -48,12 +48,30 @@ disproves it) — the airtight story decomposes it:
   RESULTS.md: "near-zero ZS accuracy is entirely due to distribution shift, not label coverage."
 - **Neither is a representation failure** — both recover to 64–78% with 1–10% labels.
 
+**Root cause (EXP-P3 evidence) = GRAVITY.** Datasets we excel on are smartphone CoreMotion streams
+(**gravity-removed** user acceleration); HARTH is **raw Axivity acc with gravity** — a static gravity
+vector **132× larger than its motion** (dynamic range 0.01 vs MotionSense 0.2), and **gyro = all zeros**.
+The encoder still maps HARTH to the *same* region (centroid cosine **0.975**, identical norms); only the
+text↔IMU **alignment inverts** (correct sim 0.836 < max-wrong 0.954, margin −0.118, 2.5% top-1) → it
+recovers 2%→78% with 0.5–5% labels. VTT covered-half also fails (2.53%) → VTT = label floor **+** signal
+OOD (gravity-laden hip acc, odd-unit gyro), not labels alone.
+
 Terminology to make explicit in the paper: the 5 "main" sets are **entire held-out datasets** (never
 trained / validated / tested on) that are distributionally *near* → this is genuine **cross-dataset
 zero-shot transfer**, a stronger claim than a held-out test split. Severe-OOD = same signal-format
 family pushed on **labels** (VTT) or **sensor placement/modality** (HARTH). Both are expected limits
 of a deliberately small model on a bounded corpus → motivates tempering to "effective under *moderate*
 heterogeneity," not "universal." **EXP-P3 quantifies exactly this split.**
+
+---
+
+## Findings log addendum
+
+- **EXP-P3 (severe-OOD analysis)** — branch `rebuttal/experiment/ood-failure-analysis`. Root cause =
+  **gravity** (raw gravity-laden acc, 132× motion; no/odd gyro; odd placement), an **alignment** failure
+  not a representation one (HARTH↔train centroid cos 0.975; ranking inverts; recovers 2%→78% @0.5–5%).
+  HARTH = signal/alignment (100% labels covered, even running/sitting fail); VTT = label floor (novel
+  0.0%) + signal OOD (covered 2.53%). Reproduces deployed JSON; smoke passed. See experiment `results/`.
 
 ---
 
@@ -99,7 +117,7 @@ All outputs → `paper-rebuttal/experiments/<id>/`.
 | **EXP-X** | **Exact-match open-set column** for HALO + LanHAR (vs group-match) | C2, E1, **D-3** | EVAL | local | `evaluate_tsfm.py:526–544`, `grouped_zero_shot.py` (`score_exact` vs `score_with_groups`) | ☑ **DONE** |
 | **EXP-F** | Fairness/native-rate: **HALO through 20Hz/120/6-ch** pipeline (all 5) + **LanHAR at native 50Hz** | C3, C7, A3, E1 | EVAL | local | `evaluate_tsfm.py` (20Hz data path exists), `evaluate_lanhar.py:1295` (load `data_native.npy`, fix filter fs) | ☐ |
 | **EXP-P2** | Open-vocab eval: novel + paraphrase + fine-grained + distractor labels, split by synonym-distance | D2, E2 | EVAL | local | `evaluate_tsfm.py` candidate-set construction; `label_augmentation.py` | ☐ |
-| **EXP-P3** | OOD failure analysis (HARTH **+ VTT**): confusion, nearest-text-label, per-activity, placement/modality/coverage breakdowns | A1, C3, D2, E3 | EVAL | local | generalize `harth_analysis.py` → VTT; add breakdowns | ☐ |
+| **EXP-P3** | OOD failure analysis (HARTH **+ VTT**): confusion, nearest-text-label, per-activity, placement/modality/coverage breakdowns | A1, C3, D2, E3 | EVAL | local | generalize `harth_analysis.py` → VTT; add breakdowns | ☑ **DONE** |
 | **EXP-P5** | Scoring-protocol sensitivity (exact↔group, both directions, all models) | C2, E1 | EVAL | local | `grouped_zero_shot.py`, `evaluation_metrics.py` | ☐ |
 | **EXP-P1** | Queue ablation: **none / hard-neg (current) / semantic-aware** queue | A2, E4 | TRAIN ×3 | RunPod | `memory_bank.py` (store label identity/text emb), `semantic_loss.py` (target matrix over queue), add `TSFM_QUEUE_MODE` | ☐ |
 | **EXP-P6** | Multi-seed (≥3) for headline + key ablations; report mean±std on +13.7pp | A6, E4 | TRAIN ×N | RunPod | `run_ablations.sh` seed loop; eval | ☐ |
