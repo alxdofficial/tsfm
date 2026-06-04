@@ -34,6 +34,29 @@ Companion: [`codebase_audit.md`](codebase_audit.md) (paper↔code discrepancies)
 
 ---
 
+## Severe-OOD framing (two distinct, EXPECTED failure modes) — for A1 / D2 / E3
+
+Severe-OOD is **not one cause**. Telling reviewers "it's just a labels problem" is wrong (HARTH
+disproves it) — the airtight story decomposes it:
+
+- **VTT-ConIoT = label novelty.** 50% coverage; 8/16 construction activities (climbing ladder,
+  roll/spray painting, leveling, lifting, pushing cart, carrying, kneeling work) have **no analog**
+  in the 87-label vocabulary → an **irreducible zero-shot floor for *any* label-retrieval method**,
+  not a HALO defect.
+- **HARTH = sensor/modality shift, NOT labels.** **100% label coverage**, yet ~2% ZS, because
+  back/thigh **accelerometer-only (no gyro, gravity-laden)** ≠ waist/wrist phone IMUs in training.
+  RESULTS.md: "near-zero ZS accuracy is entirely due to distribution shift, not label coverage."
+- **Neither is a representation failure** — both recover to 64–78% with 1–10% labels.
+
+Terminology to make explicit in the paper: the 5 "main" sets are **entire held-out datasets** (never
+trained / validated / tested on) that are distributionally *near* → this is genuine **cross-dataset
+zero-shot transfer**, a stronger claim than a held-out test split. Severe-OOD = same signal-format
+family pushed on **labels** (VTT) or **sensor placement/modality** (HARTH). Both are expected limits
+of a deliberately small model on a bounded corpus → motivates tempering to "effective under *moderate*
+heterogeneity," not "universal." **EXP-P3 quantifies exactly this split.**
+
+---
+
 ## 1. Reviewer response map
 
 ### Reviewer A — Weak reject, knowledgeable → **CONVERT**
