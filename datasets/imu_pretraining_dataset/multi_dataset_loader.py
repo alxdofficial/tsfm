@@ -311,17 +311,26 @@ class IMUPretrainingDataset(Dataset):
 
             # Apply max_sessions_per_dataset limit if specified
             if self.max_sessions_per_dataset is not None and len(dataset_sessions) > self.max_sessions_per_dataset:
-                # Shuffle before limiting to get diverse samples
-                random.shuffle(dataset_sessions)
+                # Deterministic per-dataset subset via a DEDICATED rng, so it never
+                # consumes the global RNG state (which would make _create_splits
+                # cache-state-dependent) and is identical across train/val/test instances.
+                random.Random(f"{self.seed}-{dataset_name}-maxsessions").shuffle(dataset_sessions)
                 dataset_sessions = dataset_sessions[:self.max_sessions_per_dataset]
                 print(f"  {dataset_name}: limited to {self.max_sessions_per_dataset} sessions (from {total_count})")
 
             self.sessions.extend(dataset_sessions)
 
     def _create_splits(self):
-        """Create train/val/test splits."""
-        # Shuffle sessions
-        random.shuffle(self.sessions)
+        """Create train/val/test splits.
+
+        Uses a DEDICATED, seed-derived RNG so the partition is deterministic and
+        INDEPENDENT of cache state / prior global-RNG consumption. Previously this used
+        the global `random.shuffle`, whose state differed between a cache-miss instance
+        (train) and a cache-hit instance (val), producing different partitions on the
+        same config -> train/val leakage on the first run. See paper-rebuttal/debug_sweep_report.md.
+        """
+        # Shuffle sessions (cache- and order-independent)
+        random.Random(f"{self.seed}-splits").shuffle(self.sessions)
 
         # Calculate split indices
         n_total = len(self.sessions)
