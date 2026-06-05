@@ -231,7 +231,7 @@ def get_window_labels(labels_raw: np.ndarray, label_index: int = 0) -> np.ndarra
         [np.bincount(row.astype(int)).argmax() for row in act_labels],
         dtype=np.int64
     )
-    return window_labels
+    return window_labels + t  # restore index offset (labels are canonical indices; HARTH has min>0)
 
 
 def majority_vote_subwindows(sub_preds: np.ndarray, parent_ids: np.ndarray,
