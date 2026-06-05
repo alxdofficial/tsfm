@@ -315,13 +315,30 @@ def predict_svm_global(svm_model, data, logit_mask=None):
     Returns:
         pred_global_indices: (N,) predicted global label indices
     """
+    # libsvm's RBF predict/decision_function is single-threaded C but RELEASES the GIL,
+    # so we parallelize across CPU threads for large test sets (~12x on 24 cores).
+    # Math-identical to the serial call (same libsvm on row-chunks, concatenated in order).
+    import os as _os
+    from joblib import Parallel, delayed
+    _nthreads = max(1, (_os.cpu_count() or 2) - 1)
+    _parallel = len(data) > 4000 and _nthreads > 1
+
     if logit_mask is None:
-        # Open-set: simple predict
+        # Open-set: predict (libsvm OvO voting)
+        if _parallel:
+            parts = Parallel(n_jobs=_nthreads, prefer="threads")(
+                delayed(svm_model.predict)(c) for c in np.array_split(data, _nthreads))
+            return np.concatenate(parts).astype(np.int64)
         return svm_model.predict(data).astype(np.int64)
 
     # Closed-set: use decision_function to get per-class scores,
     # mask disallowed classes, then argmax
-    scores = svm_model.decision_function(data)  # (N, n_svm_classes)
+    if _parallel:
+        parts = Parallel(n_jobs=_nthreads, prefer="threads")(
+            delayed(svm_model.decision_function)(c) for c in np.array_split(data, _nthreads))
+        scores = np.concatenate(parts, axis=0)  # (N, n_svm_classes)
+    else:
+        scores = svm_model.decision_function(data)  # (N, n_svm_classes)
     svm_classes = svm_model.classes_  # global label indices the SVM knows
 
     # For binary classification, decision_function returns (N,) not (N,2)
