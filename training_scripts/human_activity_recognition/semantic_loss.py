@@ -117,7 +117,7 @@ class InfoNCELoss(nn.Module):
         return imu_queue is not None and text_queue is not None and len(imu_queue) > 0
 
     def _forward_single_prototype(self, imu_embeddings, text_embeddings, imu_queue, text_queue,
-                                    frozen_text_embeddings=None):
+                                    frozen_text_embeddings=None, frozen_queue=None):
         """Compute loss for single-prototype (2D) text embeddings.
 
         Args:
@@ -147,10 +147,16 @@ class InfoNCELoss(nn.Module):
             # Use frozen SBERT embeddings for soft targets if available.
             # This prevents the learnable label bank from gaming the target distribution
             # by making all text embeddings artificially similar.
+            # EXP-P1 semantic queue: when a frozen queue is supplied, the soft-target support
+            # is extended to the queue so synonyms IN THE QUEUE get soft (not zero) targets.
+            use_semantic_queue = (frozen_text_embeddings is not None
+                                  and frozen_queue is not None and len(frozen_queue) > 0)
             if frozen_text_embeddings is not None:
                 soft_text = frozen_text_embeddings
-                # No queue for frozen embeddings — use only in-batch similarities
-                soft_text_all = soft_text
+                if use_semantic_queue:
+                    soft_text_all = torch.cat([soft_text, frozen_queue.detach()], dim=0)  # (B+Q, Dsbert)
+                else:
+                    soft_text_all = soft_text  # in-batch only (hard_neg queue)
             else:
                 soft_text = text_embeddings
                 soft_text_all = all_text
@@ -162,18 +168,21 @@ class InfoNCELoss(nn.Module):
             text_similarity_full = (text_similarity_full - sim_mean) / sim_std / self.soft_target_temperature
 
             if frozen_text_embeddings is not None:
-                # Frozen soft targets: (B, B) — in-batch only, no queue dimension
-                soft_targets_inbatch = F.softmax(text_similarity_full, dim=1)
                 queue_size = all_text.shape[0] - batch_size
-                if queue_size > 0:
-                    # Pad soft targets to match logit dimensions (B, B+Q)
-                    # Queue entries get zero soft-target weight
+                if use_semantic_queue:
+                    # Soft targets already span (B, B+Q): softmax distributes mass over in-batch
+                    # AND queue synonyms. frozen_queue is aligned 1:1 with text_queue / imu_queue,
+                    # so this matches the logit columns and fixes BOTH i2t and t2i (shared targets).
+                    soft_targets_full = F.softmax(text_similarity_full, dim=1)
+                elif queue_size > 0:
+                    # Hard-negative queue: in-batch soft (B,B); queue columns get zero soft mass.
+                    soft_targets_inbatch = F.softmax(text_similarity_full, dim=1)
                     soft_targets_full = torch.cat([
                         soft_targets_inbatch,
                         torch.zeros(batch_size, queue_size, device=imu_embeddings.device),
                     ], dim=1)
                 else:
-                    soft_targets_full = soft_targets_inbatch
+                    soft_targets_full = F.softmax(text_similarity_full, dim=1)
             else:
                 soft_targets_full = F.softmax(text_similarity_full, dim=1)
 
@@ -349,7 +358,8 @@ class InfoNCELoss(nn.Module):
         return_metrics: bool = True,
         imu_queue: Optional[torch.Tensor] = None,
         text_queue: Optional[torch.Tensor] = None,
-        frozen_text_embeddings: Optional[torch.Tensor] = None
+        frozen_text_embeddings: Optional[torch.Tensor] = None,
+        frozen_queue: Optional[torch.Tensor] = None
     ) -> tuple[torch.Tensor, Optional[Dict[str, float]]]:
         """
         Compute InfoNCE loss with optional soft targets and memory bank queue.
@@ -378,7 +388,8 @@ class InfoNCELoss(nn.Module):
         else:
             loss, logits, logits_t2i, targets, sim_mean = \
                 self._forward_single_prototype(imu_embeddings, text_embeddings, imu_queue, text_queue,
-                                               frozen_text_embeddings=frozen_text_embeddings)
+                                               frozen_text_embeddings=frozen_text_embeddings,
+                                               frozen_queue=frozen_queue)
             text_for_metrics = text_embeddings
 
         # NaN debugging
@@ -436,7 +447,8 @@ class SigLIPLoss(nn.Module):
         return_metrics: bool = True,
         imu_queue: Optional[torch.Tensor] = None,
         text_queue: Optional[torch.Tensor] = None,
-        frozen_text_embeddings: Optional[torch.Tensor] = None
+        frozen_text_embeddings: Optional[torch.Tensor] = None,
+        frozen_queue: Optional[torch.Tensor] = None
     ) -> tuple[torch.Tensor, Optional[Dict[str, float]]]:
         """
         Compute SigLIP loss.
@@ -558,7 +570,8 @@ class SemanticAlignmentLoss(nn.Module):
         return_metrics: bool = True,
         imu_queue: Optional[torch.Tensor] = None,
         text_queue: Optional[torch.Tensor] = None,
-        frozen_text_embeddings: Optional[torch.Tensor] = None
+        frozen_text_embeddings: Optional[torch.Tensor] = None,
+        frozen_queue: Optional[torch.Tensor] = None
     ) -> tuple[torch.Tensor, Optional[Dict[str, float]]]:
         """
         Compute semantic alignment loss.
@@ -571,13 +584,15 @@ class SemanticAlignmentLoss(nn.Module):
             imu_queue: Optional queue of past IMU embeddings (queue_size, embedding_dim)
             text_queue: Optional queue of past text embeddings (queue_size, embedding_dim)
             frozen_text_embeddings: Optional frozen SBERT mean-pool embeddings for soft targets
+            frozen_queue: Optional frozen SBERT embeddings for queued entries (EXP-P1 semantic queue)
 
         Returns:
             loss: Scalar loss value
             metrics: Optional dict with metrics
         """
         return self.loss_fn(imu_embeddings, text_embeddings, label_texts, return_metrics,
-                           imu_queue, text_queue, frozen_text_embeddings=frozen_text_embeddings)
+                           imu_queue, text_queue, frozen_text_embeddings=frozen_text_embeddings,
+                           frozen_queue=frozen_queue)
 
     def forward_cached(
         self,

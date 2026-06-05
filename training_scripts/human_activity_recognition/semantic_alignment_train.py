@@ -746,6 +746,10 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
 
             # Encode text embeddings
             text_embeddings = label_bank.encode(label_texts, normalize=True)
+            # EXP-P1 semantic queue: cache frozen SBERT text so warmup-filled entries carry
+            # soft-target info (None / no-op for the standard hard-negative queue).
+            warm_frozen = (label_bank.encode_frozen(label_texts, normalize=True)
+                           if memory_bank.frozen_queue is not None else None)
 
             # Forward pass (no gradients)
             imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
@@ -757,7 +761,9 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
                 if flat_text.dim() == 3:
                     sims = torch.einsum('bd,bkd->bk', flat_imu, flat_text)
                     flat_text = flat_text[torch.arange(flat_text.shape[0]), sims.argmax(1)]
-                memory_bank.update(flat_imu, flat_text)
+                warm_flat_frozen = (warm_frozen.repeat_interleave(patch_mask.sum(dim=1).long(), dim=0)[:flat_imu.shape[0]]
+                                    if warm_frozen is not None else None)
+                memory_bank.update(flat_imu, flat_text, frozen_emb=warm_flat_frozen)
             else:
                 # For multi-prototype: store the winning prototype (nearest to IMU)
                 text_for_queue = text_embeddings
@@ -765,7 +771,7 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
                     sims = torch.einsum('bd,bkd->bk', imu_embeddings, text_for_queue)
                     best_idx = sims.argmax(dim=1)
                     text_for_queue = text_for_queue[torch.arange(text_for_queue.shape[0]), best_idx]
-                memory_bank.update(imu_embeddings, text_for_queue)
+                memory_bank.update(imu_embeddings, text_for_queue, frozen_emb=warm_frozen)
             
             # Print progress
             filled = min((batch_idx + 1) * len(label_texts), memory_bank.queue_size)
@@ -914,8 +920,10 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         if memory_bank is not None and USE_MEMORY_BANK:
             with torch.no_grad():
                 imu_queue, text_queue = memory_bank.get_queue_embeddings(device)
+                frozen_queue = memory_bank.get_frozen_queue(device)  # EXP-P1: None unless semantic mode
         else:
             imu_queue, text_queue = None, None
+            frozen_queue = None
 
         with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
             imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
@@ -929,11 +937,11 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
                 )[:flat_imu.shape[0]]
                 loss, metrics = criterion(flat_imu, flat_text, flat_labels,
                                          return_metrics=True, imu_queue=imu_queue, text_queue=text_queue,
-                                         frozen_text_embeddings=flat_frozen)
+                                         frozen_text_embeddings=flat_frozen, frozen_queue=frozen_queue)
             else:
                 loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
                                          return_metrics=True, imu_queue=imu_queue, text_queue=text_queue,
-                                         frozen_text_embeddings=frozen_text)
+                                         frozen_text_embeddings=frozen_text, frozen_queue=frozen_queue)
 
         window_samples += current_bs
         window_micro_batches += 1
@@ -997,14 +1005,14 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
                     if flat_text_q.dim() == 3:
                         sims = torch.einsum('bd,bkd->bk', flat_imu_q, flat_text_q)
                         flat_text_q = flat_text_q[torch.arange(flat_text_q.shape[0]), sims.argmax(1)]
-                    memory_bank.update(flat_imu_q, flat_text_q)
+                    memory_bank.update(flat_imu_q, flat_text_q, frozen_emb=flat_frozen)
                 else:
                     text_for_queue = text_embeddings.detach()
                     if text_for_queue.dim() == 3:
                         sims = torch.einsum('bd,bkd->bk', imu_embeddings.detach(), text_for_queue)
                         best_idx = sims.argmax(dim=1)
                         text_for_queue = text_for_queue[torch.arange(text_for_queue.shape[0]), best_idx]
-                    memory_bank.update(imu_embeddings.detach(), text_for_queue)
+                    memory_bank.update(imu_embeddings.detach(), text_for_queue, frozen_emb=frozen_text)
 
         batch_loss = metrics['loss']
         if math.isnan(batch_loss):
@@ -2006,8 +2014,13 @@ def main():
     # Initialize memory bank if enabled
     memory_bank = None
     if USE_MEMORY_BANK:
-        print(f"Initializing memory bank (queue_size={MEMORY_BANK_SIZE}, embedding_dim={SEMANTIC_DIM}, device={device})...")
-        memory_bank = MemoryBank(queue_size=MEMORY_BANK_SIZE, embedding_dim=SEMANTIC_DIM, device=device)
+        # EXP-P1 semantic queue: store frozen SBERT text (CONTRASTIVE_TEXT_DIM) per entry so queued
+        # synonyms get soft targets. None for the hard_neg / default queue (no frozen storage).
+        _frozen_dim = CONTRASTIVE_TEXT_DIM if QUEUE_MODE == "semantic" else None
+        print(f"Initializing memory bank (queue_size={MEMORY_BANK_SIZE}, embedding_dim={SEMANTIC_DIM}, "
+              f"frozen_dim={_frozen_dim}, queue_mode={QUEUE_MODE}, device={device})...")
+        memory_bank = MemoryBank(queue_size=MEMORY_BANK_SIZE, embedding_dim=SEMANTIC_DIM, device=device,
+                                 frozen_dim=_frozen_dim)
         print(f"✓ Memory bank initialized on {device} - provides {MEMORY_BANK_SIZE} additional negatives (no CPU round-trips)")
 
     plotter = TrainingPlotter(plot_dir)
