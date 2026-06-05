@@ -117,46 +117,64 @@ fi
 
 # ----------------------------- 1. setup (code + data + deps) -----------------------------
 log "=== $RUN_TAG : setup ==="
-# code: prefer the Drive archive (no git auth); fall back to an existing checkout.
-if [[ ! -d "$WORKDIR/training_scripts" ]]; then
-  if [[ -n "$CODE_ID" ]]; then
-    log "downloading code archive ($BRANCH) from Drive id $CODE_ID ..."
-    pip install -q gdown 2>/dev/null || true
-    gdown "$CODE_ID" -O /tmp/tsfm_code.tar.gz || { log "FATAL: code download failed"; exit 1; }
-    mkdir -p "$WORKDIR"; tar xzf /tmp/tsfm_code.tar.gz -C "$WORKDIR"; rm -f /tmp/tsfm_code.tar.gz
-  else
-    log "FATAL: no code at $WORKDIR and CODE_GDRIVE_ID_${EXP} unset."
-    log "  Create it on the dev box: scripts/make_code_bundle.sh, upload to Drive, export CODE_GDRIVE_ID_${EXP}."
-    exit 1
-  fi
+fatal() { log "FATAL: $*"; exit 1; }   # every critical setup step is checked explicitly (no silent continue)
+
+# code: pull THIS experiment's archive from Drive (no git auth). A marker guards against a reused
+# volume silently running the WRONG experiment's code (e.g. P1 code under --exp P6) or stale code.
+MARKER="$WORKDIR/.exp_code_marker"; WANT_MARKER="${EXP}:${CODE_ID}"
+if [[ ! -f "$MARKER" || "$(cat "$MARKER" 2>/dev/null)" != "$WANT_MARKER" ]]; then
+  [[ -n "$CODE_ID" ]] || fatal "no matching code at $WORKDIR and CODE_GDRIVE_ID_${EXP} unset. Run scripts/make_code_bundle.sh, upload to Drive, export CODE_GDRIVE_ID_${EXP}."
+  log "fetching code archive ($BRANCH, id $CODE_ID) — FRESH extract (marker mismatch) ..."
+  pip install -q gdown 2>/dev/null || true
+  rm -rf "$WORKDIR"; mkdir -p "$WORKDIR"
+  gdown "$CODE_ID" -O /tmp/tsfm_code.tar.gz || fatal "code download failed"
+  tar tzf /tmp/tsfm_code.tar.gz >/dev/null 2>&1 || fatal "code archive is corrupt/truncated"
+  tar xzf /tmp/tsfm_code.tar.gz -C "$WORKDIR" || fatal "code extract failed"
+  rm -f /tmp/tsfm_code.tar.gz
+  echo "$WANT_MARKER" > "$MARKER"
+else
+  log "code present for ${EXP} (marker matches) — reusing."
 fi
 cd "$WORKDIR"
 
-# deps (idempotent; never touch the pre-installed torch)
+# deps (idempotent; never replace the pre-installed CUDA torch). zip is needed for artifact packaging.
 if ! python -c "import sentence_transformers, umap" 2>/dev/null; then
-  log "installing deps (preserving system torch) ..."
-  pip install --upgrade pip -q
+  log "installing deps ..."
+  pip install --upgrade pip -q || fatal "pip upgrade failed"
   pip install -q numpy scipy pandas pyarrow matplotlib plotly scikit-learn umap-learn \
-                 tqdm joblib sentence-transformers transformers pydantic requests gdown
+                 tqdm joblib sentence-transformers transformers pydantic requests gdown || fatal "pip deps failed"
   python - <<'PY' 2>/dev/null || true
 from sentence_transformers import SentenceTransformer
 SentenceTransformer('all-MiniLM-L6-v2'); print("SBERT cached")
 PY
 fi
+command -v zip >/dev/null || { apt-get update -qq && apt-get install -y -qq zip unzip; } 2>/dev/null \
+  || log "WARN: could not install zip — will rclone the artifact DIRECTORY instead."
 
-# data (RAM disk; guarded so a re-run is instant)
-if [[ ! -d "$DATA_MOUNT/uci_har/sessions" ]]; then
-  log "downloading + extracting training data from Drive id $DATA_GDRIVE_ID ..."
-  mkdir -p "$DATA_MOUNT"
-  [[ -f /tmp/tsfm_data.tar.gz ]] || gdown "$DATA_GDRIVE_ID" -O /tmp/tsfm_data.tar.gz
-  tar xzf /tmp/tsfm_data.tar.gz --no-same-owner -C "$DATA_MOUNT" --strip-components=1
+# GPU MUST be live before a multi-hour train. A CPU fallback (semantic_alignment_train falls back
+# silently) or a pip-clobbered CUDA torch would burn pod money for days — abort instead.
+python -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)" \
+  || fatal "CUDA not available (no GPU, or pip replaced the CUDA torch). Aborting BEFORE a paid train."
+log "GPU OK: $(python -c 'import torch; print(torch.cuda.get_device_name(0))' 2>/dev/null)"
+
+# data (RAM disk). Validate the tarball + use a completion sentinel so a PARTIAL extract is never reused.
+DATA_DONE="$DATA_MOUNT/.extract_complete"
+if [[ ! -f "$DATA_DONE" ]]; then
+  log "downloading + extracting training data (id $DATA_GDRIVE_ID) ..."
+  rm -rf "$DATA_MOUNT"; mkdir -p "$DATA_MOUNT"
+  rm -f /tmp/tsfm_data.tar.gz   # never reuse a possibly-partial earlier download
+  gdown "$DATA_GDRIVE_ID" -O /tmp/tsfm_data.tar.gz || fatal "data download failed"
+  tar tzf /tmp/tsfm_data.tar.gz >/dev/null 2>&1 || fatal "data archive is corrupt/truncated"
+  tar xzf /tmp/tsfm_data.tar.gz --no-same-owner -C "$DATA_MOUNT" --strip-components=1 || fatal "data extract failed"
   rm -f /tmp/tsfm_data.tar.gz
+  touch "$DATA_DONE"
 fi
 rm -rf "$WORKDIR/data" 2>/dev/null; ln -sf "$DATA_MOUNT" "$WORKDIR/data"
-# checkpoints land on the persistent volume
+N_DS=$(ls -d "$WORKDIR"/data/*/sessions 2>/dev/null | wc -l)
+[[ "$N_DS" -ge 10 ]] || fatal "only $N_DS datasets present (<10) — data incomplete, aborting before a confounded run."
 mkdir -p /workspace/training_output; rm -rf "$WORKDIR/training_output" 2>/dev/null
 ln -sf /workspace/training_output "$WORKDIR/training_output"
-log "setup complete ($(ls -d "$WORKDIR"/data/*/sessions 2>/dev/null | wc -l) datasets present)"
+log "setup complete ($N_DS datasets, GPU live)"
 
 # ----------------------------- 2-3. train -----------------------------
 log "=== $RUN_TAG : training ($CMD_PREVIEW) ==="
@@ -165,51 +183,72 @@ env "${RUN_ENV[@]}" PYTHONUNBUFFERED=1 TSFM_NO_COMPILE=1 \
     python training_scripts/human_activity_recognition/semantic_alignment_train.py \
     2>&1 | tee "/workspace/${RUN_TAG}.log"
 TRAIN_RC=${PIPESTATUS[0]}
-set -e
 log "training exited rc=$TRAIN_RC"
+# NOTE: deliberately NOT under `set -e` here — a failed glob/cp must not abort before we secure artifacts.
 
-# ----------------------------- 4. retrieve artifacts (ALWAYS, even on failure) -----------------------------
+# ----------------------------- 4. retrieve artifacts (ALWAYS, even on failure; non-fatal) -----------------------------
 DEST="$ARTIFACT_ROOT/$EXP/${VARIANT}_seed${SEED}"
 mkdir -p "$DEST"
-RUN_DIR=$(ls -dt "$WORKDIR"/training_output/semantic_alignment/*_ablation_${RUN_TAG} 2>/dev/null | head -1)
+RUN_DIR=$(ls -dt "$WORKDIR"/training_output/semantic_alignment/*_ablation_${RUN_TAG} 2>/dev/null | head -1 || true)
 if [[ -n "$RUN_DIR" ]]; then
   log "collecting artifacts from $RUN_DIR -> $DEST"
-  cp -f "$RUN_DIR/best.pt" "$DEST/" 2>/dev/null || cp -f "$(ls -t "$RUN_DIR"/epoch_*.pt 2>/dev/null | head -1)" "$DEST/" 2>/dev/null || true
+  cp -f "$RUN_DIR/best.pt" "$DEST/" 2>/dev/null \
+    || cp -f "$(ls -t "$RUN_DIR"/epoch_*.pt 2>/dev/null | head -1)" "$DEST/best.pt" 2>/dev/null || true
   cp -f "$RUN_DIR/hyperparameters.json" "$DEST/" 2>/dev/null || true
-  cp -f "$RUN_DIR/plots/metrics.json" "$DEST/metrics.json" 2>/dev/null || true   # NOTE: lives in plots/, not run root
+  cp -f "$RUN_DIR/plots/metrics.json" "$DEST/metrics.json" 2>/dev/null || true   # lives in plots/, NOT run root
 else
-  log "WARNING: no run dir matched *_ablation_${RUN_TAG} — copying log only"
+  log "WARNING: no run dir matched *_ablation_${RUN_TAG}"
 fi
 cp -f "/workspace/${RUN_TAG}.log" "$DEST/train.log" 2>/dev/null || true
-( cd "$ARTIFACT_ROOT/$EXP" && zip -qr "/workspace/${RUN_TAG}.zip" "${VARIANT}_seed${SEED}" ) 2>/dev/null || true
-log "artifacts persisted on /workspace (survives termination): $DEST"
 
-# best-effort push to Drive (non-fatal). Requires `rclone config` with a remote named $RCLONE_REMOTE.
-if command -v rclone >/dev/null && rclone listremotes 2>/dev/null | grep -q "^${RCLONE_REMOTE}:"; then
-  log "pushing $RUN_TAG.zip to ${RCLONE_REMOTE}:${RCLONE_DEST}/ ..."
-  rclone copy "/workspace/${RUN_TAG}.zip" "${RCLONE_REMOTE}:${RCLONE_DEST}/" 2>&1 | tail -2 || log "rclone push failed (non-fatal)"
+# verify the ESSENTIAL artifacts landed — this gates auto-terminate (don't kill a pod that lost its run).
+ARTIFACTS_OK=0
+if [[ -f "$DEST/best.pt" && -f "$DEST/hyperparameters.json" && -f "$DEST/metrics.json" ]]; then
+  ARTIFACTS_OK=1; log "artifacts verified on /workspace: $DEST"
 else
-  log "rclone remote '${RCLONE_REMOTE}' not configured — artifacts are on /workspace only."
-  log "  retrieve with: scripts/runpod_fetch.sh  (or 'runpodctl send /workspace/${RUN_TAG}.zip' from this pod)."
+  log "WARNING: essential artifacts MISSING in $DEST (need best.pt + hyperparameters.json + metrics.json)."
 fi
 
-# ----------------------------- 5. auto-terminate (stop billing) -----------------------------
-if [[ "$TRAIN_RC" -ne 0 ]]; then
-  log "training FAILED (rc=$TRAIN_RC) — leaving the pod ALIVE for SSH debugging. Not terminating."
-  exit "$TRAIN_RC"
+# package (zip if available; else fall back to a directory rclone so we never depend on zip existing)
+HAVE_ZIP=0
+if command -v zip >/dev/null; then
+  ( cd "$ARTIFACT_ROOT/$EXP" && zip -qr "/workspace/${RUN_TAG}.zip" "${VARIANT}_seed${SEED}" ) && HAVE_ZIP=1 || log "WARN: zip failed"
 fi
-if [[ "$NO_TERMINATE" == 1 ]]; then
-  log "--no-terminate set — done; pod left running."
+
+# push to Drive (best-effort). DRIVE_OK gates auto-terminate unless ALLOW_LOCAL_ONLY_TERMINATE=1.
+DRIVE_OK=0
+if command -v rclone >/dev/null && rclone listremotes 2>/dev/null | grep -q "^${RCLONE_REMOTE}:"; then
+  if [[ "$HAVE_ZIP" == 1 ]]; then
+    rclone copy "/workspace/${RUN_TAG}.zip" "${RCLONE_REMOTE}:${RCLONE_DEST}/" && DRIVE_OK=1 || log "WARN: rclone zip push failed"
+  else
+    rclone copy "$DEST" "${RCLONE_REMOTE}:${RCLONE_DEST}/${EXP}/${VARIANT}_seed${SEED}/" && DRIVE_OK=1 || log "WARN: rclone dir push failed"
+  fi
+  [[ "$DRIVE_OK" == 1 ]] && log "artifacts pushed to ${RCLONE_REMOTE}:${RCLONE_DEST}/"
+else
+  log "rclone remote '${RCLONE_REMOTE}' not configured — artifacts on /workspace only (retrieve via scripts/runpod_fetch.sh / runpodctl send)."
+fi
+
+# ----------------------------- 5. auto-terminate (stop billing) — only when artifacts are SAFE -----------------------------
+if [[ "$TRAIN_RC" -ne 0 ]]; then
+  log "training FAILED (rc=$TRAIN_RC) — leaving pod ALIVE for SSH debugging. Not terminating."; exit "$TRAIN_RC"
+fi
+if [[ "$NO_TERMINATE" == 1 ]]; then log "--no-terminate set — pod left running."; exit 0; fi
+if [[ "$ARTIFACTS_OK" != 1 ]]; then
+  log "ARTIFACTS NOT VERIFIED — leaving pod ALIVE so the run isn't lost. Inspect $DEST, then terminate manually."; exit 0
+fi
+if [[ "$DRIVE_OK" != 1 && "${ALLOW_LOCAL_ONLY_TERMINATE:-0}" != 1 ]]; then
+  log "Artifacts are on /workspace but NOT confirmed on Drive — leaving pod ALIVE (a released volume would lose them)."
+  log "  Retrieve now ('runpodctl send /workspace/${RUN_TAG}.zip'), or set ALLOW_LOCAL_ONLY_TERMINATE=1 to terminate anyway."
   exit 0
 fi
-log "SUCCESS — terminating pod ${RUNPOD_POD_ID:-?} to stop billing (artifacts are safe on /workspace + Drive)."
+log "SUCCESS + artifacts safe — terminating pod ${RUNPOD_POD_ID:-?} to stop billing."
 if command -v runpodctl >/dev/null && [[ -n "${RUNPOD_POD_ID:-}" ]]; then
   runpodctl remove pod "$RUNPOD_POD_ID" && exit 0
 fi
-# fallback to the REST API (needs RUNPOD_API_KEY)
 if [[ -n "${RUNPOD_POD_ID:-}" && -n "${RUNPOD_API_KEY:-}" ]]; then
   curl -s -X DELETE "https://rest.runpod.io/v1/pods/${RUNPOD_POD_ID}" \
        -H "Authorization: Bearer ${RUNPOD_API_KEY}" >/dev/null && exit 0
 fi
 log "WARNING: could not auto-terminate (no runpodctl / RUNPOD_POD_ID / RUNPOD_API_KEY). TERMINATE MANUALLY."
+exit 0
 exit 0

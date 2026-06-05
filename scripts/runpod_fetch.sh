@@ -24,7 +24,7 @@ if command -v rclone >/dev/null && rclone listremotes 2>/dev/null | grep -q "^${
     name=$(basename "$z" .zip)          # e.g. P1_semantic_seed42
     exp="${name%%_*}"                    # P1 / P6 / P7
     mkdir -p "$DEST/$exp"
-    unzip -oq "$z" -d "$DEST/$exp/"
+    unzip -oq "$z" -d "$DEST/$exp/" || { echo "  WARN: failed to unpack $name (corrupt zip?) — skipping"; continue; }
     echo "  unpacked $name -> $DEST/$exp/"
   done
   echo "Done. Artifacts under: $DEST/"
