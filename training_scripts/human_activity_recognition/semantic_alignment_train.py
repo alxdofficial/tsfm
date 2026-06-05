@@ -131,7 +131,7 @@ DATA_ROOT = os.environ.get("TSFM_DATA_ROOT", os.path.join(os.path.dirname(os.pat
 # Zero-shot test datasets are EXCLUDED: motionsense, realworld, mobiact, vtt_coniot
 # Also excluded for GOAT comparison: opportunity, realdisp, daphnet_fog
 DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'recgym']
-random.seed(42)
+random.seed(int(os.environ.get("TSFM_SEED", "42")))  # TSFM_SEED enables the multi-seed ablation (EXP-P6)
 PATCH_SIZE_PER_DATASET = {
     # Fixed-length sessions (2.56s) - use 1.0s patches for 2 patches/session
     'uci_har': 1.0,       # 50 Hz, 2.56s fixed sessions
@@ -163,7 +163,9 @@ MAX_PATCHES_PER_SAMPLE = 48  # Matches good small_v1_best checkpoint config
 MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
 
 # ---- Architecture configuration (single source of truth: model/config.py) ----
-MODEL_SIZE = "small_deep"  # Options: "tiny", "small", "small_deep", "medium", "large"
+# TSFM_MODEL_SIZE enables size/tokenizer ablations (EXP-P7) without source edits.
+# The ablation launcher sets env vars BEFORE invoking python, so this import-time read is correct.
+MODEL_SIZE = os.environ.get("TSFM_MODEL_SIZE", "small_deep")  # tiny | small | small_deep | medium | large
 _cfg = get_config(MODEL_SIZE)
 
 # Encoder
@@ -217,7 +219,7 @@ SAVE_EVERY = 5
 # Resume configuration - set to a folder path to resume training from that checkpoint
 # Example: RESUME_FROM = "training_output/semantic_alignment/20251124_234942"
 RESUME_FROM = None  # Fresh training with small_deep config
-SEED = 42
+SEED = int(os.environ.get("TSFM_SEED", "42"))  # numpy randomness is seeded inside the data loader (seed=SEED)
 MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # ---- Training hyperparameters ----
