@@ -107,8 +107,10 @@ scaling is a no-op under the following LayerNorm (by design).
 
 ## Recommended sequence (decisions for Alex)
 1. **Fix the 2 shared CRITICAL bugs** (HARTH label shift; cache-split/leakage) + delete `data/.cache/`.
-   Re-run the HARTH column for all models; regenerate harth figures; **re-validate the severe-OOD narrative**
-   (HARTH ZS may rise above 2%, reshuffling EXP-P3's per-activity story — the gravity *mechanism* stays).
+   ✅ **DONE.** Re-ran HARTH for HALO + all 5 baselines. **HARTH ZS rose 2.0%→29.1% (HALO)** — far more
+   than "above 2%": this **retracts** the gravity mechanism (it was the label bug, not gravity) and
+   reframes severe-OOD as HARTH=graceful-degradation vs VTT=genuine-collapse. See `rebuttal_plan.md`
+   "Severe-OOD framing" and `RESULTS.md` HARTH table.
 2. **Fix the baseline fairness bugs we owe** (LLaSA ÷9.8 per-dataset; LanHAR HARTH labels) → re-run those.
    Delete cached baseline classifiers first.
 3. **Wire the ablation infra** (TSFM_SEED, TSFM_MODEL_SIZE→runtime config, queue/resample/loss flags +

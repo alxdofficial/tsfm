@@ -35,34 +35,43 @@ Companion: [`codebase_audit.md`](codebase_audit.md) (paper↔code discrepancies)
 
 ---
 
-## Severe-OOD framing (two distinct, EXPECTED failure modes) — for A1 / D2 / E3
+## Severe-OOD framing (two distinct failure modes) — for A1 / D2 / E3
 
-Severe-OOD is **not one cause**. Telling reviewers "it's just a labels problem" is wrong (HARTH
-disproves it) — the airtight story decomposes it:
+> **⚠ MAJOR CORRECTION (2026-06): the HARTH "~2% collapse" was a LABEL-INDEXING BUG, not gravity.**
+> `get_window_labels` 0-indexed HARTH's activity codes (`[2..11]`, min code > 0) to slice the data
+> but **never restored the offset** when returning the ground truth, corrupting every HARTH GT by
+> −2 label groups → all HARTH zero-shot read near-zero. HARTH is the **only** dataset with min code
+> > 0, so nothing else is affected (5-main + VTT reproduce bit-for-bit). After the fix,
+> **HARTH ZS-Open = 29.1% (HALO), on par with the best baseline CrossHAR (30.3)** — graceful
+> degradation, **NOT collapse**. The earlier "gravity → alignment inversion → 2%" root cause
+> (EXP-P3) was an **artifact of the bug and is retracted**. The gravity/modality *facts* (raw
+> gravity-laden acc, gyro≈0, odd placement) remain true *descriptors* of the shift, but they do
+> **not** cause a collapse.
 
-- **VTT-ConIoT = label novelty.** 50% coverage; 8/16 construction activities (climbing ladder,
-  roll/spray painting, leveling, lifting, pushing cart, carrying, kneeling work) have **no analog**
-  in the 87-label vocabulary → an **irreducible zero-shot floor for *any* label-retrieval method**,
-  not a HALO defect.
-- **HARTH = sensor/modality shift, NOT labels.** **100% label coverage**, yet ~2% ZS, because
-  back/thigh **accelerometer-only (no gyro, gravity-laden)** ≠ waist/wrist phone IMUs in training.
-  RESULTS.md: "near-zero ZS accuracy is entirely due to distribution shift, not label coverage."
-- **Neither is a representation failure** — both recover to 64–78% with 1–10% labels.
+Severe-OOD decomposes into two **distinct, expected** failure modes — now with the honest numbers:
 
-**Root cause (EXP-P3 evidence) = GRAVITY.** Datasets we excel on are smartphone CoreMotion streams
-(**gravity-removed** user acceleration); HARTH is **raw Axivity acc with gravity** — a static gravity
-vector **132× larger than its motion** (dynamic range 0.01 vs MotionSense 0.2), and **gyro = all zeros**.
-The encoder still maps HARTH to the *same* region (centroid cosine **0.975**, identical norms); only the
-text↔IMU **alignment inverts** (correct sim 0.836 < max-wrong 0.954, margin −0.118, 2.5% top-1) → it
-recovers 2%→78% with 0.5–5% labels. VTT covered-half also fails (2.53%) → VTT = label floor **+** signal
-OOD (gravity-laden hip acc, odd-unit gyro), not labels alone.
+- **VTT-ConIoT = label novelty (genuine collapse, for everyone).** 50% coverage; 8/16 construction
+  activities (climbing ladder, roll/spray painting, leveling, lifting, pushing cart, carrying,
+  kneeling work) have **no analog** in the 87-label vocabulary → an **irreducible zero-shot floor
+  for *any* label-retrieval method**. *All* models collapse, **HALO included (ZS-Open 1.3%)**;
+  LanHAR's text alignment earns a slight edge (8.3%). Not a HALO-specific defect.
+- **HARTH = sensor/placement shift (graceful degradation).** 100% label coverage; back/thigh
+  **accelerometer-only (no gyro, gravity-laden)** ≠ waist/wrist phone IMUs in training. Post-fix
+  ZS-Open is **moderate**: HALO 29.1, CrossHAR 30.3, MOMENT 17.5, LanHAR 9.3. LiMU-BERT is the lone
+  collapse (0.2% open / 54.2% closed) — an open-set **calibration** failure, not representation
+  collapse.
+- **Neither is a representation failure** — both recover strongly with 1–10% labels (HALO HARTH
+  **76.8% @10%**).
 
 Terminology to make explicit in the paper: the 5 "main" sets are **entire held-out datasets** (never
-trained / validated / tested on) that are distributionally *near* → this is genuine **cross-dataset
-zero-shot transfer**, a stronger claim than a held-out test split. Severe-OOD = same signal-format
-family pushed on **labels** (VTT) or **sensor placement/modality** (HARTH). Both are expected limits
-of a deliberately small model on a bounded corpus → motivates tempering to "effective under *moderate*
-heterogeneity," not "universal." **EXP-P3 quantifies exactly this split.**
+trained / validated / tested on) that are distributionally *near* → genuine **cross-dataset
+zero-shot transfer**, stronger than a held-out test split. Severe-OOD = same signal-format family
+pushed on **labels** (VTT, collapses for all) or **sensor placement/modality** (HARTH, degrades
+gracefully). Both are expected limits of a deliberately small model on a bounded corpus → tempers
+the claim to "effective under *moderate* heterogeneity," not "universal." **This is a stronger,
+honest A1/E3 answer than the retracted gravity story** — and the "all models collapse on HARTH"
+reading in the submitted paper was the same bug, so the correction is defensible as a fix, not a
+walk-back.
 
 ---
 
@@ -90,18 +99,32 @@ heterogeneity," not "universal." **EXP-P3 quantifies exactly this split.**
   (standing→"standing still and upright"), degrade for poor ones (frozen-text-encoder artifact, ties
   E5). T0 reproduces deployed closed-set JSON on all 5. Confirms E2/D2 with honest caveat.
 
-- **EXP-P3 (severe-OOD analysis)** — branch `rebuttal/experiment/ood-failure-analysis`. Root cause =
-  **gravity** (raw gravity-laden acc, 132× motion; no/odd gyro; odd placement), an **alignment** failure
-  not a representation one (HARTH↔train centroid cos 0.975; ranking inverts; recovers 2%→78% @0.5–5%).
-  HARTH = signal/alignment (100% labels covered, even running/sitting fail); VTT = label floor (novel
-  0.0%) + signal OOD (covered 2.53%). Reproduces deployed JSON; smoke passed. See experiment `results/`.
+- **EXP-P3 (severe-OOD analysis) — ⚠ SUPERSEDED by the label-bug fix.** The original conclusion
+  (gravity → alignment inversion → 2% ZS) was an **artifact of the HARTH label-indexing bug** and is
+  **retracted**. Corrected: HARTH ZS-Open = **29.1%** (graceful degradation, not collapse) — see the
+  "Severe-OOD framing" section above. The gravity/modality facts (raw gravity-laden acc, gyro≈0, odd
+  placement) survive only as *descriptors* of the shift, not as a cause of collapse. Any
+  per-activity / confusion / nearest-label analysis for E3 must be **re-done on corrected labels**.
+
+- **HARTH label-bug fix + baseline re-run (2026-06)** — commit `e9ffeb1` + follow-ups. Fixed
+  `get_window_labels` (`+ t` offset restore) across all 6 evaluators. Re-ran HARTH for HALO +
+  all 5 baselines. **Corrected HARTH ZS-Open: HALO 29.1, CrossHAR 30.3, MOMENT 17.5, LanHAR 9.3,
+  LiMU-BERT 0.2** (open-set calibration outlier). LiMU-BERT encoder recovered from the Drive
+  checkpoint zip (`1oINrQcCFAdk1avmlheNd0lcv8VYFMFTA`); embeddings regenerated + validated
+  (motionsense 28.4 == original). Numbers in `docs/baselines/RESULTS.md` (HARTH table). **Still
+  pre-fix / pending**: TSFM-Medium (needs RunPod), TSFM-Tiny, LLaSA (also needs the ÷9.8 fix).
+
+- **Eval perf fixes (2026-06)** — all verified math-preserving (5-main reproduce to ≤0.018pp;
+  MOMENT SVM bit-identical). HALO majority-vote vectorized + extraction batch 32→256 (HARTH ZS
+  13.8s); MOMENT RBF-SVM thread-parallelized ~12× (libsvm releases the GIL). Full bottleneck
+  analysis in `paper-rebuttal/perf_analysis.md` (46 items). Does not change any reported number.
 
 ---
 
 ## 1. Reviewer response map
 
 ### Reviewer A — Weak reject, knowledgeable → **CONVERT**
-- ☐ **A1 (temper foundation/open-set + OOD):** proactively scope claims; OOD collapse affects *all* models (confirms distribution shift, not HALO-specific); SFT recovers (HARTH 78.3@10%). → **EXP-P3**.
+- ☐ **A1 (temper foundation/open-set + OOD):** proactively scope claims. **Corrected story** (post label-fix): HARTH = sensor-shift → *graceful degradation* (HALO ZS-Open 29.1, on par with CrossHAR 30.3), recovers to 76.8% @10%; VTT = novel-label → *genuine collapse for all models incl. HALO* (1.3%), confirming distribution shift not HALO-specific. EXP-P3 gravity story retracted (was the label bug). → see "Severe-OOD framing" §.
 - ☐ **A2 (FIFO queue vs synonym objective):** A is *correct* per audit — in-batch is pure soft (`SOFT_TARGET_WEIGHT=1.0`), queue entries are hard negatives, similarity **not** computed over the queue. Run the exact ablation A asked for. → **EXP-P1**.
 
 ### Reviewer B — Weak accept, no familiarity → **KEEP** (light touch)

@@ -386,12 +386,11 @@ characteristics. See [Severe Out-of-Domain](#severe-out-of-domain-harth--vtt-con
 | VTT-ConIoT | 2,058 | 16 | 50 | 50% | Severe (industrial/construction, 50% novel activities) |
 
 **Why these are reported separately**:
-- **HARTH**: 100% label coverage but extreme sensor distribution shift — uses back-mounted and
-  thigh-mounted accelerometers only (no gyroscope). The raw accelerometer data includes gravity
-  and has fundamentally different characteristics from waist/wrist-mounted smartphone IMUs in
-  training data. All models achieve near-zero zero-shot accuracy, confirming this is a genuine
-  distribution shift rather than a model-specific failure. Supervised fine-tuning adapts well
-  (up to 78.3% at 10%).
+- **HARTH**: 100% label coverage but a sensor/placement shift — back- and thigh-mounted
+  accelerometers only (no gyroscope), with raw gravity-laden acceleration unlike the waist/wrist
+  smartphone IMUs in training. After the label-indexing fix (see the HARTH table below), zero-shot
+  is **moderate, not near-zero** (HALO ZS-Open 29.1%, on par with the best baseline) — graceful
+  degradation under modality shift. Supervised fine-tuning recovers strongly (HALO 76.8% at 10%).
 - **VTT-ConIoT**: 8 of 16 activity labels (carrying, climbing ladder, kneeling work, leveling
   paint, lifting, pushing cart, roll painting, spraying paint) have no semantic equivalent in the
   10 training datasets. All models are guaranteed to fail on these activities regardless of
@@ -494,11 +493,13 @@ differences, zero-shot still works reasonably (42-54% closed-set group) because 
    and LanHAR (28.4%). TSFM leads at 10% supervised (85.7% vs MOMENT's 81.3%) and 1%
    supervised (76.5% acc, 70.0% F1 — both ahead of MOMENT's 73.8% / 69.8%).
 
-2. **HARTH is a distribution-shift stress test** — All models achieve near-zero zero-shot accuracy
-   (<1% for TSFM/MOMENT/CrossHAR, 20.2% for LiMU-BERT closed-set). This is caused by the
-   back-mounted raw accelerometer data being fundamentally different from waist/wrist smartphone
-   IMUs in training data. However, supervised fine-tuning adapts well: TSFM reaches 78.3% at 10%,
-   confirming the encoder representations are flexible enough to adapt with labeled data.
+2. **HARTH is a graceful-degradation stress test (corrected).** A HARTH-only label-indexing bug
+   (see [Severe Out-of-Domain](#severe-out-of-domain-harth--vtt-coniot)) had made all HARTH
+   zero-shot read near-zero. After the fix, ZS-Open is **moderate** — HALO 29.1%, CrossHAR 30.3%,
+   MOMENT 17.5%, LanHAR 9.3% — i.e. the encoders transfer to back-mounted accelerometer data
+   imperfectly but well above chance, and fine-tuning recovers strongly (HALO 76.8% @10%). The
+   true severe-OOD set is **VTT-ConIoT**, where all models (incl. HALO) collapse on zero-shot due
+   to 50% novel labels.
 
 3. **Opportunity data was fixed** — Previously produced all-zero input due to a column mapping
    bug in `dataset_config.json` (identity mapping where `back_acc_x → acc_x` was needed).
@@ -620,16 +621,26 @@ These two datasets are reported separately due to extreme distribution shift:
 
 ### HARTH
 
+> **⚠ Corrected — HARTH label-indexing bug fix (2026-06).** HARTH stores activity codes `[2..11]`
+> (min code > 0). The windowing helper `get_window_labels` subtracted the per-window min to 0-index
+> the data but **did not restore the offset** when returning the ground-truth labels, corrupting
+> every HARTH ground truth by −2 label groups. This drove all HARTH **zero-shot** accuracies to read
+> near-zero (the old "collapse"). Fixed across all evaluators; **HARTH is the only dataset with min
+> code > 0, so no other dataset is affected** (verified: 5-main + VTT reproduce bit-for-bit). The
+> deployed Small-Deep and all 5 baselines were re-run; numbers below are **post-fix**.
+
 | Model | ZS-Open Acc | ZS-Close Acc | 1% Acc | 1% F1 | 10% Acc | 10% F1 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **TSFM-Medium (ours)** | 1.6 | 1.1 | 66.9 | 21.8 | 82.4 | 48.6 |
-| **TSFM-Small-Deep (ours)** | **2.0** | 2.5 | **64.7** | **37.8** | **78.3** | **48.0** |
-| **TSFM-Tiny (ours)** | 2.7 | 3.8 | 65.8 | 36.9 | 77.8 | 47.5 |
-| **LiMU-BERT** | 0.0 | **20.2** | 54.4 | 5.9 | 19.1 | 2.7 |
-| **MOMENT** | 0.4 | 1.9 | 66.7 | 32.4 | 65.4 | 31.2 |
-| **CrossHAR** | 0.3 | 0.9 | 42.4 | 25.0 | 71.9 | 42.8 |
-| **LanHAR** | 0.9 | 1.1 | 3.4 | 1.5 | 70.0 | 21.7 |
-| **LLaSA**† | 11.9 | 12.5 | N/A | N/A | N/A | N/A |
+| **TSFM-Small-Deep (ours)** | 29.1 | 30.4 | 62.0 | 36.6 | 76.8 | 48.6 |
+| **LiMU-BERT** | 0.2 | 54.2¹ | 53.1 | 5.9 | 54.4 | 5.9 |
+| **MOMENT** | 17.5 | 57.6¹ | 58.6 | 32.4 | 72.2 | 39.6 |
+| **CrossHAR** | 30.3 | 52.2¹ | 46.8 | 24.6 | 71.1 | 41.4 |
+| **LanHAR** | 9.3 | 14.1 | 76.6 | 25.3 | 77.3 | 30.8 |
+
+¹ Classifier-baseline closed-set is **group**-scored (their native convention) vs HALO's
+**exact**-match closed-set; **ZS-Open is group-scored for all → directly comparable**.
+**Pre-fix rows pending re-run**: TSFM-Medium (needs >48 GB GPU), TSFM-Tiny, and LLaSA were not
+re-run with the label fix and are omitted here to avoid mixing pre/post-fix numbers.
 
 ### VTT-ConIoT
 
@@ -644,9 +655,21 @@ These two datasets are reported separately due to extreme distribution shift:
 | **LanHAR** | **8.3** | 6.9 | 7.7 | 3.5 | 7.7 | 5.7 |
 | **LLaSA**† | 0.0 | 6.9 | N/A | N/A | N/A | N/A |
 
-**Observations**:
-- **HARTH**: All models near-zero on zero-shot due to sensor distribution shift. LiMU-BERT is an outlier with 20.2% closed-set (its training label masking happens to favor HARTH's label distribution). Supervised FT adapts well: TSFM leads at both 1% (64.7%) and 10% (78.3%).
-- **VTT-ConIoT**: All models near random on zero-shot (≤8% open-set, ≤7% closed-set). With 10% supervised data, MOMENT leads (34.8%), followed by CrossHAR (30.9%) and TSFM (16.9%). The 50% label coverage floor limits all models.
+**Observations** (post label-fix):
+- **HARTH is graceful degradation, not collapse.** After the label-indexing fix, ZS-Open is
+  **moderate** for most models — HALO 29.1, CrossHAR 30.3, MOMENT 17.5, LanHAR 9.3 — i.e. the
+  encoders still transfer to a back-mounted-accelerometer dataset, just imperfectly. HALO (29.1)
+  is on par with the best baseline (CrossHAR 30.3) and recovers strongly with labels (76.8% @10%).
+  **LiMU-BERT is the lone exception** (ZS-Open 0.2%): it predicts confidently *out-of-group* over
+  all 87 labels yet reaches 54.2% closed-set — an **open-set calibration failure, not a
+  representation collapse** (the embeddings clearly carry HARTH-relevant signal).
+- **VTT-ConIoT is the genuine severe-OOD set.** *All* models — including HALO (1.3%) — collapse on
+  zero-shot (≤8% open-set), because 50% of its construction activities have **no training analog**
+  (true label-OOD). LanHAR's text alignment gives it a slight edge (8.3%) by generalizing over
+  label *text*. With 10% labels MOMENT leads (34.8%), then CrossHAR (30.9%), TSFM (16.9%).
+- **Two distinct failure modes:** HARTH = sensor/placement shift (degrades gracefully, ~9–30% ZS);
+  VTT-ConIoT = novel-label shift (collapses for everyone). The old "both collapse to ~0–2%" reading
+  was the HARTH label bug conflating the two.
 
 ---
 
@@ -658,10 +681,11 @@ These two datasets are reported separately due to extreme distribution shift:
 |---------|---:|---:|---:|---:|---:|---:|---:|---:|
 | Shoaib | 35.3 | 40.9 | 44.1 | **45.0** | 44.4 | 43.8 | 42.8 | 9.6 |
 | Opportunity | 30.6 | 38.3 | 42.3 | 42.7 | **43.6** | 43.5 | 43.0 | 13.0 |
-| HARTH | **3.3** | 2.1 | 0.5 | 0.3 | 0.1 | 0.1 | 0.0 | 3.2 |
+| HARTH | **3.3** | 2.1 | 0.5 | 0.3 | 0.1 | 0.1 | 0.0 | 3.2 | _(pre-fix — stale)_ |
 
-**Note**: Shoaib and HARTH are evaluated at native 50Hz; Opportunity at native 30Hz. HARTH's
-near-zero ZS performance makes its patch sensitivity meaningless (noise). For Shoaib and
+**Note**: Shoaib and HARTH are evaluated at native 50Hz; Opportunity at native 30Hz. ⚠ The HARTH
+row above predates the label-indexing fix (its ZS was mis-scored near-zero); rerun the sweep on
+corrected labels if HARTH patch sensitivity is needed. For Shoaib and
 Opportunity, the 1.0s default is within 0.9% and 1.3% of the best patch size respectively.
 Opportunity's slight preference for 1.5s makes physical sense — at 30Hz, a 1.5s patch contains
 45 samples, close to the 50 samples that other 50Hz datasets get with a 1.0s patch.
@@ -766,7 +790,7 @@ We define **label groups** that cluster semantically equivalent labels:
 - **MobiAct** (85% coverage): 2 of 13 activities (`car_step_in`, `car_step_out`) have no training equivalent. These are counted as **failures for all models** in zero-shot. In supervised, they are learned from labeled data.
 - **Shoaib** (100% coverage): All 7 activities have training equivalents. No failures due to unseen labels.
 - **Opportunity** (100% coverage): All 4 activities (lying, sitting, standing, walking) have training equivalents. No failures due to unseen labels.
-- **HARTH** (100% coverage): All 12 activities map to known groups (e.g., cycling_sit→cycling, shuffling→walking, transport_sit→sitting). No failures due to unseen labels; near-zero ZS accuracy is entirely due to distribution shift, not label coverage.
+- **HARTH** (100% coverage): All 12 activities map to known groups (e.g., cycling_sit→cycling, shuffling→walking, transport_sit→sitting). No failures due to unseen labels; the moderate (post-fix) ZS accuracy reflects sensor/placement distribution shift, not label coverage.
 - **VTT-ConIoT** (50% coverage): 8 of 16 activities are completely novel (industrial/construction). These are **guaranteed failures for all models** in zero-shot, setting a ~50% accuracy ceiling. This is why VTT-ConIoT is reported separately.
 
 ### Scoring Rules
