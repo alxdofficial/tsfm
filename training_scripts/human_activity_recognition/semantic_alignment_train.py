@@ -168,6 +168,17 @@ MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experi
 MODEL_SIZE = os.environ.get("TSFM_MODEL_SIZE", "small_deep")  # tiny | small | small_deep | medium | large
 _cfg = get_config(MODEL_SIZE)
 
+# EXP-P7: generic config override via TSFM_CONFIG_OVERRIDES (a JSON object). Applied BEFORE the
+# globals below unpack _cfg, so fields like feature_extractor_type / cnn_kernel_sizes /
+# use_cross_channel / spectral_ratio / contrastive_text_model(+dim) / semantic_dim can be varied
+# at a FIXED model size without source edits. (Previously these were "from config, no override".)
+_overrides = os.environ.get("TSFM_CONFIG_OVERRIDES", "")
+if _overrides:
+    import json as _json
+    _patch = _json.loads(_overrides)  # fail loudly on malformed JSON
+    print(f"[config-override] applying TSFM_CONFIG_OVERRIDES: {_patch}")
+    _cfg.update(_patch)  # _cfg is a fresh copy from get_config(); safe to mutate
+
 # Encoder
 D_MODEL = _cfg["d_model"]
 NUM_HEADS = _cfg["num_heads"]
@@ -178,7 +189,7 @@ USE_CROSS_CHANNEL = _cfg["use_cross_channel"]
 CNN_CHANNELS = _cfg["cnn_channels"]
 CNN_KERNEL_SIZES = _cfg["cnn_kernel_sizes"]
 TARGET_PATCH_SIZE = _cfg["target_patch_size"]
-FEATURE_EXTRACTOR_TYPE = _cfg.get("feature_extractor_type", "cnn")  # From config (no override)
+FEATURE_EXTRACTOR_TYPE = _cfg.get("feature_extractor_type", "cnn")  # override via TSFM_CONFIG_OVERRIDES
 SPECTRAL_RATIO = _cfg.get("spectral_ratio", 0.25)
 
 # Semantic alignment head
@@ -224,7 +235,7 @@ MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # ---- Training hyperparameters ----
 # Both small and small_deep use the same proven recipe (384-dim contrastive dynamics).
-EPOCHS = 100
+EPOCHS = int(os.environ.get("TSFM_EPOCHS", "100"))  # TSFM_EPOCHS=1 for smoke tests
 WARMUP_EPOCHS = 3
 BATCH_SIZE = int(os.environ.get("TSFM_BATCH_SIZE", "32"))  # Per-GPU micro-batch size
 ACCUMULATION_STEPS = int(os.environ.get("TSFM_ACCUM_STEPS", "16"))  # effective = BS * ACCUM * N_gpus
@@ -235,6 +246,28 @@ USE_GRAD_CACHE = os.environ.get("TSFM_GRAD_CACHE", "0") == "1"  # Off for small_
 USE_MEMORY_BANK = os.environ.get("TSFM_MEMORY_BANK", "1") == "1"
 MEMORY_BANK_SIZE = int(os.environ.get("TSFM_MEMORY_BANK_SIZE", "512"))
 USE_GRADIENT_CHECKPOINTING = os.environ.get("TSFM_GRAD_CHECKPOINT", "0") == "1"
+
+# EXP-P1: queue-mode ablation. none = no memory bank; hard_neg = current default (queue entries are
+# pure hard negatives); semantic = queued entries receive soft targets by label similarity so
+# synonyms ("walking"/"strolling") are NOT pushed apart (the A2 concern). The "semantic" path is
+# implemented on the rebuttal/experiment/queue-ablation branch.
+_queue_mode_explicit = os.environ.get("TSFM_QUEUE_MODE") is not None
+QUEUE_MODE = os.environ.get("TSFM_QUEUE_MODE") or ("hard_neg" if USE_MEMORY_BANK else "none")
+assert QUEUE_MODE in ("none", "hard_neg", "semantic"), f"bad TSFM_QUEUE_MODE={QUEUE_MODE}"
+if QUEUE_MODE == "none":
+    USE_MEMORY_BANK = False
+elif not USE_MEMORY_BANK:
+    USE_MEMORY_BANK = True  # hard_neg / semantic require the bank to be on
+# GradCache's forward_cached() hardcodes imu_queue=text_queue=None, so the memory bank/queue is
+# silently bypassed under GradCache. An EXPLICIT P1 queue request under GradCache is a hard error;
+# the default medium/large case (queue not explicitly requested) just warns and drops the queue.
+if USE_GRAD_CACHE and _queue_mode_explicit and QUEUE_MODE != "none":
+    raise SystemExit(f"EXP-P1 queue ablation (TSFM_QUEUE_MODE={QUEUE_MODE}) requires "
+                     "TSFM_GRAD_CACHE=0 (GradCache bypasses the queue).")
+if USE_GRAD_CACHE and USE_MEMORY_BANK:
+    print("WARNING: TSFM_GRAD_CACHE=1 bypasses the memory bank/queue (forward_cached passes "
+          "queue=None). Forcing USE_MEMORY_BANK=False (queue_mode effectively 'none').")
+    USE_MEMORY_BANK = False
 
 TARGET_EFFECTIVE_BATCH = BATCH_SIZE * ACCUMULATION_STEPS  # e.g. 512
 # Per-patch mode: cap by total valid patches (not sessions) to control NxN logit matrix size.
@@ -255,8 +288,8 @@ PERSISTENT_WORKERS = True
 # With augmentation, batch contains duplicates like "walking", "strolling", "person walking"
 # Hard targets treat these as negatives (contradictory!) → Soft targets weight by semantic similarity (correct!)
 USE_SOFT_TARGETS = True
-SOFT_TARGET_TEMPERATURE = 0.5
-SOFT_TARGET_WEIGHT = 1.0
+SOFT_TARGET_TEMPERATURE = float(os.environ.get("TSFM_SOFT_TARGET_TEMP", "0.5"))   # EXP-P7 tau_s sweep
+SOFT_TARGET_WEIGHT = float(os.environ.get("TSFM_SOFT_TARGET_WEIGHT", "1.0"))       # EXP-P7 soft/hard blend
 
 # Loss function type: "infonce" (default) or "siglip"
 LOSS_TYPE = "infonce"
@@ -1744,7 +1777,7 @@ def main():
             print("Warning: No checkpoint files found, starting from epoch 1")
     else:
         # Fresh start with new timestamp folder
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")  # microseconds avoid same-second collisions
         # Include ablation tag in directory name for easy identification
         ablation_tag = os.environ.get("ABLATION_NAME", "")
         if ablation_tag:
@@ -1830,6 +1863,7 @@ def main():
             'use_soft_targets': USE_SOFT_TARGETS, 'soft_target_temperature': SOFT_TARGET_TEMPERATURE,
             'soft_target_weight': SOFT_TARGET_WEIGHT,
             'use_memory_bank': USE_MEMORY_BANK, 'memory_bank_size': MEMORY_BANK_SIZE,
+            'queue_mode': QUEUE_MODE,  # EXP-P1: none | hard_neg | semantic
         },
         'training': {
             'epochs': EPOCHS, 'target_effective_batch': TARGET_EFFECTIVE_BATCH,
