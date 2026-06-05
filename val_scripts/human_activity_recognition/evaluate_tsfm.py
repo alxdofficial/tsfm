@@ -74,7 +74,7 @@ CHECKPOINT_PATH = os.environ.get("TSFM_CHECKPOINT", _DEFAULT_CHECKPOINT)
 # Data specs
 DATA_CHANNELS = 6          # 6-channel IMU (3 accel + 3 gyro)
 TSFM_EMB_DIM = None        # Auto-detected from model (set after loading)
-TSFM_BATCH_SIZE = 32       # Batch size for embedding extraction
+TSFM_BATCH_SIZE = int(os.environ.get("TSFM_EVAL_BATCH_SIZE", "256"))  # extraction batch (LayerNorm => batch-independent; bigger = faster)
 
 # Fixed patch size for evaluation
 # 1.0s chosen as smallest valid size — gives finest temporal resolution.
@@ -638,42 +638,42 @@ def evaluate_zero_shot_majority_vote(
         label_embeddings = label_bank.encode(candidate_labels, normalize=True).to(device)
 
     N = patch_embeddings.shape[0]
+    P = patch_embeddings.shape[1]
     L = len(candidate_labels)
+    test_labels = np.asarray(test_labels)
+    nact = len(test_activities)
+
+    # Valid windows: GT label in range AND >= 1 valid patch (matches the old per-window skips).
+    patch_counts = patch_masks.sum(dim=1).cpu().numpy()
+    keep = np.where((test_labels < nact) & (patch_counts > 0))[0]
+
+    # Vectorized per-patch majority vote (was a per-window Python loop with a per-patch
+    # vote-count loop + per-window .item() sync). Each valid patch casts one vote; padded
+    # patches are masked out via scatter_add weight 0. argmax breaks ties by first index,
+    # identical to the original torch vote_counts.argmax().
+    preds = np.empty(len(keep), dtype=np.int64)
+    CHUNK = 2048
+    for s in range(0, len(keep), CHUNK):
+        wi = keep[s:s + CHUNK]
+        emb = patch_embeddings[wi].to(device)            # (b, P, D)
+        msk = patch_masks[wi].to(device).float()         # (b, P) 1=valid
+        b = emb.shape[0]
+        sims = compute_similarity(emb.reshape(b * P, emb.shape[-1]), label_embeddings).reshape(b, P, L)
+        votes = sims.argmax(dim=2)                        # (b, P) per-patch winner
+        vote_counts = torch.zeros(b, L, device=device)
+        vote_counts.scatter_add_(1, votes, msk)           # count only valid patches
+        preds[s:s + b] = vote_counts.argmax(dim=1).cpu().numpy()
 
     pred_groups = []
     gt_groups = []
     pred_names = []
     gt_names = []
-
-    for i in range(N):
-        local_idx = test_labels[i]
-        if local_idx >= len(test_activities):
-            continue
-
-        gt_name = test_activities[local_idx]
-        gt_group = label_to_group.get(gt_name, gt_name)
-
-        # Get valid patches for this sample
-        valid = patch_masks[i].bool()
-        patches_i = patch_embeddings[i, valid].to(device)  # (P_valid, D)
-
-        if patches_i.shape[0] == 0:
-            continue
-
-        # Per-patch similarity and voting
-        sims = compute_similarity(patches_i, label_embeddings)  # (P_valid, L)
-        votes = sims.argmax(dim=1)  # (P_valid,)
-        vote_counts = torch.zeros(L, device=device)
-        for v in votes:
-            vote_counts[v] += 1
-        pred_idx = vote_counts.argmax().item()
-
-        pred_name = candidate_labels[pred_idx]
-        pred_group = label_to_group.get(pred_name, pred_name)
-
+    for j, i in enumerate(keep):
+        gt_name = test_activities[test_labels[i]]
+        pred_name = candidate_labels[preds[j]]
         if open_set:
-            gt_groups.append(gt_group)
-            pred_groups.append(pred_group)
+            gt_groups.append(label_to_group.get(gt_name, gt_name))
+            pred_groups.append(label_to_group.get(pred_name, pred_name))
         else:
             gt_names.append(gt_name)
             pred_names.append(pred_name)
