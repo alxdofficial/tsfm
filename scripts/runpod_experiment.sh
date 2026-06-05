@@ -67,13 +67,17 @@ done
 RUN_TAG="${EXP}_${VARIANT}_seed${SEED}"
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
-# ----------------------------- exp -> branch + code id -----------------------------
+# ----------------------------- exp -> PUBLIC code-only branch -----------------------------
+# The pod clones the code-only pod/* branch (no paper-rebuttal/) from the public origin. The full
+# experiment branches (rebuttal/experiment/*) stay local; scripts/sync_pod_branches.sh regenerates
+# these pod/* mirrors. TSFM_BRANCH overrides (e.g. for a one-off test branch).
 case "$EXP" in
-  P1) BRANCH="rebuttal/experiment/queue-ablation";;
-  P6) BRANCH="rebuttal/experiment/multi-seed";;
-  P7) BRANCH="rebuttal/experiment/fine-grained-ablations";;
+  P1) BRANCH="pod/queue-ablation";;
+  P6) BRANCH="pod/multi-seed";;
+  P7) BRANCH="pod/fine-grained-ablations";;
   *)  echo "ERROR: bad --exp '$EXP' (P1|P6|P7)"; exit 2;;
 esac
+BRANCH="${TSFM_BRANCH:-$BRANCH}"
 
 # ----------------------------- variant -> TSFM_* env -----------------------------
 # Exports the right vars. Fails loudly on an unknown variant so we never pay for a no-op run.
