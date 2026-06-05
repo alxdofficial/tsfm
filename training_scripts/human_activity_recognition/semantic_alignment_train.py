@@ -1799,6 +1799,7 @@ def main():
     }
     hyperparams = {
         'model_size': MODEL_SIZE,
+        'seed': SEED,  # recorded for the multi-seed ablation (EXP-P6)
         'config': _active_config,  # Built from local vars, correct even on resume
         'encoder': {
             'd_model': D_MODEL, 'num_heads': NUM_HEADS, 'num_temporal_layers': NUM_TEMPORAL_LAYERS,
