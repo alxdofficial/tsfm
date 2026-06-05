@@ -98,6 +98,12 @@ def load_limubert_data(dataset_name: str) -> Tuple[np.ndarray, np.ndarray, dict]
 
     data = np.load(str(ds_dir / "data_20_120.npy")).astype(np.float32)
     labels = np.load(str(ds_dir / "label_20_120.npy")).astype(np.float32)
+    # LLaSA's IMU encoder IS LiMU-BERT, which requires acc channels divided by 9.8
+    # (its Preprocess4Normalization). We must match the standalone LiMU-BERT baseline
+    # exactly (evaluate_limubert.normalize_for_limubert) so LLaSA's encoder sees
+    # in-distribution inputs. Previously raw m/s^2 acc was fed straight in (~9.8x too
+    # large), pushing every embedding OOD and unfairly crippling LLaSA across all datasets.
+    data[:, :, :3] = data[:, :, :3] / 9.8  # acc channels -> g units (match LiMU-BERT)
     with open(ds_dir / "mapping.json") as f:
         mapping = json.load(f)
     return data, labels, mapping
