@@ -68,6 +68,12 @@ heterogeneity," not "universal." **EXP-P3 quantifies exactly this split.**
 
 ## Findings log addendum
 
+- **EXP-P5 (scoring sensitivity)** — branch `rebuttal/experiment/scoring-sensitivity`. HALO is **#1 in
+  all four cells** {open,closed}×{exact,group}: open 38.63/41.97, closed 53.11/53.11 vs best baseline
+  MOMENT 20.68/28.28, 44.70/44.70. **Ranking invariant** to scoring; largest margin under strictest
+  (open-exact **+18pp**); closed exact≈group. Validity reproduces deployed JSON. → E1 fully answered;
+  report exact-match as conservative headline.
+
 - **EXP-F (fairness 2×2)** — branch `rebuttal/experiment/fairness-native-rate`. **(1) Fairness defense
   airtight:** HALO in the baseline input regime (20Hz + generic descriptions) scores **41.56** 5-main
   ZS-open, **+13.3pp over MOMENT (28.3)** — native-rate+metadata net **+0.41pp** → win is architectural.
@@ -135,7 +141,7 @@ All outputs → `paper-rebuttal/experiments/<id>/`.
 | **EXP-F** | Fairness/native-rate: **HALO through 20Hz/120/6-ch** pipeline (all 5) + **LanHAR at native 50Hz** | C3, C7, A3, E1 | EVAL | local | `evaluate_tsfm.py` (20Hz data path exists), `evaluate_lanhar.py:1295` (load `data_native.npy`, fix filter fs) | ☑ **HALO 2×2 DONE** · LanHAR-native = RunPod |
 | **EXP-P2** | Open-vocab eval: novel + paraphrase + fine-grained + distractor labels, split by synonym-distance | D2, E2 | EVAL | local | `evaluate_tsfm.py` candidate-set construction; `label_augmentation.py` | ☑ **DONE** |
 | **EXP-P3** | OOD failure analysis (HARTH **+ VTT**): confusion, nearest-text-label, per-activity, placement/modality/coverage breakdowns | A1, C3, D2, E3 | EVAL | local | generalize `harth_analysis.py` → VTT; add breakdowns | ☑ **DONE** |
-| **EXP-P5** | Scoring-protocol sensitivity (exact↔group, both directions, all models) | C2, E1 | EVAL | local | `grouped_zero_shot.py`, `evaluation_metrics.py` | ☐ |
+| **EXP-P5** | Scoring-protocol sensitivity (exact↔group, both directions, all models) | C2, E1 | EVAL | local | `grouped_zero_shot.py`, `evaluation_metrics.py` | ☑ **DONE** |
 | **EXP-P1** | Queue ablation: **none / hard-neg (current) / semantic-aware** queue | A2, E4 | TRAIN ×3 | RunPod | `memory_bank.py` (store label identity/text emb), `semantic_loss.py` (target matrix over queue), add `TSFM_QUEUE_MODE` | ☐ |
 | **EXP-P6** | Multi-seed (≥3) for headline + key ablations; report mean±std on +13.7pp | A6, E4 | TRAIN ×N | RunPod | `run_ablations.sh` seed loop; eval | ☐ |
 | **EXP-P7** | Fine-grained ablations: spectral-temporal **vs** temporal-only; **soft vs hard** targets; adaptive-pool **vs** fixed-resample; **additive vs gated** conditioning (C3); kernel `[5]` **vs** `[3,5,7]` (C5); τ_s sweep; SBERT swap | C2, D3, E4 | TRAIN ×several | RunPod | `config.py`, `feature_extractor.py`, `semantic_loss.py`, `token_text_encoder.py` | ☐ |
