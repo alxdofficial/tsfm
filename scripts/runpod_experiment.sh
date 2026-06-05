@@ -26,14 +26,12 @@
 #   P7: temporal_only | channel_indep | cnn_multi | spectral_half | hard_targets |
 #       tau_0p3 | soft_weight_0p5 | sbert_mpnet
 #
-# Required env (export before running, or bake into the pod template):
-#   RUNPOD_POD_ID         present automatically in every RunPod container
-#   CODE_GDRIVE_ID_<EXP>  Google-Drive file id of the code archive for that experiment's branch,
-#                         e.g. CODE_GDRIVE_ID_P1, CODE_GDRIVE_ID_P6, CODE_GDRIVE_ID_P7
-#                         (created on the dev box by scripts/make_code_bundle.sh, then uploaded)
-#   DATA_GDRIVE_ID        Google-Drive file id of the training-data tarball
-#                         (default = the existing 1a6QROP9... data tarball)
+# Code comes via `git clone/pull` from TSFM_REPO_URL (default: public origin, code-only branches).
+# Data comes via gdown from DATA_GDRIVE_ID. Required/optional env:
+#   RUNPOD_POD_ID         present automatically in every RunPod container (for auto-terminate)
+#   DATA_GDRIVE_ID        Google-Drive file id of the training-data tarball (default = 1a6QROP9...)
 # Optional env:
+#   TSFM_REPO_URL         git remote to clone code from (default: https://github.com/alxdofficial/tsfm.git)
 #   RUNPOD_API_KEY        used only as a fallback for termination if runpodctl is unavailable
 #   RCLONE_REMOTE         name of a configured rclone remote for Drive artifact upload (default: gdrive)
 #   RCLONE_DEST           rclone dest path (default: tsfm_rebuttal/artifacts)
@@ -42,8 +40,9 @@
 set -uo pipefail
 
 # ----------------------------- defaults -----------------------------
-EXP=""; VARIANT=""; SEED=42; DRY_RUN=0; NO_TERMINATE=0
+EXP=""; VARIANT=""; SEED=42; DRY_RUN=0; NO_TERMINATE=0; SETUP_ONLY=0
 WORKDIR="${TSFM_WORKDIR:-/workspace/tsfm}"
+REPO_URL="${TSFM_REPO_URL:-https://github.com/alxdofficial/tsfm.git}"  # public origin (code-only branches)
 DATA_MOUNT="${TSFM_DATA_MOUNT:-/dev/shm/tsfm_data}"
 ARTIFACT_ROOT="${TSFM_ARTIFACT_ROOT:-/workspace/artifacts}"
 RCLONE_REMOTE="${RCLONE_REMOTE:-gdrive}"
@@ -57,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --variant)      VARIANT="$2"; shift 2;;
     --seed)         SEED="$2"; shift 2;;
     --dry-run)      DRY_RUN=1; shift;;
+    --setup-only)   SETUP_ONLY=1; shift;;   # do setup + GPU check, then exit (no training) — for the smoke test
     --no-terminate) NO_TERMINATE=1; shift;;
     -h|--help)      sed -n '2,40p' "$0"; exit 0;;
     *) echo "unknown arg: $1 (see --help)"; exit 2;;
@@ -67,13 +67,17 @@ done
 RUN_TAG="${EXP}_${VARIANT}_seed${SEED}"
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
-# ----------------------------- exp -> branch + code id -----------------------------
+# ----------------------------- exp -> PUBLIC code-only branch -----------------------------
+# The pod clones the code-only pod/* branch (no paper-rebuttal/) from the public origin. The full
+# experiment branches (rebuttal/experiment/*) stay local; scripts/sync_pod_branches.sh regenerates
+# these pod/* mirrors. TSFM_BRANCH overrides (e.g. for a one-off test branch).
 case "$EXP" in
-  P1) BRANCH="rebuttal/experiment/queue-ablation";         CODE_ID="${CODE_GDRIVE_ID_P1:-}";;
-  P6) BRANCH="rebuttal/experiment/multi-seed";             CODE_ID="${CODE_GDRIVE_ID_P6:-}";;
-  P7) BRANCH="rebuttal/experiment/fine-grained-ablations"; CODE_ID="${CODE_GDRIVE_ID_P7:-}";;
+  P1) BRANCH="pod/queue-ablation";;
+  P6) BRANCH="pod/multi-seed";;
+  P7) BRANCH="pod/fine-grained-ablations";;
   *)  echo "ERROR: bad --exp '$EXP' (P1|P6|P7)"; exit 2;;
 esac
+BRANCH="${TSFM_BRANCH:-$BRANCH}"
 
 # ----------------------------- variant -> TSFM_* env -----------------------------
 # Exports the right vars. Fails loudly on an unknown variant so we never pay for a no-op run.
@@ -107,7 +111,7 @@ resolve_env
 CMD_PREVIEW="env ${RUN_ENV[*]} PYTHONUNBUFFERED=1 TSFM_NO_COMPILE=1 python training_scripts/human_activity_recognition/semantic_alignment_train.py"
 if [[ "$DRY_RUN" == 1 ]]; then
   log "DRY RUN — would do:"
-  echo "  branch:   $BRANCH   (code id: ${CODE_ID:-<unset CODE_GDRIVE_ID_${EXP}>})"
+  echo "  branch:   $BRANCH   (git clone $REPO_URL)$([[ $SETUP_ONLY == 1 ]] && echo '  [SETUP-ONLY]')"
   echo "  run tag:  $RUN_TAG"
   echo "  command:  cd $WORKDIR && $CMD_PREVIEW"
   echo "  artifacts -> $ARTIFACT_ROOT/$EXP/${VARIANT}_seed${SEED}/  (+ rclone $RCLONE_REMOTE:$RCLONE_DEST)"
@@ -119,23 +123,19 @@ fi
 log "=== $RUN_TAG : setup ==="
 fatal() { log "FATAL: $*"; exit 1; }   # every critical setup step is checked explicitly (no silent continue)
 
-# code: pull THIS experiment's archive from Drive (no git auth). A marker guards against a reused
-# volume silently running the WRONG experiment's code (e.g. P1 code under --exp P6) or stale code.
-MARKER="$WORKDIR/.exp_code_marker"; WANT_MARKER="${EXP}:${CODE_ID}"
-if [[ ! -f "$MARKER" || "$(cat "$MARKER" 2>/dev/null)" != "$WANT_MARKER" ]]; then
-  [[ -n "$CODE_ID" ]] || fatal "no matching code at $WORKDIR and CODE_GDRIVE_ID_${EXP} unset. Run scripts/make_code_bundle.sh, upload to Drive, export CODE_GDRIVE_ID_${EXP}."
-  log "fetching code archive ($BRANCH, id $CODE_ID) — FRESH extract (marker mismatch) ..."
-  pip install -q gdown 2>/dev/null || true
-  rm -rf "$WORKDIR"; mkdir -p "$WORKDIR"
-  gdown "$CODE_ID" -O /tmp/tsfm_code.tar.gz || fatal "code download failed"
-  tar tzf /tmp/tsfm_code.tar.gz >/dev/null 2>&1 || fatal "code archive is corrupt/truncated"
-  tar xzf /tmp/tsfm_code.tar.gz -C "$WORKDIR" || fatal "code extract failed"
-  rm -f /tmp/tsfm_code.tar.gz
-  echo "$WANT_MARKER" > "$MARKER"
+# code: git clone/pull the experiment branch from the public origin (code-only branches — nothing
+# confidential). git is the source of truth for which branch/commit runs (no stale-code marker
+# needed). `reset --hard origin/$BRANCH` supports the local-edit -> push -> pod `git pull` loop.
+if [[ -d "$WORKDIR/.git" ]]; then
+  git -C "$WORKDIR" fetch --quiet origin "$BRANCH" || fatal "git fetch $BRANCH failed"
+  git -C "$WORKDIR" checkout --quiet -B "$BRANCH" "origin/$BRANCH" || fatal "git checkout $BRANCH failed"
+  git -C "$WORKDIR" reset --hard --quiet "origin/$BRANCH" || fatal "git reset failed"
 else
-  log "code present for ${EXP} (marker matches) — reusing."
+  git clone --quiet --branch "$BRANCH" --single-branch "$REPO_URL" "$WORKDIR" \
+    || fatal "git clone failed ($BRANCH from $REPO_URL) — is the branch pushed to origin?"
 fi
 cd "$WORKDIR"
+log "code: $BRANCH @ $(git -C "$WORKDIR" rev-parse --short HEAD)"
 
 # deps (idempotent; never replace the pre-installed CUDA torch). zip is needed for artifact packaging.
 if ! python -c "import sentence_transformers, umap" 2>/dev/null; then
@@ -175,6 +175,11 @@ N_DS=$(ls -d "$WORKDIR"/data/*/sessions 2>/dev/null | wc -l)
 mkdir -p /workspace/training_output; rm -rf "$WORKDIR/training_output" 2>/dev/null
 ln -sf /workspace/training_output "$WORKDIR/training_output"
 log "setup complete ($N_DS datasets, GPU live)"
+
+if [[ "$SETUP_ONLY" == 1 ]]; then
+  log "--setup-only: code + data + deps + GPU all verified, NOT training. Exiting cleanly."
+  exit 0
+fi
 
 # ----------------------------- 2-3. train -----------------------------
 log "=== $RUN_TAG : training ($CMD_PREVIEW) ==="
