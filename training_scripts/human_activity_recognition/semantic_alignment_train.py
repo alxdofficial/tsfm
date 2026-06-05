@@ -268,6 +268,7 @@ if USE_GRAD_CACHE and USE_MEMORY_BANK:
     print("WARNING: TSFM_GRAD_CACHE=1 bypasses the memory bank/queue (forward_cached passes "
           "queue=None). Forcing USE_MEMORY_BANK=False (queue_mode effectively 'none').")
     USE_MEMORY_BANK = False
+    QUEUE_MODE = "none"  # keep provenance truthful — hyperparameters.json must not claim hard_neg
 
 TARGET_EFFECTIVE_BATCH = BATCH_SIZE * ACCUMULATION_STEPS  # e.g. 512
 # Per-patch mode: cap by total valid patches (not sessions) to control NxN logit matrix size.
@@ -1824,7 +1825,7 @@ def main():
         "target_patch_size": TARGET_PATCH_SIZE,
         "feature_extractor_type": FEATURE_EXTRACTOR_TYPE, "spectral_ratio": SPECTRAL_RATIO,
         "normalization_method": "zscore", "interpolation_method": "linear",
-        "temporal_init_scale": 0.1, "channel_init_scale": 0.1, "use_channel_encoding": True,
+        "temporal_init_scale": 0.1, "channel_init_scale": 0.1, "use_channel_encoding": False,  # encoder is built with use_channel_encoding=False (alignment training)
         "max_patches": 5000,
         "sentence_bert_model": SENTENCE_BERT_MODEL,
         "contrastive_text_model": CONTRASTIVE_TEXT_MODEL, "contrastive_text_dim": CONTRASTIVE_TEXT_DIM,
@@ -2244,8 +2245,8 @@ def main():
             # Linear warmup: 0 -> 1 over WARMUP_EPOCHS
             return (epoch + 1) / WARMUP_EPOCHS
         else:
-            # Cosine decay after warmup
-            progress = (epoch - WARMUP_EPOCHS) / (EPOCHS - WARMUP_EPOCHS)
+            # Cosine decay after warmup (max(1,..) avoids 0/0 NaN when EPOCHS == WARMUP_EPOCHS)
+            progress = (epoch - WARMUP_EPOCHS) / max(1, EPOCHS - WARMUP_EPOCHS)
             return 0.01 + 0.99 * (1 + math.cos(math.pi * progress)) / 2
 
     scheduler = LambdaLR(optimizer, lr_lambda=warmup_cosine_schedule)

@@ -14,7 +14,9 @@ import sys, json, glob, os, statistics as st
 from collections import defaultdict
 
 root = sys.argv[1] if len(sys.argv) > 1 else "."
-METRICS = ["val_accuracy", "val_mrr", "val_loss"]
+# unseen_* are the held-out/zero-shot signals the rebuttal variance question is actually about
+# (logged periodically); they show "--" if a run didn't record them.
+METRICS = ["val_accuracy", "val_mrr", "unseen_accuracy", "unseen_mrr", "val_loss"]
 
 runs = defaultdict(list)   # config -> [(run_name, metrics_dict), ...]
 for mp in glob.glob(os.path.join(root, "**", "metrics.json"), recursive=True):

@@ -20,13 +20,20 @@ declare -A BRANCHES=(
   [P6]=rebuttal/experiment/multi-seed
   [P7]=rebuttal/experiment/fine-grained-ablations
 )
-echo "Creating code archives (working tree only, no history):"
+echo "Creating code archives from the COMMITTED branch tips (git archive ignores uncommitted changes):"
+DIRTY=0; [[ -n "$(git status --porcelain)" ]] && DIRTY=1
 for exp in P1 P6 P7; do
   br="${BRANCHES[$exp]}"
   out="$OUT/tsfm_code_${exp}.tar.gz"
+  sha=$(git rev-parse --short "$br")
   git archive --format=tar.gz -o "$out" "$br"
-  echo "  $exp  $br  ->  $out  ($(du -h "$out" | cut -f1))"
+  echo "  $exp  $br @ $sha  ->  $out  ($(du -h "$out" | cut -f1))"
 done
+if [[ "$DIRTY" == 1 ]]; then
+  echo
+  echo "  ⚠ WARNING: the working tree has UNCOMMITTED changes — these are NOT shipped to RunPod."
+  echo "    git archive bundles only the committed branch tips above. Commit to the relevant branch first."
+fi
 
 echo
 echo "Next: upload these to Google Drive (private) and, on each pod, export the file ids:"
