@@ -230,7 +230,10 @@ SAVE_EVERY = 5
 # Resume configuration - set to a folder path to resume training from that checkpoint
 # Example: RESUME_FROM = "training_output/semantic_alignment/20251124_234942"
 RESUME_FROM = None  # Fresh training with small_deep config
-SEED = int(os.environ.get("TSFM_SEED", "42"))  # numpy randomness is seeded inside the data loader (seed=SEED)
+SEED = int(os.environ.get("TSFM_SEED", "42"))  # model init + data ORDER; varied for EXP-P6 multi-seed
+# Data composition + train/val/unseen SPLIT seed — kept FIXED across P6 seeds so multi-seed variance
+# is over random init/order on a FIXED evaluation set (not over different eval sets). Default = headline 42.
+SPLIT_SEED = int(os.environ.get("TSFM_SPLIT_SEED", "42"))
 MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # ---- Training hyperparameters ----
@@ -1833,7 +1836,8 @@ def main():
     }
     hyperparams = {
         'model_size': MODEL_SIZE,
-        'seed': SEED,  # recorded for the multi-seed ablation (EXP-P6)
+        'seed': SEED,  # init + data order; varied for EXP-P6 multi-seed
+        'split_seed': SPLIT_SEED,  # data composition + eval split; FIXED across P6 seeds
         'config': _active_config,  # Built from local vars, correct even on resume
         'encoder': {
             'd_model': D_MODEL, 'num_heads': NUM_HEADS, 'num_temporal_layers': NUM_TEMPORAL_LAYERS,
@@ -2041,7 +2045,7 @@ def main():
         patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
         patch_size_range_per_dataset=PATCH_SIZE_RANGE_PER_DATASET if USE_PATCH_SIZE_AUGMENTATION else None,
         max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
-        seed=SEED,
+        seed=SPLIT_SEED,
         target_patch_size=TARGET_PATCH_SIZE,
         max_patches_per_sample=MAX_PATCHES_PER_SAMPLE,
         use_rotation_augmentation=USE_ROTATION_AUGMENTATION,
@@ -2055,7 +2059,7 @@ def main():
         patch_size_per_dataset=PATCH_SIZE_PER_DATASET,
         patch_size_range_per_dataset=None,  # No augmentation for validation
         max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
-        seed=SEED,
+        seed=SPLIT_SEED,
         target_patch_size=TARGET_PATCH_SIZE,
         max_patches_per_sample=MAX_PATCHES_PER_SAMPLE,
     )
@@ -2150,7 +2154,7 @@ def main():
                 datasets=[UNSEEN_DATASET],
                 split='val',
                 max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
-                seed=SEED,
+                seed=SPLIT_SEED,
                 target_patch_size=TARGET_PATCH_SIZE,
                 max_patches_per_sample=MAX_PATCHES_PER_SAMPLE,
             )
@@ -2329,7 +2333,14 @@ def main():
     # Warmup memory bank if enabled (reduces early training volatility)
     # Skip if resuming since memory bank is restored from checkpoint
     if memory_bank is not None and USE_MEMORY_BANK and resume_checkpoint is None:
+        # Save/restore RNG around warmup: iterating the dataloader here advances the sampler RNG, so
+        # without this, queue runs would see a different train shuffle than 'none'/no-queue runs — a
+        # confound for the EXP-P1/P6 comparisons. Restoring makes every run RNG-identical entering epoch 1.
+        _rng_t, _rng_np, _rng_py = torch.get_rng_state(), np.random.get_state(), random.getstate()
+        _rng_c = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
         warmup_memory_bank(model, label_bank, train_loader, memory_bank, device)
+        torch.set_rng_state(_rng_t); np.random.set_state(_rng_np); random.setstate(_rng_py)
+        if _rng_c is not None: torch.cuda.set_rng_state_all(_rng_c)
 
     # Training loop
     for epoch in range(start_epoch, EPOCHS + 1):
