@@ -23,7 +23,7 @@
 # Variants:
 #   P1: none | hard_neg | semantic
 #   P6: headline | no_soft_targets | no_queue           (run each at --seed 42/43/44)
-#   P7: temporal_only | channel_indep | cnn_multi | spectral_half | hard_targets |
+#   P7: temporal_only | channel_indep | no_channel_text | cnn_multi | spectral_half | hard_targets |
 #       tau_0p3 | soft_weight_0p5 | sbert_mpnet
 #
 # Code comes via `git clone/pull` from TSFM_REPO_URL (default: public origin, code-only branches).
@@ -95,7 +95,8 @@ resolve_env() {
     P6:no_queue)        RUN_ENV+=( "TSFM_GRAD_CACHE=0" "TSFM_QUEUE_MODE=none" );;
     # ---- P7 fine-grained ablations ----
     P7:temporal_only)   RUN_ENV+=( 'TSFM_CONFIG_OVERRIDES={"feature_extractor_type":"cnn"}' );;
-    P7:channel_indep)   RUN_ENV+=( 'TSFM_CONFIG_OVERRIDES={"use_cross_channel":false}' );;
+    P7:channel_indep)   RUN_ENV+=( 'TSFM_CONFIG_OVERRIDES={"use_cross_channel":false}' );;  # encoder cross-channel ATTENTION off (NOT ChannelTextFusion)
+    P7:no_channel_text) RUN_ENV+=( "ABLATION_CHANNEL_TEXT_FUSION=0" );;                      # ablate the NOVEL text-as-channel-identity mechanism (justifies the contribution)
     P7:cnn_multi)       RUN_ENV+=( 'TSFM_CONFIG_OVERRIDES={"cnn_kernel_sizes":[3,5,7]}' );;
     P7:spectral_half)   RUN_ENV+=( 'TSFM_CONFIG_OVERRIDES={"spectral_ratio":0.5}' );;
     P7:hard_targets)    RUN_ENV+=( "ABLATION_SOFT_TARGETS=0" );;
