@@ -131,7 +131,8 @@ DATA_ROOT = os.environ.get("TSFM_DATA_ROOT", os.path.join(os.path.dirname(os.pat
 # Zero-shot test datasets are EXCLUDED: motionsense, realworld, mobiact, vtt_coniot
 # Also excluded for GOAT comparison: opportunity, realdisp, daphnet_fog
 DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'recgym']
-random.seed(int(os.environ.get("TSFM_SEED", "42")))  # TSFM_SEED enables the multi-seed ablation (EXP-P6)
+random.seed(int(os.environ.get("TSFM_SEED", "42")))  # seeds global `random` for non-data RNG only; the
+# data loader re-seeds `random` with SPLIT_SEED at construction, so this does NOT control data order/partition.
 PATCH_SIZE_PER_DATASET = {
     # Fixed-length sessions (2.56s) - use 1.0s patches for 2 patches/session
     'uci_har': 1.0,       # 50 Hz, 2.56s fixed sessions
@@ -230,9 +231,11 @@ SAVE_EVERY = 5
 # Resume configuration - set to a folder path to resume training from that checkpoint
 # Example: RESUME_FROM = "training_output/semantic_alignment/20251124_234942"
 RESUME_FROM = None  # Fresh training with small_deep config
-SEED = int(os.environ.get("TSFM_SEED", "42"))  # model init + data ORDER; varied for EXP-P6 multi-seed
+SEED = int(os.environ.get("TSFM_SEED", "42"))  # model init + sampler BATCH ORDER; varied for EXP-P6
+# (per validity review: per-sample augmentation/channel-draws are reseeded from SPLIT_SEED per worker,
+#  so they are FIXED across P6 seeds; P6 variance is over weight init + sampler batch order — the honest claim.)
 # Data composition + train/val/unseen SPLIT seed — kept FIXED across P6 seeds so multi-seed variance
-# is over random init/order on a FIXED evaluation set (not over different eval sets). Default = headline 42.
+# is over init/batch-order on a FIXED evaluation set (not over different eval sets). Default = headline 42.
 SPLIT_SEED = int(os.environ.get("TSFM_SPLIT_SEED", "42"))
 MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
@@ -1844,8 +1847,8 @@ def main():
     }
     hyperparams = {
         'model_size': MODEL_SIZE,
-        'seed': SEED,  # init + data order; varied for EXP-P6 multi-seed
-        'split_seed': SPLIT_SEED,  # data composition + eval split; FIXED across P6 seeds
+        'seed': SEED,  # model init + sampler batch order; varied for EXP-P6 (augmentation/partition fixed via split_seed)
+        'split_seed': SPLIT_SEED,  # data composition + eval split + per-sample augmentation; FIXED across P6 seeds
         'config': _active_config,  # Built from local vars, correct even on resume
         'encoder': {
             'd_model': D_MODEL, 'num_heads': NUM_HEADS, 'num_temporal_layers': NUM_TEMPORAL_LAYERS,
