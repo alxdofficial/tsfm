@@ -166,9 +166,16 @@ DATA_DONE="$DATA_MOUNT/.extract_complete"
 if [[ ! -f "$DATA_DONE" ]]; then
   log "downloading + extracting training data (id $DATA_GDRIVE_ID) ..."
   rm -rf "$DATA_MOUNT"; mkdir -p "$DATA_MOUNT"
-  rm -f /tmp/tsfm_data.tar.gz   # never reuse a possibly-partial earlier download
-  gdown "$DATA_GDRIVE_ID" -O /tmp/tsfm_data.tar.gz || fatal "data download failed"
-  tar tzf /tmp/tsfm_data.tar.gz >/dev/null 2>&1 || fatal "data archive is corrupt/truncated"
+  # gdown is REFUSED (not slowed) under concurrency — Drive caps simultaneous downloads of one file.
+  # Retry with backoff so a pod recovers once other pods finish + the concurrency clears; validate each try.
+  _dl_ok=0
+  for _att in 1 2 3 4 5 6; do
+    rm -f /tmp/tsfm_data.tar.gz
+    if gdown "$DATA_GDRIVE_ID" -O /tmp/tsfm_data.tar.gz && tar tzf /tmp/tsfm_data.tar.gz >/dev/null 2>&1; then _dl_ok=1; break; fi
+    log "data download attempt $_att failed (Drive concurrency limit?) — retry in $((_att*45))s ..."
+    sleep $((_att * 45))
+  done
+  [[ "$_dl_ok" == 1 ]] || fatal "data download failed after 6 attempts"
   tar xzf /tmp/tsfm_data.tar.gz --no-same-owner -C "$DATA_MOUNT" --strip-components=1 || fatal "data extract failed"
   rm -f /tmp/tsfm_data.tar.gz
   touch "$DATA_DONE"
