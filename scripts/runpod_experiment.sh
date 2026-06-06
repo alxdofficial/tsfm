@@ -84,7 +84,7 @@ BRANCH="${TSFM_BRANCH:-$BRANCH}"
 # Exports the right vars. Fails loudly on an unknown variant so we never pay for a no-op run.
 declare -a RUN_ENV
 resolve_env() {
-  RUN_ENV=( "TSFM_MODEL_SIZE=small_deep" "TSFM_SEED=${SEED}" "ABLATION_NAME=${RUN_TAG}" "TSFM_VISUALIZE=0" )  # viz=0: UMAP deadlocks + is useless for ablations (val-acc metric is kept)
+  RUN_ENV=( "TSFM_MODEL_SIZE=small_deep" "TSFM_SEED=${SEED}" "ABLATION_NAME=${RUN_TAG}" "TSFM_VISUALIZE=0" "TSFM_NUM_WORKERS=24" )  # viz=0: UMAP deadlocks; workers=24 (was 8): A40 was data-starved at ~45% GPU on a 96-core box
   case "${EXP}:${VARIANT}" in
     # ---- P1 queue ablation: GradCache MUST be off so the queue is actually used ----
     P1:none)            RUN_ENV+=( "TSFM_GRAD_CACHE=0" "TSFM_QUEUE_MODE=none" );;
