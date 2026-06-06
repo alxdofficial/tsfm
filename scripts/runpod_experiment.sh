@@ -47,7 +47,8 @@ DATA_MOUNT="${TSFM_DATA_MOUNT:-/dev/shm/tsfm_data}"
 ARTIFACT_ROOT="${TSFM_ARTIFACT_ROOT:-/workspace/artifacts}"
 RCLONE_REMOTE="${RCLONE_REMOTE:-gdrive}"
 RCLONE_DEST="${RCLONE_DEST:-tsfm_rebuttal/artifacts}"
-DATA_GDRIVE_ID="${DATA_GDRIVE_ID:-1a6QROP9qZZetOek_NxbgIWFNYDVY8d0H}"
+DATA_GDRIVE_ID="${DATA_GDRIVE_ID:-1a6QROP9qZZetOek_NxbgIWFNYDVY8d0H}"  # legacy (Drive quota-locks under concurrency)
+TSFM_HF_DATA_REPO="${TSFM_HF_DATA_REPO:-alxd219p1/tsfm-har-bench}"      # data now lives on HF (CDN, concurrency-safe)
 
 # ----------------------------- arg parsing -----------------------------
 while [[ $# -gt 0 ]]; do
@@ -164,20 +165,20 @@ log "GPU OK: $(python -c 'import torch; print(torch.cuda.get_device_name(0))' 2>
 # data (RAM disk). Validate the tarball + use a completion sentinel so a PARTIAL extract is never reused.
 DATA_DONE="$DATA_MOUNT/.extract_complete"
 if [[ ! -f "$DATA_DONE" ]]; then
-  log "downloading + extracting training data (id $DATA_GDRIVE_ID) ..."
+  log "downloading training data from HF dataset ($TSFM_HF_DATA_REPO) — CDN-backed, concurrency-safe ..."
   rm -rf "$DATA_MOUNT"; mkdir -p "$DATA_MOUNT"
-  # gdown is REFUSED (not slowed) under concurrency — Drive caps simultaneous downloads of one file.
-  # Retry with backoff so a pod recovers once other pods finish + the concurrency clears; validate each try.
-  _dl_ok=0
-  for _att in 1 2 3 4 5 6; do
-    rm -f /tmp/tsfm_data.tar.gz
-    if gdown "$DATA_GDRIVE_ID" -O /tmp/tsfm_data.tar.gz && tar tzf /tmp/tsfm_data.tar.gz >/dev/null 2>&1; then _dl_ok=1; break; fi
-    log "data download attempt $_att failed (Drive concurrency limit?) — retry in $((_att*45))s ..."
-    sleep $((_att * 45))
+  pip install -q huggingface_hub >/dev/null 2>&1 || true
+  # HF Hub is CDN-backed + built for massive concurrent downloads (unlike Drive, which quota-blocks
+  # concurrent pulls of one file). Public repo -> no token needed. Light retry only for network blips.
+  _dl_ok=0; DATA_TARBALL=""
+  for _att in 1 2 3; do
+    _p=$(python -c "from huggingface_hub import hf_hub_download; print(hf_hub_download(repo_id='$TSFM_HF_DATA_REPO', filename='data.tar.gz', repo_type='dataset'))" 2>/dev/null)
+    if [[ -n "$_p" && -f "$_p" ]] && tar tzf "$_p" >/dev/null 2>&1; then DATA_TARBALL="$_p"; _dl_ok=1; break; fi
+    log "HF data download attempt $_att failed — retry in $((_att*20))s ..."; sleep $((_att * 20))
   done
-  [[ "$_dl_ok" == 1 ]] || fatal "data download failed after 6 attempts"
-  tar xzf /tmp/tsfm_data.tar.gz --no-same-owner -C "$DATA_MOUNT" --strip-components=1 || fatal "data extract failed"
-  rm -f /tmp/tsfm_data.tar.gz
+  [[ "$_dl_ok" == 1 ]] || fatal "HF data download failed after 3 attempts"
+  # tarball holds the dataset dirs at top level (no wrapper) -> no --strip-components
+  tar xzf "$DATA_TARBALL" --no-same-owner -C "$DATA_MOUNT" || fatal "data extract failed"
   touch "$DATA_DONE"
 fi
 rm -rf "$WORKDIR/data" 2>/dev/null; ln -sf "$DATA_MOUNT" "$WORKDIR/data"
