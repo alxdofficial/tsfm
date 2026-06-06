@@ -24,6 +24,7 @@ from datetime import datetime
 from tqdm import tqdm
 import json
 import math
+import numpy as np  # used by the warmup-RNG save/restore in main()
 
 from datasets.imu_pretraining_dataset.multi_dataset_loader import IMUPretrainingDataset, worker_init_fn
 from torch.utils.data import DataLoader, DistributedSampler
