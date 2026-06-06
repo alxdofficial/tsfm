@@ -140,6 +140,9 @@ log "code: $BRANCH @ $(git -C "$WORKDIR" rev-parse --short HEAD)"
 # deps (idempotent; never replace the pre-installed CUDA torch). zip is needed for artifact packaging.
 if ! python -c "import sentence_transformers, umap" 2>/dev/null; then
   log "installing deps ..."
+  # PEP 668 (Ubuntu 24.04 / py3.12): system Python is "externally managed" and refuses pip without
+  # this. Newer pip respects the env var; older pip (Ubuntu 22.04 images) ignores it — so it's safe.
+  export PIP_BREAK_SYSTEM_PACKAGES=1
   pip install --upgrade pip -q || fatal "pip upgrade failed"
   pip install -q numpy scipy pandas pyarrow matplotlib plotly scikit-learn umap-learn \
                  tqdm joblib sentence-transformers transformers pydantic requests gdown || fatal "pip deps failed"
