@@ -84,7 +84,10 @@ BRANCH="${TSFM_BRANCH:-$BRANCH}"
 # Exports the right vars. Fails loudly on an unknown variant so we never pay for a no-op run.
 declare -a RUN_ENV
 resolve_env() {
-  RUN_ENV=( "TSFM_MODEL_SIZE=small_deep" "TSFM_SEED=${SEED}" "ABLATION_NAME=${RUN_TAG}" "TSFM_VISUALIZE=0" "TSFM_NUM_WORKERS=24" )  # viz=0: UMAP deadlocks; workers=24 (was 8): A40 was data-starved at ~45% GPU on a 96-core box
+  # viz=0: UMAP deadlocks. workers=8: runs are host/data-bound (GPU ~40% sawtooth), not worker-bound, and
+  # ~52 persistent workers caused the fd/shm DataLoader deadlock — fewer workers cuts that risk at no throughput cost.
+  # epochs=80: val plateaus by ~ep80 (the one complete run peaked ep81); uniform across all conditions for comparability.
+  RUN_ENV=( "TSFM_MODEL_SIZE=small_deep" "TSFM_SEED=${SEED}" "ABLATION_NAME=${RUN_TAG}" "TSFM_VISUALIZE=0" "TSFM_NUM_WORKERS=8" "TSFM_EPOCHS=80" )
   case "${EXP}:${VARIANT}" in
     # ---- P1 queue ablation: GradCache MUST be off so the queue is actually used ----
     P1:none)            RUN_ENV+=( "TSFM_GRAD_CACHE=0" "TSFM_QUEUE_MODE=none" );;
@@ -110,7 +113,7 @@ resolve_env() {
 resolve_env
 
 # ----------------------------- dry run -----------------------------
-CMD_PREVIEW="env ${RUN_ENV[*]} PYTHONUNBUFFERED=1 TSFM_NO_COMPILE=1 python training_scripts/human_activity_recognition/semantic_alignment_train.py"
+CMD_PREVIEW="env ${RUN_ENV[*]} PYTHONUNBUFFERED=1 python training_scripts/human_activity_recognition/semantic_alignment_train.py"
 if [[ "$DRY_RUN" == 1 ]]; then
   log "DRY RUN — would do:"
   echo "  branch:   $BRANCH   (git clone $REPO_URL)$([[ $SETUP_ONLY == 1 ]] && echo '  [SETUP-ONLY]')"
@@ -196,7 +199,7 @@ fi
 # ----------------------------- 2-3. train -----------------------------
 log "=== $RUN_TAG : training ($CMD_PREVIEW) ==="
 set +e
-env "${RUN_ENV[@]}" PYTHONUNBUFFERED=1 TSFM_NO_COMPILE=1 \
+env "${RUN_ENV[@]}" PYTHONUNBUFFERED=1 \
     python training_scripts/human_activity_recognition/semantic_alignment_train.py \
     2>&1 | tee "/workspace/${RUN_TAG}.log"
 TRAIN_RC=${PIPESTATUS[0]}
