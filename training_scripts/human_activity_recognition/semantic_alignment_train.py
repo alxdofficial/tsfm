@@ -25,6 +25,8 @@ from tqdm import tqdm
 import json
 import math
 import numpy as np  # used by the warmup-RNG save/restore in main()
+import faulthandler  # hang self-diagnosis: SIGUSR1 -> all-thread stack dump
+import signal
 
 from datasets.imu_pretraining_dataset.multi_dataset_loader import IMUPretrainingDataset, worker_init_fn
 from torch.utils.data import DataLoader, DistributedSampler
@@ -290,6 +292,13 @@ VAL_BATCH_SIZE = int(os.environ.get("TSFM_VAL_BATCH_SIZE", "64"))
 NUM_WORKERS = int(os.environ.get("TSFM_NUM_WORKERS", "8"))
 PREFETCH_FACTOR = int(os.environ.get("TSFM_PREFETCH_FACTOR", "4"))
 PERSISTENT_WORKERS = True
+
+# Plumbing/"cheat" run: exercise ALL data loading + checkpoint save + eval scheduling across every epoch
+# but SKIP the heavy model compute (forward/backward/optimizer/metric compute). Lets us validate the
+# epoch-loop plumbing (the hang lived in the dataloader, the corruption in the save) in minutes, free.
+SKIP_COMPUTE = os.environ.get("TSFM_SKIP_COMPUTE", "0") == "1"
+# Optional: in a skip-compute run, cap train batches/epoch so all epochs sweep fast (0 = full data loading).
+SKIP_COMPUTE_MAX_BATCHES = int(os.environ.get("TSFM_SKIP_COMPUTE_MAX_BATCHES", "0"))
 
 # Soft targets configuration
 # CRITICAL: Soft targets are ESSENTIAL for label augmentation to prevent treating synonyms as negatives
@@ -913,6 +922,13 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         channel_descriptions = [m['channel_descriptions'] for m in metadata]
         current_bs = patches.shape[0]
 
+        if SKIP_COMPUTE:
+            # Plumbing run: data load + H2D exercised above; skip model/loss/backward/optimizer.
+            # Metrics stay 0 and the return averages are div-by-zero-safe (max(...,1) guards).
+            if SKIP_COMPUTE_MAX_BATCHES and (batch_idx + 1) >= SKIP_COMPUTE_MAX_BATCHES:
+                break
+            continue
+
         text_embeddings = label_bank.encode(label_texts, normalize=True)
         # Frozen SBERT embeddings for soft targets — prevents learnable label bank
         # from gaming the target distribution by making all embeddings similar.
@@ -1444,6 +1460,13 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
     """Validate for one epoch and optionally compute classification metrics."""
     model.eval()
     label_bank.eval()  # Disable dropout in learnable attention pooling
+    if SKIP_COMPUTE:
+        # Plumbing run: iterate the val loader (the hang struck at val-loader re-engagement) then skip
+        # compute. epoch-varying accuracy => best.pt re-saved every epoch (exercises the atomic save).
+        for _ in tqdm(dataloader, desc=f"[{stage}] Epoch {epoch} Validation (skip-compute)"):
+            pass
+        return {'loss': 0.0, 'positive_similarity': 0.0, 'negative_similarity': 0.0,
+                'similarity_gap': 0.0, 'accuracy': min(0.999, epoch / 1000.0), 'mrr': 0.0}
     total_loss = 0.0
     total_pos_sim = 0.0
     total_neg_sim = 0.0
@@ -1596,6 +1619,11 @@ def evaluate_unseen(model, label_bank, dataloader, device, epoch):
     """
     model.train(False)
     label_bank.train(False)
+    if SKIP_COMPUTE:
+        # Plumbing run: iterate the unseen loader (every-5-epochs path) then skip compute.
+        for _ in tqdm(dataloader, desc=f"[Epoch {epoch}] Unseen eval (skip-compute)", leave=False):
+            pass
+        return {'accuracy': 0.0, 'mrr': 0.0}
     all_imu_embeddings = []
     all_patch_masks = []
     all_labels = []
@@ -1668,6 +1696,18 @@ def is_main_process():
     return not dist.is_initialized() or dist.get_rank() == 0
 
 
+def _atomic_torch_save(obj, path):
+    """Save a checkpoint atomically: write to <path>.tmp, fsync, then os.replace (atomic on POSIX).
+    Prevents the truncated/corrupt best.pt produced when a process wedged mid-save (Wave-1 cnn_multi)."""
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "wb") as f:
+        torch.save(obj, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
 def main():
     """Main training function."""
     global CHECKPOINT_DIR
@@ -1681,6 +1721,24 @@ def main():
     global CONTRASTIVE_TEXT_MODEL, CONTRASTIVE_TEXT_DIM
     global LABEL_BANK_NUM_HEADS, LABEL_BANK_NUM_QUERIES, LABEL_BANK_NUM_PROTOTYPES
     global PER_PATCH_PREDICTION
+
+    # --- Robustness (Wave-1 hang fixes) ---
+    # The default 'file_descriptor' sharing strategy passes shared-memory fds between workers via
+    # multiprocessing.resource_sharer over Unix sockets; under ~50 persistent pin_memory workers it
+    # deadlocked (the resource_sharer BrokenPipe traceback seen in every salvaged log). 'file_system'
+    # shares via /dev/shm files instead and is robust to fd exhaustion.
+    try:
+        torch.multiprocessing.set_sharing_strategy('file_system')
+    except Exception as _e:
+        print(f"[warn] could not set mp sharing strategy: {_e}")
+    # Hang self-diagnosis: `kill -USR1 <pid>` dumps all thread stacks (main + workers) to stderr, so a
+    # future freeze is captured live instead of guessed post-mortem. faulthandler.enable() also dumps on
+    # fatal signals (segfault). The freeze monitor sends SIGUSR1 just before terminating a wedged pod.
+    faulthandler.enable()
+    try:
+        faulthandler.register(signal.SIGUSR1, all_threads=True, chain=False)  # dump-only; do NOT chain to SIGUSR1's default (terminate)
+    except Exception as _e:
+        print(f"[warn] could not register SIGUSR1 faulthandler: {_e}")
 
     local_rank, rank, world_size, use_ddp = setup_ddp()
     device = torch.device(f'cuda:{local_rank}' if torch.cuda.is_available() else 'cpu')
@@ -2081,6 +2139,7 @@ def main():
             persistent_workers=PERSISTENT_WORKERS,
             collate_fn=IMUPretrainingDataset.collate_patches_fn,
             pin_memory=True,
+            timeout=600,  # a wedged worker raises instead of hanging the main loop forever
             worker_init_fn=worker_init_fn
         )
         if is_main_process():
@@ -2111,6 +2170,7 @@ def main():
             persistent_workers=PERSISTENT_WORKERS,
             collate_fn=IMUPretrainingDataset.collate_patches_fn,
             pin_memory=True,
+            timeout=600,  # a wedged worker raises instead of hanging the main loop forever
             worker_init_fn=worker_init_fn
         )
 
@@ -2133,6 +2193,7 @@ def main():
             persistent_workers=PERSISTENT_WORKERS,
             collate_fn=IMUPretrainingDataset.collate_patches_fn,
             pin_memory=True,
+            timeout=600,  # a wedged worker raises instead of hanging the main loop forever
             worker_init_fn=worker_init_fn
         )
 
@@ -2143,9 +2204,10 @@ def main():
         shuffle=False,
         num_workers=NUM_WORKERS,
         prefetch_factor=PREFETCH_FACTOR,
-        persistent_workers=PERSISTENT_WORKERS,
+        persistent_workers=False,  # val runs intermittently; don't keep ~24 workers alive all run
         collate_fn=IMUPretrainingDataset.collate_patches_fn,
-        pin_memory=True,
+        pin_memory=False,  # val doesn't need fast H2D; cuts /dev/shm + fd pressure
+        timeout=600,
         worker_init_fn=worker_init_fn
     )
 
@@ -2168,9 +2230,10 @@ def main():
                 shuffle=False,
                 num_workers=4,
                 prefetch_factor=2,
-                persistent_workers=True,
+                persistent_workers=False,  # unseen eval is every-5-epochs; don't hold workers alive
                 collate_fn=IMUPretrainingDataset.collate_patches_fn,
-                pin_memory=True,
+                pin_memory=False,
+                timeout=600,
                 worker_init_fn=worker_init_fn
             )
             print(f"Loaded unseen dataset '{UNSEEN_DATASET}' with {len(unseen_dataset)} samples")
@@ -2336,7 +2399,7 @@ def main():
 
     # Warmup memory bank if enabled (reduces early training volatility)
     # Skip if resuming since memory bank is restored from checkpoint
-    if memory_bank is not None and USE_MEMORY_BANK and resume_checkpoint is None:
+    if memory_bank is not None and USE_MEMORY_BANK and resume_checkpoint is None and not SKIP_COMPUTE:
         # Save/restore RNG around warmup: iterating the dataloader here advances the sampler RNG, so
         # without this, queue runs would see a different train shuffle than 'none'/no-queue runs — a
         # confound for the EXP-P1/P6 comparisons. Restoring makes every run RNG-identical entering epoch 1.
@@ -2438,11 +2501,19 @@ def main():
                 'val_metrics': val_metrics,
                 'hyperparameters': hyperparams
             }
-            torch.save(checkpoint, CHECKPOINT_DIR / f'epoch_{epoch}.pt')
+            _atomic_torch_save(checkpoint, CHECKPOINT_DIR / f'epoch_{epoch}.pt')
+            # Bound disk use: keep only the 3 most recent epoch_*.pt (best.pt is kept separately).
+            try:
+                _ckpts = sorted(CHECKPOINT_DIR.glob('epoch_*.pt'),
+                                key=lambda p: int(p.stem.split('_')[1]))
+                for _old in _ckpts[:-3]:
+                    _old.unlink()
+            except Exception as _e:
+                print(f"[warn] checkpoint cleanup failed: {_e}")
 
             if val_acc > best_val_acc:
                 best_val_acc = val_acc
-                torch.save(checkpoint, CHECKPOINT_DIR / 'best.pt')
+                _atomic_torch_save(checkpoint, CHECKPOINT_DIR / 'best.pt')
                 print(f"  ✓ Saved best model (val_acc: {best_val_acc:.1%})")
 
         # Synchronize all processes before next epoch
