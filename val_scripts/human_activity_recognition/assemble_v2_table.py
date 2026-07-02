@@ -7,14 +7,16 @@ ED = Path(__file__).resolve().parent.parent.parent / "test_output" / "eval_v2"
 DATASETS = ["motionsense", "realworld", "mobiact", "shoaib", "opportunity", "harth"]
 
 # (label, json file, key path to the zs metrics dict, tier)
+# Baseline set (post V2 cleanup): CrossHAR + LiMU-BERT kept; MOMENT/LanHAR/LLaSA
+# dropped (slow / weak / undeployable). UniMTS + ssl-wearables to be added as
+# adapters (released weights) — their rows appear here once their JSONs exist.
 MODELS = [
     ("HALO (Small-Deep)", "tsfm_v2_native_native.json", "zs_xd", "text-aligned"),
     ("HALO (parity)", "tsfm_v2_neutral_20.json", "zs_xd", "text-aligned"),
-    ("LanHAR", "baseline_v2_lanhar.json", None, "text-aligned"),
-    ("MOMENT †", "baseline_v2_moment.json", None, "conse"),
     ("CrossHAR †", "baseline_v2_crosshar.json", None, "conse"),
     ("LiMU-BERT †", "baseline_v2_limubert.json", None, "conse"),
-    ("LLaSA", "baseline_v2_llasa.json", None, "generative"),
+    ("UniMTS", "baseline_v2_unimts.json", None, "cosine"),          # planned
+    ("ssl-wearables †", "baseline_v2_ssl_wearables.json", None, "conse"),  # planned
 ]
 
 
