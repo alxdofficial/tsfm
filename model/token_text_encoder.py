@@ -440,48 +440,6 @@ class ChannelTextFusion(nn.Module):
         return fused
 
 
-class LearnableLabelEncoder(nn.Module):
-    """
-    Complete label encoding with frozen text encoder + learnable pooling.
-
-    Replaces the static LabelBank.
-    """
-
-    def __init__(
-        self,
-        num_heads: int = 4,
-        num_queries: int = 4,
-        dropout: float = 0.1
-    ):
-        super().__init__()
-
-        self.text_encoder = TokenTextEncoder()
-        self.pooling = LabelAttentionPooling(
-            d_model=384,
-            num_heads=num_heads,
-            num_queries=num_queries,
-            dropout=dropout
-        )
-
-    def encode(
-        self,
-        labels: List[str],
-        normalize: bool = True,
-        device: Optional[torch.device] = None
-    ) -> torch.Tensor:
-        """
-        Encode labels to refined semantic embeddings.
-
-        Args:
-            labels: Activity labels
-            normalize: L2 normalize
-            device: Target device
-
-        Returns:
-            embeddings: (batch, 384)
-        """
-        tokens, mask = self.text_encoder.encode(labels, device)
-        return self.pooling(tokens, mask, normalize)
 
 
 class LearnableLabelBank(nn.Module):

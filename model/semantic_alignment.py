@@ -394,22 +394,25 @@ class SemanticAlignmentHead(nn.Module):
             use_self_attention=use_fusion_self_attention
         )
 
-        self.temporal_attention = TemporalAttention(
-            d_model=d_model_fused,
-            num_heads=num_heads,
-            num_layers=num_temporal_layers,
-            dim_feedforward=dim_feedforward,
-            dropout=dropout
-        )
-
-        # Multi-query pooling: pools temporal sequence to single vector
-        self.attention_pooling = MultiQueryPooling(
-            d_model=d_model_fused,
-            num_queries=num_pool_queries,
-            num_heads=num_heads,
-            dropout=dropout,
-            use_self_attention=use_pool_self_attention
-        )
+        # Session-level head (temporal attention -> multi-query pooling) is only
+        # used when per_patch_prediction=False. The headline small_deep config is
+        # per-patch, so we do NOT construct these ~9.3M params there. Checkpoints
+        # that still carry them load fine (strict=False ignores the extra keys).
+        if not per_patch_prediction:
+            self.temporal_attention = TemporalAttention(
+                d_model=d_model_fused,
+                num_heads=num_heads,
+                num_layers=num_temporal_layers,
+                dim_feedforward=dim_feedforward,
+                dropout=dropout
+            )
+            self.attention_pooling = MultiQueryPooling(
+                d_model=d_model_fused,
+                num_queries=num_pool_queries,
+                num_heads=num_heads,
+                dropout=dropout,
+                use_self_attention=use_pool_self_attention
+            )
 
         self.projection_head = ProjectionHead(
             input_dim=d_model_fused,
@@ -463,36 +466,3 @@ class SemanticAlignmentHead(nn.Module):
             embedding = self.projection_head(pooled, normalize=normalize)  # (batch, output_dim)
             return embedding
 
-    def get_attention_stats(
-        self,
-        encoder_output: torch.Tensor,
-        channel_mask: Optional[torch.Tensor] = None
-    ) -> dict:
-        """
-        Get attention statistics for debugging.
-
-        Returns dict with:
-            - cross_channel_attn_entropy: How uniform is attention over channels (higher = more uniform)
-            - cross_channel_attn_max: Max attention weight (higher = more focused)
-        """
-        # Get attention weights from cross-channel fusion
-        _, attn_weights = self.cross_channel_fusion(
-            encoder_output, channel_mask, return_attention_weights=True
-        )
-
-        if attn_weights is None:
-            return {}
-
-        # attn_weights shape: (batch*patches, num_queries, num_channels)
-        # Compute entropy of attention distribution
-        # Entropy = -sum(p * log(p)), max entropy = log(num_channels)
-        attn_entropy = -(attn_weights * torch.log(attn_weights + 1e-10)).sum(dim=-1).mean().item()
-        num_channels = attn_weights.shape[-1]
-        max_entropy = math.log(num_channels)
-
-        return {
-            'cross_channel_attn_entropy': attn_entropy,
-            'cross_channel_attn_entropy_ratio': attn_entropy / max_entropy,  # 1.0 = uniform
-            'cross_channel_attn_max': attn_weights.max(dim=-1)[0].mean().item(),  # Avg max weight
-            'cross_channel_attn_std': attn_weights.std(dim=-1).mean().item(),  # How spread out
-        }

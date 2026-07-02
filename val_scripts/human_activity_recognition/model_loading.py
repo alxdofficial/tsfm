@@ -212,10 +212,17 @@ def load_model(
         state_dict['channel_fusion.gate_channel.weight'] = W[:, d:]   # last d cols
         state_dict['channel_fusion.gate_channel.bias'] = b
 
-    # Load state dict (strict=False only to tolerate removed channel_encoding keys)
+    # Load state dict (strict=False only to tolerate keys for components that a
+    # given config does not construct).
     missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
-    # Filter out known benign mismatches
-    benign_patterns = ('channel_encoding',)
+    # Filter out known benign mismatches:
+    #  - channel_encoding: legacy ChannelSemanticEncoding (never used at runtime)
+    #  - semantic_head.temporal_attention / .attention_pooling: the session-level
+    #    head, not constructed for per_patch_prediction models (e.g. small_deep);
+    #    per-patch checkpoints carry these dead weights but they have no home.
+    benign_patterns = ('channel_encoding',
+                       'semantic_head.temporal_attention',
+                       'semantic_head.attention_pooling')
     benign_unexpected = [k for k in unexpected_keys if any(p in k for p in benign_patterns)]
     critical_unexpected = [k for k in unexpected_keys if not any(p in k for p in benign_patterns)]
     if critical_unexpected:

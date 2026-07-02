@@ -601,22 +601,6 @@ class SemanticAlignmentModel(nn.Module):
 
         return embeddings
 
-    def get_attention_stats(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
-                            attention_mask=None):
-        """Get attention statistics from cross-channel fusion (for debugging)."""
-        with torch.no_grad():
-            result = self._preprocess_raw_batch(
-                data, channel_descriptions, channel_mask, sampling_rates, patch_sizes, attention_mask
-            )
-            if result is None:
-                return {}
-
-            batched_patches, patch_mask, batched_channel_mask, batched_channel_descs, valid_indices = result
-
-            encoded_batch = self.encoder(batched_patches, batched_channel_descs, channel_mask=batched_channel_mask)
-
-            # Get attention stats from semantic head (use valid-only channel_mask)
-            return self.semantic_head.get_attention_stats(encoded_batch, batched_channel_mask)
 
 
 def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_queue=None):
