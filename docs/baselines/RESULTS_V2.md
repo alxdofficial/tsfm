@@ -29,15 +29,34 @@ record: ZS-XD F1 1.2 native / 2.5 parity.)
 †parity = anti-aliased 20 Hz resample + neutral channel text (fairness row).
 CIs: subject-stratified bootstrap, B=1000.
 
-## FS — subject-disjoint few-shot (running; appended as results land)
+## FS — subject-disjoint few-shot (complete, 2026-07-02)
 
-| Dataset | FS-1% F1 | FS-1% Acc | FS-10% F1 | FS-10% Acc |
-|---|---:|---:|---:|---:|
-| harth | 36.0 | 41.6 | — | — |
-| *(others)* | *running* | | | |
+| Dataset | FS-1% F1 | FS-1% Acc | FS-10% F1 | FS-10% Acc | v1 leaky 1% Acc | Δ |
+|---|---:|---:|---:|---:|---:|---:|
+| motionsense | 76.5 | 76.2 | 85.2 | 86.1 | 88.6 | −12.4 |
+| realworld | 65.6 | 67.3 | 64.5 | 66.2 | 75.1 | −7.8 |
+| mobiact | 13.0 | 53.3 | 27.7 | 66.6 | 65.3 | −12.0 |
+| shoaib | 75.2 | 75.7 | 88.2 | 88.6 | 81.6 | −5.9 |
+| opportunity | 58.8 | 56.4 | 70.7 | 69.5 | 72.0 | −15.6 |
+| harth | 36.0 | 41.6 | 54.1 | 64.6 | 62.0 | −20.4 |
+| **avg (6)** | **54.2** | **61.7** | **65.0** | **73.6** | | **≈−12** |
 
-Early signal: harth FS-1% accuracy 41.6 vs the leaky v1 number 62.0 — the
-~20-point drop is the subject leakage being removed, not a regression.
+**The leakage removal, quantified:** subject-disjoint FS-1% accuracy averages
+−12 points vs the v1 random-window splits — squarely in the 10–15 pp range the
+LOSO literature predicts (Gholamiangonabadi et al.; Rehman et al.). This drop
+is the correction, not a regression; it is the number the paper must report.
+
+**Known limitation of this single-split run (flagged honestly):** with an
+80/10/10 *subject* split, small-cohort datasets leave only 1–2 test subjects —
+realworld/shoaib/opportunity's FS bootstrap CIs are degenerate (single test
+subject → resampling returns the same subject), and mobiact/harth CIs are very
+wide. Follow-up (next milestone): rotate test subjects via GroupKFold and
+report mean±std across folds. ZS-XD rows are unaffected (no split needed —
+the full cohort is evaluated).
+
+Also visible by design: mobiact FS-1% acc 53.3 vs F1 13.0 — one balanced
+sample per fall class isn't enough to learn falls; accuracy alone would have
+hidden that entirely.
 
 ## Reading the table honestly
 
