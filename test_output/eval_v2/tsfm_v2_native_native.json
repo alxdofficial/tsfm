@@ -1,0 +1,312 @@
+{
+  "_protocol": {
+    "version": "v2",
+    "checkpoint": "/home/alex/code/HALO/code/training_output/semantic_alignment/small_deep_v2_4b3fdd6/best.pt",
+    "channel_text": "native",
+    "eval_rate": "native",
+    "pooling": "soft_logit(tau=0.07)",
+    "primary_metric": "f1_macro over GT-present classes",
+    "splits": "zero-shot: none needed; few-shot: subject-disjoint",
+    "seed": 3431
+  },
+  "harth": {
+    "sampling_rate_hz": 50.0,
+    "n_windows": 47330,
+    "zs_xd": {
+      "f1_macro": 19.76714051527661,
+      "balanced_accuracy": 27.003461139849712,
+      "accuracy": 30.405662370589475,
+      "f1_weighted": 31.70123090702215,
+      "n_samples": 47330,
+      "n_gt_classes": 8,
+      "f1_macro_ci_lo": 17.116482623465778,
+      "f1_macro_ci_hi": 22.302325138643475,
+      "bootstrap_B": 1000,
+      "n_subjects": 22,
+      "per_class_f1": {
+        "lying": 5.313788364635822,
+        "running": 0.2377179080824089,
+        "shuffling": 0.0,
+        "sitting": 26.58331239004775,
+        "stairs_down": 2.0332258864368957,
+        "stairs_up": 24.395857307249713,
+        "standing": 27.664541618029993,
+        "walking": 71.90868064773029
+      }
+    },
+    "zs_xd_vote": {
+      "f1_macro": 19.77414988250112,
+      "balanced_accuracy": 26.925295637265005,
+      "accuracy": 30.312698077329394,
+      "f1_weighted": 31.7905935771644,
+      "n_samples": 47330,
+      "n_gt_classes": 8
+    },
+    "zs_xd_meanpool": {
+      "f1_macro": 19.77120006687432,
+      "balanced_accuracy": 27.003461139849712,
+      "accuracy": 30.405662370589475,
+      "f1_weighted": 31.701245179214197,
+      "n_samples": 47330,
+      "n_gt_classes": 8
+    }
+  },
+  "mobiact": {
+    "sampling_rate_hz": 50.0,
+    "n_windows": 4345,
+    "zs_xd": {
+      "f1_macro": 12.826693952926254,
+      "balanced_accuracy": 17.659240837177837,
+      "accuracy": 50.011507479861905,
+      "f1_weighted": 39.54527471817927,
+      "n_samples": 4345,
+      "n_gt_classes": 13,
+      "f1_macro_ci_lo": 10.630398671331598,
+      "f1_macro_ci_hi": 14.433425266468252,
+      "bootstrap_B": 1000,
+      "n_subjects": 24,
+      "per_class_f1": {
+        "car_step_in": 0.0,
+        "car_step_out": 0.0,
+        "fall_backward_knees": 0.0,
+        "fall_backward_sitting": 0.0,
+        "fall_forward": 0.0,
+        "fall_sideways": 0.0,
+        "jogging": 1.2048192771084338,
+        "jumping": 0.0,
+        "sitting_chair": 0.0,
+        "stairs_down": 16.689847009735743,
+        "stairs_up": 7.751937984496124,
+        "standing": 62.923159591617406,
+        "walking": 78.1772575250836
+      }
+    },
+    "zs_xd_vote": {
+      "f1_macro": 12.995014518878861,
+      "balanced_accuracy": 17.78748586385861,
+      "accuracy": 50.011507479861905,
+      "f1_weighted": 39.64545515749593,
+      "n_samples": 4345,
+      "n_gt_classes": 13
+    },
+    "zs_xd_meanpool": {
+      "f1_macro": 12.82099157726261,
+      "balanced_accuracy": 17.652857179341897,
+      "accuracy": 49.98849252013809,
+      "f1_weighted": 39.530477722953414,
+      "n_samples": 4345,
+      "n_gt_classes": 13
+    }
+  },
+  "motionsense": {
+    "sampling_rate_hz": 50.0,
+    "n_windows": 12080,
+    "zs_xd": {
+      "f1_macro": 49.33872149475613,
+      "balanced_accuracy": 52.51522241324983,
+      "accuracy": 64.05629139072848,
+      "f1_weighted": 59.03339375557734,
+      "n_samples": 12080,
+      "n_gt_classes": 6,
+      "f1_macro_ci_lo": 46.463264614840554,
+      "f1_macro_ci_hi": 51.98839215237253,
+      "bootstrap_B": 1000,
+      "n_subjects": 24,
+      "per_class_f1": {
+        "jogging": 0.0,
+        "sitting": 71.49859943977592,
+        "standing": 67.74351443954968,
+        "walking": 77.63359843728199,
+        "walking_downstairs": 49.44375772558715,
+        "walking_upstairs": 29.712858926342072
+      }
+    },
+    "zs_xd_vote": {
+      "f1_macro": 49.1853339610874,
+      "balanced_accuracy": 52.34269149995515,
+      "accuracy": 63.94867549668874,
+      "f1_weighted": 58.888373761598686,
+      "n_samples": 12080,
+      "n_gt_classes": 6
+    },
+    "zs_xd_meanpool": {
+      "f1_macro": 49.33737781581136,
+      "balanced_accuracy": 52.51522241324983,
+      "accuracy": 64.05629139072848,
+      "f1_weighted": 59.034898184056985,
+      "n_samples": 12080,
+      "n_gt_classes": 6
+    }
+  },
+  "opportunity": {
+    "sampling_rate_hz": 30.0,
+    "n_windows": 6453,
+    "zs_xd": {
+      "f1_macro": 34.223402527476146,
+      "balanced_accuracy": 39.55516050605513,
+      "accuracy": 49.34139160080583,
+      "f1_weighted": 42.913130522620435,
+      "n_samples": 6453,
+      "n_gt_classes": 4,
+      "f1_macro_ci_lo": 31.861671724246886,
+      "f1_macro_ci_hi": 36.120116376832435,
+      "bootstrap_B": 1000,
+      "n_subjects": 4,
+      "per_class_f1": {
+        "lying": 8.875739644970414,
+        "sitting": 11.050228310502282,
+        "standing": 59.09895195317817,
+        "walking": 57.86869020125371
+      }
+    },
+    "zs_xd_vote": {
+      "f1_macro": 34.74706211257389,
+      "balanced_accuracy": 39.85632428353602,
+      "accuracy": 49.80629164729583,
+      "f1_weighted": 43.42490097677518,
+      "n_samples": 6453,
+      "n_gt_classes": 4
+    },
+    "zs_xd_meanpool": {
+      "f1_macro": 34.221995587929996,
+      "balanced_accuracy": 39.54030728708408,
+      "accuracy": 49.34139160080583,
+      "f1_weighted": 42.91317778841547,
+      "n_samples": 6453,
+      "n_gt_classes": 4
+    }
+  },
+  "realworld": {
+    "sampling_rate_hz": 50.0,
+    "n_windows": 27138,
+    "zs_xd": {
+      "f1_macro": 37.8517566854843,
+      "balanced_accuracy": 44.04561056289273,
+      "accuracy": 48.013855110914584,
+      "f1_weighted": 40.94837986632175,
+      "n_samples": 27138,
+      "n_gt_classes": 8,
+      "f1_macro_ci_lo": 34.37159948646067,
+      "f1_macro_ci_hi": 41.05308575045445,
+      "bootstrap_B": 1000,
+      "n_subjects": 15,
+      "per_class_f1": {
+        "jumping": 0.0,
+        "lying": 70.98261051749424,
+        "running": 0.0,
+        "sitting": 38.001811047389076,
+        "stairs_down": 56.84036393713813,
+        "stairs_up": 27.002745195907163,
+        "standing": 59.1128476212365,
+        "walking": 50.873675164709255
+      }
+    },
+    "zs_xd_vote": {
+      "f1_macro": 37.77116962478603,
+      "balanced_accuracy": 44.00473061493857,
+      "accuracy": 47.9622669319773,
+      "f1_weighted": 40.85844825122676,
+      "n_samples": 27138,
+      "n_gt_classes": 8
+    },
+    "zs_xd_meanpool": {
+      "f1_macro": 37.854961744094965,
+      "balanced_accuracy": 44.050450098917736,
+      "accuracy": 48.01753998083868,
+      "f1_weighted": 40.95152074724966,
+      "n_samples": 27138,
+      "n_gt_classes": 8
+    }
+  },
+  "shoaib": {
+    "sampling_rate_hz": 50.0,
+    "n_windows": 5537,
+    "zs_xd": {
+      "f1_macro": 51.54000336475701,
+      "balanced_accuracy": 54.53097008024316,
+      "accuracy": 54.16290409969298,
+      "f1_weighted": 51.060733432280514,
+      "n_samples": 5537,
+      "n_gt_classes": 7,
+      "f1_macro_ci_lo": 47.937082271582874,
+      "f1_macro_ci_hi": 54.5752828451962,
+      "bootstrap_B": 1000,
+      "n_subjects": 10,
+      "per_class_f1": {
+        "cycling": 11.009174311926607,
+        "jogging": 79.05308464849354,
+        "sitting": 63.17626527050611,
+        "standing": 50.68493150684932,
+        "walking": 54.84109386548411,
+        "walking_downstairs": 37.735849056603776,
+        "walking_upstairs": 64.27962489343564
+      }
+    },
+    "zs_xd_vote": {
+      "f1_macro": 51.72194729069112,
+      "balanced_accuracy": 54.70517484328216,
+      "accuracy": 54.3435073144302,
+      "f1_weighted": 51.25081399216022,
+      "n_samples": 5537,
+      "n_gt_classes": 7
+    },
+    "zs_xd_meanpool": {
+      "f1_macro": 51.517211718195576,
+      "balanced_accuracy": 54.513590865783655,
+      "accuracy": 54.144843778219254,
+      "f1_weighted": 51.03711807857836,
+      "n_samples": 5537,
+      "n_gt_classes": 7
+    }
+  },
+  "vtt_coniot": {
+    "sampling_rate_hz": 50.0,
+    "n_windows": 2058,
+    "zs_xd": {
+      "f1_macro": 1.1955496562683954,
+      "balanced_accuracy": 2.2676282051282053,
+      "accuracy": 2.28377065111759,
+      "f1_weighted": 1.1930258610525444,
+      "n_samples": 2058,
+      "n_gt_classes": 16,
+      "f1_macro_ci_lo": 0.8233419158489567,
+      "f1_macro_ci_hi": 1.612900587195073,
+      "bootstrap_B": 1000,
+      "n_subjects": 13,
+      "per_class_f1": {
+        "carrying": 3.149606299212598,
+        "climbing_ladder": 3.7209302325581395,
+        "jumping_down": 0.0,
+        "kneeling_work": 5.592841163310962,
+        "laying_back": 0.0,
+        "leveling_paint": 0.0,
+        "lifting": 0.0,
+        "pushing_cart": 0.0,
+        "raising_hands": 0.0,
+        "roll_painting": 0.0,
+        "sitting": 0.0,
+        "spraying_paint": 1.282051282051282,
+        "stairs": 0.0,
+        "standing_work": 0.8032128514056224,
+        "walking_straight": 4.580152671755725,
+        "walking_winding": 0.0
+      }
+    },
+    "zs_xd_vote": {
+      "f1_macro": 1.1656131994948626,
+      "balanced_accuracy": 2.2676282051282053,
+      "accuracy": 2.28377065111759,
+      "f1_weighted": 1.16276938384703,
+      "n_samples": 2058,
+      "n_gt_classes": 16
+    },
+    "zs_xd_meanpool": {
+      "f1_macro": 1.1150308896064398,
+      "balanced_accuracy": 2.219551282051282,
+      "accuracy": 2.2351797862001943,
+      "f1_weighted": 1.1116463495574678,
+      "n_samples": 2058,
+      "n_gt_classes": 16
+    }
+  }
+}
