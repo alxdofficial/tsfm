@@ -556,25 +556,7 @@ class IMUAugmentation:
         return torch.stack(resampled, dim=0)
 
 
-def get_weak_augmentation():
-    """Get weak augmentation pipeline for contrastive learning."""
-    return IMUAugmentation(
-        aug_types=['jitter', 'scale', 'time_shift'],
-        aug_prob=0.8
-    )
 
 
-def get_strong_augmentation():
-    """Get strong augmentation pipeline for contrastive learning."""
-    return IMUAugmentation(
-        aug_types=['time_warp', 'magnitude_warp', 'resample'],
-        aug_prob=0.6
-    )
 
 
-def get_mixed_augmentation():
-    """Get mixed weak+strong augmentation pipeline."""
-    return IMUAugmentation(
-        aug_types=['jitter', 'scale', 'time_warp', 'magnitude_warp', 'rotation_3d'],
-        aug_prob=0.7
-    )

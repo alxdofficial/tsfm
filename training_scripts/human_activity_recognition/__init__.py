@@ -1,14 +1,8 @@
 """
-IMU Tool Pretraining
+Human activity recognition training.
 
-Training scripts for pretraining the IMU Activity Recognition Encoder
-using masked autoencoding and contrastive learning objectives.
+Semantic-alignment training (CLIP-style IMU<->text contrastive) lives in
+semantic_alignment_train.py. The legacy Stage-1 self-supervised pretraining
+(masked reconstruction + patch contrastive) was removed in the V2 cleanup —
+the headline model trains the encoder from scratch during alignment.
 """
-
-from .losses import MaskedReconstructionLoss, PatchContrastiveLoss, CombinedPretrainingLoss
-
-__all__ = [
-    'MaskedReconstructionLoss',
-    'PatchContrastiveLoss',
-    'CombinedPretrainingLoss'
-]
