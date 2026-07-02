@@ -128,8 +128,8 @@ class ChannelBucketBatchSampler:
 # Data configuration
 DATA_ROOT = os.environ.get("TSFM_DATA_ROOT", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data"))
 # Training datasets (10 diverse HAR datasets)
-# Zero-shot test datasets are EXCLUDED: motionsense, realworld, mobiact, vtt_coniot
-# Also excluded for GOAT comparison: opportunity, realdisp, daphnet_fog
+# Zero-shot test datasets are EXCLUDED (6): motionsense, realworld, mobiact, shoaib, opportunity, harth
+# Zero-shot test datasets (6): motionsense, realworld, mobiact, shoaib, opportunity, harth
 DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'recgym']
 random.seed(42)
 PATCH_SIZE_PER_DATASET = {
@@ -145,17 +145,13 @@ PATCH_SIZE_PER_DATASET = {
     'dsads': 2.0,         # 25 Hz, min_session=5.0s → use 2.0s
     'mobiact': 1.5,       # 50 Hz, min_session=2.0s → use 1.5s
     'realworld': 1.5,     # 50 Hz, min_session=2.0s → use 1.5s (was 2.0s)
-    'vtt_coniot': 2.0,    # 50 Hz, min_session=60s → plenty of room
     'recgym': 1.5,        # 20 Hz, min_session=2.0s → use 1.5s (was 2.5s)
     'hapt': 1.25,         # 50 Hz, min_session=1.48s → use 1.25s (was 1.5s)
     'kuhar': 1.5,         # 100 Hz, min_session=2.0s → use 1.5s
     # Zero-shot datasets (NOT trained on, only for evaluation)
     'motionsense': 1.5,   # 50 Hz — zero-shot (primary eval dataset)
     'opportunity': 1.5,   # 30 Hz — zero-shot (GOAT baseline comparison)
-    'realdisp': 1.5,      # 50 Hz — zero-shot (GOAT baseline comparison)
-    'daphnet_fog': 1.5,   # 64 Hz — zero-shot (GOAT baseline comparison)
     'shoaib': 1.5,        # 50 Hz — zero-shot (LanHAR/CrossHAR baseline comparison)
-    'usc_had': 1.5,       # 100 Hz — zero-shot (waist IMU, acc+gyro)
     'harth': 1.5,         # 50 Hz — zero-shot (acc only, back+thigh)
 }
 
@@ -340,7 +336,6 @@ PATCH_SIZE_RANGE_PER_DATASET = {
     'dsads':        (1.5, 2.5, 0.5),     # min_session=5.0s → [1.5, 2.0, 2.5]
     'mobiact':      (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
     'realworld':    (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
-    'vtt_coniot':   (1.5, 2.5, 0.5),     # min_session=60s → [1.5, 2.0, 2.5]
     'recgym':       (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
     'hapt':         (0.75, 1.25, 0.25),  # min_session=1.48s → [0.75, 1.0, 1.25]
     'kuhar':        (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
