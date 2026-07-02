@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
-from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, recall_score
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 LABEL_CONFIG_DIR = PROJECT_ROOT / "benchmark_data" / "eval_v2" / "labels"
@@ -80,11 +80,14 @@ def window_ground_truth(
     act = labels_raw[:, :, 0].astype(np.int64)
     subj = labels_raw[:, 0, 1].astype(np.int64)
 
-    # Majority vote tolerating possible -1 (unknown) codes: shift by +1 for bincount.
-    shifted = act + 1
-    window_codes = np.array(
-        [np.bincount(row).argmax() - 1 for row in shifted], dtype=np.int64
-    )
+    # Majority vote over VALID codes only. Negative codes (e.g. -1 = unknown /
+    # dropped-during-conversion) never win a tie and are excluded from the vote;
+    # a window that is all-negative gets code -1 and is dropped below. (Voting
+    # over the shifted array would let -1 win ties at bincount index 0.)
+    window_codes = np.empty(len(act), dtype=np.int64)
+    for i in range(len(act)):
+        valid = act[i][act[i] >= 0]
+        window_codes[i] = int(np.bincount(valid).argmax()) if valid.size else -1
 
     keep = np.array([c in idx_to_label for c in window_codes], dtype=bool)
     keep_idx = np.nonzero(keep)[0]
@@ -119,7 +122,11 @@ def subject_disjoint_split(
 
     n = len(perm)
     n_train = max(1, int(round(n * fracs[0])))
-    n_val = max(1, int(round(n * fracs[1])))
+    # Floor the val allocation so the remainder falls to TEST — this hands test
+    # >=2 subjects whenever the cohort is large enough (e.g. n=15 -> 12/1/2),
+    # giving a non-degenerate bootstrap CI. Genuinely small cohorts (shoaib=10,
+    # opportunity=4) still yield 1 test subject; that is flagged downstream.
+    n_val = max(1, int(n * fracs[1]))
     # Ensure test gets at least one subject
     if n_train + n_val >= n:
         n_train = max(1, n - 2)
@@ -143,21 +150,47 @@ def balanced_subsample_indices(
     gt_names: Sequence[str],
     rate: float,
     seed: int = BOOTSTRAP_SEED,
-) -> np.ndarray:
-    """Class-balanced subsample of `indices` down to ~rate of its size."""
+    return_counts: bool = False,
+):
+    """As-balanced-as-possible subsample of `indices` down to ~rate of its size.
+
+    Uses water-filling: classes are filled scarce-first with an equal share of
+    the remaining budget, and any deficit from a class that runs out of windows
+    is redistributed to classes that still have spare capacity. This keeps the
+    total at ~rate*N (a plain per-class cap silently under-samples and would
+    make e.g. HARTH FS-10% both too small and imbalanced), while remaining as
+    balanced as the data allows. Achieved per-class counts are returned when
+    `return_counts=True` so the caller can record them.
+    """
     rng = np.random.RandomState(seed)
+    indices = np.asarray(indices)
     names = np.asarray(gt_names)[indices]
-    classes = np.unique(names)
-    n_total = max(1, int(len(indices) * rate))
-    n_per_class = max(1, n_total // len(classes))
+    classes, counts = np.unique(names, return_counts=True)
+    avail = dict(zip(classes.tolist(), counts.tolist()))
+    n_total = max(len(classes), int(len(indices) * rate))
+
+    # Water-fill quotas, scarce class first.
+    order = sorted(classes.tolist(), key=lambda c: avail[c])
+    quota = {c: 0 for c in classes.tolist()}
+    remaining = n_total
+    k = len(order)
+    for i, c in enumerate(order):
+        share = remaining // (k - i)
+        take = min(avail[c], share)
+        quota[c] = take
+        remaining -= take
 
     picked = []
-    for c in classes:
-        cls_idx = indices[names == c]
-        cls_idx = rng.permutation(cls_idx)
-        picked.extend(cls_idx[:n_per_class].tolist())
-    picked = np.array(picked, dtype=np.int64)
-    return rng.permutation(picked)
+    achieved = {}
+    for c in classes.tolist():
+        cls_idx = rng.permutation(indices[names == c])
+        take = quota[c]
+        picked.extend(cls_idx[:take].tolist())
+        achieved[c] = int(take)
+    picked = rng.permutation(np.array(picked, dtype=np.int64))
+    if return_counts:
+        return picked, achieved
+    return picked
 
 
 # =============================================================================
@@ -243,23 +276,48 @@ def segment_predictions(
 # Metrics
 # =============================================================================
 
+def macro_f1_classes(gt_names: Sequence[str], pred_names: Sequence[str]) -> List[str]:
+    """The class set macro-F1 is averaged over: ground-truth classes UNION
+    predicted classes. Union (sklearn's default) charges false positives that a
+    model routes into candidate classes with zero test windows — e.g. HALO
+    predicting HARTH's `cycling_sit` (a real L_D string with no test windows)
+    is penalized, not silently exempt. GT-only would let those FPs escape;
+    full-L_D would inject automatic F1=0 for never-relevant classes and
+    over-penalize."""
+    return sorted(set(gt_names) | set(pred_names))
+
+
 def classification_metrics(
     gt_names: Sequence[str],
     pred_names: Sequence[str],
+    f1_classes: Sequence[str] = None,
+    recall_classes: Sequence[str] = None,
 ) -> Dict[str, float]:
-    """v2 metric set. Macro-F1 is computed over classes PRESENT IN GROUND TRUTH
-    (classes with zero test windows — e.g. HARTH's cycling variants — are
-    excluded rather than counted as automatic zeros)."""
-    gt_classes = sorted(set(gt_names))
+    """v2 metric set.
+
+    - macro-F1 (primary): averaged over `f1_classes` = GT ∪ predicted classes.
+    - balanced accuracy = macro recall over `recall_classes` = GT classes only
+      (recall is undefined for a class with no true samples).
+    `f1_classes`/`recall_classes` may be pinned by the caller (the bootstrap
+    freezes them on the full sample so every replicate scores the SAME estimand).
+    """
+    gt_names = list(gt_names)
+    pred_names = list(pred_names)
+    if f1_classes is None:
+        f1_classes = macro_f1_classes(gt_names, pred_names)
+    if recall_classes is None:
+        recall_classes = sorted(set(gt_names))
     return {
-        "f1_macro": f1_score(gt_names, pred_names, labels=gt_classes,
+        "f1_macro": f1_score(gt_names, pred_names, labels=list(f1_classes),
                              average="macro", zero_division=0) * 100,
-        "balanced_accuracy": balanced_accuracy_score(gt_names, pred_names) * 100,
+        "balanced_accuracy": recall_score(gt_names, pred_names, labels=list(recall_classes),
+                                          average="macro", zero_division=0) * 100,
         "accuracy": accuracy_score(gt_names, pred_names) * 100,
-        "f1_weighted": f1_score(gt_names, pred_names, labels=gt_classes,
+        "f1_weighted": f1_score(gt_names, pred_names, labels=list(f1_classes),
                                 average="weighted", zero_division=0) * 100,
         "n_samples": len(gt_names),
-        "n_gt_classes": len(gt_classes),
+        "n_gt_classes": len(set(gt_names)),
+        "n_scored_classes": len(f1_classes),
     }
 
 
@@ -267,10 +325,10 @@ def per_class_f1(
     gt_names: Sequence[str],
     pred_names: Sequence[str],
 ) -> Dict[str, float]:
-    gt_classes = sorted(set(gt_names))
-    scores = f1_score(gt_names, pred_names, labels=gt_classes,
+    classes = macro_f1_classes(gt_names, pred_names)
+    scores = f1_score(gt_names, pred_names, labels=classes,
                       average=None, zero_division=0)
-    return {c: float(s) * 100 for c, s in zip(gt_classes, scores)}
+    return {c: float(s) * 100 for c, s in zip(classes, scores)}
 
 
 def subject_bootstrap_ci(
@@ -283,26 +341,58 @@ def subject_bootstrap_ci(
 ) -> Dict[str, float]:
     """Subject-stratified bootstrap CI: resample SUBJECTS with replacement
     (windows within a subject are correlated — resampling windows would
-    understate variance)."""
+    understate variance).
+
+    Two correctness guards from the M0 debug sweep:
+      * The scoring class set is FROZEN once on the full sample and reused for
+        every replicate. Re-deriving it per replicate (as an earlier version
+        did) makes replicates that drop a subject-exclusive class average
+        macro-F1 over fewer classes — a different estimand — so the interval
+        need not bracket the point estimate.
+      * With < 2 subjects a subject-bootstrap has no variance to resample; we
+        return a NaN interval flagged `ci_degenerate` rather than a fake
+        zero-width 95% CI.
+    """
     gt = np.asarray(gt_names)
     pred = np.asarray(pred_names)
     subjects = np.asarray(subjects)
     uniq = np.unique(subjects)
-    subj_windows = {s: np.nonzero(subjects == s)[0] for s in uniq}
 
+    if len(uniq) < 2:
+        return {
+            f"{metric}_ci_lo": float("nan"),
+            f"{metric}_ci_hi": float("nan"),
+            "bootstrap_B": 0,
+            "n_subjects": int(len(uniq)),
+            "ci_degenerate": True,
+        }
+
+    f1_classes = macro_f1_classes(gt.tolist(), pred.tolist())
+    recall_classes = sorted(set(gt.tolist()))
+
+    def score(g, p) -> float:
+        if metric == "f1_macro":
+            return f1_score(g, p, labels=f1_classes, average="macro", zero_division=0) * 100
+        if metric == "balanced_accuracy":
+            return recall_score(g, p, labels=recall_classes, average="macro", zero_division=0) * 100
+        if metric == "accuracy":
+            return accuracy_score(g, p) * 100
+        raise ValueError(f"unsupported bootstrap metric: {metric}")
+
+    subj_windows = {s: np.nonzero(subjects == s)[0] for s in uniq}
     rng = np.random.RandomState(seed)
     stats = []
     for _ in range(B):
         sample_subj = rng.choice(uniq, size=len(uniq), replace=True)
         idx = np.concatenate([subj_windows[s] for s in sample_subj])
-        m = classification_metrics(gt[idx].tolist(), pred[idx].tolist())
-        stats.append(m[metric])
+        stats.append(score(gt[idx].tolist(), pred[idx].tolist()))
     lo, hi = np.percentile(stats, [2.5, 97.5])
     return {
         f"{metric}_ci_lo": float(lo),
         f"{metric}_ci_hi": float(hi),
         "bootstrap_B": B,
         "n_subjects": int(len(uniq)),
+        "ci_degenerate": False,
     }
 
 
@@ -374,7 +464,11 @@ def conse_predict(
 
     Returns:
         pred_names: N predictions among target_labels
-        info: {'reachable_classes', 'reachability', 'top_T'}
+        info: reachability stats. `reachable_nn_lb` is a T=1 nearest-neighbour
+              LOWER BOUND on which target classes the bridge can output (a
+              training label maps nearest to them); the actual top-T convex
+              combinations can also land on other classes, so `predicted_classes`
+              (the classes actually hit on this data) is reported alongside.
     """
     if encode is None:
         encode = get_sbert_encoder()
@@ -385,13 +479,14 @@ def conse_predict(
     sims = v @ target_embs.T                                         # (N, L)
     preds = [target_labels[i] for i in sims.argmax(axis=1)]
 
-    # Reachability: a target class is reachable iff at least one single
-    # training label maps nearest to it (T=1 sufficiency criterion).
     nn_of_train = (train_embs @ target_embs.T).argmax(axis=1)        # (K,)
-    reachable = sorted({target_labels[i] for i in nn_of_train})
+    reachable_lb = sorted({target_labels[i] for i in nn_of_train})
+    predicted = sorted(set(preds))
     info = {
-        "reachable_classes": reachable,
-        "reachability": len(reachable) / len(target_labels),
+        "reachable_nn_lb": reachable_lb,
+        "reachability_lb": len(reachable_lb) / len(target_labels),
+        "predicted_classes": predicted,
+        "n_predicted_classes": len(predicted),
         "top_T": top_T,
     }
     return preds, info

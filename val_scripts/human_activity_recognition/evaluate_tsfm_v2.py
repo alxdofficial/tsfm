@@ -24,6 +24,7 @@ import copy
 import json
 import os
 import random
+import re
 import sys
 from fractions import Fraction
 from pathlib import Path
@@ -79,14 +80,11 @@ def channel_descriptions_for(meta: dict, mode: str, sampling_rate: float) -> Lis
     if mode == "native":
         descs = meta["channel_descriptions"]
         if sampling_rate != meta["sampling_rate_hz"]:
-            # Rewrite the rate suffix so the text matches the actual input rate.
-            descs = [
-                d.replace(
-                    f"(sampled at {meta['sampling_rate_hz']:.0f}Hz",
-                    f"(sampled at {sampling_rate:.0f}Hz",
-                )
-                for d in descs
-            ]
+            # Rewrite EVERY 'NNHz' token so the text can't contradict the actual
+            # input rate. A suffix-only replace left stale rates elsewhere in the
+            # description body (e.g. a manifest prose "...at 50Hz...").
+            rate_tok = re.compile(r"\d+(?:\.\d+)?\s*Hz")
+            descs = [rate_tok.sub(f"{sampling_rate:.0f}Hz", d) for d in descs]
         return descs
     if mode == "neutral":
         n = meta["n_real_channels"]
@@ -157,8 +155,14 @@ def evaluate_zs_xd(
         has_gyro=has_gyro,
     )
     with torch.no_grad():
-        le2 = label_embs if label_embs.dim() == 2 else label_embs.max(dim=1).values
-        sess_sims = (torch.from_numpy(emb).to(device).float() @ le2.T).cpu().numpy()
+        emb_t = torch.from_numpy(emb).to(device).float()
+        if label_embs.dim() == 3:
+            # multi-prototype (L,K,D): max similarity OVER prototypes, not an
+            # elementwise max of the prototype vectors.
+            sess_sims = torch.einsum("nd,lkd->nlk", emb_t, label_embs).max(dim=2).values
+        else:
+            sess_sims = emb_t @ label_embs.T
+        sess_sims = sess_sims.cpu().numpy()
     preds_pool = ev2.predict_from_similarity(sess_sims, labels_ld)
     out["zs_xd_meanpool"] = ev2.classification_metrics(gt_names, preds_pool)
 
@@ -183,13 +187,15 @@ def evaluate_fewshot_subject_disjoint(
     label_rate: float,
     tag: str,
     seed: int,
+    bootstrap_B: int = ev2.BOOTSTRAP_B,
 ) -> Dict[str, float]:
     """End-to-end fine-tuning as in v1, but with subject-disjoint splits."""
     name_to_idx = {n: i for i, n in enumerate(labels_ld)}
     y = np.array([name_to_idx[n] for n in gt_names], dtype=np.int64)
 
     tr_idx, va_idx, te_idx = ev2.subject_disjoint_split(subjects, seed=seed)
-    tr_idx = ev2.balanced_subsample_indices(tr_idx, gt_names, rate=label_rate, seed=seed)
+    tr_idx, ft_counts = ev2.balanced_subsample_indices(
+        tr_idx, gt_names, rate=label_rate, seed=seed, return_counts=True)
 
     print(f"  [{tag} FT v2] subject-disjoint: train={len(tr_idx)} "
           f"val={len(va_idx)} test={len(te_idx)} windows "
@@ -265,8 +271,10 @@ def evaluate_fewshot_subject_disjoint(
     gt_n = [labels_ld[i] for i in gts]
     pred_n = [labels_ld[i] for i in preds]
     metrics = ev2.classification_metrics(gt_n, pred_n)
-    metrics.update(ev2.subject_bootstrap_ci(gt_n, pred_n, subjects[te_idx], B=500))
+    metrics.update(ev2.subject_bootstrap_ci(gt_n, pred_n, subjects[te_idx], B=bootstrap_B))
     metrics["n_train_windows"] = int(len(tr_idx))
+    metrics["train_class_counts"] = ft_counts
+    metrics["n_test_subjects"] = int(len(np.unique(subjects[te_idx])))
     metrics["split"] = "subject_disjoint"
 
     del best_state, ft_model
@@ -352,7 +360,8 @@ def main():
                 ds_results[f"fs_{tag}"] = evaluate_fewshot_subject_disjoint(
                     model, label_bank, raw_data, gt_names, subjects, labels_ld,
                     device, eval_sr, ch_descs, meta["has_gyro"],
-                    label_rate=rate, tag=tag, seed=args.seed)
+                    label_rate=rate, tag=tag, seed=args.seed,
+                    bootstrap_B=args.bootstrap)
                 fs = ds_results[f"fs_{tag}"]
                 print(f"  FS-{tag}: F1={fs['f1_macro']:.1f} Acc={fs['accuracy']:.1f} "
                       f"(subject-disjoint)")

@@ -14,7 +14,7 @@ Implementation: `val_scripts/human_activity_recognition/eval_v2.py` (+ unit test
 | Accuracy headline despite heavy class imbalance (acc 42 vs macro-F1 21) | **Macro-F1 primary** (+ balanced accuracy), per the ZSL evaluation canon (Xian et al., TPAMI 2018) |
 | `get_window_labels` min-subtraction caused the HARTH label-offset bug | GT maps raw codes through the dataset's own `activity_to_idx` — **no offset arithmetic exists** (regression-tested) |
 | Native-rate + rich channel text confounded with architecture | Explicit **parity row** (anti-aliased 20 Hz + neutral text for all models) + capability-Δ rows |
-| Hard per-patch majority vote (fragmentation, first-index tie bias) | **Soft logit-pooling** of per-patch scores (τ = training temperature 0.07); vote kept as diagnostic |
+| Hard per-patch majority vote (fragmentation, first-index tie bias) | **Soft voting** (per-patch softmax scores summed across patches; τ = training temperature 0.07); hard vote kept as diagnostic |
 
 ## The protocol
 
@@ -44,11 +44,21 @@ recognition capability. The evaluated set is defined by
 
 ### Metrics
 
-- **Primary: macro-F1** over classes present in ground truth (classes with zero
-  test windows — e.g. HARTH's cycling variants — are excluded, not free zeros).
-- Secondary: balanced accuracy, plain accuracy, weighted F1, per-class F1.
+- **Primary: macro-F1** averaged over `GT-classes ∪ predicted-classes` (sklearn's
+  default). This charges false positives a model routes into a candidate class
+  that has zero test windows (e.g. HALO predicting HARTH's `cycling_sit`), while
+  not injecting automatic F1=0 for never-relevant classes (which averaging over
+  the full L_D would do). GT-only averaging would let those FPs escape
+  unpenalized.
+- **Balanced accuracy** = macro recall over **GT classes only** (recall is
+  undefined for a class with no true samples).
+- Secondary: plain accuracy, weighted F1, per-class F1.
 - **Uncertainty: subject-stratified bootstrap** (B=1000, seed 3431): resample
-  subjects with replacement, not windows — windows within a subject are correlated.
+  subjects with replacement, not windows — windows within a subject are
+  correlated. The scoring class set is FROZEN once on the full sample and reused
+  for every replicate (re-deriving it per replicate silently changes the
+  estimand and de-brackets the interval). With < 2 subjects the CI is reported
+  as NaN with `ci_degenerate: true` — never a fake zero-width 95% interval.
 
 ### Scoring closed-vocabulary baselines (LiMU-BERT, CrossHAR, MOMENT)
 
@@ -67,9 +77,12 @@ Adopted from the literature (see `docs/v2/design_evaluation.md`, addendum rev. 2
    automatically; semantic pairs must be promoted from
    `proposed_semantic_pairs` (PENDING_REVIEW) in the label configs by a human
    before this table is reported.
-4. **Reachability** — fraction of `L_D` reachable by the bridge — is reported per
-   (baseline, dataset). Unreachable classes are structural zeros: a capability
-   statement, not a scoring artifact.
+4. **Reachability** — reported per (baseline, dataset) two ways: `reachability_lb`
+   (the fraction of `L_D` to which some single training label maps nearest — a
+   T=1 **lower bound**, since top-T convex combinations can also land elsewhere)
+   and `predicted_classes` (the target classes the bridge actually hit on this
+   data). Classes outside the reachable set are effectively structural zeros: a
+   capability statement, not a scoring artifact.
 
 ### Fairness rows
 
