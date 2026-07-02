@@ -197,7 +197,8 @@ class TestChannelBucketBatchSampler:
         sampler = ChannelBucketBatchSampler(
             channel_counts=channel_counts,
             sample_weights=sample_weights,
-            batch_size=batch_size,
+            batch_size_per_bucket={},
+            default_batch_size=batch_size,
         )
 
         batches = list(sampler)
@@ -220,7 +221,8 @@ class TestChannelBucketBatchSampler:
         sampler = ChannelBucketBatchSampler(
             channel_counts=channel_counts,
             sample_weights=sample_weights,
-            batch_size=batch_size,
+            batch_size_per_bucket={},
+            default_batch_size=batch_size,
         )
 
         for batch in sampler:
@@ -240,7 +242,8 @@ class TestChannelBucketBatchSampler:
         sampler = ChannelBucketBatchSampler(
             channel_counts=channel_counts,
             sample_weights=sample_weights,
-            batch_size=batch_size,
+            batch_size_per_bucket={},
+            default_batch_size=batch_size,
             num_samples=num_samples,
         )
 

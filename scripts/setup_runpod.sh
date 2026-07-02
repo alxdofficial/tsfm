@@ -2,7 +2,7 @@
 # One-shot RunPod setup: clone repo, download data, install deps, launch training.
 #
 # Usage (on RunPod):
-#   curl -sL https://raw.githubusercontent.com/alxdofficial/tsfm/master/scripts/setup_runpod.sh | bash
+#   curl -sL https://raw.githubusercontent.com/alxdofficial/HALO/V2/scripts/setup_runpod.sh | bash
 #
 # Or if you've already cloned:
 #   bash scripts/setup_runpod.sh
@@ -19,7 +19,7 @@
 set -e
 
 GDRIVE_FILE_ID="1a6QROP9qZZetOek_NxbgIWFNYDVY8d0H"
-REPO_URL="https://github.com/alxdofficial/tsfm.git"
+REPO_URL="https://github.com/alxdofficial/HALO.git"
 WORKDIR="/workspace/tsfm"
 # Use RAM disk for training data (fastest for small files)
 # Falls back to /tmp if not enough RAM
@@ -36,7 +36,7 @@ echo "============================================"
 if [ -d "$WORKDIR/.git" ]; then
     echo ">>> Repo already cloned at $WORKDIR, pulling latest..."
     cd "$WORKDIR"
-    git pull origin master
+    git pull origin V2
 else
     echo ">>> Cloning repo..."
     git clone "$REPO_URL" "$WORKDIR"

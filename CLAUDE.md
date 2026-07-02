@@ -1,92 +1,74 @@
-# TSFM Repository Guide
+# HALO Repository Guide
 
-This document tells AI agents (including future Claude sessions) what this repository contains, where things belong, and how to navigate it.
+This document tells AI agents (and humans) what this repository contains and how
+to navigate it. It reflects the **V2** cleanup (see `docs/v2/REPO_CLEANUP_PLAN.md`);
+the pre-cleanup state is preserved at the `v1-archive` git tag.
 
-## Project Summary
+## Project summary
 
-TSFM is a contrastive learning system that aligns IMU sensor embeddings with natural language activity descriptions for human activity recognition. It uses a two-stage training pipeline (MAE pretraining + semantic alignment) and evaluates on 7 unseen datasets via zero-shot and few-shot protocols.
+HALO (aka "TSFM" in code) is a language-aligned IMU foundation model for human
+activity recognition. A channel-independent patch encoder produces per-patch
+embeddings that are CLIP-style contrastively aligned to frozen-SentenceBERT text
+label embeddings, with per-channel natural-language "channel descriptions"
+(placement + sampling rate) injected via `ChannelTextFusion`. At inference,
+activities are recognized zero-shot by cosine similarity to text label
+embeddings — no per-dataset classifier.
 
-## Directory Structure
+The **headline model** is config `small_deep` (d=384, 8 dual-branch layers,
+`per_patch_prediction=True`, ~26M active params). It is trained **from scratch**
+during alignment (there is no separate self-supervised pretraining stage — the
+legacy Stage-1 was removed in V2). Headline checkpoint:
+`training_output/semantic_alignment/small_deep_v2_4b3fdd6/best.pt`.
 
-### Source Code
+## Directory structure
 
-| Directory | Purpose | Key Files |
+| Directory | Purpose | Key files |
 |---|---|---|
-| `model/` | Core model architecture (encoder, transformer, positional encoding, text encoder, config) | `encoder.py`, `transformer.py`, `config.py`, `token_text_encoder.py`, `semantic_alignment.py` |
-| `training_scripts/human_activity_recognition/` | Training loops, losses, and training utilities | `semantic_alignment_train.py` (main), `semantic_loss.py`, `memory_bank.py`, `pretrain.py` |
-| `val_scripts/human_activity_recognition/` | Evaluation scripts for TSFM and all baselines | `evaluate_tsfm.py`, `evaluate_moment.py`, `evaluate_lanhar.py`, `harth_analysis.py`, `model_loading.py` |
-| `datasets/imu_pretraining_dataset/` | PyTorch dataset classes, augmentations, label groups | `multi_dataset_loader.py`, `augmentations.py`, `label_augmentation.py` |
-| `datascripts/` | Dataset download and conversion scripts (raw -> standardized parquet) | One subfolder per dataset with `convert.py` |
-| `scripts/` | Shell scripts and utility scripts for running evaluations, ablations, packaging | `run_all_evaluations.sh`, `run_ablations.sh`, `setup_runpod.sh` |
-| `tools/` | Standalone tools (not imported by training/eval) | `session_visualizer.py` |
-| `figures/` | Paper figure generation scripts | `fig_embedding_umap.py`, `fig_dataset_discrepancy.py` |
-| `tests/` | Unit tests | Test files for model components |
+| `model/` | Model architecture | `config.py` (MODEL_SIZE presets), `encoder.py` (dual-branch transformer), `feature_extractor.py` (spectral+temporal tokenizer), `positional_encoding.py`, `semantic_alignment.py` (per-patch head), `token_text_encoder.py` (`ChannelTextFusion`, `LearnableLabelBank`), `preprocessing.py` |
+| `training_scripts/human_activity_recognition/` | Training | `semantic_alignment_train.py` (main; defines `SemanticAlignmentModel` + `ChannelBucketBatchSampler`), `semantic_loss.py` (symmetric InfoNCE + soft targets), `memory_bank.py` (MoCo queue) |
+| `val_scripts/human_activity_recognition/` | **Evaluation (protocol v2)** | `eval_v2.py` (scoring core: ground truth, subject-disjoint splits, ConSE, metrics), `evaluate_tsfm_v2.py` (HALO evaluator), `eval_common.py` (shared embed/forward helpers), `model_loading.py`, `run_baselines_v2.py` (generic baseline driver), `baselines/` (adapter package), `assemble_v2_table.py`, `plot_utils.py` (training plots) |
+| `datasets/imu_pretraining_dataset/` | Dataloader + labels | `multi_dataset_loader.py`, `label_groups.py` (87 labels→groups, training sampling), `label_augmentation.py`, `augmentations.py` (jitter/scale) |
+| `datascripts/` | Dataset download + conversion | one folder per dataset (`convert.py`); `shared/` utilities; `setup_all_ts_datasets.py` |
+| `benchmark_data/` | Eval data + config | `dataset_config.json` (train + zero-shot lists), `scripts/` (preprocessing), `eval_v2/labels/*.json` (pre-registered per-dataset label vocabularies) |
+| `docs/` | Documentation | `baselines/EVALUATION_PROTOCOL_V2.md`, `baselines/RESULTS_V2.md`, `v2/` (redesign + cleanup plans), `ARCHITECTURE.md`, `DATA_FORMAT.md` |
+| `auxiliary_repos/` | Vendored baseline repos (gitignored) | CrossHAR, LIMU-BERT-Public — rebuilt via `scripts/fetch_baselines.sh` (planned) |
+| `tests/` | pytest | `test_eval_v2.py` (protocol), model/loader/loss/aug tests |
 
-### Data (not in git, generated locally)
+## Datasets (V2)
 
-| Directory | Purpose |
-|---|---|
-| `data/{dataset}/` | Standardized parquet datasets (manifest.json + sessions/) |
-| `benchmark_data/processed/tsfm_eval/` | Preprocessed .npy files for evaluation (native sampling rates) |
-| `benchmark_data/processed/limubert/` | Preprocessed data in LiMU-BERT format (20Hz, 120-step) |
-| `benchmark_data/dataset_config.json` | Central config: dataset metadata, activities, channel mappings |
+- **Train (10):** uci_har, hhar, pamap2, wisdm, dsads, kuhar, unimib_shar, hapt, mhealth, recgym.
+- **Test (6, held out):** motionsense, realworld, mobiact, shoaib, opportunity, harth.
+- (Dropped in V2: vtt_coniot + the "severe-OOD" tier; realdisp/daphnet_fog/usc_had/actionsense converters.)
 
-### Outputs (not in git, generated by training/eval)
+## Evaluation protocol v2 (the current protocol)
 
-| Directory | Purpose |
-|---|---|
-| `training_output/semantic_alignment/{run_id}/` | Training checkpoints (best.pt), plots, metrics.json, hyperparameters.json |
-| `training_output/runpod_ablations/{run_id}/` | Ablation run outputs from RunPod |
-| `test_output/baseline_evaluation/` | Evaluation result JSONs for all models |
-| `test_output/harth_analysis/` | HARTH failure analysis figures and data |
-| `test_output/visualizations/` | Interactive HTML session visualizations |
+Single clean rule — see `docs/baselines/EVALUATION_PROTOCOL_V2.md`:
+- **ZS-XD**: zero-shot vs each dataset's **own** label strings; exact match; **macro-F1 primary**.
+- **Subject-disjoint** splits everywhere (few-shot); subject-stratified bootstrap CIs.
+- **ConSE bridge** (Norouzi 2014) for closed-vocab baselines; **parity rows** (20 Hz + neutral text) isolate the architecture advantage.
+- Ground truth via `eval_v2.window_ground_truth` (offset-free — never the v1 `get_window_labels`).
 
-### Documentation
+## Baselines (V2)
 
-| File | Purpose | Authority |
-|---|---|---|
-| `docs/baselines/RESULTS.md` | **Single source of truth** for all evaluation numbers | Authoritative — update this when re-evaluating |
-| `docs/harth_analysis.md` | HARTH failure analysis for the paper | References figures in test_output/harth_analysis/ |
-| `docs/ablations.md` | Ablation study design | Design doc, may reference incomplete runs |
-| `docs/ablation_results.md` | Ablation evaluation results | Update when new ablation results come in |
-| `docs/ARCHITECTURE.md` | Model architecture description | Keep current with model/ code |
-| `docs/DATA_FORMAT.md` | Standardized data format spec | Stable, rarely changes |
-| `docs/EXPERIMENTS.md` | Historical experiment notes | Archive — not source of truth for current constants |
-| `docs/README.md` | Documentation index | Points to all other docs |
+- **Kept:** CrossHAR, LiMU-BERT (ConSE tier). **Planned adds:** UniMTS (cosine, released weights), ssl-wearables (ConSE, released weights). **Dropped:** MOMENT, LanHAR, LLaSA.
+- Each baseline is a small adapter in `val_scripts/human_activity_recognition/baselines/` (`ConSEAdapter` or `CosineAdapter` + `@register`). Adding one = drop a module; the generic `run_baselines_v2.py` driver picks it up automatically.
 
-## Where to Put New Files
+## Common tasks
 
-- **New model component** -> `model/`
-- **New loss function** -> `training_scripts/human_activity_recognition/semantic_loss.py` (alignment) or `losses.py` (pretraining)
-- **New evaluation script** -> `val_scripts/human_activity_recognition/`
-- **New baseline** -> `val_scripts/human_activity_recognition/evaluate_{name}.py`
-- **New dataset converter** -> `datascripts/{dataset}/convert.py`
-- **New paper figure** -> `figures/fig_{name}.py`
-- **New shell utility** -> `scripts/`
-- **New standalone tool** -> `tools/`
-- **Analysis results** -> `test_output/{analysis_name}/`
-- **Documentation** -> `docs/`
+- **Train:** `python training_scripts/human_activity_recognition/semantic_alignment_train.py` (env: `TSFM_*`, `MODEL_SIZE`).
+- **Evaluate HALO:** `TSFM_CHECKPOINT=training_output/semantic_alignment/small_deep_v2_4b3fdd6/best.pt python val_scripts/human_activity_recognition/evaluate_tsfm_v2.py` (add `--zs-only`, `--channel-text neutral --eval-rate 20` for the parity row).
+- **Run baselines:** `python val_scripts/human_activity_recognition/run_baselines_v2.py [--baselines crosshar limubert]`.
+- **Assemble the results table:** `python val_scripts/human_activity_recognition/assemble_v2_table.py`.
+- **Add a baseline:** create `baselines/<name>.py` subclassing `ConSEAdapter`/`CosineAdapter`, `@register` it, import it in `baselines/__init__.py`.
+- **Tests:** `pytest tests/ -q`.
 
-## Key Conventions
+## Key conventions
 
-1. **Model configs** are in `model/config.py`. Never hardcode model dimensions elsewhere.
-2. **Checkpoint directories** must contain `hyperparameters.json` alongside `best.pt` for model loading to work.
-3. **Evaluation results** should be saved as JSON in `test_output/baseline_evaluation/` and the authoritative numbers go in `docs/baselines/RESULTS.md`.
-4. **Channel descriptions** follow the format: `"{dataset_desc} {channel_desc} (sampled at {rate}Hz, {patch_size}s window)"`.
-5. **Training script** reads all hyperparameters from `model/config.py` via `MODEL_SIZE` and env var overrides (`TSFM_*`).
-6. **The small_deep_v2 checkpoint** (`training_output/semantic_alignment/small_deep_v2_4b3fdd6/best.pt`) is the current best model. Other reference checkpoints: small_v1_best, tiny_v1.
-
-## Common Tasks
-
-- **Train**: `python training_scripts/human_activity_recognition/semantic_alignment_train.py` (env vars: TSFM_BATCH_SIZE, TSFM_GRAD_CACHE, TSFM_VISUALIZE, etc.)
-- **Evaluate TSFM**: `TSFM_CHECKPOINT=path/to/best.pt python val_scripts/human_activity_recognition/evaluate_tsfm.py`
-- **Evaluate all baselines**: `bash scripts/run_all_evaluations.sh`
-- **Run ablations**: `bash scripts/run_ablations.sh`
-- **Generate session visualization**: `python tools/session_visualizer.py --dataset motionsense --activity walking`
-- **Run HARTH analysis**: `python val_scripts/human_activity_recognition/harth_analysis.py`
+1. Model dims come from `model/config.py` (`MODEL_SIZE` + `TSFM_*` env overrides) — never hardcode.
+2. Checkpoint dirs contain `hyperparameters.json` beside `best.pt`; `model_loading.load_model` tolerates benign missing/unexpected keys (legacy channel-encoding + the gated session-level head for per-patch models).
+3. Authoritative v2 numbers: `docs/baselines/RESULTS_V2.md`; results JSONs under `test_output/eval_v2/`.
+4. `training_output/`, `test_output/{ablation,baseline}_evaluation/`, `auxiliary_repos/`, `data/**` are gitignored — do not commit checkpoints/large artifacts.
 
 ## Environment
 
-- Python 3.11 in `.venv/` (activate with `source .venv/bin/activate`)
-- GPU: RTX 4090 24GB locally. Medium model requires >48GB GPU (RunPod).
-- Key dependencies: torch, sentence-transformers, umap-learn, plotly, sklearn
+- Python 3.11 in `.venv/`. GPU: RTX 4090 24GB locally.

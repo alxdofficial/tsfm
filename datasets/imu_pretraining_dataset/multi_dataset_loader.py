@@ -127,7 +127,7 @@ class IMUPretrainingDataset(Dataset):
 
     def __init__(
         self,
-        data_root: str = "/home/alex/code/tsfm/data",
+        data_root: str = None,
         datasets: List[str] = ['uci_har', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'hhar'],
         split: str = 'train',
         split_ratios: Tuple[float, float, float] = (0.7, 0.15, 0.15),
@@ -176,7 +176,8 @@ class IMUPretrainingDataset(Dataset):
         Note: Channel augmentation (random subsampling/shuffling) is DISABLED.
             Experiments showed better zero-shot generalization with consistent channel order.
         """
-        self.data_root = Path(data_root)
+        # Default to the project-local data/ dir (env TSFM_DATA_ROOT usually overrides).
+        self.data_root = Path(data_root) if data_root else (Path(__file__).resolve().parents[2] / "data")
         self.datasets = datasets
         self.split = split
         self.split_ratios = split_ratios

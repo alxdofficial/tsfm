@@ -48,10 +48,14 @@ label embeddings, top-T=10 → argmax over `L_D`). See `EVALUATION_PROTOCOL_V2.m
 | **HALO (Small-Deep)** | text-aligned | **49.3** | **37.9** | 12.8 | **51.5** | 34.2 | 13.2 | **33.2** |
 | HALO (parity, 20 Hz) | text-aligned | 44.7 | 20.0 | 17.3 | 43.5 | 31.8 | 20.5 | 29.6 |
 | CrossHAR † | conse | 30.3 | 27.3 | **13.6** | 22.1 | **48.5** | **20.8** | 27.1 |
-| LanHAR | text-aligned | 30.7 | 19.1 | 11.6 | 30.6 | 16.7 | 7.1 | 19.3 |
 | LiMU-BERT † | conse | 43.0 | 20.5 | 8.0 | 27.6 | 8.3 | 2.4 | 18.3 |
-| MOMENT † | conse | *running (CPU)* | | | | | | |
-| LLaSA | generative | *not yet run (7B, ZS-only)* | | | | | | |
+| UniMTS | cosine | *planned (released weights)* | | | | | | |
+| ssl-wearables † | conse | *planned (released weights)* | | | | | | |
+
+*Baseline set changed in the V2 cleanup: **MOMENT, LanHAR, LLaSA dropped** (slow /
+weak / undeployable); **UniMTS + ssl-wearables to be added** as adapters. For the
+record, the dropped baselines' last v2 averages were LanHAR 19.3, LiMU-BERT-tier
+MOMENT (partial), LLaSA ~near-random.*
 
 **Reading it:**
 - **HALO leads the 6-dataset average (33.2)** and wins 3/6 datasets outright
