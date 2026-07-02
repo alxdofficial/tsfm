@@ -241,3 +241,16 @@ Integration keys:
 - [GOAT](https://consensus.app/papers/details/ed52d465eb1d5e1f8a35fb611d3ba628/) — device-position text conditioning; justifies keeping channel-text as a measured capability Δ.
 
 Consensus counts as one search toward your monthly limit. Consensus searches are included with your Claude subscription for a limited time. [Sign up for a dedicated Consensus plan](https://consensus.app) for unlimited literature-grounded search.
+---
+
+## Addendum (2026-07-02): scoring closed-vocabulary baselines under ZS-XD
+
+**Problem.** ZS-XD scores against the target dataset's own strings `L_D`. Text-aligned models (HALO, LanHAR, LLaSA-with-candidate-prompt, UniMTS/GOAT) consume `L_D` directly. Closed-vocabulary baselines (LiMU-BERT+GRU, CrossHAR+Transformer, MOMENT+SVM) can only emit labels from their training vocabulary `L_train` and have no mechanism to produce unseen test strings — the deleted synonym ontology existed to patch exactly this.
+
+**Policy.**
+1. **Two tiers.** The main ZS-XD table contains models capable of classifying against an arbitrary label list (the capability under test; CLIP-benchmark precedent — supervised models don't appear in zero-shot tables). Closed-vocab baselines compete at full strength in the FS-1%/10% columns.
+2. **Deterministic text bridge (†-marked ZS rows for closed-vocab baselines):** baseline predicts `ℓ̂ ∈ L_train`; final prediction `= argmax_{c∈L_D} cos(E(ℓ̂), E(c))` with `E` = the same frozen SBERT used by HALO, for all models. Replaces the hand ontology (subjective lookup table) with a reproducible one-line rule. Identical strings bridge at cos=1, so overlapping labels behave as exact match; the bridge only acts where vocabularies diverge.
+3. **Coverage is computed, not hand-authored:** class `c ∈ L_D` is *reachable* for a baseline iff `∃ ℓ ∈ L_train` with `c = argmax_{c'∈L_D} cos(E(ℓ), E(c'))`. Report reachable-class fraction per (baseline, dataset). Unreachable classes are structural zeros; macro-F1 exposes them per-class — a true capability statement, not a scoring artifact.
+4. **The bridge is strictly generous to closed-vocab baselines** (a free semantic mapping they don't natively have) — i.e. conservative against HALO. State this in the protocol.
+5. **Pre-registered label strings:** `L_D` = each dataset's own documented label names, frozen in a config before any evaluation; no rephrasing. Datasets shipping codes use their documented human-readable names.
+6. **Transparency analysis (applies to HALO too):** report each test class's max text-similarity to any training label and correlate with per-class F1 — makes the source of zero-shot transfer (near-synonym vs genuinely novel) explicit instead of contestable.
