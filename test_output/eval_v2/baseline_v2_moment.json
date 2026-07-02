@@ -1,0 +1,37 @@
+{
+  "_baseline": "moment",
+  "_tier": "conse",
+  "mobiact": {
+    "f1_macro": 16.02027108838784,
+    "balanced_accuracy": 21.088419981648045,
+    "accuracy": 39.67779056386651,
+    "f1_weighted": 39.125747924951355,
+    "n_samples": 4345,
+    "n_gt_classes": 13,
+    "n_scored_classes": 13,
+    "f1_macro_ci_lo": 13.602454520444516,
+    "f1_macro_ci_hi": 17.7797788593374,
+    "bootstrap_B": 1000,
+    "n_subjects": 24,
+    "ci_degenerate": false,
+    "balanced_accuracy_ci_lo_ba": 19.037301933004716,
+    "balanced_accuracy_ci_hi_ba": 23.113592815096045,
+    "per_class_f1": {
+      "car_step_in": 0.0,
+      "car_step_out": 0.0,
+      "fall_backward_knees": 0.0,
+      "fall_backward_sitting": 0.0,
+      "fall_forward": 0.9259259259259258,
+      "fall_sideways": 0.0,
+      "jogging": 57.17791411042945,
+      "jumping": 24.593967517401392,
+      "sitting_chair": 6.117353308364544,
+      "stairs_down": 0.0,
+      "stairs_up": 0.0,
+      "standing": 35.97497393117831,
+      "walking": 83.4733893557423
+    },
+    "reachability_lb": 0.9230769230769231,
+    "n_predicted_classes": 11
+  }
+}

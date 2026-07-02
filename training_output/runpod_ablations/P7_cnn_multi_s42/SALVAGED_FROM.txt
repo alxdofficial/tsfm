@@ -1,0 +1,1 @@
+best.pt was corrupt (hung mid-save); salvaged from epoch_81.pt

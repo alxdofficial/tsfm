@@ -1,0 +1,1327 @@
+
+
+===== PAGE 1 =====
+HALO: A Heterogeneity-Aware Language-Aligned IMU
+Foundation Model for Open-Set Human Activity
+Recognition
+ABSTRACT
+Human Activity Recognition (HAR) using inertial measure-
+ment units (IMUs) enables a wide range of applications,
+yet the field still lacks a unified model that can general-
+ize across diverse subjects, devices, and activities. Training
+such a model is difficult due to two key challenges:sensing
+heterogeneity—differences in sampling rates, channel config-
+urations, and sensor placements—andpoor generalizationto
+unseen activities and label vocabularies. We introduce HALO
+(Heterogeneity-AwareLanguage-alignedOpen-set model),
+a domain-specific IMU foundation model that addresses both
+challenges through a two-stage training framework1. Stage 1
+pretrains the IMU encoder with heterogeneity-aware self-
+supervised learning, including adaptive-pooling tokeniza-
+tion, channel-independent feature extraction, andcontex-
+tualized sensor conditioningthat injects natural-language
+sensor descriptions into each channel embedding. Stage 2
+aligns this IMU encoder with text embeddings viasynonym-
+aware soft contrastive learning, enabling open-set recogni-
+tion via cosine-similarity retrieval without per-dataset clas-
+sifiers. Trained on 10 public HAR datasets and evaluated
+on 7 held-out datasets, HALO outperforms five state-of-
+the-art baselines on all 8 aggregate metrics. Despite using
+only ∼35M trainable parameters—10 × fewer than the lat-
+est foundation model MOMENT (341.2M)—HALO improves
+zero-shot open-set accuracy by 13.7%. A video demonstra-
+tion of HALO’s performance in real world is available at
+https://youtu.be/rooVKragtFU.
+1 INTRODUCTION
+Inertial measurement units (IMUs) are among the most
+widely deployed sensors in consumer electronics such as
+smartwatches and smartphones, enabling human activ-
+ity recognition (HAR) for applications in health monitor-
+ing [2], rehabilitation [25], sports analytics [3], and human–
+computer interaction. However, developing a unified model
+for HAR that generalizes across diverse subjects, devices, and
+activities remains challenging due to two fundamental issues.
+First,sensing heterogeneity: datasets differ substantially in
+sampling rates (20–100 Hz), sensor suites (3–45 channels
+spanning accelerometers, gyroscopes, and magnetometers
+1The source code and pretrained models for HALO will be released upon
+acceptance.
+Figure 1: HALO is a domain-specific IMU foundation
+model that can tackle various sensing heterogeneity
+for open-set human activity recognition.
+at various body placements), and label vocabularies with
+inconsistently overlapping activity names. Second,limited
+generalization: models trained on one dataset typically trans-
+fer poorly to others, especially when faced with unseen ac-
+tivities or mismatched label spaces.
+Addressing these challenges requires a model that can
+(i) operate at arbitrary sampling rates without architectural
+modifications, (ii) handle variable sensor suites and place-
+ments, and (iii) recognize activities absent from training—
+i.e., support open-vocabulary recognition under label shift.
+Existing approaches address these axes in isolation. Self-
+supervised methods (LiMU-BERT [36], CrossHAR [4]) im-
+prove transferability but require closed-world classifiers.
+General-purpose foundation models (MOMENT [8]) cover
+diverse signal types but lack HAR-specific inductive biases.
+Language-aligned models (LanHAR [13]) decouple the label
+interface via text similarity, but without strong sensor pre-
+training, naive text alignment proves insufficient for robust
+zero-shot transfer.
+We present HALO (Heterogeneity-AwareLanguage-
+alignedOpen-set model), a domain-specific IMU founda-
+tion model that enables a new deployment capability: a
+single pretrained model that accepts diverse wearable and
+phone IMU configurations—varying sampling rates, chan-
+nel counts, and sensor placements—and recognizes activi-
+ties via open-vocabulary cosine-similarity retrieval, with no
+per-dataset classifier or architectural modification required.
+HALO achieves this through a two-stage framework driven
+by the three design requirements above. Stage 1 pretrains
+1
+
+===== PAGE 2 =====
+a heterogeneity-aware IMU encoder via self-supervised ob-
+jectives (masked patch autoencoding and contrastive learn-
+ing), using (1) seconds-based adaptive-pooling tokeniza-
+tion for rate invariance, (2) channel-independent process-
+ing for variable sensor suites, and (3)contextualized sensor
+conditioningthat injects natural-language descriptions of
+each channel’s sensor configuration (e.g., “Accelerometer
+X-axis, waist-mounted phone”) to provide placement con-
+text. Stage 2 aligns this encoder with a frozen SentenceBERT
+backbone [24] viasynonym-aware soft contrastive learning:
+soft targets derived from text–text similarity allow semanti-
+cally related labels (e.g., “walking”, “strolling”, “ambulating”)
+to reinforce one another, resolving the label-conflict prob-
+lem inherent to multi-dataset training. At inference, activity
+recognition is cosine-similarity retrieval over any text label
+library—eliminating per-dataset classifiers.
+We train HALO on 10 public HAR datasets and evaluate
+it on seven held-out test datasets—five main test datasets
+with high label coverage and two severe out-of-domain
+datasets containing entirely unseen activities—under four
+evaluation settings: zero-shot open-set (predicting from all
+87 training labels with no knowledge of which labels appear
+in the test set), zero-shot closed-set (predicting only from
+the labels present in the test dataset), and 1% and 10% su-
+pervised fine-tuning. Against five state-of-the-art baselines
+spanning reconstruction-based, text-aligned, and LLM-based
+paradigms, HALO leads on all 8 aggregate metrics across
+the five main test datasets, improving zero-shot open-set
+accuracy by 13.7 percentage points over the general-purpose
+foundation model MOMENT [8] (42.0% vs. 28.3%) while us-
+ing only ∼35M trainable parameters—10 × fewer than MO-
+MENT (341.2M). On two severe out-of-domain datasets, all
+models—including HALO—collapse in zero-shot, confirming
+the limits of current cross-dataset transfer under extreme
+sensor or label shift; yet HALO adapts effectively with as lit-
+tle as 1% labeled data, recovering to the strongest supervised
+performance on the harder of the two datasets.
+We make the following contributions:
+• We systematically investigate sensing heterogeneity
+and open-set generalization as the two fundamental
+barriers preventing current IMU models from serv-
+ing as general-purpose foundations for mobile HAR,
+and derive three concrete design requirements: rate-
+agnostic tokenization, variable-channel processing,
+and synonym-robust label alignment.
+• We proposeHALO, a domain-specific IMU foundation
+model that jointly addresses all three requirements
+through a two-stage training framework. The key inte-
+gration insight is that heterogeneity-aware pretraining
+(adaptive-pooling tokenization, channel-independent
+processing, andcontextualized sensor conditioningvia
+natural-language placement descriptions) provides a
+robust encoder that can then be aligned to text via
+synonym-aware soft contrastive learning, enabling a
+deployment capability no prior system achieves: a
+single model that accepts diverse IMU configurations
+and recognizes activities via open-vocabulary cosine-
+similarity retrieval.
+• We establish a unified cross-dataset benchmark span-
+ning 10 training and 7 test datasets with four evalu-
+ation settings (eight metrics), and demonstrate that
+HALO outperforms five state-of-the-art baselines on
+all 8 aggregate metrics—including under baseline-
+equivalent input conditions (20 Hz, generic descriptions)—
+with ∼35M trainable parameters. We will release the
+pretrained model checkpoint and codebase to facilitate
+reproducible research.
+2 RELATED WORK
+IMU-based HAR.Deep learning for HAR has progressed
+from single-dataset CNN-LSTM models [20] to approaches
+addressing practical heterogeneity: Cosmo [21] demonstrates
+contrastive fusion for small-data multimodal HAR, Uni-
+HAR [35] tackles cross-user and cross-device generalization
+via physics-informed augmentation, and ClusterFL [22] cap-
+tures inter-user relationships through federated learning.
+Despite these advances, all remain architecturally bound to
+a fixed channel count, sampling rate, and closed-world label
+set, limiting transferability across sensing setups.
+Self-supervised pretraining and foundation mod-
+els for IMU sensing.Self-supervised learning reduces de-
+pendence on labeled IMU data: Contrastive methods learn
+augmentation-invariant representations [5], while masked
+autoencoding has been adapted from vision [ 9] and lan-
+guage [6] to IMU sequences. For example, LiMU-BERT [36]
+pretrains via span-masked reconstruction at 20 Hz, and
+CrossHAR [ 4] combines masked reconstruction with con-
+trastive learning for cross-dataset HAR. PatchTST [ 19]
+demonstrates that patch-based channel-independent tok-
+enization improves time-series modeling, a design princi-
+ple we adopt. However, fixed-length positional encodings
+constrain variable sampling rates, and all methods require
+a dataset-specific classifier. Foundation models for general
+time-series data aim for broader coverage: MOMENT [ 8]
+is a T5-style encoder pretrained on 13 time-series domains
+via masked patch reconstruction (341.2M parameters), and
+UniMTS [38] targets unified pretraining for motion time se-
+ries across heterogeneous sensor configurations. In the tabu-
+lar domain, Mitra [37] demonstrates that curated mixtures of
+synthetic priors can train foundation models that generalize
+across diverse real-world datasets via in-context learning.
+2
+
+===== PAGE 3 =====
+These general-purpose approaches trade domain-specific in-
+ductive biases for breadth; HALO occupies an intermediate
+position as a domain-specific foundation model for wearable
+sensing with HAR-specific designs and a language-based
+label interface.
+Language-grounded perception.CLIP [ 23] demon-
+strated that aligning vision and text in a shared embed-
+ding space enables open-vocabulary zero-shot classification
+without per-class classifiers. ImageBind [7] extends this to
+multiple modalities including IMU, but is not designed for
+cross-dataset HAR or variable sensor configurations. Lan-
+HAR [13] applies CLIP-style alignment to HAR by training
+a sensor Transformer against LLM-generated activity de-
+scriptions. LLaSA [11] takes an alternative approach, lever-
+aging LLMs directly for natural language reasoning about
+IMU data. Unlike LanHAR, which lacks self-supervised pre-
+training and assumes fixed sensor configurations, HALO
+integrates heterogeneity-aware pretraining with synonym-
+aware contrastive alignment, enabling a capability none of
+these prior systems achieve: a single deployable model that
+handles variable sampling rates, channel counts, and sensor
+placements for open-set HAR.
+3 MOTIV ATION
+We identify two fundamental challenges that prevent current
+IMU-based HAR models from serving as general-purpose
+foundations:sensing heterogeneityacross devices and de-
+ployments, andlimited generalizationto unseen activity dis-
+tributions. We analyze each challenge through the lens of
+real-world applications and derive the design requirements
+that motivate HALO.
+3.1 Sensing Heterogeneity Across Devices
+and Deployments
+Wearable and mobile devices differ widely in their sens-
+ing configurations, leading to substantial data heterogeneity
+across HAR datasets. For example, a smartwatch with a 3-
+axis accelerometer at 50 Hz produces significantly different
+raw data than a multi-sensor body suit capturing 51 channels
+at 100 Hz, even when both record the same physical activity.
+To systematically analyze such heterogeneity, we analyze the
+17 datasets included in Table 1 of our benchmark. Figure 2
+visualizes the distributions of the key characteristics of these
+datasets.
+Sampling rate variation.Sampling rates range from
+20 Hz to 100 Hz (Figure 2), so a 4-second window contains 80
+to 400 timesteps depending on the device. A fixed positional
+encoding tied to timestep index conflates physical time with
+sequence length, causing identical motions at different rates
+to appear structurally different.
+20 40 60 80 100
+Sampling Rate (Hz)
+0
+10
+20
+30
+40
+50
+Channel Count
+UCI-HAR
+HHAR
+UniMiB
+MHEALTH
+PAMAP2
+WISDM
+DSADS
+HAPT
+KU-HARRecGym
+MotionSenseRealWorld
+MobiAct
+VTT-ConIoT
+6 labels
+18 labels
+Train (10)
+T est (4)
+Figure 2: Dataset heterogeneity across 14 HAR datasets
+in our benchmark. Training datasets (blue circles) and
+test datasets (red triangles) span 20–100 Hz in sampling
+rates, 3–45 channels, and 4–19 activity labels.
+Channel and placement diversity.Channel counts
+range from 3-axis wrist accelerometers to 51-channel multi-
+IMU body suits. A fixed-width input layer cannot accom-
+modate this variability without padding artifacts or dataset-
+specific input heads.
+3.2 Limited Generalization to New
+Distributions and Activities
+Beyond sensing heterogeneity, existing approaches share
+a structural limitation: they produce representations con-
+sumed by a fixed, closed-world classifier. This is adequate
+within a single dataset but fails in two important transfer
+scenarios.
+Label vocabulary inconsistency.Label vocabularies dif-
+fer in both naming and granularity: “walking, ” “level walking, ”
+“walking on a flat surface, ” and “normal walk” all denote the
+same activity across different datasets, while “sport” and
+“rope skipping” represent very different levels of specificity.
+Because each research group defines its own taxonomy inde-
+pendently, standard one-hot supervision treats “jogging” and
+“running” as maximally different, producing contradictory
+gradients when both labels appear in the training set for
+similar motions.
+The first islabel shift: a model trained on ten datasets with
+a combined 87 unique activity labels is never exposed to the
+specific label strings used in a held-out test set, even when
+the underlying motions overlap. For classifier-based models,
+this means the output vocabulary cannot cover the test labels,
+and synonym mismatches (e.g., predicting “jogging” when
+the ground truth is “running”) count as errors even when
+semantically correct. The second isgenuinely novel activities:
+3
+
+===== PAGE 4 =====
+our test datasets include activities with no semantic analog
+in the training label set (e.g.,car_step_inin MobiAct, indus-
+trial activities in VTT-ConIoT), making correct predictions
+structurally impossible for any closed-world model.
+Text-aligned models can avoid the closed-world limita-
+tion: inference is cosine-similarity retrieval over an arbitrary
+text library, so the candidate set can be changed at runtime
+without retraining. However, effective text alignment re-
+quires both (i) a sensor encoder robust to the heterogeneity
+described above, and (ii) a training objective that handles
+synonym variation in label strings rather than treating them
+as distinct classes.
+3.3 Design Requirements
+The analysis above yields three concrete requirements for a
+cross-device IMU model: (R1) the model must handle arbi-
+trary sampling rates, channel counts, and sensor placements
+without dataset-specific architectural changes; (R2) it must
+support open-vocabulary recognition over arbitrary label
+sets at test time, including labels not seen during training;
+and (R3) it must align semantically equivalent labels dur-
+ing training to avoid contradictory gradients from synonym
+variation. HALO achieves R1 through heterogeneity-aware
+pretraining (Section 5), and R2–R3 through synonym-aware
+IMU-to-text contrastive alignment (Section 5).
+4 SYSTEM OVERVIEW
+HALO is an IMU-to-text semantic alignment model trained
+across heterogeneous HAR datasets for open-set, zero-shot
+activity recognition. The system addresses the design require-
+ments identified in Section 3 through a two-stage training
+framework. Figure 3 illustrates the end-to-end pipeline.
+Stage 1: Heterogeneity-aware pretraining.The IMU
+encoder maps variable-rate, variable-channel sessions to a
+fixed embeddingz imu ∈R 𝐷 through adaptive-pooling tok-
+enization, channel-independent processing, and contextual-
+ized sensor conditioning, then is pretrained via masked au-
+toencoding and patch-level contrastive learning (Section 5.1).
+Stage 2: Synonym-aware IMU-to-text alignment.The
+pretrained encoder is aligned with a frozen Sentence-BERT
+text encoder via synonym-aware soft contrastive learning
+that derives soft target distributions from text–text similarity,
+resolving label conflicts across datasets and mapping both
+modalities into a shared 384-dimensional space (Section 5.2).
+Inference.At test time, recognition is cosine-similarity
+retrieval: givenz imu, we select the label embedding with max-
+imum similarity, supporting arbitrary candidate inventories
+including open-vocabulary settings. No per-dataset classifier
+is needed. The full model contains ∼35M trainable parame-
+ters (8-layer dual-branch IMU encoder ∼19M, alignment and
+projection heads ∼16M) plus a single frozen Sentence-BERT
+Figure 3: System overview of HALO. The sensing het-
+erogeneity is addressed through heterogeneity-aware
+pretraining of the IMU encoder (Stage 1), followed by
+synonym-aware soft contrastive learning to align sen-
+sor features with text semantics (Stage 2), enabling
+generalizable and open-set activity recognition. Zero-
+shot inference is achieved by swapping label banks at
+runtime without retraining.
+backbone (all-MiniLM-L6-v2, 22.7M) shared for both channel
+conditioning and text alignment. At deployment, the sensor
+description string is specified once when the app is con-
+figured; the corresponding text embeddings are computed
+once and cached, adding zero per-inference cost. Likewise,
+all candidate label embeddings can be precomputed offline.
+5 DESIGN OF HALO
+This section details HALO’s two stages: the heterogeneity-
+aware encoder with self-supervised pretraining (Stage 1,
+Section 5.1) and synonym-aware contrastive text alignment
+(Stage 2, Section 5.2).
+4
+
+===== PAGE 5 =====
+5.1 Heterogeneity-aware Pretraining
+The encoder addresses the three heterogeneity challenges
+identified in Section 3 through dedicated components (Fig-
+ure 4). At inference time, a sample flows through them
+in sequence: tokenization produces per-channel tokensH 0,
+sensor conditioning enriches them toH ′, and the channel-
+independent encoder fuses them into the session embedding
+zimu. We present each component below, grouping the en-
+coder with its fusion mechanism before describing condition-
+ing, since the encoder architecture is easier to understand as
+a self-contained unit.
+5.1.1 Adaptive-Pooling Tokenization for Variable Sampling
+Rates.HAR datasets are collected at different native sam-
+pling rates—for example, PAMAP2 [ 25] records at 100 Hz
+while Shoaib [28] uses 50 Hz and WISDM [12] operates at
+20 Hz. A conventional fixed-length tokenizer that expects
+𝐿 samples per patch would either require resampling every
+dataset to a common rate (distorting high-frequency content
+or fabricating samples) or training separate models per rate.
+Rather than resampling, HALO segments sessions inseconds
+rather than samples, so every patch spans the same physi-
+cal duration regardless of rate. The resulting variable-length
+patches are then mapped to fixed-dimension tokens via adap-
+tive pooling, decoupling the entire encoder from any specific
+sampling rate.
+Seconds-based patching.Each session is segmented into
+fixed-duration patches (dataset-specific, typically 0.75–2.0 s),
+yieldingX ∈R 𝐵×𝑃×𝐿×𝐶 where 𝐿 is the native patch length
+and 𝐶 the channel count. A 1-second patch at 50 Hz contains
+𝐿=50samples while the same patch at 100 Hz contains𝐿=100;
+the variable 𝐿 is absorbed downstream by adaptive pooling
+rather than resampling. During training, patch durations are
+randomly sampled from a dataset-specific range (e.g., 0.75–
+1.25 s) as a temporal augmentation; augmentation is disabled
+at evaluation.
+Per-patch, per-channel normalization.Each patch-
+channel pair is independently z-score normalized:
+ˆX𝑏,𝑝,:,𝑐 = X𝑏,𝑝,:,𝑐 −𝜇 𝑏,𝑝,𝑐
+𝜎𝑏,𝑝,𝑐 +𝜖 ,
+where 𝜇𝑏,𝑝,𝑐 and 𝜎𝑏,𝑝,𝑐 are computed over the 𝐿 timesteps
+of patch (𝑏, 𝑝) channel 𝑐. This local normalization removes
+device- and subject-specific amplitude biases without requir-
+ing global statistics.
+Spectral-temporal tokenizer.Each normalized patch-
+channel pair is converted into a 𝐷-dimensional token
+(𝐷=384) via a hybrid feature extractor with shared weights
+across channels. The temporal branch applies a multi-scale
+1-D CNN (kernel sizes 3, 5, 7) followed by adaptive average
+pooling to produce a fixed-length output regardless of 𝐿;
+Figure 4: Heterogeneity-aware Pretraining. Each row
+shows a challenge (left) and the corresponding design
+in HALO (right): adaptive-pooling tokenization for
+variable sampling rates; channel-independent feature
+extraction for variable channels; and contextualized
+sensor conditioning for variable sensor placements.
+the spectral branch computes a fixed-𝑛 FFT magnitude spec-
+trum and projects it through a learned MLP. Combining both
+branches captures complementary time-domain shape and
+frequency-domain periodicity cues. The outputs are concate-
+nated to form the initial token tensorH 0 ∈R 𝐵×𝑃×𝐶×𝐷 .
+Because both branches use adaptive pooling, the tokenizer
+natively accepts any sampling rate without resampling or
+architectural changes—a single trained model can process
+20 Hz smartphone data and 100 Hz clinical IMU data through
+the same weights. This is a key advantage over fixed-length
+tokenizers such as PatchTST [ 19], which require a prede-
+termined number of samples per patch and therefore ei-
+ther resample all inputs to a common rate (distorting high-
+frequency content at downsampled rates and fabricating
+samples at upsampled rates) or maintain separate tokenizer
+configurations per dataset. Patch-size sensitivity analysis
+(Section 6.4) confirms that the fixed 1.0 s default is within
+1.3 pp of per-dataset optima across the full 20–100 Hz range.
+5.1.2 Channel-Independent Feature Extraction for Vari-
+able Channel Counts.Different datasets expose vastly dif-
+ferent sensor suites: WISDM [ 12] provides a single 3-axis
+accelerometer (𝐶=3), while DSADS [3] uses 45 channels from
+accelerometers, gyroscopes, and magnetometers at five body
+locations. A fixed-width architecture would either waste
+capacity on small datasets or fail entirely on larger ones.
+To handle this, HALO treats every channel identically: the
+tokenizer, Transformer, and fusion modules all share parame-
+ters across channels, and variable-length channel dimensions
+are zero-padded with binary masks propagated to every at-
+tention and pooling layer so that padded channels never
+contribute to computation.
+Dual-branch Transformer.The token tensor—after sen-
+sor conditioning (Section 5.1.3, below)—is processed by 𝐿𝑒
+5
+
+===== PAGE 6 =====
+Transformer layers (𝐿𝑒 =8), each alternating two attention
+stages: (1)temporal self-attentionover patches within each
+channel (reshape to (𝐵𝐶, 𝑃, 𝐷) ), which captures how each in-
+dividual sensor signal evolves over time, and (2)cross-channel
+self-attentionover channels within each patch (reshape to
+(𝐵𝑃, 𝐶, 𝐷) , padded channels masked), which captures corre-
+lations between different sensors at the same time step. Each
+stage is followed by a shared FFN, yieldingH ∈R 𝐵×𝑃×𝐶×𝐷 .
+Sinusoidal positional encodings [33] with a learnable scale
+parameter inject temporal order over the patch dimension.
+The alternating design allows the model to first build per-
+sensor temporal representations and then exchange infor-
+mation across sensors at every layer, progressively building
+richer multi-sensor features.
+Cross-channel fusion.For each patch, a small set of
+learnable queries attends over the 𝐶 channel tokens via
+multi-query attention, producing a fused patch sequence
+U ∈R 𝐵×𝑃×𝐷 . Channel masks prevent padded channels
+from influencing attention. This reduces the variable-width
+channel dimension to a fixed-width representation, enabling
+downstream modules to operate regardless of the original
+sensor count.
+Temporal pooling and projection.A lightweight Trans-
+former overUfollowed by a second multi-query attention
+module pools the patch axis to yieldv∈R 𝐵×𝐷 , which an MLP
+projection head maps to the session embeddingzimu ∈R 𝐵×𝐷 𝑠
+(𝐷𝑠 =384, ℓ2-normalized). HALO also supportsper-patch pre-
+diction: each fused patch tokenU 𝑏,𝑝 is independently pro-
+jected and scored against text labels via cosine similarity,
+with per-patch predictions aggregated by majority vote. All
+zero-shot results in this paper use per-patch majority voting;
+supervised fine-tuning uses the pooled global embedding
+zimu.
+The channel-independent design means the same trained
+weights handle 3-channel smartphone data and 45-channel
+full-body sensor suites with no architectural changes across
+all 17 datasets. At training time, channels from different
+datasets are mixed within each batch, exposing the encoder
+to diverse sensor types and body locations in every gradient
+step. The shared-parameter approach also acts as an implicit
+regularizer: the model cannot memorize channel-specific
+shortcuts, encouraging generalizable motion features that
+transfer across sensor configurations.
+5.1.3 Contextualized Sensor Conditioning for Variable Sen-
+sor Placements.Because the tokenizer shares weights across
+all channels, the tokensH 0 carry temporal and spectral infor-
+mation but are agnostic towhereon the body each channel
+was recorded orwhattype of sensor produced it. A wrist
+accelerometer X-axis and a waist gyroscope Z-axis may pro-
+duce similar waveforms for different activities—for exam-
+ple, arm-swing acceleration during walking looks similar
+from a wrist accelerometer and a hip accelerometer, yet the
+two carry different biomechanical meaning. Without place-
+ment context, the encoder cannot disambiguate them. HALO
+addresses this by injecting sensor placement and modality
+context into each channel token via natural-language de-
+scriptions, using the same frozen text encoder that will later
+be used for activity-label alignment. This converts the hetero-
+geneity problem into a representational advantage: the model
+learns that “Accelerometer X-axis, waist-mounted smart-
+phone” and “Accelerometer X-axis, wrist-mounted smart-
+watch” are related but distinct, leveraging the semantic struc-
+ture of natural language.
+Concretely, each channel tokenH 0,𝑏,𝑝,𝑐 is conditioned on
+a per-channel semantic description (e.g., “Accelerometer
+X-axis, waist-mounted smartphone”). A frozen Sentence-
+BERT backbone [24] (all-MiniLM-L6-v2, 384-dim)—shared
+with the text encoder used in Stage 2 alignment—encodes
+the description, and a learned two-layer residual projection
+with ReLU maps it toe 𝑐 ∈R 𝐷. The conditioned token is:
+H′
+𝑏,𝑝,𝑐 = H0,𝑏,𝑝,𝑐 +𝛾 e𝑐, where 𝛾 is a learnable scale initial-
+ized to 0.1 so that conditioning acts as a gentle bias early
+in training and grows as the model learns to exploit it.The
+conditioned tokensH ′ are then passed to the dual-branch
+Transformer (Section 5.1.2).
+Descriptions are constructed per dataset from a simple
+template combining modality, axis, and placement metadata
+(e.g., “Accelerometer X-axis, waist-mounted smartphone”).
+Each dataset’s channel descriptions are specified once during
+data preparation and remain fixed throughout training and
+evaluation. For datasets without placement annotations (e.g.,
+UCI-HAR provides only “smartphone” without specifying
+pocket vs. hand), we use the available metadata; datasets
+with no sensor metadata fall back to generic descriptions
+(e.g., “IMU channel”). At inference, the model leverages rich
+descriptions when available and falls back to generic ones
+otherwise. Sensor conditioning is the single largest contrib-
+utor to zero-shot transfer ( −19.6 pp ZS-O when removed;
+Table 6); even with generic descriptions HALO outperforms
+baselines on 3 of 4 settings (Table 7).
+5.1.4 Self-supervised Pretraining.Before alignment with
+text, the encoder must learn general-purpose IMU representa-
+tions from unlabeled data across all 10 training datasets. The
+difficulty is that heterogeneous sensor configurations and
+activities can cause the encoder to overfit to dataset-specific
+artifacts (e.g., amplitude ranges, noise profiles) rather than
+learning transferable motion patterns. Stage 1 addresses this
+by training the encoder end-to-end with two complementary
+self-supervised objectives—masked autoencoding for local
+signal reconstruction and patch-level contrastive learning for
+global discriminability—combined with signal augmentation
+that forces the model to generalize across noise conditions.
+6
+
+===== PAGE 7 =====
+Masked autoencoding.A fixed fraction of patches (mask
+ratio 0.5) are replaced by a learned mask token, and the
+temporal encoder reconstructs the normalized input signal
+at masked positions:
+Lmae = 1
+|M |
+∑︁
+(𝑏,𝑝) ∈ M
+ ˆu𝑏,𝑝 −u 𝑏,𝑝
+2
+2 .
+This objective encourages the encoder to capture fine-
+grained temporal patterns within each channel, such as the
+periodic swing phase in walking or the abrupt deceleration
+in sitting down. The 50% mask ratio is chosen to balance
+reconstruction difficulty: lower ratios make the task too easy
+(the encoder can interpolate from nearby unmasked patches),
+while higher ratios deprive the model of sufficient context
+for meaningful reconstruction.
+Patch-level contrastive learning.Two augmented
+views of each patch (jittering, scaling, time warping) are
+treated as positives and other in-batch patches as negatives
+under an InfoNCE objective [32] with temperature 0.2. This
+objective encourages patches from similar motions to cluster
+in embedding space while pushing dissimilar motions apart,
+building discriminative structure before any labels are in-
+troduced. Both objectives are combined with equal weights
+(𝜆mae =𝜆 con =1.0).
+Together, the dual objectives produce an encoder that cap-
+tures both local signal fidelity (via MAE) and global motion
+discriminability (via contrastive learning). Signal augmenta-
+tion is critical: it closes a 9.5 pp generalization gap invisible
+on in-distribution validation but evident on held-out datasets
+(Section 6.3.1).
+5.2 Synonym-aware IMU-to-text Alignment
+A key challenge in multi-dataset IMU-to-text alignment isla-
+bel synonym conflict: “walking, ” “strolling, ” and “ambulating”
+describe the same motion, yet standard contrastive objectives
+treat them as unrelated negatives, producing contradictory
+gradients when both appear in a batch. HALO resolves this
+through synonym-aware label augmentation (Section 5.2.1)
+and soft contrastive alignment (Section 5.2.2).
+5.2.1 Synonym-Aware Label Augmentation.Each dataset
+defines a curated synonym map (e.g.,walking ↔ strolling ↔
+ambulating) and natural-language templates (e.g., “person
+{}”, “a person is {}”). Synonym maps are constructed once per
+dataset from WordNet and common HAR naming conven-
+tions, averaging 2.3 synonyms per activity across the 87-label
+vocabulary. During each Stage 2 step, with probability 0.8 the
+original label is replaced by a randomly sampled synonym
+wrapped in a random template (disabled at evaluation), di-
+versifying the text embeddings seen for each activity and
+preventing the text encoder from overfitting to exact label
+strings in any single dataset.
+Figure 5: IMU-to-text alignment and zero-shot infer-
+ence.Top:During training, the IMU encoder is aligned
+with a frozen text encoder in a shared embedding
+space via synonym-aware contrastive learning, so that
+semantically related activities are clustered together.
+Bottom:At inference, the IMU segment is encoded
+and matched against anopenlabel library via cosine
+similarity-enabling zero-shot recognition without re-
+training or dataset-specific classifiers.
+Such label augmentation reduces synonym conflict fre-
+quency in each batch (−7.0 pp at 1% when removed; Table 6),
+but cannot eliminate it entirely—residual synonyms still ap-
+pear as negatives—motivating the soft targets described next.
+5.2.2 IMU-to-Text Alignment with Soft Contrastive Learn-
+ing.Standard CLIP-style learning uses hard one-hot targets,
+forcing synonymous labels apart. HALO replaces these with
+softtarget distributions derived from text–text similarity, so
+synonymous labels receive partial credit—converting syn-
+onym conflict from a source of gradient noise into a learning
+signal that reinforces semantic structure.
+Text encoder and contrastive objective.A frozen
+Sentence-BERT backbone [24] (all-MiniLM-L6-v2, 384-dim)—
+the same model used for sensor conditioning—encodes aug-
+mented activity labels; learnable query-based pooling over
+its token outputs producesz text ∈R 𝐵×𝐷 𝑠 . Stage 2 alignsz imu
+withz text via a CLIP-style bidirectional contrastive objective.
+Because our batch sizes are limited by GPU memory (micro-
+batch 32 with gradient accumulation), we maintain FIFO
+queues [10] of size 𝑄= 256for both modalities to increase
+the effective number of negatives per step from 32 to 288,
+pre-filling them with a warmup pass before training begins.
+Similarity logits are computed as
+S𝑖→𝑡 =𝛼Z imu A⊤
+text,S 𝑡→𝑖 =𝛼Z text A⊤
+imu,
+whereAdenotes the concatenation of the current batch and
+queue, and 𝛼=exp(logit_scale) is a learnable tempera-
+ture (CLIP-initialized, clamped to[1,50]).
+Adaptive soft targets.Raw text–text similarities cluster
+in a narrow range (0.4–0.9), producing near-uniform tar-
+gets that collapse the embedding space. We applyadaptive
+7
+
+===== PAGE 8 =====
+sharpening: z-score-normalize the in-batch similarity matrix
+M = ZtextZ⊤
+text, rescale with temperature 𝜏𝑠 =0.5, and softmax
+to obtain sharpened distributionsT(e.g., “walking”/“strolling”
+share 0.4 of target mass while “walking”/“cycling” share
+<0.01). Queue entries serve as hard negatives. The blended
+targetPcombines soft in-batch targetsTwith hard one-hot
+targets for queue entries. The bidirectional loss is:
+L𝑖→𝑡 =− 1
+𝐵
+∑︁
+𝑏,𝑗
+P𝑏,𝑗 log softmax(S𝑖→𝑡 )𝑏,𝑗 ,
+L= 1
+2
+ L𝑖→𝑡 + L𝑡→𝑖
+.
+Zero-shot inference.At test time, the predicted activity
+is ˆ𝑦=arg max 𝑘 cos(zimu, z(𝑘)
+text) over an arbitrary candidate
+label set. Swapping the label library at runtime enables open-
+set recognition without retraining (Section 4).
+Embedding-space analysis confirms 76.7% nearest-neighbor
+accuracy between IMU and text centroids (Section 6.3.3).
+6 EXPERIMENTS
+6.1 Methodology
+We evaluate whether HALO supports (i) robust performance
+under heterogeneous multi-dataset training, (ii) open-set and
+closed-set zero-shot generalization to unseen datasets, and
+(iii) sample-efficient supervised transfer.
+Datasets.We train jointly on ten public HAR datasets
+(Table 1). All HAR-pretrained models use the same 10 train-
+ing datasets; MOMENT is pretrained on general time-series
+data; LLaSA uses published weights whose training data
+overlaps with two of our test sets (MotionSense, Shoaib).
+We evaluate on seven held-out datasetsnever seen during
+any model’s training: five main test datasets (85–100% label
+coverage) and two severe out-of-domain datasets reported
+separately. HALO evaluates at native rates and LanHAR at
+50 Hz; the remaining baselines use 20 Hz resampled data via
+the LIMU-BERT pipeline (Section 6.1).
+Baselines.We compare HALO against five baselines rep-
+resenting different pretraining paradigms (Table 2):
+Text-aligned models(HALO, LanHAR) predict via cosine
+similarity between sensor and text embeddings, enabling
+arbitrary label strings at test time (evaluated by exact string
+match). LanHAR fine-tunes SciBERT on activity text, then
+aligns a sensor Transformer.Classifier-based models(LiMU-
+BERT, MOMENT, CrossHAR) train a fixed 87-class classi-
+fier over the global training labels. LiMU-BERT uses span-
+masked reconstruction with a GRU head; MOMENT is a
+T5-style encoder pretrained on 13 time-series domains, pro-
+cessing each channel independently (6 ×1024 = 6144-dim);
+CrossHAR combines masked reconstruction with contrastive
+regularization. For zero-shot evaluation, each uses its paper’s
+recommended classifier on training-set embeddings only—
+the termzero-shotmeans the test dataset is unseen at both
+Dataset Hz #Subj #Act #Ch DescriptionCov. Diff.
+UCI-HAR [1] 50 30 6 9 Smartphone
+IMU
+HHAR [30]∼50 9 6 6 Phone +
+watch
+UniMiB [18] 50 30 17 3 Phone acc,
+ADLs
+MHEALTH [2] 50 10 12 6+ Body IMU
+suite
+PAMAP2 [25] 100 9 18 27 Multi-
+IMU
+WISDM [12] 20 51 18 6 Phone +
+watch
+DSADS [3] 25 8 19 45 5 body po-
+sitions
+HAPT [26] 50 30 12 6 Phone,
+transi-
+tions
+KU-HAR [29] 100 90 18 6 Phone, 18
+acts
+RecGym [39] 20 10 12 6 Watch,
+gym
+MotionSense† [16] 50 24 6 6 Phone, ba-
+sic
+100% Easy
+RealWorld† [31] 50 15 8 3 Phone,
+acc-only
+100% Med
+MobiAct† [34] 50 66 13 6 Falls +
+ADLs
+85% Hard
+Shoaib† [28] 50 10 7 6 Multi-
+placement
+100% Med
+Opportunity† [27] 30 4 4 6 XSens
+body-
+worn
+100% Med
+HARTH‡ [14] 50 22 12 6 Back/thigh
+acc
+100% Severe
+VTT-ConIoT‡ [15] 52 12 16 6 Construction50% Severe
+Table 1: Dataset overview. Top: 10 training datasets.
+Bottom: 7 held-out test datasets. † Main test datasets.
+‡ Severe OOD datasets; reported separately.Cov.: Frac-
+tion of test activities that have an equivalent in the
+training set.Diff.: Difficulty level determined by distri-
+bution shift and label novelty.
+training and classifier-fitting stages. These models benefit
+from group-based scoring but cannot predict unseen label
+strings.Generative language model(LLaSA) combines a LiMU-
+BERT encoder with Vicuna-7B and classifies by prompting
+the LLM with sensor tokens. These asymmetries are inherent
+to the architectures; where we deviated from a baseline’s
+protocol, we erred in that baseline’s favour (Section 6.1). Full
+adaptation details are in the supplementary material.
+Evaluation protocol.To handle cross-dataset label in-
+consistency (e.g., “jogging” vs. “running”), we definesyn-
+onym groupsmapping variant strings to canonical activities;
+classifier-based models benefit from group-based scoring,
+while text-aligned models use exact string match. Novel test
+activities with no training equivalent form irreducible er-
+ror floors. We report accuracy and macro F1 for all settings.
+Zero-shot open-set:predict from the full 87-label training
+8
+
+===== PAGE 9 =====
+Model Paradigm Dim Train. Infer.
+LiMU-BERT [36] Masked recon. 72 72.7K 72.7K
+MOMENT [8] General TS 6144 341.2M 341.2M
+CrossHAR [4] Self-sup HAR 72 531.4K 531.4K
+LanHAR [13] Text-aligned 768 13.0M ∗ 122.9M
+LLaSA [11] LLM generative —∼6.7B∼6.7B
+HALO (ours) Text-aligned 384∼35M∼58M
+Table 2: Baseline overview.Train.: parameters up-
+dated during pretraining andalignment.Infer.: Total
+parameters used at inference, including frozen mod-
+ules. HALO’s inference total includes a single frozen
+MiniLM (22.7M) shared for both contrastive alignment
+and channel conditioning; all text embeddings are pre-
+computable. ∗LanHAR freezes SciBERT (109.9M) dur-
+ing stage-2 and unfreezes it for fine-tuning.
+vocabulary (HALO uses per-patch majority voting; classifier-
+based models use 87-class logits).Zero-shot closed-set:restrict
+predictions to test-dataset labels.1%/10% supervised:fine-
+tune end-to-end on 1% or 10% of labeled test data (balanced
+subsampling, 80/10/10 split, seed 3431; 20 epochs, AdamW,
+encoder LR10 −5, head LR10 −3, batch 32, patience 5).
+Fairness and input policy.Each model receives the rich-
+est input its architecture can consume. HALO evaluates
+at native rates with rich channel descriptions; LanHAR at
+50 Hz; LiMU-BERT, CrossHAR, MOMENT, and LLaSA use
+the LIMU-BERT preprocessing pipeline (20 Hz, 120-step, 6-
+channel windows); MOMENT additionally left-pads each
+channel to its expected 512 timesteps per its published proto-
+col. Conversely, MOMENT benefits from 341M parameters
+and 6144-dim embeddings, and classifier-based models ben-
+efit from group scoring. To ensure a fair comparison: (i) all
+models receive identical windows, labels, and splits; (ii) each
+baseline uses its recommended classifier; (iii) where we devi-
+ated from a baseline’s original protocol, we chose the option
+favouring that baseline (e.g., unfreezing CrossHAR, giving
+MOMENT end-to-end fine-tuning, 10 × LLaSA’s per-class
+budget); (iv) classifier-based models use group scoring, while
+text-aligned models use exact string match. We report ex-
+act match for text-aligned models because open-vocabulary
+deployment depends on raw label-string retrieval; synonym-
+group scoring would not reflect real deployment accuracy.
+As a direct fairness control, Section 6.3.2 evaluates HALO un-
+der baseline-equivalent inputs (20 Hz, generic descriptions)
+and shows it still leads on 3 of 4 settings (Table 7).
+Implementation details.Training proceeds in two
+stages with a single model jointly across all 10 datasets.
+Stage 1 pretrains the IMU encoder (Section 5.1.4) for
+100 epochs (batch 20, AdamW, LR10 −4, weight decay10 −5,
+10 warmup epochs, MAE mask ratio 0.5, contrastive tem-
+perature 0.2). Stage 2 initializes from the pretrained encoder
+ZS-O ZS-C 1% 10%
+Model Acc F1 Acc F1 Acc F1 Acc F1
+HALO (ours)42.0 21.0 53.1 37.2 76.5 70.0 85.7 81.7
+MOMENT 28.3 7.2 44.7 33.2 73.8 69.8 81.3 76.8
+CrossHAR 21.2 5.5 38.2 31.7 61.1 55.2 78.6 75.2
+LiMU-BERT 21.7 7.5 33.1 23.1 35.7 22.7 51.3 43.6
+LanHAR 15.8 6.2 28.4 21.7 43.3 35.2 56.2 51.5
+LLaSA† 1.4 1.2 17.4 8.4 — — — —
+Table 3: Overall performance in average accuracy (%)
+and macro F1 (%) across 5 main test datasets. Bold:
+best result for each metric. ZS-O/ZS-C: zero-shot open-
+set/closed-set settings. HALO and LanHAR are evalu-
+ated at each dataset’s native sampling rate; other base-
+lines use data resampled to 20 Hz. †LLaSA: published
+7B model, zero-shot only (no supervised)
+and trains for 200 epochs with 70/15/15 splits per dataset,
+mixed precision, and gradient accumulation (micro-batch 32,
+accumulation 16). Key hyperparameters: learned tempera-
+ture 𝛼0=0.07, soft-target temperature 𝜏𝑠 =0.5, memory bank
+𝑄=256. Group-balanced sampling mitigates class imbalance
+(weights inversely proportional to group frequency, capped
+at20 ×). HALO uses a fixed 1.0 s evaluation patch size for
+all datasets with no per-dataset tuning; sensitivity is ana-
+lyzed in Section 6.4. All training is performed on a single
+NVIDIA A100 80 GB GPU; on-device inference profiling uses
+a smartphone (Section 6.5).
+6.2 Overall Performance
+6.2.1 Overall performance in different settings.Table 3
+summarizes average performance. HALO leads on all eight
+metrics; notably, these gains hold even under baseline-
+equivalent inputs (20 Hz, generic descriptions), as confirmed
+in the fairness control (Table 7). The largest margin is in
+zero-shot open-set (42.0% vs. MOMENT’s 28.3%, +13.7 pp),
+where predicting from 87 candidates without test-set knowl-
+edge is hardest. Even at 1% supervision, HALO leads despite
+MOMENT’s 6144-dim embeddings (16× HALO’s 384-dim)
+giving its classifier substantially more capacity. LanHAR un-
+derperforms despite being text-aligned and evaluating at
+native 50 Hz—likely because its sensor encoder lacks self-
+supervised pretraining.
+6.2.2 Results in each dataset .HALO leads zero-shot on all
+five datasets except Opportunity closed-set, where MOMENT
+edges ahead (53.9% vs. 49.3%), possibly because its 6144-
+dim SVM-RBF classifier benefits from the small label set.
+MobiAct—the hardest with 13 classes including falls—shows
+the largest zero-shot gap (HALO 42.2% vs. MOMENT 28.7%
+open-set). At 10% supervision, HALO leads on all 5 datasets;
+9
+
+===== PAGE 10 =====
+Accuracy (%) Macro F1 (%)
+Dataset ZS-O ZS-C 1% 10% ZS-O ZS-C 1% 10%
+MotionSense 49.3 64.1 88.6 95.0 30.3 49.3 87.1 94.6
+RealWorld 48.0 48.0 75.1 85.6 33.3 37.9 74.0 86.4
+MobiAct 42.2 50.0 65.3 72.9 16.3 12.8 35.2 51.7
+Shoaib 49.2 54.1 81.6 95.9 17.6 51.5 81.2 95.7
+Opportunity 21.1 49.3 72.0 79.3 7.4 34.2 72.6 80.0
+Average42.0 53.1 76.5 85.7 21.0 37.2 70.0 81.7
+Table 4: Per-dataset results of HALO on the five main
+test datasets. ZS-O/ZS-C: zero-shot open/closed-set. All
+datasets are held out from training.
+HARTH VTT-ConIoT
+ZS-O ZS-C 1% 10% ZS-O ZS-C 1% 10%
+HALO 2.0 2.5 64.778.31.3 2.2 1.9 16.9
+MOMENT 0.4 1.9 66.7 65.4 1.6 5.218.4 34.8
+CrossHAR 0.3 0.9 42.4 71.9 0.7 5.0 10.6 30.9
+LiMU-BERT 0.020.254.4 19.1 3.47.14.3 15.0
+LanHAR 0.9 1.1 3.4 70.08.36.9 7.7 7.7
+LLaSA† 11.9 12.5 — — — 6.9 — —
+Table 5: Accuracy on severe out-of-domain datasets
+(%). ZS-O/ZS-C: zero-shot open/closed-set. All mod-
+els collapse on HARTH zero-shot (sensor distribution
+shift); VTT-ConIoT is capped at ∼50% by novel activi-
+ties. †LLaSA: zero-shot only, subsampled.
+at 1%, HALO leads on 4 of 5 (MOMENT edges ahead only on
+Opportunity: 74.3% vs. 72.0%).
+6.2.3 Severe out-of-domain transfer performance.Table 5
+reports HARTH and VTT-ConIoT separately. HARTH uses
+back/thigh-mounted accelerometers only (no gyroscope),
+with gravity-contaminated data that differs substantially
+from training; despite 100% label coverage, this sensor shift
+causes all models to collapse in zero-shot. VTT-ConIoT is
+an industrial dataset where only 50% of activities have train-
+ing equivalents; the rest (e.g., kneeling work, roll painting)
+are entirely novel. On HARTH, all embedding-based models
+achieve near-zero zero-shot accuracy (<3%), confirming gen-
+uine sensor distribution shift rather than a model-specific fail-
+ure. LLaSA’s generative reasoning is less sensitive to signal
+distribution (11.9% open-set), but still far from useful. With
+supervised data, HALO leads at 10% (78.3% vs. CrossHAR’s
+71.9%); at 1%, MOMENT edges ahead (66.7% vs. 64.7%). On
+VTT-ConIoT, all models score near random on zero-shot
+(<9%). With supervised data, MOMENT leads (34.8% at 10%),
+benefiting from its general time-series pretraining; HALO’s
+HAR-specific encoder provides strong in-domain transfer
+but less benefit when the target domain is fundamentally
+different.
+Configuration ZS-O ZS-C 1% 10%
+Full model44.9 51.9 74.7 85.4
+−Channel-text fusion 25.3 (–19.6) 43.8 (–8.1) 72.9 (–1.8) 82.5 (–2.9)
+−Signal augmentation 45.3 (+0.4) 53.0 (+1.1) 70.9 (–3.8) 83.5 (–1.9)
+−Text augmentation 42.7 (–2.2) 49.9 (–2.0) 67.7 (–7.0) 84.2 (–1.2)
+Table 6: Ablation study of design components. Each
+row removes one component while keeping all others
+fixed. Results report average accuracy (%) across five
+main test datasets, with performance deltas relative to
+the full model shown in parentheses.
+Configuration ZS-O ZS-C 1% 10%
+HALO (native Hz, rich desc.)42.0 53.1 76.5 85.7
+HALO (20 Hz, generic desc.) 30.6 49.4 71.7 84.7
+Best baseline (MOMENT) 28.3 44.7 73.8 81.3
+Table 7: Analysis of native sampling rate and evalua-
+tion fairness with average accuracy (%) across five main
+test datasets. In Row 2, HALO is evaluated using the
+same 20Hz, 6-channel inputs with generic textual de-
+scriptions as four of the five baselines (LanHAR uses
+50Hz data). Even under these conservative and stan-
+dardized inputs, HALO outperforms baselines in three
+of the four evaluation settings.
+6.3 Understanding HALO’s Performance
+6.3.1 Ablation study on design components.We isolate
+three architectural and training contributions by disabling
+each independently from the full model. 2 Table 6 reports
+5-dataset averages.Channel-text fusion(i.e., sensor condi-
+tioning, Section 5.1.3) is the single most important zero-shot
+component (−19.6 pp ZS-O), as the model must otherwise
+infer sensor semantics purely from signal patterns; the effect
+fades with supervision (−2.9 pp at 10%).Text augmentation
+has the largest supervised impact (−7.0 pp at 1%), preventing
+the text encoder from memorizing exact label strings.Signal
+augmentationcloses a 9.5 pp generalization gap invisible on
+in-distribution validation but critical on held-out datasets;
+on severe OOD the effect strengthens to−6.8 pp at 10%.
+6.3.2 Analysis on native sampling rate and fairness.We
+compare HALO at native rates with rich descriptions against
+the same model on 20 Hz resampled data with generic chan-
+nel names (e.g., “acc_x”), matching the LIMU-BERT pipeline
+used by four of five baselines. Table 7 shows that even under
+these conservative inputs, HALO leads on 3 of 4 settings
+(+2.3 pp ZS-O, +4.7 pp ZS-C, +3.4 pp at 10% over MOMENT);
+2Ablation runs use 100 Stage 2 epochs (vs. 200 for the final model) with a
+single seed; absolute numbers differ slightly from Table 3 but relative deltas
+are meaningful.
+10
+
+===== PAGE 11 =====
+Figure 6: Analysis of embedding space. UMAP projec-
+tion of learned IMU and text embeddings at epoch 100.
+Circles: per-activity IMU centroids; diamonds: SBERT
+text centroids; lines connect matched IMU–text pairs.
+only at 1% does MOMENT edge ahead. The native-rate advan-
+tage is dataset-dependent: MotionSense and MobiAct show
+large zero-shot gains (+24.5 and +19.7 pp) where rich chan-
+nel text aids placement disambiguation, while RealWorld
+drops (−9.9 pp) because its heterogeneous body placements
+are poorly captured by a single dataset-level description.
+Supervised performance is less affected (within 3 pp at 10%).
+6.3.3 Analysis of embedding space .Figure 6 visualizes
+the learned embedding space via UMAP [17]. Semantically
+related groups (e.g.,running,stairs,walking) cluster together
+with tight cross-modal alignment: nearest-neighbor accuracy
+reaches 76.7%, positive similarity 0.857, and the similarity gap
+between matched and unmatched pairs is 0.377. Stationary
+activities form a distinct cluster separated from locomotion,
+mirroring kinematic structure. Text centroids align closely
+with IMU counterparts, confirming the contrastive objective
+maps both modalities into a shared semantic space.
+6.4 Patch Size Sensitivity
+HALO uses a fixed 1.0 s patch size for all results—no per-
+dataset tuning. Figure 7 shows that 1.0–1.25 s patches consis-
+tently perform best; the fixed 1.0 s choice is within 1.3 pp of
+the per-dataset optimum across all five datasets. This range
+aligns with typical gait cycle durations (0.8–1.2 s), captur-
+ing approximately one full motion cycle per patch. Shorter
+patches (0.75 s) degrade on complex-activity datasets like Op-
+portunity, likely splitting compound activities across patch
+boundaries; longer patches (1.5–2.0 s) show diminishing re-
+turns as they average over multiple motion phases. The
+sensitivity curve is relatively flat between 0.75–1.5 s, and
+consistency across sampling rates (20–100 Hz) confirms that
+1.00 1.25 1.50 1.75 2.00
+Patch Duration (seconds)
+0
+10
+20
+30
+40
+50
+ZS Closed-Set Accuracy (%)
+chosen
+MotionSense
+RealWorld
+MobiAct
+VTT-ConIoT
+Figure 7: Patch size sensitivity. Zero-shot closed-set
+accuracy (%) across candidate patch durations. The
+dashed vertical line indicates the selected patch size
+of 1.0 s. Original datasets are evaluated at 20 Hz, while
+Shoaib and Opportunity are evaluated at their native
+sampling rates.
+Model Params ZS-O ZS-C 1% 10%
+Tiny 6M 32.8 52.1 72.686.4
+Small 35M 46.0 53.4 77.585.3
+Medium 63M 37.8 47.7 72.6 84.5
+Table 8: Scaling of model size. Average accuracy (%) on
+3 main test datasets at 20 Hz. The Small model (35M)
+achieves the best performance, while the Medium
+model regresses on all zero-shot metrics despite having
+twice as many parameters.
+seconds-based patching with adaptive pooling decouples
+temporal resolution from patch semantics.
+6.5 Scaling of Model Sizes
+We train three model sizes—Tiny (𝑑=192, 4 layers, 6M), Small
+(𝑑=384, 8 layers, 35M), and Medium (𝑑=512, 8 layers, 63M)—
+with identical training recipes, hyperparameters, and data to
+isolate the effect of model capacity. Table 8 shows Small is the
+sweet spot: Medium regresses by 8.2 pp on ZS-O despite dou-
+bling parameters, achieving the highestvalidationaccuracy
+but the worst held-out generalization—classic overfitting to
+dataset-specific patterns rather than transferable motion rep-
+resentations. Tiny underfits, falling 13.2 pp below Small on
+ZS-O, though it slightly outperforms Small at 10% super-
+vision (86.4% vs. 85.3%), suggesting smaller models benefit
+more from supervised regularization. The ∼13K-session cor-
+pus supports ∼35M parameters before overfitting dominates;
+larger HAR corpora could shift this ceiling upward.
+6.6 Inference Overhead on Smartphones
+Table 9 shows that HALO achieves an average inference
+latency of 7.16 ms (p95: 7.37 ms) on an iPhone 16 Pro, well
+within real-time requirements for on-device activity recogni-
+tion. Under the same Core ML deployment setting (identical
+11
+
+===== PAGE 12 =====
+Model Params Avg (ms) p95 (ms) Peak Mem. (MB) CPU Wt/ms
+CrossHAR 110K 0.29 0.30 1.20 224.0K
+LiMU-BERT 110K 0.31 0.36 0.27 188.0K
+LLaSA 105K 0.33 0.46 0.02 187.2K
+LanHAR 8.8M 0.77 0.89 0.05 71.8K
+MOMENT 24.0M 37.69 37.98 25.05 1.8K
+HALO (ours) 34.0M 7.16 7.37 32.81 2414.4K
+Table 9: Inference overhead on an iPhone 16 Pro. All
+models are benchmarked with same setting: identical
+6-channel IMU inputs using Core ML, with 10 warm-
+up iterations followed by 100 timed iterations.Params
+denotes the profiled model size.CPU Wt/msreports
+cycle-weighted CPU activity normalized by benchmark
+duration.
+6-channel IMU input, 10 warm-up and 100 timed iterations),
+HALO is5 .26× faster than MOMENT (7.16 ms vs. 37.69 ms)
+while jointly modeling all six IMU channels in a single for-
+ward pass. Although HALO is slower than lightweight base-
+lines such as CrossHAR (0.29 ms) and LiMU-BERT (0.31 ms)
+due to its dual-branch Transformer architecture, its latency
+remains practical for smartphone deployment. The speedup
+over MOMENT mainly stems from inference structure: MO-
+MENT relies on a large T5-style encoder and requires six
+separate passes for a 6-channel input, whereas HALO pro-
+cesses all channels jointly. HALO reaches a peak memory
+usage of 32.81 MB, and label embeddings are precomputed
+and cached offline, incurring negligible runtime overhead.
+6.7 Real-World Case Study
+We implement the full HALO pipeline as an iOS application
+and test under continuous placement and label shifts. As
+shown in Figure 8, the pipeline consists of four stages: (1) SFT
+data collection on the smartphone, where the user performs
+each target activity for 30 s per class; (2) SFT head training on
+a laptop (under 2 minutes for 6 classes); (3) weight transfer
+back to the device via a local network; and (4) real-time
+inference. The demo covers three body locations (left pocket,
+wrist,upper arm) with six seen classes (Sitting,Standing,
+Walking,Running,Jumping,Lying) and two unseen labels
+(Marching,Jogging) introduced at inference to test robustness
+beyond the SFT label space.
+Across 40 inference windows (Figure 9), HALO achieves
+97.5% accuracy with only one transient error near the pocket-
+to-wrist transition, recovering immediately. The placement
+transition from pocket to wrist represents a significant sensor
+distribution shift mid-session, yet the model adapts within a
+single window. The unseen-label phase remains fully correct,
+confirming that the personalized head preserves semantic
+generalization even when inference-time labels differ from
+the SFT classes—the model correctly distinguishes “March-
+ing” from “Walking” and “Jogging” from “Running” despite
+never training on these labels during SFT. Mean end-to-end
+Figure 8: Deployment setting of smartphone-based
+IMU HAR in the real-world case study.
+Figure 9: Performance continuous IMU-based HAR on
+the smartphone.
+pipeline latency is 30.35 ms (P95: 33.66 ms), higher than the
+isolated model benchmark (7.16 ms, Table 9) due to app-level
+overhead; memory stays within 73–78 MB, and the deployed
+model is 21.8M parameters (∼34 MB on disk)—practical for
+continuous on-device HAR.
+7 CONCLUSION AND DISCUSSIONS
+We presented HALO, an IMU foundation model that sup-
+ports diverse wearable configurations and enables open-
+vocabulary activity recognition without per-dataset adapta-
+tion. With ∼35M parameters, HALO outperforms five base-
+lines across all eight aggregate metrics. Our results also mo-
+tivate several directions for future work. First, moving from
+dataset-level to per-sample channel–text conditioning could
+better capture heterogeneous body placements, as evidenced
+by a 9.9 pp zero-shot drop on RealWorld with richer global
+descriptions (Section 6.3.2). Second, robustness to severe
+distribution shift remains an open challenge, particularly
+for datasets such as HARTH and VTT-ConIoT under zero-
+shot transfer. Finally, expanding beyond the current 87-label
+vocabulary and 384-dimensional embedding space may fur-
+ther enhance semantic coverage and generalization ability
+of HALO.
+12
+
+===== PAGE 13 =====
+REFERENCES
+[1] Davide Anguita, Alessandro Ghio, Luca Oneto, Xavier Parra, and
+Jorge Luis Reyes-Ortiz. 2013. A Public Domain Dataset for Human Ac-
+tivity Recognition Using Smartphones. InProceedings of the European
+Symposium on Artificial Neural Networks, Computational Intelligence
+and Machine Learning (ESANN). Bruges, Belgium.
+[2] Oresti Banos, Rafael Garcia, Juan A. Holgado-Terriza, Miguel Damas,
+Hector Pomares, Ignacio Rojas, Alejandro Saez, and Claudia Villa-
+longa. 2014. mHealthDroid: A Novel Framework for Agile Develop-
+ment of Mobile Health Applications. InProceedings of the 6th Interna-
+tional Work-conference on Ambient Assisted Living and Daily Activities
+(IW AAL). Springer, Belfast, UK, 91–98.
+[3] Billur Barshan and Murat C. Yüksek. 2014. Recognizing Daily and
+Sports Activities in Two Open-Source Machine Learning Environments
+Using Body-Worn Sensor Units.Comput. J.57, 11 (2014), 1649–1667.
+[4] Zhiqiang Chang, Patrizia Di Campli San Vito, Mirco Musolesi, and
+Cecilia Mascolo. 2024. CrossHAR: Generalizing Cross-dataset Human
+Activity Recognition via Hierarchical Self-Supervised Pretraining.Pro-
+ceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies8, 1 (2024), 1–27.
+[5] Ting Chen, Simon Kornblith, Mohammad Norouzi, and Geoffrey Hin-
+ton. 2020. A Simple Framework for Contrastive Learning of Visual
+Representations. InProceedings of the 37th International Conference on
+Machine Learning (ICML). PMLR, Virtual, 1597–1607.
+[6] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova.
+2019. BERT: Pre-training of Deep Bidirectional Transformers for
+Language Understanding. InProceedings of the 2019 Conference of the
+North American Chapter of the Association for Computational Linguistics
+(NAACL). Association for Computational Linguistics, Minneapolis, MN,
+4171–4186.
+[7] Rohit Girdhar, Alaaeldin El-Nouby, Zhuang Liu, Mannat Singh,
+Kalyan Vasudev Alwala, Armand Joulin, and Ishan Misra. 2023. Im-
+ageBind: One Embedding Space to Bind Them All. InProceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+(CVPR). IEEE, Vancouver, Canada, 15180–15190.
+[8] Mononito Goswami, Konrad Szafer, Arjun Choudhry, Yifu Cai, Shuo Li,
+and Artur Dubrawski. 2024. MOMENT: A Family of Open Time-Series
+Foundation Models. InProceedings of the 41st International Conference
+on Machine Learning (ICML). PMLR, Vienna, Austria, 16115–16152.
+[9] Kaiming He, Xinlei Chen, Saining Xie, Yanghao Li, Piotr Dollár, and
+Ross Girshick. 2022. Masked Autoencoders Are Scalable Vision Learn-
+ers. InProceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition (CVPR). IEEE, New Orleans, LA, 16000–16009.
+[10] Kaiming He, Haoqi Fan, Yuxin Wu, Saining Xie, and Ross Girshick.
+2020. Momentum Contrast for Unsupervised Visual Representation
+Learning. InProceedings of the IEEE/CVF Conference on Computer Vision
+and Pattern Recognition (CVPR). IEEE, Seattle, WA, 9729–9738.
+[11] Sheikh Asif Imran, Mohammad Nur Hossain Khan, Subrata Biswas,
+and Bashima Islam. 2025. LLaSA: A Sensor-Aware LLM for Natural
+Language Reasoning of Human Activity from IMU Data. InCompan-
+ion of the 2025 ACM International Joint Conference on Pervasive and
+Ubiquitous Computing (UbiComp). ACM.
+[12] Jennifer R. Kwapisz, Gary M. Weiss, and Samuel A. Moore. 2011. Ac-
+tivity Recognition Using Cell Phone Accelerometers.ACM SIGKDD
+Explorations Newsletter12, 2 (2011), 74–82.
+[13] Quan Li, Kecheng Li, Yuqian Hu, Bin Guo, and Zhiwen Yu. 2024. Lan-
+HAR: Language-Based Zero-Shot Human Activity Recognition via
+Large Language Models.Proceedings of the ACM on Interactive, Mobile,
+Wearable and Ubiquitous Technologies8, 4 (2024), 1–25.
+[14] Aleksej Logacjov, Kerstin Bach, Atle Kongsvold, Hilde Bremseth Bård-
+stu, and Paul Jarle Mork. 2021. HARTH: A Human Activity Recognition
+Dataset for Machine Learning.Sensors21, 21 (2021), 7261.
+[15] Satu-Marja Mäkelä, Ari Lämsä, Joonas S. Keränen, Jari Liikka, Jari
+Ronkainen, Jari Peltola, Jukka Häikiö, Sami Järvinen, and Miguel Bor-
+dallo López. 2021. Introducing VTT-ConIoT: A Realistic Dataset for
+Activity Recognition of Construction Workers Using IMU Devices.
+Sustainability14, 1 (2021), 220. https://doi.org/10.3390/su14010220
+[16] Mohammad Malekzadeh, Richard G. Clegg, Andrea Cavallaro, and
+Hamed Haddadi. 2019. Mobile Sensor Data Anonymization. InPro-
+ceedings of the International Conference on Internet of Things Design
+and Implementation (IoTDI). ACM, Montreal, Canada, 49–58.
+[17] Leland McInnes, John Healy, and James Melville. 2018. UMAP: Uniform
+Manifold Approximation and Projection for Dimension Reduction.
+arXiv preprint arXiv:1802.03426(2018).
+[18] Daniela Micucci, Marco Mobilio, and Paolo Napoletano. 2017. UniMiB
+SHAR: A Dataset for Human Activity Recognition Using Acceleration
+Data from Smartphones.Applied Sciences7, 10 (2017), 1101.
+[19] Yuqi Nie, Nam H. Nguyen, Phanwadee Sinthong, and Jayant
+Kalagnanam. 2023. A Time Series is Worth 64 Words: Long-term
+Forecasting with Transformers. InThe Eleventh International Con-
+ference on Learning Representations (ICLR). OpenReview.net, Kigali,
+Rwanda, 1–22.
+[20] Francisco Javier Ordóñez and Daniel Roggen. 2016. Deep Convolu-
+tional and LSTM Recurrent Neural Networks for Multimodal Wearable
+Activity Recognition.Sensors16, 1 (2016), 115.
+[21] Xiaomin Ouyang, Xian Shuai, Jiayu Zhou, Ivy Wang Shi, Zhiyuan Xie,
+Guoliang Xing, and Jianwei Huang. 2022. Cosmo: Contrastive Fusion
+Learning with Small Data for Multimodal Human Activity Recognition.
+InProceedings of the 28th Annual International Conference on Mobile
+Computing and Networking (MobiCom). ACM, 324–337.
+[22] Xiaomin Ouyang, Zhiyuan Xie, Jiayu Zhou, Jianwei Huang, and Guo-
+liang Xing. 2021. ClusterFL: A Similarity-Aware Federated Learning
+System for Human Activity Recognition. InProceedings of the 19th
+Annual International Conference on Mobile Systems, Applications, and
+Services (ACM MobiSys). ACM, 54–67. https://doi.org/10.1145/3458864.
+3467681
+[23] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel
+Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin,
+Jack Clark, Gretchen Krueger, and Ilya Sutskever. 2021. Learning
+Transferable Visual Models From Natural Language Supervision. In
+Proceedings of the 38th International Conference on Machine Learning
+(ICML). PMLR, Virtual, 8748–8763.
+[24] Nils Reimers and Iryna Gurevych. 2019. Sentence-BERT: Sentence
+Embeddings using Siamese BERT-Networks. InProceedings of the
+2019 Conference on Empirical Methods in Natural Language Process-
+ing (EMNLP). Association for Computational Linguistics, Hong Kong,
+China, 3982–3992.
+[25] Attila Reiss and Didier Stricker. 2012. Introducing a New Benchmarked
+Dataset for Activity Monitoring. InProceedings of the 16th International
+Symposium on Wearable Computers (ISWC). IEEE, Newcastle, UK, 108–
+109.
+[26] Jorge-Luis Reyes-Ortiz, Luca Oneto, Albert Samà, Xavier Parra, and
+Davide Anguita. 2016. Transition-Aware Human Activity Recognition
+Using Smartphones.Neurocomputing171 (2016), 754–767.
+[27] Daniel Roggen, Alberto Calatroni, Mirco Rossi, Thomas Holleczek,
+Kilian Förster, Gerhard Tröster, Paul Lukowicz, David Bannach, Gerald
+Pirkl, Alois Ferscha, et al. 2010. Collecting Complex Activity Datasets
+in Highly Rich Networked Sensor Environments. InProceedings of
+the 7th International Conference on Networked Sensing Systems (INSS).
+IEEE, 233–240.
+[28] Muhammad Shoaib, Stephan Bosch, Ozlem Durmaz Incel, Hans
+Scholten, and Paul J. M. Havinga. 2014. Fusion of Smartphone Mo-
+tion Sensors for Physical Activity Recognition.Sensors14, 6 (2014),
+13
+
+===== PAGE 14 =====
+10146–10176.
+[29] Nilufar Sikder, Muhammad Sakib Ibne Chowdhury, and Abdullah-Al
+Nahid. 2021. KU-HAR: An Open Dataset for Heterogeneous Human
+Activity Recognition.Pattern Recognition Letters146 (2021), 46–54.
+[30] Allan Stisen, Henrik Blunck, Sourav Bhattacharya, Thor Siiger
+Prentow, Mikkel Bent Kjærgaard, Anind Dey, Tobias Sonne, and
+Mads Møller Jensen. 2015. Smart Devices Are Different: Assessing and
+Mitigating Mobile Sensing Heterogeneities for Activity Recognition.
+InProceedings of the 13th ACM Conference on Embedded Networked
+Sensor Systems (SenSys). ACM, Seoul, South Korea, 127–140.
+[31] Timo Sztyler and Heiner Stuckenschmidt. 2016. On-Body Localization
+of Wearable Devices: An Investigation of Position-Aware Activity
+Recognition. InProceedings of the IEEE International Conference on
+Pervasive Computing and Communications (PerCom). IEEE, Sydney,
+Australia, 1–9.
+[32] Aaron van den Oord, Yazhe Li, and Oriol Vinyals. 2018. Represen-
+tation Learning with Contrastive Predictive Coding.arXiv preprint
+arXiv:1807.03748(2018).
+[33] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion
+Jones, Aidan N. Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017.
+Attention Is All You Need. InAdvances in Neural Information Processing
+Systems 30 (NeurIPS). Curran Associates, Long Beach, CA, 5998–6008.
+[34] George Vavoulas, Charikleia Chatzaki, Thodoris Malliotakis, Matthew
+Pediaditis, and Manolis Tsiknakis. 2016. The MobiAct Dataset: Recog-
+nition of Activities of Daily Living Using Smartphones. InProceedings
+of the International Conference on Information and Communication Tech-
+nologies for Ageing Well and e-Health (ICT4A WE). SciTePress, Rome,
+Italy, 143–151.
+[35] Huatao Xu, Pengfei Zhou, Rui Tan, and Mo Li. 2023. Practically Adopt-
+ing Human Activity Recognition. InProceedings of the 29th Annual
+International Conference on Mobile Computing and Networking (ACM
+MobiCom). ACM, 10–21. https://doi.org/10.1145/3570361.3613299
+[36] Huatao Xu, Pengfei Zhou, Rui Tan, Mo Li, and Guobin Shen. 2021.
+LIMU-BERT: Unleashing the Potential of Unlabeled Data for IMU
+Sensing Applications. InProceedings of the 19th ACM Conference on
+Embedded Networked Sensor Systems (SenSys). ACM, Coimbra, Portugal,
+220–233.
+[37] Xiyuan Zhang, Danielle Maddix, Hao Wang, Megha Gupta, Michael
+Mahoney, Priyank Goyal, Oleksandr Shchur, Andrew Merrill, Caner
+Turkmen, Qingsong Wen, Vasudev Rajan, Renqian Luo, Christos Falout-
+sos, and Yuyang Wang. 2025. Mitra: Mixed Synthetic Priors for Enhanc-
+ing Tabular Foundation Models. InAdvances in Neural Information
+Processing Systems (NeurIPS). arXiv:2510.21204.
+[38] Xiyuan Zhang, Diyan Teng, Ranak Roy Chowdhury, Shuheng Li, Dezhi
+Hong, Rajesh K. Gupta, and Jingbo Shang. 2024. UniMTS: Unified Pre-
+training for Motion Time Series. InAdvances in Neural Information
+Processing Systems 37 (NeurIPS).
+[39] Zhaxidele, Jiawei Bian, et al. 2022. RecGym: Gym Workouts Recogni-
+tion Dataset with IMU and Capacitive Sensor. UCI Machine Learning
+Repository. (2022). https://archive.ics.uci.edu/dataset/1128.
+14

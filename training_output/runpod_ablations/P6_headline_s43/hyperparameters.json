@@ -1,0 +1,111 @@
+{
+  "model_size": "small_deep",
+  "seed": 43,
+  "split_seed": 42,
+  "config": {
+    "d_model": 384,
+    "num_heads": 8,
+    "num_temporal_layers": 8,
+    "dim_feedforward": 1536,
+    "dropout": 0.1,
+    "use_cross_channel": true,
+    "cnn_channels": [
+      32,
+      64
+    ],
+    "cnn_kernel_sizes": [
+      5
+    ],
+    "target_patch_size": 64,
+    "feature_extractor_type": "spectral_temporal",
+    "spectral_ratio": 0.25,
+    "normalization_method": "zscore",
+    "interpolation_method": "linear",
+    "temporal_init_scale": 0.1,
+    "channel_init_scale": 0.1,
+    "use_channel_encoding": false,
+    "max_patches": 5000,
+    "sentence_bert_model": "all-MiniLM-L6-v2",
+    "contrastive_text_model": "all-MiniLM-L6-v2",
+    "contrastive_text_dim": 384,
+    "semantic_dim": 384,
+    "d_model_fused": 384,
+    "num_semantic_temporal_layers": 4,
+    "num_fusion_queries": 6,
+    "use_fusion_self_attention": true,
+    "num_pool_queries": 6,
+    "use_pool_self_attention": true,
+    "channel_text_num_heads": 4,
+    "label_bank_num_heads": 4,
+    "label_bank_num_queries": 6,
+    "label_bank_num_prototypes": 1,
+    "per_patch_prediction": true
+  },
+  "encoder": {
+    "d_model": 384,
+    "num_heads": 8,
+    "num_temporal_layers": 8,
+    "dim_feedforward": 1536,
+    "dropout": 0.1,
+    "use_cross_channel": true,
+    "cnn_channels": [
+      32,
+      64
+    ],
+    "cnn_kernel_sizes": [
+      5
+    ],
+    "target_patch_size": 64,
+    "use_channel_encoding": false,
+    "feature_extractor_type": "spectral_temporal",
+    "spectral_ratio": 0.25
+  },
+  "semantic_head": {
+    "d_model_fused": 384,
+    "semantic_dim": 384,
+    "num_temporal_layers": 4,
+    "num_fusion_queries": 6,
+    "use_fusion_self_attention": true,
+    "num_pool_queries": 6,
+    "use_pool_self_attention": true
+  },
+  "channel_text_fusion": {
+    "num_heads": 4
+  },
+  "label_bank": {
+    "sentence_bert_model": "all-MiniLM-L6-v2",
+    "num_heads": 4,
+    "num_queries": 6,
+    "num_prototypes": 1,
+    "use_mean_pooling": false,
+    "freeze_label_bank": false
+  },
+  "loss": {
+    "temperature": 0.07,
+    "loss_type": "infonce",
+    "use_soft_targets": true,
+    "soft_target_temperature": 0.5,
+    "soft_target_weight": 1.0,
+    "use_memory_bank": true,
+    "memory_bank_size": 512,
+    "queue_mode": "hard_neg"
+  },
+  "training": {
+    "epochs": 80,
+    "target_effective_batch": 512,
+    "max_bs_per_bucket": {},
+    "default_micro_batch_size": 32,
+    "use_grad_cache": false,
+    "lr": 8e-05,
+    "warmup_epochs": 3,
+    "max_grad_norm": 1.0
+  },
+  "ablation": {
+    "name": "P6_headline_seed43",
+    "channel_text_fusion": true,
+    "learnable_label_bank": true,
+    "soft_targets": true,
+    "signal_augmentation": true,
+    "text_augmentation": true
+  }
+}

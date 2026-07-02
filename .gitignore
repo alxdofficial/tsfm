@@ -71,3 +71,12 @@ test_output/**/*.txt
 
 # Packaged zips for sharing
 *.zip
+
+# --- V2 cleanup: dev artifacts + regenerable outputs (2026-07) ---
+data/**/debug_*.png
+figures/*.pdf
+figures/*.png
+test_output/ablation_evaluation/
+test_output/baseline_evaluation/
+test_output/harth_analysis/
+docs/baselines/results/
