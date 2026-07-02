@@ -18,6 +18,18 @@ Implementation: `val_scripts/human_activity_recognition/eval_v2.py` (+ unit test
 
 ## The protocol
 
+### Pre-registered test set (decided 2026-07-02)
+
+One flat tier of **6 test datasets**: motionsense, realworld, mobiact, shoaib,
+opportunity, **harth**. There is no "severe-OOD" category. HARTH (back-mounted
+accelerometer, genuine sensor/placement shift) is a regular test dataset,
+scored by the same rules as every other. **VTT-ConIoT is dropped from the
+benchmark**: ~50% of its construction-domain labels have no training
+equivalent, so zero-shot scores there measured label coverage rather than
+recognition capability. The evaluated set is defined by
+`EVALUATED_DATASETS` in `benchmark_data/scripts/generate_eval_v2_labels.py`
+(equivalently: which label configs exist in `benchmark_data/eval_v2/labels/`).
+
 ### Settings
 
 1. **ZS-XD (primary).** Zero-shot cross-dataset classification. For target dataset D

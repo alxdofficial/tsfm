@@ -359,10 +359,12 @@ def main():
 
         all_results[ds] = ds_results
 
-    out_path = Path(args.out) if args.out else (
-        OUTPUT_DIR / f"tsfm_v2_{args.channel_text}_{args.eval_rate}.json")
-    with open(out_path, "w") as f:
-        json.dump(all_results, f, indent=2, default=float)
+        # Incremental save after every dataset — a crash must not lose hours of FT.
+        out_path = Path(args.out) if args.out else (
+            OUTPUT_DIR / f"tsfm_v2_{args.channel_text}_{args.eval_rate}.json")
+        with open(out_path, "w") as f:
+            json.dump(all_results, f, indent=2, default=float)
+
     print(f"\nSaved: {out_path}")
 
 

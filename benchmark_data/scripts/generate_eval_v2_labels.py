@@ -38,11 +38,22 @@ OUT_DIR = BENCHMARK_DIR / "eval_v2" / "labels"
 SBERT_MODEL = "all-MiniLM-L6-v2"
 SEMANTIC_PAIR_MIN_COS = 0.60  # proposal threshold only; pairs still need human review
 
+# Pre-registered v2 test set (decided 2026-07-02): ONE flat tier, no severe-OOD
+# category. HARTH is a regular test dataset. VTT-ConIoT is dropped from the
+# benchmark (its ~50% no-training-equivalent construction labels made every
+# model's zero-shot number a coverage artifact rather than a capability signal).
+EVALUATED_DATASETS = [
+    "motionsense",
+    "realworld",
+    "mobiact",
+    "shoaib",
+    "opportunity",
+    "harth",
+]
+
 
 def main():
-    with open(BENCHMARK_DIR / "dataset_config.json") as f:
-        dataset_config = json.load(f)
-    test_datasets = dataset_config["zero_shot_datasets"]
+    test_datasets = EVALUATED_DATASETS
 
     with open(GLOBAL_LABEL_PATH) as f:
         train_vocab = json.load(f)["labels"]
