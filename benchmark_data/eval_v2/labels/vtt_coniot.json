@@ -1,0 +1,85 @@
+{
+  "dataset": "vtt_coniot",
+  "protocol_version": "v2",
+  "source": "Label strings verbatim from benchmark_data/processed/tsfm_eval/vtt_coniot/metadata.json activity_to_idx (produced by datascripts/vtt_coniot/convert.py from the dataset's documented label names). Frozen for eval v2 \u2014 no rephrasing at evaluation time.",
+  "labels": [
+    "carrying",
+    "climbing_ladder",
+    "jumping_down",
+    "kneeling_work",
+    "laying_back",
+    "leveling_paint",
+    "lifting",
+    "pushing_cart",
+    "raising_hands",
+    "roll_painting",
+    "sitting",
+    "spraying_paint",
+    "stairs",
+    "standing_work",
+    "walking_straight",
+    "walking_winding"
+  ],
+  "idx_to_label": {
+    "0": "carrying",
+    "1": "climbing_ladder",
+    "2": "jumping_down",
+    "3": "kneeling_work",
+    "4": "laying_back",
+    "5": "leveling_paint",
+    "6": "lifting",
+    "7": "pushing_cart",
+    "8": "raising_hands",
+    "9": "roll_painting",
+    "10": "sitting",
+    "11": "spraying_paint",
+    "12": "stairs",
+    "13": "standing_work",
+    "14": "walking_straight",
+    "15": "walking_winding"
+  },
+  "n_classes": 16,
+  "sampling_rate_hz": 50,
+  "n_subjects": 13,
+  "common_classes_exact": [
+    "sitting",
+    "stairs"
+  ],
+  "proposed_semantic_pairs": {
+    "climbing_ladder": {
+      "train_label": "climbing_stairs",
+      "cosine": 0.6823,
+      "status": "PENDING_REVIEW"
+    },
+    "jumping_down": {
+      "train_label": "jumping",
+      "cosine": 0.8571,
+      "status": "PENDING_REVIEW"
+    },
+    "kneeling_work": {
+      "train_label": "knees_bending",
+      "cosine": 0.6922,
+      "status": "PENDING_REVIEW"
+    },
+    "laying_back": {
+      "train_label": "laying",
+      "cosine": 0.8387,
+      "status": "PENDING_REVIEW"
+    },
+    "standing_work": {
+      "train_label": "standing",
+      "cosine": 0.7705,
+      "status": "PENDING_REVIEW"
+    },
+    "walking_straight": {
+      "train_label": "walking",
+      "cosine": 0.7926,
+      "status": "PENDING_REVIEW"
+    }
+  },
+  "conse": {
+    "text_encoder": "all-MiniLM-L6-v2",
+    "pooling": "mean",
+    "top_T": 10
+  }
+}

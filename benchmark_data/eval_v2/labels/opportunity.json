@@ -1,0 +1,32 @@
+{
+  "dataset": "opportunity",
+  "protocol_version": "v2",
+  "source": "Label strings verbatim from benchmark_data/processed/tsfm_eval/opportunity/metadata.json activity_to_idx (produced by datascripts/opportunity/convert.py from the dataset's documented label names). Frozen for eval v2 \u2014 no rephrasing at evaluation time.",
+  "labels": [
+    "lying",
+    "sitting",
+    "standing",
+    "walking"
+  ],
+  "idx_to_label": {
+    "0": "lying",
+    "1": "sitting",
+    "2": "standing",
+    "3": "walking"
+  },
+  "n_classes": 4,
+  "sampling_rate_hz": 30,
+  "n_subjects": 4,
+  "common_classes_exact": [
+    "lying",
+    "sitting",
+    "standing",
+    "walking"
+  ],
+  "proposed_semantic_pairs": {},
+  "conse": {
+    "text_encoder": "all-MiniLM-L6-v2",
+    "pooling": "mean",
+    "top_T": 10
+  }
+}
