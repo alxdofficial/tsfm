@@ -14,7 +14,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from val_scripts.human_activity_recognition.evaluation_metrics import (
     compute_similarity,
-    compute_semantic_recall,
     compute_group_accuracy,
 )
 
@@ -80,48 +79,6 @@ class TestComputeSimilarity:
         sim = compute_similarity(imu, labels)
         assert sim.min() >= -1.0 - 1e-6
         assert sim.max() <= 1.0 + 1e-6
-
-
-class TestComputeSemanticRecall:
-    """Test semantic recall computation."""
-
-    def test_perfect_recall(self):
-        """When IMU embeddings match their labels exactly, recall@1 should be 1.0."""
-        D = 384
-        labels = ['walking', 'running', 'sitting']
-        # Create distinct embeddings per label
-        label_embeddings = torch.randn(3, D)
-        label_embeddings = label_embeddings / label_embeddings.norm(dim=-1, keepdim=True)
-
-        # IMU embeddings = exact label embeddings (perfect match)
-        imu_embeddings = label_embeddings.clone()
-
-        metrics = compute_semantic_recall(
-            imu_embeddings, label_embeddings,
-            query_labels=labels, corpus_labels=labels,
-            k_values=[1, 3], use_groups=False
-        )
-        assert metrics['semantic_recall@1'] == 1.0
-
-    def test_recall_at_k_monotonic(self):
-        """recall@k should be monotonically non-decreasing with k."""
-        D = 384
-        N, L = 20, 10
-        imu = torch.randn(N, D)
-        imu = imu / imu.norm(dim=-1, keepdim=True)
-        labels_emb = torch.randn(L, D)
-        labels_emb = labels_emb / labels_emb.norm(dim=-1, keepdim=True)
-
-        query_labels = [f'label_{i % L}' for i in range(N)]
-        corpus_labels = [f'label_{i}' for i in range(L)]
-
-        metrics = compute_semantic_recall(
-            imu, labels_emb,
-            query_labels=query_labels, corpus_labels=corpus_labels,
-            k_values=[1, 3, 5], use_groups=False
-        )
-        assert metrics['semantic_recall@1'] <= metrics['semantic_recall@3']
-        assert metrics['semantic_recall@3'] <= metrics['semantic_recall@5']
 
 
 class TestComputeGroupAccuracy:

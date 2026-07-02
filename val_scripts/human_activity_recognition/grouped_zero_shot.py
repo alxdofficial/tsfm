@@ -39,10 +39,6 @@ def load_global_labels() -> List[str]:
         return json.load(f)["labels"]
 
 
-def load_dataset_config() -> dict:
-    """Load the dataset configuration."""
-    with open(DATASET_CONFIG_PATH) as f:
-        return json.load(f)
 
 
 def map_local_to_global_labels(
@@ -73,36 +69,6 @@ def map_local_to_global_labels(
     return global_indices
 
 
-def get_mappable_info(
-    test_dataset: str,
-    global_labels: List[str],
-    dataset_config: dict,
-) -> Tuple[Set[str], float]:
-    """Determine which test labels are mappable through synonym groups.
-
-    A test label is mappable if its group contains at least one training label.
-
-    Returns:
-        mappable_test_labels: set of test label names that have training synonyms
-        coverage: fraction of test dataset's labels that are mappable
-    """
-    label_to_group = get_label_to_group_mapping()
-    training_label_set = set(global_labels)
-    test_activities = sorted(dataset_config["datasets"][test_dataset]["activities"])
-
-    mappable = set()
-    for label in test_activities:
-        group_name = label_to_group.get(label, label)
-        if group_name in LABEL_GROUPS:
-            # Check if any member of this group is in training
-            if any(member in training_label_set for member in LABEL_GROUPS[group_name]):
-                mappable.add(label)
-        elif label in training_label_set:
-            # Singleton: directly in training
-            mappable.add(label)
-
-    coverage = len(mappable) / len(test_activities) if test_activities else 0.0
-    return mappable, coverage
 
 
 # =============================================================================
@@ -146,103 +112,10 @@ def get_closed_set_mask(
 # Scoring Functions
 # =============================================================================
 
-def score_exact(
-    pred_names: List[str],
-    gt_names: List[str],
-) -> Dict[str, float]:
-    """Score predictions using exact string comparison on label names.
-
-    Both pred_names and gt_names should be label name strings (not indices).
-    Used uniformly by all model types for the "exact match" metric.
-
-    Returns dict with: accuracy, f1_macro, f1_weighted, n_samples
-    """
-    n_samples = len(gt_names)
-    if n_samples == 0:
-        return {'accuracy': 0.0, 'f1_macro': 0.0, 'f1_weighted': 0.0, 'n_samples': 0}
-
-    acc = accuracy_score(gt_names, pred_names) * 100
-    f1 = f1_score(gt_names, pred_names, average='macro', zero_division=0) * 100
-    f1_w = f1_score(gt_names, pred_names, average='weighted', zero_division=0) * 100
-
-    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': n_samples}
 
 
-def score_with_groups_from_names(
-    pred_names: List[str],
-    gt_names: List[str],
-) -> Dict[str, float]:
-    """Score predictions using group matching on label name strings.
-
-    Maps both predicted and ground-truth label names through synonym groups
-    before comparison. Used by text-aligned and generative models that produce
-    label names directly (not global indices).
-
-    Returns dict with: accuracy, f1_macro, f1_weighted, n_samples
-    """
-    label_to_group = get_label_to_group_mapping()
-
-    pred_groups = [label_to_group.get(n, n) for n in pred_names]
-    gt_groups = [label_to_group.get(n, n) for n in gt_names]
-
-    n_samples = len(gt_groups)
-    if n_samples == 0:
-        return {'accuracy': 0.0, 'f1_macro': 0.0, 'f1_weighted': 0.0, 'n_samples': 0}
-
-    acc = accuracy_score(gt_groups, pred_groups) * 100
-    f1 = f1_score(gt_groups, pred_groups, average='macro', zero_division=0) * 100
-    f1_w = f1_score(gt_groups, pred_groups, average='weighted', zero_division=0) * 100
-
-    return {'accuracy': acc, 'f1_macro': f1, 'f1_weighted': f1_w, 'n_samples': n_samples}
 
 
-def aggregate_logits_to_test_labels(
-    logits: np.ndarray,
-    global_labels: List[str],
-    test_activities: List[str],
-    dataset_config: dict,
-    test_dataset: str,
-) -> np.ndarray:
-    """Aggregate 87-class logits to C test-label logits for classifier-based models.
-
-    For each test label, finds its synonym group, identifies all training labels
-    (global_labels) in that group, and takes the MAX logit across those training
-    labels. This produces (N, C) logits over the C test labels, enabling exact
-    match scoring that is comparable to text-aligned models.
-
-    Args:
-        logits: (N, 87) raw logits/scores over global training labels
-        global_labels: list of 87 global label strings
-        test_activities: sorted list of C test activity names
-        dataset_config: loaded dataset_config.json
-        test_dataset: name of the test dataset
-
-    Returns:
-        (N, C) aggregated logits over test labels
-    """
-    label_to_group = get_label_to_group_mapping()
-
-    # Build mapping: for each test label, find which global label indices belong
-    # to the same group
-    C = len(test_activities)
-    N = logits.shape[0]
-    aggregated = np.full((N, C), -np.inf, dtype=np.float64)
-
-    for c, test_label in enumerate(test_activities):
-        test_group = label_to_group.get(test_label, test_label)
-
-        # Find all global training labels in the same group
-        matching_global_indices = []
-        for g_idx, g_label in enumerate(global_labels):
-            g_group = label_to_group.get(g_label, g_label)
-            if g_group == test_group:
-                matching_global_indices.append(g_idx)
-
-        if matching_global_indices:
-            # Take MAX logit across all training labels in this group
-            aggregated[:, c] = logits[:, matching_global_indices].max(axis=1)
-
-    return aggregated
 
 
 def score_with_groups(

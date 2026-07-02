@@ -41,7 +41,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # Reuse model loading, metadata, and embedding extraction from the v1 evaluator.
-from val_scripts.human_activity_recognition import evaluate_tsfm as v1
+from val_scripts.human_activity_recognition import eval_common as v1
 from val_scripts.human_activity_recognition import eval_v2 as ev2
 from val_scripts.human_activity_recognition.model_loading import load_model, load_label_bank
 
