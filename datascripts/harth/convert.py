@@ -46,19 +46,22 @@ from shared.windowing import create_variable_windows
 
 # Activity mapping (label codes to standardized names)
 # HARTH uses integer labels 1-12 (some variants use string labels)
+# Real released HARTH integer codes (Logacjov et al. 2021, Table A1). Codes 9-12
+# do NOT exist in the data (previously fabricated); cycling uses 13/14 (active) and
+# 130/140 (inactive, merged into the active class). No transport code exists.
 ACTIVITIES_BY_INT = {
     1: "walking",
     2: "running",
     3: "shuffling",
-    4: "stairs_up",
-    5: "stairs_down",
+    4: "stairs_up",     # HARTH "stairs (ascending)"
+    5: "stairs_down",   # HARTH "stairs (descending)"
     6: "standing",
     7: "sitting",
     8: "lying",
-    9: "cycling_sit",
-    10: "cycling_stand",
-    11: "transport_sit",
-    12: "transport_stand",
+    13: "cycling_sit",     # HARTH "cycling (sit)"
+    14: "cycling_stand",   # HARTH "cycling (stand)"
+    130: "cycling_sit",    # HARTH "cycling (sit, inactive)" -> merged
+    140: "cycling_stand",  # HARTH "cycling (stand, inactive)" -> merged
 }
 
 # Some HARTH variants use string labels directly
@@ -73,15 +76,13 @@ ACTIVITIES_BY_STR = {
     "lying": "lying",
     "cycling (sit)": "cycling_sit",
     "cycling (stand)": "cycling_stand",
-    "transport (sit)": "transport_sit",
-    "transport (stand)": "transport_stand",
-    # Alternative string formats
+    "cycling (sit, inactive)": "cycling_sit",
+    "cycling (stand, inactive)": "cycling_stand",
+    # Alternative string formats (no transport code exists in released HARTH)
     "stairs_up": "stairs_up",
     "stairs_down": "stairs_down",
     "cycling_sit": "cycling_sit",
     "cycling_stand": "cycling_stand",
-    "transport_sit": "transport_sit",
-    "transport_stand": "transport_stand",
 }
 
 # Paths

@@ -205,7 +205,7 @@ The encoder's original weights are restored after each fine-tuning run to isolat
 
 ## 3. CrossHAR
 
-**Paper**: Dang et al., IMWUT 2024
+**Paper**: Hong et al., IMWUT 2024
 **Script**: `val_scripts/human_activity_recognition/evaluate_crosshar.py`
 **One-liner**: Hierarchical self-supervised pretraining combining masked reconstruction and contrastive learning on IMU sequences for cross-dataset transfer.
 
@@ -269,7 +269,7 @@ its paper's protocol, since the encoder can adapt to the target dataset.
 
 ## 4. LanHAR
 
-**Paper**: Hao et al., 2024
+**Paper**: Yan et al., 2024
 **Script**: `val_scripts/human_activity_recognition/evaluate_lanhar.py`
 **One-liner**: 2-stage CLIP-style alignment: (1) fine-tune SciBERT on activity text, (2) train a sensor Transformer from scratch to align with the text embedding space.
 

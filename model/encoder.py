@@ -14,13 +14,13 @@ from typing import Optional, List, Dict, Tuple
 
 try:
     from .preprocessing import preprocess_imu_data
-    from .feature_extractor import FixedPatchCNN, SpectralTemporalExtractor
+    from .feature_extractor import FixedPatchCNN, SpectralTemporalExtractor, PhysicalFilterbankTokenizer
     from .positional_encoding import IMUPositionalEncoding
     from .transformer import IMUTransformer
 except ImportError:
     # For running as script
     from preprocessing import preprocess_imu_data
-    from feature_extractor import FixedPatchCNN, SpectralTemporalExtractor
+    from feature_extractor import FixedPatchCNN, SpectralTemporalExtractor, PhysicalFilterbankTokenizer
     from positional_encoding import IMUPositionalEncoding
     from transformer import IMUTransformer
 
@@ -80,6 +80,23 @@ class IMUActivityRecognitionEncoder(nn.Module):
         feature_extractor_type: str = 'cnn',
         spectral_ratio: float = 0.25,
 
+        # PHz-Filterbank tokenizer params (feature_extractor_type='physical_filterbank')
+        n_bands: int = 32,
+        f_min: float = 0.3,
+        f_max: float = 15.0,
+        tokenizer_Q: float = 4.0,
+        dft_size: int = 512,
+        nyquist_margin: float = 0.9,
+        tokenizer_learnable: bool = False,
+        tokenizer_norm: str = 'frozen',
+        use_amplitude: bool = True,
+        use_resolution_mask: bool = True,
+
+        # RoPE over physical time (streamable encoder; dual-branch only)
+        use_rope: bool = False,
+        rope_min_period: float = 1.0,
+        rope_max_period: float = 1000.0,
+
         # Other
         max_patches: int = 5000
     ):
@@ -119,9 +136,27 @@ class IMUActivityRecognitionEncoder(nn.Module):
         self.interpolation_method = interpolation_method
         self.use_cross_channel = use_cross_channel
         self.feature_extractor_type = feature_extractor_type
+        # Filterbank tokenizer consumes native-rate patches zero-padded to dft_size and
+        # needs (sampling_rate_hz, patch_len_samples) at forward time.
+        self.is_filterbank = (feature_extractor_type == 'physical_filterbank')
+        self.dft_size = dft_size
 
         # Feature extractor
-        if feature_extractor_type == 'spectral_temporal':
+        if self.is_filterbank:
+            self.feature_extractor = PhysicalFilterbankTokenizer(
+                d_model=d_model,
+                n_bands=n_bands,
+                f_min=f_min,
+                f_max=f_max,
+                Q=tokenizer_Q,
+                dft_size=dft_size,
+                nyquist_margin=nyquist_margin,
+                learnable=tokenizer_learnable,
+                use_amplitude=use_amplitude,
+                use_resolution_mask=use_resolution_mask,
+                norm=tokenizer_norm,
+            )
+        elif feature_extractor_type == 'spectral_temporal':
             self.feature_extractor = SpectralTemporalExtractor(
                 d_model=d_model,
                 cnn_channels=cnn_channels,
@@ -151,13 +186,17 @@ class IMUActivityRecognitionEncoder(nn.Module):
         )
 
         # Transformer
+        self.use_rope = use_rope
         self.transformer = IMUTransformer(
             d_model=d_model,
             num_temporal_layers=num_temporal_layers,
             num_heads=num_heads,
             dim_feedforward=dim_feedforward,
             dropout=dropout,
-            use_cross_channel=use_cross_channel
+            use_cross_channel=use_cross_channel,
+            use_rope=use_rope,
+            rope_min_period=rope_min_period,
+            rope_max_period=rope_max_period,
         )
 
         # Learnable tokens for MAE and padding
@@ -195,7 +234,8 @@ class IMUActivityRecognitionEncoder(nn.Module):
             stride_sec=stride_sec,
             target_patch_size=self.target_patch_size,
             normalization_method=self.normalization_method,
-            interpolation_method=self.interpolation_method
+            interpolation_method=self.interpolation_method,
+            pad_to_size=self.dft_size if self.is_filterbank else None,
         )
 
     def forward(
@@ -206,7 +246,9 @@ class IMUActivityRecognitionEncoder(nn.Module):
         channel_mask: Optional[torch.Tensor] = None,
         mae_mask: Optional[torch.Tensor] = None,
         patch_attention_mask: Optional[torch.Tensor] = None,
-        channel_dropout_mask: Optional[torch.Tensor] = None
+        channel_dropout_mask: Optional[torch.Tensor] = None,
+        sampling_rate_hz=None,
+        patch_len_samples=None,
     ) -> torch.Tensor:
         """
         Encode preprocessed IMU patches.
@@ -233,12 +275,27 @@ class IMUActivityRecognitionEncoder(nn.Module):
         """
         # Verify input shape
         batch_size, num_patches, seq_len, num_channels = patches.shape
-        assert seq_len == self.target_patch_size, \
-            f"Expected patches with {self.target_patch_size} timesteps, got {seq_len}"
 
-        # Extract features with CNN
-        # (batch, patches, target_patch_size, channels) -> (batch, patches, channels, d_model)
-        features = self.feature_extractor(patches)
+        # Extract features -> (batch, patches, channels, d_model)
+        if self.is_filterbank:
+            assert seq_len == self.dft_size, \
+                f"Filterbank tokenizer expects patches zero-padded to dft_size={self.dft_size}, got {seq_len}"
+            if sampling_rate_hz is None:
+                raise ValueError("physical_filterbank tokenizer requires sampling_rate_hz in forward()")
+            if patch_len_samples is None:
+                # Patches are asserted padded to dft_size, so N==dft_size is almost
+                # certainly wrong; requiring N turns a silent Hann/DC corruption into a
+                # loud error (symmetric with the sampling_rate_hz guard above).
+                raise ValueError(
+                    "physical_filterbank tokenizer requires patch_len_samples (true native N) "
+                    "in forward() when patches are zero-padded to dft_size; passing None would "
+                    "assume N==dft_size and silently corrupt the Hann window / DC removal"
+                )
+            features = self.feature_extractor(patches, sampling_rate_hz, patch_len_samples)
+        else:
+            assert seq_len == self.target_patch_size, \
+                f"Expected patches with {self.target_patch_size} timesteps, got {seq_len}"
+            features = self.feature_extractor(patches)
 
         # Apply mask_token and pad_token at feature level (AFTER CNN, BEFORE positional encoding)
         # All masking uses torch.where for vectorized operation (no per-sample loops)
@@ -274,8 +331,9 @@ class IMUActivityRecognitionEncoder(nn.Module):
                         f"Sample {i} has {len(descs)} channel descriptions, expected {num_channels}"
                     )
 
-            # Step 1: Temporal PE — same for all samples, apply to full batch at once
-            features = self.positional_encoding.temporal_encoding(features)
+            # Step 1: Temporal PE — skipped under RoPE (position lives in temporal attention).
+            if not self.use_rope:
+                features = self.positional_encoding.temporal_encoding(features)
 
             # Step 2: Channel PE — deduplicate description sets, encode each unique set once
             if self.positional_encoding.use_channel_encoding and self.positional_encoding.channel_encoding is not None:
@@ -293,13 +351,34 @@ class IMUActivityRecognitionEncoder(nn.Module):
                 # Broadcast: (B, 1, C, D) added to (B, P, C, D)
                 features = features + ch_enc.scale * channel_enc_batch.unsqueeze(1)
         else:
-            # Single list for all samples (or no descriptions)
-            features = self.positional_encoding(features, channel_descriptions)
+            # Single list for all samples (or no descriptions). Under RoPE the temporal
+            # position is handled inside attention, so skip additive PE. (The RoPE config
+            # uses use_channel_encoding=False, so no channel PE is dropped here.)
+            if not self.use_rope:
+                features = self.positional_encoding(features, channel_descriptions)
+
+        # RoPE positions: per-patch physical start time (seconds), anchored at 0 per sample
+        # (non-overlapping patches: patch p starts at p * D, D = patch_len / sampling_rate).
+        positions = None
+        if self.use_rope:
+            p_idx = torch.arange(num_patches, device=features.device, dtype=torch.float32)
+            if sampling_rate_hz is not None and patch_len_samples is not None:
+                r = torch.as_tensor(sampling_rate_hz, dtype=torch.float32, device=features.device).reshape(-1)
+                N = torch.as_tensor(patch_len_samples, dtype=torch.float32, device=features.device).reshape(-1)
+                if r.numel() == 1:
+                    r = r.expand(batch_size)
+                if N.numel() == 1:
+                    N = N.expand(batch_size)
+                D = (N / r.clamp(min=1e-6)).clamp(min=1e-6)          # (B,) patch duration seconds
+                positions = p_idx.unsqueeze(0) * D.unsqueeze(1)      # (B, P)
+            else:
+                positions = p_idx.unsqueeze(0).expand(batch_size, num_patches).contiguous()
 
         # Process through transformer
         # (batch, patches, channels, d_model) -> (batch, patches, channels, d_model)
         encoded = self.transformer(features, temporal_mask, channel_mask,
-                                    patch_padding_mask=patch_attention_mask)
+                                    patch_padding_mask=patch_attention_mask,
+                                    positions=positions)
 
         return encoded
 
@@ -364,11 +443,18 @@ class IMUActivityRecognitionEncoder(nn.Module):
             all_patches.append(patches)
             all_metadata.append(metadata)
 
-        # Stack patches: (batch, num_patches, 96, num_channels)
+        # Stack patches: (batch, num_patches, seq_len, num_channels)
         batched_patches = torch.stack(all_patches, dim=0)
 
-        # Encode
-        encoded = self.forward(batched_patches, channel_descriptions)
+        # Encode (thread native rate + patch length for the filterbank tokenizer)
+        if self.is_filterbank:
+            patch_len = all_metadata[0].get('patch_len_samples') if all_metadata else None
+            encoded = self.forward(
+                batched_patches, channel_descriptions,
+                sampling_rate_hz=sampling_rate_hz, patch_len_samples=patch_len,
+            )
+        else:
+            encoded = self.forward(batched_patches, channel_descriptions)
 
         # Combine metadata
         combined_metadata = {

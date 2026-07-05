@@ -21,8 +21,6 @@
     "stairs_down",
     "stairs_up",
     "standing",
-    "transport_sit",
-    "transport_stand",
     "walking"
   ],
   "subjects": [
@@ -50,7 +48,7 @@
     "S029"
   ],
   "placement": "back+thigh",
-  "num_sessions_original": null,
+  "num_sessions_original": 39199,
   "train_subjects": [
     6,
     8,

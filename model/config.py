@@ -177,6 +177,40 @@ SMALL_DEEP_CONFIG: Dict[str, Any] = {
 
 
 # ---------------------------------------------------------------------------
+# Small-Deep-FB: Small-Deep with the V2 PHz-Filterbank tokenizer (M1) instead of
+# the spectral-temporal CNN. Native-rate, rate-invariant, anti-aliased tokens.
+# See docs/v2/design_tokenizer.md. NOTE: the training-script key reader + DataLoader
+# zero-pad are wired at the retrain cutover (M4); the encoder/preprocessing path
+# and encode_from_raw already support it.
+# ---------------------------------------------------------------------------
+SMALL_DEEP_FB_CONFIG: Dict[str, Any] = {
+    **SMALL_DEEP_CONFIG,
+    "feature_extractor_type": "physical_filterbank",
+    # PHz-Filterbank tokenizer hyperparameters
+    "n_bands": 32,
+    "f_min": 0.3,
+    "f_max": 15.0,
+    "tokenizer_Q": 4.0,
+    "dft_size": 512,               # S >= max(r*D); 100Hz*5.1s or 200Hz*2.5s
+    "nyquist_margin": 0.9,
+    "tokenizer_learnable": False,  # Arm A (fixed filterbank); True -> Arm B
+    "tokenizer_norm": "frozen",    # 'frozen' per-band standardization | 'none'
+    "use_amplitude": True,
+    "use_resolution_mask": True,   # low-freq mirror of the Nyquist mask
+    # --- Streamable encoder (Phase E, research_streaming_design.md) ---
+    "use_rope": True,              # RoPE over physical time (dual-branch temporal attn)
+    "rope_min_period": 1.0,        # fastest rotary period (s) — finest patch spacing
+    "rope_max_period": 1000.0,     # slowest period (s) — must exceed max session span
+    "stream_causal_prob": 0.5,     # per-step prob of a causal(student) mask (else full/teacher)
+    "stream_window_sec": 8.0,      # causal-window W (seconds) for the student mask
+    "stream_lookahead_patches": 0, # K lookahead patches (inference latency dial; 0 = strict causal)
+    "distill_weight": 1.0,         # offline->online in-place distillation loss weight
+    "attention_sink": True,        # persistent anchor patch (patch 0) in causal windows
+    # Legacy CNN/interp keys are ignored in this mode but kept for config uniformity.
+}
+
+
+# ---------------------------------------------------------------------------
 # Medium: d=512, 8 layers, all-mpnet-base-v2 (768-dim)
 # Same proven depth as Small-Deep but wider encoder (512 vs 384).
 # Trainable: ~67M | Tests width scaling independently of depth.
@@ -305,6 +339,7 @@ def get_config(size: str = "small") -> Dict[str, Any]:
         "tiny": TINY_CONFIG,
         "small": SMALL_CONFIG,
         "small_deep": SMALL_DEEP_CONFIG,
+        "small_deep_fb": SMALL_DEEP_FB_CONFIG,
         "medium": MEDIUM_CONFIG,
         "large": LARGE_CONFIG,
     }

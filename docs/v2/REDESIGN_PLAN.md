@@ -172,7 +172,7 @@ Dependencies: **eval fix before any retraining** (so every number is trustworthy
 - ⚑ **Decision (encoder):** adopt **train-both / eval-both** (recommended). Fallback = streaming-first causal-windowed with wider-window offline eval.
 
 **Milestone 4 — Retrain `small_deep` end-to-end.**
-- One run with M1–M3. Evaluate with Milestone-0 harness: ZS-XD macro-F1 on the 6 test datasets (flat tier, no severe-OOD category — VTT-ConIoT dropped, HARTH promoted to the main set; decided 2026-07-02); rate-flatness; frame-F1/boundary; ablation grid.
+- One run with M1–M3. Evaluate with Milestone-0 harness: ZS-XD macro-F1 on the 7 test datasets (flat tier, no severe-OOD category — VTT-ConIoT dropped, HARTH promoted to the main set; decided 2026-07-02); rate-flatness; frame-F1/boundary; ablation grid.
 
 **Milestone 5 — Freeze + export + app.**
 - Precompute label matrix + channel-text constants; `forward_export`; Core ML / ONNX(-web) / ExecuTorch with `|Δcos|<1e-3` parity; `halo/api.py` `predict()`/`set_labels()`; `HALOStreamSession`; phone-web demo + CLI. Depends on M3 (causal weights) + frozen banks.
@@ -198,6 +198,6 @@ Dependencies: **eval fix before any retraining** (so every number is trustworthy
 
 7. **Export of MHA / stateful KV to Core ML / ExecuTorch is fiddly.** *De-risk:* App design already verified MHA traces; keep the tokenizer a fixed matmul/FFT (traceable) and gate the release on the `|Δcos|<1e-3` parity test — if a target backend fails, ship the others (ONNX-web is enough for the browser demo).
 
-8. **Open question ⚑ (human):** which 3 showcase scenarios and which single blessed label vocabulary ship in the default checkpoint's model card? Recommended: scenarios 1/2/3 above; label bank = union of the 6 test-set native vocabularies plus a documented open-vocab path.
+8. **Open question ⚑ (human):** which 3 showcase scenarios and which single blessed label vocabulary ship in the default checkpoint's model card? Recommended: scenarios 1/2/3 above; label bank = union of the 7 test-set native vocabularies plus a documented open-vocab path.
 
 **Key file paths (single source of truth for implementation):** `model/feature_extractor.py`, `model/preprocessing.py`, `model/encoder.py`, `model/positional_encoding.py`, `model/config.py`, `model/semantic_alignment.py`, `model/transformer.py`, `model/token_text_encoder.py` (ChannelTextFusion — **unchanged**), `training_scripts/human_activity_recognition/semantic_alignment_train.py`, `.../semantic_loss.py` (**core unchanged**), `datasets/imu_pretraining_dataset/multi_dataset_loader.py`, `.../augmentations.py`, `datascripts/{ds}/convert.py`, `val_scripts/human_activity_recognition/evaluate_tsfm.py`, `val_scripts/human_activity_recognition/model_loading.py`, new `halo/api.py` + `scripts/export/`, canonical checkpoint `training_output/semantic_alignment/small_deep_v2_4b3fdd6/best.pt`.

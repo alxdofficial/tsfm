@@ -1,0 +1,37 @@
+{
+  "sampling_rate_hz": 50,
+  "window_size": 300,
+  "window_duration_sec": 6.0,
+  "n_windows": 3370,
+  "has_gyro": true,
+  "activity_to_idx": {
+    "jogging": 0,
+    "ramp_ascent": 1,
+    "ramp_descent": 2,
+    "sitting": 3,
+    "standing": 4,
+    "walking": 5
+  },
+  "subject_to_idx": {
+    "1": 0,
+    "10": 1,
+    "11": 2,
+    "12": 3,
+    "13": 4,
+    "14": 5,
+    "15": 6,
+    "16": 7,
+    "17": 8,
+    "18": 9,
+    "19": 10,
+    "2": 11,
+    "20": 12,
+    "3": 13,
+    "4": 14,
+    "5": 15,
+    "6": 16,
+    "7": 17,
+    "8": 18,
+    "9": 19
+  }
+}

@@ -12,8 +12,6 @@
     "stairs_down",
     "stairs_up",
     "standing",
-    "transport_sit",
-    "transport_stand",
     "walking"
   ],
   "idx_to_label": {
@@ -26,11 +24,9 @@
     "6": "stairs_down",
     "7": "stairs_up",
     "8": "standing",
-    "9": "transport_sit",
-    "10": "transport_stand",
-    "11": "walking"
+    "9": "walking"
   },
-  "n_classes": 12,
+  "n_classes": 10,
   "sampling_rate_hz": 50,
   "n_subjects": 22,
   "common_classes_exact": [
@@ -51,11 +47,6 @@
     "cycling_stand": {
       "train_label": "cycling",
       "cosine": 0.6384,
-      "status": "PENDING_REVIEW"
-    },
-    "transport_sit": {
-      "train_label": "sitting",
-      "cosine": 0.6202,
       "status": "PENDING_REVIEW"
     }
   },

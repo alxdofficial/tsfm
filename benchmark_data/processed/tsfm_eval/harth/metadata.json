@@ -2,7 +2,7 @@
   "sampling_rate_hz": 50,
   "window_size": 300,
   "window_duration_sec": 6.0,
-  "n_windows": 47330,
+  "n_windows": 51443,
   "has_gyro": false,
   "activity_to_idx": {
     "cycling_sit": 0,
@@ -14,9 +14,7 @@
     "stairs_down": 6,
     "stairs_up": 7,
     "standing": 8,
-    "transport_sit": 9,
-    "transport_stand": 10,
-    "walking": 11
+    "walking": 9
   },
   "subject_to_idx": {
     "S006": 0,

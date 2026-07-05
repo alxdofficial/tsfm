@@ -13,7 +13,7 @@
   "activities": [
     "car_step_in",
     "car_step_out",
-    "fall_backward_knees",
+    "fall_forward_knees",
     "fall_backward_sitting",
     "fall_forward",
     "fall_sideways",
@@ -51,7 +51,7 @@
     8,
     9
   ],
-  "placement": "waist",
+  "placement": "trouser_pocket",
   "num_sessions_original": 3646,
   "train_subjects": [
     1,

@@ -23,7 +23,7 @@ but 3 baselines require their original code repos for model definitions and pret
 ```bash
 mkdir -p auxiliary_repos && cd auxiliary_repos
 
-# CrossHAR (Dang et al., IMWUT 2024)
+# CrossHAR (Hong et al., IMWUT 2024)
 git clone https://github.com/kingdomrush2/CrossHAR.git
 cd CrossHAR && git checkout 77b63d3 && cd ..
 
@@ -31,19 +31,19 @@ cd CrossHAR && git checkout 77b63d3 && cd ..
 git clone https://github.com/dapowan/LIMU-BERT-Public.git
 cd LIMU-BERT-Public && git checkout decffee && cd ..
 
-# LanHAR (Hao et al., IMWUT 2025)
+# LanHAR (Yan et al., IMWUT 2025)
 git clone https://github.com/DASHLab/LanHAR.git
 cd LanHAR && git checkout 1fe98fa && cd ..
 
 # LLaSA (optional — requires ~16GB VRAM for 7B model)
-git clone https://github.com/BASH-Lab/LLaSA.git
+git clone https://github.com/BASHLab/LLaSA.git
 cd LLaSA && cd ..
 ```
 
 MOMENT (Goswami et al., ICML 2024) is auto-downloaded from HuggingFace
 (`AutonLab/MOMENT-1-large`) on first run — no manual setup needed.
 
-LLaSA (Li et al., 2024) downloads its model (`BASH-Lab/LLaSA-7B`) from
+LLaSA (Imran et al., 2024) downloads its model (`BASHLab/LLaSA-7B`) from
 HuggingFace at runtime.
 
 ## Step 2: Apply Patches to Baseline Repos

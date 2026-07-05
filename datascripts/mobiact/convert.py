@@ -46,7 +46,7 @@ ACTIVITIES = {
     "LYI": "lying",
     # Falls
     "FOL": "fall_forward",
-    "FKL": "fall_backward_knees",
+    "FKL": "fall_forward_knees",  # FKL = Front-Knees-Lying: FORWARD fall onto knees (per paper Table 2)
     "BSC": "fall_backward_sitting",
     "SDL": "fall_sideways",
 }
@@ -483,7 +483,7 @@ def create_manifest(data_format: str):
     """Create manifest.json."""
     if data_format == "mobifall":
         name = "MobiFall"
-        desc = "MobiFall v2.0: Fall detection and ADL recognition dataset. 31 subjects performing 9 ADL activities and 4 fall types with waist-mounted Samsung Galaxy S3."
+        desc = "MobiAct (v2.0): ADL + fall dataset. Samsung Galaxy S3 in a trouser pocket, freely chosen in any random orientation. 9 ADL activities + 4 fall types."
         num_subjects = 31
     else:
         name = "MobiAct"

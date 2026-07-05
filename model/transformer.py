@@ -5,10 +5,55 @@ Implements temporal attention for modeling dependencies across patches.
 Processes each channel independently (channel-independent temporal attention).
 """
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional
+
+
+def _rotate_half(x: torch.Tensor) -> torch.Tensor:
+    d = x.shape[-1] // 2
+    x1, x2 = x[..., :d], x[..., d:]
+    return torch.cat((-x2, x1), dim=-1)
+
+
+def _rope_cos_sin(positions: torch.Tensor, inv_freq: torch.Tensor):
+    """positions (BC, P) in seconds, inv_freq (hd/2,) rad/s -> cos, sin (BC, 1, P, hd)."""
+    ang = positions.to(inv_freq.dtype).unsqueeze(-1) * inv_freq        # (BC, P, hd/2)
+    emb = torch.cat((ang, ang), dim=-1)                                # (BC, P, hd)
+    return emb.cos().unsqueeze(1), emb.sin().unsqueeze(1)              # (BC, 1, P, hd)
+
+
+def build_temporal_mask(positions, mode='full', window_sec=None,
+                        lookahead_patches=0, attention_sink=False):
+    """Temporal attention mask from per-patch physical times.
+
+    positions: (B, P) seconds. Returns (B, P, P) bool (True = attend) or None for 'full'.
+      full   -> None (unmasked bidirectional; offline/session mode)
+      causal -> query i attends key j where j <= i + lookahead_patches (streaming, all past)
+      window -> causal AND past key within `window_sec` seconds (bounded-memory streaming)
+    attention_sink: also always attend to patch 0 (persistent anchor, StreamingLLM).
+    The diagonal (self) is always allowed.
+    """
+    if mode == 'full':
+        return None
+    B, P = positions.shape
+    dev = positions.device
+    i = torch.arange(P, device=dev).view(1, P, 1)      # query index
+    j = torch.arange(P, device=dev).view(1, 1, P)      # key index
+    allowed = (j <= i + lookahead_patches)             # causal + K lookahead
+    if mode == 'window' and window_sec is not None:
+        ti = positions.unsqueeze(2)                    # (B,P,1)
+        tj = positions.unsqueeze(1)                    # (B,1,P)
+        past_ok = (ti - tj) <= window_sec              # past key within W seconds
+        future = (j > i)                               # lookahead keys always allowed
+        allowed = allowed & (past_ok | future)
+    allowed = allowed.expand(B, P, P).clone()
+    if attention_sink:
+        allowed[:, :, 0] = True
+    allowed |= torch.eye(P, dtype=torch.bool, device=dev).view(1, P, P)
+    return allowed
 
 
 class TemporalSelfAttention(nn.Module):
@@ -23,13 +68,19 @@ class TemporalSelfAttention(nn.Module):
         self,
         d_model: int,
         num_heads: int = 8,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        use_rope: bool = False,
+        rope_min_period: float = 1.0,
+        rope_max_period: float = 1000.0,
     ):
         """
         Args:
             d_model: Feature dimension
             num_heads: Number of attention heads
             dropout: Dropout probability
+            use_rope: Apply rotary position embedding indexed by physical time (seconds)
+            rope_min_period: Period (s) of the fastest rotary component (finest patch spacing)
+            rope_max_period: Period (s) of the slowest component (> max session span)
         """
         super().__init__()
 
@@ -52,11 +103,21 @@ class TemporalSelfAttention(nn.Module):
         # Scaling factor for attention scores
         self.scale = self.head_dim ** -0.5
 
+        # RoPE frequency band calibrated to HAR time-scales (seconds), not integer token
+        # indices. Geometric periods: index 0 = fastest (min_period), last = slowest.
+        self.use_rope = use_rope
+        if use_rope:
+            half = self.head_dim // 2
+            k = torch.arange(half, dtype=torch.float32)
+            periods = rope_min_period * (rope_max_period / rope_min_period) ** (k / max(half - 1, 1))
+            self.register_buffer("rope_inv_freq", 2.0 * math.pi / periods, persistent=False)
+
     def forward(
         self,
         x: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
-        key_padding_mask: Optional[torch.Tensor] = None
+        key_padding_mask: Optional[torch.Tensor] = None,
+        positions: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Apply temporal self-attention.
@@ -88,13 +149,22 @@ class TemporalSelfAttention(nn.Module):
         K = K.transpose(1, 2)
         V = V.transpose(1, 2)
 
-        # Build attention mask for SDPA (True = attend, False = masked)
+        # Rotary position embedding over physical time, applied to Q,K before attention.
+        if self.use_rope and positions is not None:
+            cos, sin = _rope_cos_sin(positions, self.rope_inv_freq)     # (BC,1,P,hd)
+            cos, sin = cos.to(Q.dtype), sin.to(Q.dtype)
+            Q = Q * cos + _rotate_half(Q) * sin
+            K = K * cos + _rotate_half(K) * sin
+
+        # Build attention mask for SDPA (True = attend, False = masked). `mask` may be a
+        # shared (P,P) mask or a per-sample (batch_channels, P, P) causal/windowed mask.
         attn_mask = None
         if mask is not None:
-            attn_mask = mask.bool()  # (num_patches, num_patches)
+            attn_mask = mask.bool()
+            if attn_mask.dim() == 3:
+                attn_mask = attn_mask.unsqueeze(1)                     # (BC,1,P,P)
         if key_padding_mask is not None:
-            # Column mask: prevent attention TO padded patches
-            # (batch_channels, num_patches) -> (batch_channels, 1, 1, num_patches)
+            # Column mask: prevent attention TO padded patches -> (BC,1,1,P)
             key_mask = key_padding_mask.unsqueeze(1).unsqueeze(2)
             attn_mask = key_mask if attn_mask is None else (attn_mask & key_mask)
 
@@ -352,7 +422,10 @@ class DualBranchTransformerBlock(nn.Module):
         d_model: int,
         num_heads: int = 8,
         dim_feedforward: int = 512,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        use_rope: bool = False,
+        rope_min_period: float = 1.0,
+        rope_max_period: float = 1000.0,
     ):
         """
         Args:
@@ -360,6 +433,7 @@ class DualBranchTransformerBlock(nn.Module):
             num_heads: Number of attention heads
             dim_feedforward: Hidden dimension for feed-forward network
             dropout: Dropout probability
+            use_rope / rope_min_period / rope_max_period: physical-time RoPE for temporal attn
         """
         super().__init__()
 
@@ -367,7 +441,10 @@ class DualBranchTransformerBlock(nn.Module):
         self.temporal_attn = TemporalSelfAttention(
             d_model=d_model,
             num_heads=num_heads,
-            dropout=dropout
+            dropout=dropout,
+            use_rope=use_rope,
+            rope_min_period=rope_min_period,
+            rope_max_period=rope_max_period,
         )
 
         # Cross-channel attention (over channels within patch)
@@ -396,7 +473,8 @@ class DualBranchTransformerBlock(nn.Module):
         x: torch.Tensor,
         temporal_mask: Optional[torch.Tensor] = None,
         channel_mask: Optional[torch.Tensor] = None,
-        patch_padding_mask: Optional[torch.Tensor] = None
+        patch_padding_mask: Optional[torch.Tensor] = None,
+        positions: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Forward pass through dual-branch transformer block.
@@ -427,9 +505,23 @@ class DualBranchTransformerBlock(nn.Module):
         else:
             temporal_key_padding_mask = None
 
+        # Expand per-sample positions (B,P) -> (B*C,P) and a per-sample temporal mask
+        # (B,P,P) -> (B*C,P,P); a shared (P,P) mask passes through unchanged.
+        temporal_positions = None
+        if positions is not None:
+            temporal_positions = positions.unsqueeze(1).expand(
+                batch_size, num_channels, num_patches
+            ).reshape(batch_size * num_channels, num_patches)
+        tmask = temporal_mask
+        if tmask is not None and tmask.dim() == 3:
+            tmask = tmask.unsqueeze(1).expand(
+                batch_size, num_channels, num_patches, num_patches
+            ).reshape(batch_size * num_channels, num_patches, num_patches)
+
         # Apply temporal attention
-        temporal_output = self.temporal_attn(x_temporal, temporal_mask,
-                                             key_padding_mask=temporal_key_padding_mask)
+        temporal_output = self.temporal_attn(x_temporal, tmask,
+                                             key_padding_mask=temporal_key_padding_mask,
+                                             positions=temporal_positions)
 
         # Reshape back: (batch*channels, patches, d_model) -> (batch, patches, channels, d_model)
         temporal_output = temporal_output.reshape(batch_size, num_channels, num_patches, d_model)
@@ -592,7 +684,10 @@ class DualBranchTransformer(nn.Module):
         num_layers: int = 4,
         num_heads: int = 8,
         dim_feedforward: int = 512,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        use_rope: bool = False,
+        rope_min_period: float = 1.0,
+        rope_max_period: float = 1000.0,
     ):
         """
         Args:
@@ -601,6 +696,7 @@ class DualBranchTransformer(nn.Module):
             num_heads: Number of attention heads
             dim_feedforward: Hidden dimension for feed-forward networks
             dropout: Dropout probability
+            use_rope / rope_min_period / rope_max_period: physical-time RoPE for temporal attn
         """
         super().__init__()
 
@@ -613,7 +709,10 @@ class DualBranchTransformer(nn.Module):
                 d_model=d_model,
                 num_heads=num_heads,
                 dim_feedforward=dim_feedforward,
-                dropout=dropout
+                dropout=dropout,
+                use_rope=use_rope,
+                rope_min_period=rope_min_period,
+                rope_max_period=rope_max_period,
             )
             for _ in range(num_layers)
         ])
@@ -623,25 +722,25 @@ class DualBranchTransformer(nn.Module):
         x: torch.Tensor,
         temporal_mask: Optional[torch.Tensor] = None,
         channel_mask: Optional[torch.Tensor] = None,
-        patch_padding_mask: Optional[torch.Tensor] = None
+        patch_padding_mask: Optional[torch.Tensor] = None,
+        positions: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Process input through dual-branch transformer.
 
         Args:
             x: Input tensor of shape (batch_size, num_patches, num_channels, d_model)
-            temporal_mask: Optional mask for temporal attention (num_patches, num_patches)
+            temporal_mask: Optional (num_patches, num_patches) or per-sample (B,P,P) mask
             channel_mask: Optional mask for channel attention (batch_size, num_channels)
-                         True = valid channel, False = padded
             patch_padding_mask: Optional patch validity mask (batch_size, num_patches)
-                               True = valid patch, False = padded
+            positions: Optional per-patch physical times (batch_size, num_patches) for RoPE
 
         Returns:
             Output tensor of shape (batch_size, num_patches, num_channels, d_model)
         """
         # Apply transformer layers
         for layer in self.layers:
-            x = layer(x, temporal_mask, channel_mask, patch_padding_mask)
+            x = layer(x, temporal_mask, channel_mask, patch_padding_mask, positions=positions)
 
         return x
 
@@ -662,7 +761,10 @@ class IMUTransformer(nn.Module):
         num_heads: int = 8,
         dim_feedforward: int = 512,
         dropout: float = 0.1,
-        use_cross_channel: bool = False
+        use_cross_channel: bool = False,
+        use_rope: bool = False,
+        rope_min_period: float = 1.0,
+        rope_max_period: float = 1000.0,
     ):
         """
         Args:
@@ -671,11 +773,13 @@ class IMUTransformer(nn.Module):
             num_heads: Number of attention heads
             dim_feedforward: Hidden dimension for feed-forward networks
             dropout: Dropout probability
-            use_cross_channel: Whether to use cross-channel attention (default: False for backward compatibility)
+            use_cross_channel: Whether to use cross-channel attention (default: False)
+            use_rope / rope_min_period / rope_max_period: physical-time RoPE (dual-branch only)
         """
         super().__init__()
 
         self.use_cross_channel = use_cross_channel
+        self.use_rope = use_rope
 
         if use_cross_channel:
             # Use dual-branch transformer with temporal + cross-channel attention
@@ -684,7 +788,10 @@ class IMUTransformer(nn.Module):
                 num_layers=num_temporal_layers,
                 num_heads=num_heads,
                 dim_feedforward=dim_feedforward,
-                dropout=dropout
+                dropout=dropout,
+                use_rope=use_rope,
+                rope_min_period=rope_min_period,
+                rope_max_period=rope_max_period,
             )
         else:
             # Use temporal-only transformer (backward compatible)
@@ -701,25 +808,27 @@ class IMUTransformer(nn.Module):
         x: torch.Tensor,
         temporal_mask: Optional[torch.Tensor] = None,
         channel_mask: Optional[torch.Tensor] = None,
-        patch_padding_mask: Optional[torch.Tensor] = None
+        patch_padding_mask: Optional[torch.Tensor] = None,
+        positions: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Process input through transformer.
 
         Args:
             x: Input tensor of shape (batch_size, num_patches, num_channels, d_model)
-            temporal_mask: Optional mask for temporal attention
+            temporal_mask: Optional (P,P) or per-sample (B,P,P) mask for temporal attention
             channel_mask: Optional mask for channel attention (only used if use_cross_channel=True)
-                         Shape: (batch_size, num_channels), True = valid, False = padded
             patch_padding_mask: Optional patch validity mask (batch_size, num_patches)
-                               True = valid patch, False = padded
+            positions: Optional per-patch physical times (batch_size, num_patches) for RoPE
 
         Returns:
             Output tensor of shape (batch_size, num_patches, num_channels, d_model)
         """
         if self.use_cross_channel:
-            return self.transformer(x, temporal_mask, channel_mask, patch_padding_mask)
+            return self.transformer(x, temporal_mask, channel_mask, patch_padding_mask,
+                                    positions=positions)
         else:
+            # Temporal-only path does not support RoPE/positions (backward compatible).
             return self.transformer(x, temporal_mask, patch_padding_mask)
 
 

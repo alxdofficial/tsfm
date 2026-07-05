@@ -119,15 +119,6 @@ macro-F1 = (1/C) Σ_{c=1..C} F1_c
 
 Report **balanced accuracy** = `(1/C) Σ_c R_c` alongside. This directly answers the "accuracy 42 vs macro-F1 21" objection: balanced accuracy is an accuracy-family number that is *already* robust to imbalance, so the gap between it and macro-F1 shrinks and is interpretable rather than embarrassing.
 
-### 3d. Reporting severe-OOD honestly
-
-For VTT-ConIoT (50% of classes have no training support) and any future OOD set, **do not average into the main table** (keep `RESULTS.md`'s existing separation). Report three pre-registered numbers:
-1. **Full macro-F1** over all 16 native strings (will be low; that's honest).
-2. **Supported-subset macro-F1** over only the classes with training support, with the unsupported class list printed verbatim (currently the 8 in `EVALUATION_PROTOCOL.md:222`).
-3. **Novelty framing:** optionally an OOD-rejection AUROC treating unsupported classes as "should be rejected." 
-
-Both (1) and (2) are pre-registered so you cannot be accused of cherry-picking the subset post hoc.
-
 ---
 
 ## 4. Fairness — one clean rule for rate + channel-text
@@ -188,8 +179,7 @@ Result: the script computes **A (ZS-XD macro-F1 + balanced acc + CI), B (FS-1%/1
 - **Table 1 (headline):** ZS-XD **macro-F1** per main dataset + mean, all models at parity rate/neutral text, mean ± 95% CI.
 - **Table 2:** FS-1% / FS-10% **macro-F1**, subject-disjoint (LOSO/GroupKFold), multi-seed CI.
 - **Table 3 (appendix):** HALO capability Δ — native rate, +channel-text — as increments over the Table 1 parity row.
-- **Table 4 (appendix):** severe-OOD (VTT-ConIoT): full macro-F1 + supported-subset macro-F1 + unsupported-class list.
-- **Table 5 (appendix, optional):** T→S Recall@1 diagnostic; OV-Distractor@k.
+- **Table 4 (appendix, optional):** T→S Recall@1 diagnostic; OV-Distractor@k.
 
 ### 5d. Before/after on one dataset — **MobiAct**
 
@@ -220,8 +210,8 @@ Per-dataset facts verified from `benchmark_data/processed/tsfm_eval/*/{label_nat
 | MobiAct | main test | 4,345 | 13 | 24 | 50 | yes | LOSO |
 | Shoaib | main test | 5,537 | 7 | 10 | 50 | yes | GroupKFold-5 |
 | Opportunity | main test | 6,453 | 4 | 4 | 30 | yes | GroupKFold-4 (caveat: few subjects) |
-| HARTH | severe-OOD | 47,330 | 12 | 22 | 50 | no | LOSO (report separately) |
-| VTT-ConIoT | severe-OOD | 2,058 | 16 | 13 | 50 | yes | report full + supported-subset |
+| HARTH | main test | 47,330 | 12 | 22 | 50 | no | LOSO |
+| InclusiveHAR | main test | 3,370 | 6 | 20 | 50 | yes | LOSO |
 
 Integration keys:
 - **Subject vector:** `label_native.npy[:, 0, 1]` (int). Activity: `[:, 0, 0]`. Group by column 1 for all splits.

@@ -1,0 +1,26 @@
+{
+  "dataset": "inclusivehar",
+  "checkpoint": "training_output/semantic_alignment/small_deep_v2_4b3fdd6/best.pt",
+  "overall": {
+    "f1_macro": 21.31,
+    "accuracy": 31.45,
+    "balanced_accuracy": 31.23,
+    "n_windows": 3370,
+    "n_subjects": 20
+  },
+  "able_bodied": {
+    "f1_macro": 25.52,
+    "accuracy": 35.92,
+    "balanced_accuracy": 35.26,
+    "n_windows": 1598,
+    "n_subjects": 10
+  },
+  "disabled": {
+    "f1_macro": 18.22,
+    "accuracy": 27.43,
+    "balanced_accuracy": 27.3,
+    "n_windows": 1772,
+    "n_subjects": 10
+  },
+  "ability_gap_f1": 7.3
+}

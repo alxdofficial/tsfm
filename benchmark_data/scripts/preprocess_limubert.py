@@ -47,7 +47,11 @@ GRAVITY_MS2 = 9.80665
 # Datasets where accelerometer values are stored in g units (not m/s²).
 # These need to be multiplied by GRAVITY_MS2 before saving, since the
 # LIMU-BERT training pipeline expects m/s² and normalizes by dividing by 9.8.
-ACC_IN_G_UNITS = {"motionsense", "vtt_coniot"}
+# motionsense + inclusivehar: iOS userAcceleration in g. capture24: Axivity raw acc in g.
+# harth: Axivity AX3 outputs in g. All are multiplied by GRAVITY_MS2 -> m/s².
+ACC_IN_G_UNITS = {"motionsense", "inclusivehar", "capture24", "harth"}
+# opportunity records acceleration in milli-g -> m/s² is x * GRAVITY_MS2 / 1000.
+ACC_IN_MILLI_G = {"opportunity"}
 
 # Load dataset config
 with open(BENCHMARK_DIR / "dataset_config.json") as f:
@@ -261,6 +265,8 @@ def process_dataset(dataset: str):
         # divides by 9.8 to bring values to ~g scale.
         if dataset in ACC_IN_G_UNITS:
             sensor_data[:, :3] *= GRAVITY_MS2
+        elif dataset in ACC_IN_MILLI_G:
+            sensor_data[:, :3] *= (GRAVITY_MS2 / 1000.0)
 
         # Window the data (non-overlapping, matches original LIMU-BERT)
         windows, window_act_labels = window_data(sensor_data, activity_labels)
@@ -351,7 +357,10 @@ def main():
     print(f"Output: {LIMUBERT_DIR}")
     print(f"Parameters: {TARGET_HZ}Hz, window={WINDOW_SIZE}, stride={WINDOW_STRIDE}")
 
-    data_config = {}
+    # Merge into any existing data_config.json — a partial run (e.g. --datasets
+    # mobiact) must NOT erase entries written by previous runs.
+    config_path = LIMUBERT_DIR / "data_config.json"
+    data_config = json.load(open(config_path)) if config_path.exists() else {}
     for ds in args.datasets:
         stats = process_dataset(ds)
         if stats:
@@ -359,7 +368,6 @@ def main():
             data_config[key] = stats
 
     # Write LIMU-BERT compatible data_config.json
-    config_path = LIMUBERT_DIR / "data_config.json"
     with open(config_path, "w") as f:
         json.dump(data_config, f, indent=2)
     print(f"\nWrote {config_path} with {len(data_config)} dataset entries")

@@ -9,9 +9,7 @@
     "stairs_down": 6,
     "stairs_up": 7,
     "standing": 8,
-    "transport_sit": 9,
-    "transport_stand": 10,
-    "walking": 11
+    "walking": 9
   },
   "subject_to_idx": {
     "S006": 0,

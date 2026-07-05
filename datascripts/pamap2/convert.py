@@ -43,17 +43,22 @@ ACTIVITIES = {
     24: "rope_jumping"
 }
 
-# Column names for PAMAP2 (54 columns)
+# Column names for PAMAP2 (54 columns). Per the Reiss thesis Appendix B Table B.2,
+# each IMU is 17 columns with orientation INTERLEAVED after the magnetometer (NOT
+# appended at the end of the file). The previous code appended all 12 orientation
+# columns at the end, which shifted every chest/ankle channel and fed garbage
+# (temperature / orientation / other-IMU magnetometer) into chest/ankle acc/gyro/mag.
+_IMU_SENSORS = ['temp',
+                'acc16_x', 'acc16_y', 'acc16_z',   # 3D-acc, +/-16g
+                'acc6_x', 'acc6_y', 'acc6_z',      # 3D-acc, +/-6g
+                'gyro_x', 'gyro_y', 'gyro_z',      # 3D-gyroscope
+                'mag_x', 'mag_y', 'mag_z',         # 3D-magnetometer
+                'ori_1', 'ori_2', 'ori_3', 'ori_4']  # orientation (invalid/off)
 COLUMN_NAMES = ['timestamp', 'activity_id', 'heart_rate'] + [
     f'{location}_{sensor}'
     for location in ['hand', 'chest', 'ankle']
-    for sensor in ['temp', 'acc16_x', 'acc16_y', 'acc16_z',
-                   'acc6_x', 'acc6_y', 'acc6_z',
-                   'gyro_x', 'gyro_y', 'gyro_z',
-                   'mag_x', 'mag_y', 'mag_z',
-                   'ori_1', 'ori_2', 'ori_3', 'ori_4']
-    if not (sensor.startswith('ori'))  # Skip invalid orientation columns
-] + [f'{location}_ori_{i}' for location in ['hand', 'chest', 'ankle'] for i in range(1, 5)]
+    for sensor in _IMU_SENSORS
+]
 
 # Paths
 RAW_DIR = Path("data/raw/pamap2/PAMAP2_Dataset/Protocol")
@@ -216,7 +221,7 @@ def create_manifest():
         for i in range(1, 5):
             channels.append({
                 "name": f"{location}_ori_{i}",
-                "description": f"Orientation quaternion component {i} from {location_desc} IMU",
+                "description": f"Orientation component {i} from {location_desc} IMU (INVALID: orientation was turned off during PAMAP2 collection; constant placeholder)",
                 "sampling_rate_hz": 100.0
             })
 

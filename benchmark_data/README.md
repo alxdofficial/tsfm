@@ -1,7 +1,7 @@
 # Benchmark Data for TSFM vs Baselines
 
 Unified benchmark comparing TSFM against LiMU-BERT, MOMENT, CrossHAR, LanHAR, and LLaSA
-on 20 HAR datasets (10 training + 10 zero-shot test).
+on 18 HAR datasets (11 training + 6 active zero-shot test; opportunity appendix-only).
 
 ## Quick Start
 
@@ -30,7 +30,7 @@ benchmark_data/
 │   │   ├── metadata.json
 │   │   ├── subject_01.csv
 │   │   └── ...
-│   └── ... (20 datasets)
+│   └── ... (18 datasets)
 ├── processed/
 │   ├── tsfm/                   # Symlinks to data/{dataset} (for training)
 │   ├── tsfm_eval/              # Native-rate .npy files for TSFM evaluation
@@ -45,7 +45,7 @@ benchmark_data/
 │   │   │   ├── label_20_120.npy
 │   │   │   └── mapping.json
 │   │   ├── global_label_mapping.json  # 87 global labels shared across all training datasets
-│   │   └── ... (20 datasets)
+│   │   └── ... (18 datasets)
 │   ├── lanhar/                 # LanHAR text descriptions
 │   └── crosshar/               # CrossHAR processed data
 └── scripts/
@@ -143,8 +143,8 @@ Each test dataset produces:
 
 ## Configuration
 
-`dataset_config.json` is the authoritative metadata file for all 20 datasets. It defines:
-- `train_datasets`: List of 10 training dataset names
+`dataset_config.json` is the authoritative metadata file for all 18 datasets. It defines:
+- `train_datasets`: List of 11 training dataset names
 - `zero_shot_datasets`: List of 10 test dataset names
 - Per-dataset: `activities`, `core_channels` mapping, `sampling_rate_hz`, `num_sessions`
 - `subsampling`: Rules for large datasets (HHAR, WISDM → 15K sessions)
@@ -152,7 +152,7 @@ Each test dataset produces:
 ## Train/Test Splits
 
 **Training datasets** (10): Used for TSFM pretraining and baseline ZS classifier training.
-All 10 training datasets share 87 unique activity labels mapped via `global_label_mapping.json`.
+The 11 training datasets contribute 94 unique activity labels (HALO's train vocabulary). `global_label_mapping.json` (87 labels) is the separate closed-vocab BASELINE vocabulary used by the ConSE bridge (the baselines are not retrained on capture24).
 
 **Zero-shot test datasets** (7+): Never seen during any model's pretraining. For supervised
 evaluations, each evaluation script applies random window-level 80/10/10 splits internally

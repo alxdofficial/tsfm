@@ -1,0 +1,56 @@
+{
+  "_protocol": {
+    "version": "v2",
+    "checkpoint": "training_output/semantic_alignment/small_deep_v2_4b3fdd6/best.pt",
+    "channel_text": "neutral",
+    "eval_rate": "20",
+    "pooling": "soft_logit(tau=0.07)",
+    "primary_metric": "f1_macro over GT-present classes",
+    "splits": "zero-shot: none needed; few-shot: subject-disjoint",
+    "seed": 3431
+  },
+  "inclusivehar": {
+    "sampling_rate_hz": 20.0,
+    "n_windows": 3370,
+    "zs_xd": {
+      "f1_macro": 28.25061699391702,
+      "balanced_accuracy": 35.72322024364653,
+      "accuracy": 34.98516320474778,
+      "f1_weighted": 27.65266251330812,
+      "n_samples": 3370,
+      "n_gt_classes": 6,
+      "n_scored_classes": 6,
+      "f1_macro_ci_lo": 24.756621353386148,
+      "f1_macro_ci_hi": 31.855817764489046,
+      "bootstrap_B": 1000,
+      "n_subjects": 20,
+      "ci_degenerate": false,
+      "per_class_f1": {
+        "jogging": 48.39968774395004,
+        "ramp_ascent": 0.0,
+        "ramp_descent": 0.0,
+        "sitting": 48.07436918990704,
+        "standing": 42.81481481481482,
+        "walking": 30.21483021483021
+      }
+    },
+    "zs_xd_vote": {
+      "f1_macro": 28.270537274145124,
+      "balanced_accuracy": 35.78223344653185,
+      "accuracy": 35.04451038575668,
+      "f1_weighted": 27.67422028606838,
+      "n_samples": 3370,
+      "n_gt_classes": 6,
+      "n_scored_classes": 6
+    },
+    "zs_xd_meanpool": {
+      "f1_macro": 28.273578442403185,
+      "balanced_accuracy": 35.753745274171564,
+      "accuracy": 35.01483679525222,
+      "f1_weighted": 27.6755484706326,
+      "n_samples": 3370,
+      "n_gt_classes": 6,
+      "n_scored_classes": 6
+    }
+  }
+}

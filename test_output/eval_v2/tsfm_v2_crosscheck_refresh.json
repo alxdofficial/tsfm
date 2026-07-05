@@ -1,0 +1,155 @@
+{
+  "_protocol": {
+    "version": "v2",
+    "checkpoint": "training_output/semantic_alignment/small_deep_v2_4b3fdd6/best.pt",
+    "channel_text": "native",
+    "eval_rate": "native",
+    "pooling": "soft_logit(tau=0.07)",
+    "primary_metric": "f1_macro over GT-present classes",
+    "splits": "zero-shot: none needed; few-shot: subject-disjoint",
+    "seed": 3431
+  },
+  "harth": {
+    "sampling_rate_hz": 50.0,
+    "n_windows": 51443,
+    "zs_xd": {
+      "f1_macro": 16.629737119634637,
+      "balanced_accuracy": 24.06867873021866,
+      "accuracy": 28.97575957856268,
+      "f1_weighted": 29.110568003940084,
+      "n_samples": 51443,
+      "n_gt_classes": 10,
+      "n_scored_classes": 10,
+      "f1_macro_ci_lo": 14.195941460000613,
+      "f1_macro_ci_hi": 18.480256371342584,
+      "bootstrap_B": 1000,
+      "n_subjects": 22,
+      "ci_degenerate": false,
+      "per_class_f1": {
+        "cycling_sit": 11.843548190569027,
+        "cycling_stand": 6.962785114045618,
+        "lying": 4.574727959138352,
+        "running": 0.2372479240806643,
+        "shuffling": 0.0,
+        "sitting": 25.78426897915716,
+        "stairs_down": 2.0281001832620644,
+        "stairs_up": 18.579234972677597,
+        "standing": 26.2739597942964,
+        "walking": 70.0134980791195
+      }
+    },
+    "zs_xd_vote": {
+      "f1_macro": 16.736388186961236,
+      "balanced_accuracy": 24.15339975560123,
+      "accuracy": 29.006861963726845,
+      "f1_weighted": 29.277556598986994,
+      "n_samples": 51443,
+      "n_gt_classes": 10,
+      "n_scored_classes": 10
+    },
+    "zs_xd_meanpool": {
+      "f1_macro": 16.633937019798868,
+      "balanced_accuracy": 24.083350418406642,
+      "accuracy": 28.96798398227164,
+      "f1_weighted": 29.102915246420558,
+      "n_samples": 51443,
+      "n_gt_classes": 10,
+      "n_scored_classes": 10
+    }
+  },
+  "mobiact": {
+    "sampling_rate_hz": 50.0,
+    "n_windows": 4345,
+    "zs_xd": {
+      "f1_macro": 20.743291114677863,
+      "balanced_accuracy": 23.918504558037778,
+      "accuracy": 54.70655926352129,
+      "f1_weighted": 48.18379378628361,
+      "n_samples": 4345,
+      "n_gt_classes": 13,
+      "n_scored_classes": 13,
+      "f1_macro_ci_lo": 16.177274482252955,
+      "f1_macro_ci_hi": 24.041330956800593,
+      "bootstrap_B": 1000,
+      "n_subjects": 24,
+      "ci_degenerate": false,
+      "per_class_f1": {
+        "car_step_in": 0.0,
+        "car_step_out": 0.0,
+        "fall_backward_knees": 0.0,
+        "fall_backward_sitting": 0.0,
+        "fall_forward": 0.0,
+        "fall_sideways": 0.0,
+        "jogging": 47.93713163064833,
+        "jumping": 27.791563275434246,
+        "sitting_chair": 2.247191011235955,
+        "stairs_down": 28.2312925170068,
+        "stairs_up": 12.949640287769784,
+        "standing": 67.04581358609795,
+        "walking": 83.46015218261914
+      }
+    },
+    "zs_xd_vote": {
+      "f1_macro": 20.76590118178155,
+      "balanced_accuracy": 23.910041528554643,
+      "accuracy": 54.614499424626004,
+      "f1_weighted": 48.24122754848522,
+      "n_samples": 4345,
+      "n_gt_classes": 13,
+      "n_scored_classes": 13
+    },
+    "zs_xd_meanpool": {
+      "f1_macro": 20.704206101351826,
+      "balanced_accuracy": 23.88852486433586,
+      "accuracy": 54.66052934407365,
+      "f1_weighted": 48.142972411890604,
+      "n_samples": 4345,
+      "n_gt_classes": 13,
+      "n_scored_classes": 13
+    }
+  },
+  "inclusivehar": {
+    "sampling_rate_hz": 50.0,
+    "n_windows": 3370,
+    "zs_xd": {
+      "f1_macro": 20.54548557811907,
+      "balanced_accuracy": 29.907637883705938,
+      "accuracy": 30.02967359050445,
+      "f1_weighted": 20.624600321702253,
+      "n_samples": 3370,
+      "n_gt_classes": 6,
+      "n_scored_classes": 6,
+      "f1_macro_ci_lo": 17.827931920870675,
+      "f1_macro_ci_hi": 23.456662954940924,
+      "bootstrap_B": 1000,
+      "n_subjects": 20,
+      "ci_degenerate": false,
+      "per_class_f1": {
+        "jogging": 0.0,
+        "ramp_ascent": 7.419898819561552,
+        "ramp_descent": 0.0,
+        "sitting": 31.439688715953306,
+        "standing": 46.32768361581921,
+        "walking": 38.085642317380355
+      }
+    },
+    "zs_xd_vote": {
+      "f1_macro": 20.608719073471757,
+      "balanced_accuracy": 29.96592279989494,
+      "accuracy": 30.089020771513354,
+      "f1_weighted": 20.68683740158854,
+      "n_samples": 3370,
+      "n_gt_classes": 6,
+      "n_scored_classes": 6
+    },
+    "zs_xd_meanpool": {
+      "f1_macro": 20.545206692360782,
+      "balanced_accuracy": 29.907637883705938,
+      "accuracy": 30.02967359050445,
+      "f1_weighted": 20.624452733517305,
+      "n_samples": 3370,
+      "n_gt_classes": 6,
+      "n_scored_classes": 6
+    }
+  }
+}

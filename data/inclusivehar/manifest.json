@@ -1,0 +1,90 @@
+{
+  "dataset_name": "InclusiveHAR",
+  "description": "Smartphone (iOS CoreMotion) human activity recognition across diverse physical abilities. 20 subjects (10 able-bodied, 10 with physical disabilities) performing 6 activities (walking, jogging, sitting, standing, ramp ascent, ramp descent) at 50 Hz via the SensorLog app, with the phone worn vertically in a waist pouch.",
+  "source": "https://data.mendeley.com/datasets/r78dn3f6nc/4",
+  "num_subjects": 20,
+  "ability_by_subject": {
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 0,
+    "8": 0,
+    "9": 0,
+    "10": 0,
+    "11": 1,
+    "12": 1,
+    "13": 1,
+    "14": 1,
+    "15": 1,
+    "16": 1,
+    "17": 1,
+    "18": 1,
+    "19": 1,
+    "20": 1
+  },
+  "channels": [
+    {
+      "name": "acc_x",
+      "description": "User acceleration X (g, gravity removed by iOS)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_y",
+      "description": "User acceleration Y (g, gravity removed by iOS)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "acc_z",
+      "description": "User acceleration Z (g, gravity removed by iOS)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_x",
+      "description": "Rotation rate X (rad/s)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_y",
+      "description": "Rotation rate Y (rad/s)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gyro_z",
+      "description": "Rotation rate Z (rad/s)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gravity_x",
+      "description": "Gravity unit vector X",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gravity_y",
+      "description": "Gravity unit vector Y",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "gravity_z",
+      "description": "Gravity unit vector Z",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "attitude_roll",
+      "description": "Device attitude roll (rad)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "attitude_pitch",
+      "description": "Device attitude pitch (rad)",
+      "sampling_rate_hz": 50.0
+    },
+    {
+      "name": "attitude_yaw",
+      "description": "Device attitude yaw (rad)",
+      "sampling_rate_hz": 50.0
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 ED = Path(__file__).resolve().parent.parent.parent / "test_output" / "eval_v2"
-DATASETS = ["motionsense", "realworld", "mobiact", "shoaib", "opportunity", "harth"]
+DATASETS = ["motionsense", "realworld", "mobiact", "shoaib", "harth", "inclusivehar"]
 
 # (label, json file, key path to the zs metrics dict, tier)
 # Baseline set (post V2 cleanup): CrossHAR + LiMU-BERT kept; MOMENT/LanHAR/LLaSA

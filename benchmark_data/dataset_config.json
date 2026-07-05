@@ -10,15 +10,16 @@
     "unimib_shar",
     "hapt",
     "mhealth",
-    "recgym"
+    "recgym",
+    "capture24"
   ],
   "zero_shot_datasets": [
     "motionsense",
     "realworld",
     "mobiact",
     "shoaib",
-    "opportunity",
-    "harth"
+    "harth",
+    "inclusivehar"
   ],
   "subsampling": {
     "hhar": {
@@ -31,6 +32,14 @@
     },
     "wisdm": {
       "target_sessions": 15000,
+      "method": "stratified",
+      "stratify_by": [
+        "activity",
+        "subject"
+      ]
+    },
+    "capture24": {
+      "target_sessions": 20000,
       "method": "stratified",
       "stratify_by": [
         "activity",
@@ -134,7 +143,7 @@
         "gyro_z": "gyro_z"
       },
       "extra_channels": [],
-      "placement": "pocket",
+      "placement": "waist",
       "num_subjects": 9,
       "activities": [
         "cycling",
@@ -160,7 +169,7 @@
     },
     "pamap2": {
       "display_name": "PAMAP2",
-      "num_sessions": 4342,
+      "num_sessions": 4377,
       "sampling_rate_hz": 100,
       "channels": [
         "heart_rate",
@@ -443,7 +452,7 @@
         "mag_y",
         "mag_z"
       ],
-      "placement": "wrist",
+      "placement": "torso",
       "num_subjects": 8,
       "activities": [
         "cycling_horizontal",
@@ -500,7 +509,7 @@
         "gyro_z": "gyro_z"
       },
       "extra_channels": [],
-      "placement": "wrist",
+      "placement": "waist",
       "num_subjects": 89,
       "activities": [
         "jumping",
@@ -867,7 +876,7 @@
         "gyro_z": "gyro_z"
       },
       "extra_channels": [],
-      "placement": "chest",
+      "placement": "wrist",
       "num_subjects": 10,
       "activities": [
         "adductor_machine",
@@ -1039,12 +1048,12 @@
         "gyro_z": "gyro_z"
       },
       "extra_channels": [],
-      "placement": "waist",
+      "placement": "trouser_pocket",
       "num_subjects": 24,
       "activities": [
         "car_step_in",
         "car_step_out",
-        "fall_backward_knees",
+        "fall_forward_knees",
         "fall_backward_sitting",
         "fall_forward",
         "fall_sideways",
@@ -1117,15 +1126,15 @@
         "belt_mag_x",
         "belt_mag_y",
         "belt_mag_z",
-        "arm_acc_x",
-        "arm_acc_y",
-        "arm_acc_z",
-        "arm_gyro_x",
-        "arm_gyro_y",
-        "arm_gyro_z",
-        "arm_mag_x",
-        "arm_mag_y",
-        "arm_mag_z",
+        "upper_arm_acc_x",
+        "upper_arm_acc_y",
+        "upper_arm_acc_z",
+        "upper_arm_gyro_x",
+        "upper_arm_gyro_y",
+        "upper_arm_gyro_z",
+        "upper_arm_mag_x",
+        "upper_arm_mag_y",
+        "upper_arm_mag_z",
         "wrist_acc_x",
         "wrist_acc_y",
         "wrist_acc_z",
@@ -1166,15 +1175,15 @@
         "belt_mag_x",
         "belt_mag_y",
         "belt_mag_z",
-        "arm_acc_x",
-        "arm_acc_y",
-        "arm_acc_z",
-        "arm_gyro_x",
-        "arm_gyro_y",
-        "arm_gyro_z",
-        "arm_mag_x",
-        "arm_mag_y",
-        "arm_mag_z",
+        "upper_arm_acc_x",
+        "upper_arm_acc_y",
+        "upper_arm_acc_z",
+        "upper_arm_gyro_x",
+        "upper_arm_gyro_y",
+        "upper_arm_gyro_z",
+        "upper_arm_mag_x",
+        "upper_arm_mag_y",
+        "upper_arm_mag_z",
         "wrist_acc_x",
         "wrist_acc_y",
         "wrist_acc_z",
@@ -1300,7 +1309,7 @@
     },
     "harth": {
       "display_name": "HARTH",
-      "num_sessions": null,
+      "num_sessions": 39199,
       "sampling_rate_hz": 50,
       "channels": [
         "back_acc_x",
@@ -1333,8 +1342,6 @@
         "stairs_down",
         "stairs_up",
         "standing",
-        "transport_sit",
-        "transport_stand",
         "walking"
       ],
       "train_subjects": [
@@ -1363,6 +1370,109 @@
         27,
         28
       ]
+    },
+    "inclusivehar": {
+      "display_name": "InclusiveHAR",
+      "num_sessions": 2049,
+      "sampling_rate_hz": 50,
+      "channels": [
+        "acc_x",
+        "acc_y",
+        "acc_z",
+        "gyro_x",
+        "gyro_y",
+        "gyro_z",
+        "gravity_x",
+        "gravity_y",
+        "gravity_z",
+        "attitude_roll",
+        "attitude_pitch",
+        "attitude_yaw"
+      ],
+      "core_channels": {
+        "acc_x": "acc_x",
+        "acc_y": "acc_y",
+        "acc_z": "acc_z",
+        "gyro_x": "gyro_x",
+        "gyro_y": "gyro_y",
+        "gyro_z": "gyro_z"
+      },
+      "extra_channels": [
+        "gravity_x",
+        "gravity_y",
+        "gravity_z",
+        "attitude_roll",
+        "attitude_pitch",
+        "attitude_yaw"
+      ],
+      "note": "iOS CoreMotion (same schema as MotionSense). acc is gravity-removed userAcceleration in g. UserID 1-10 able-bodied, 11-20 with physical disabilities (see manifest ability_by_subject) - enables ability-stratified reporting.",
+      "placement": "waist",
+      "num_subjects": 20,
+      "activities": [
+        "jogging",
+        "ramp_ascent",
+        "ramp_descent",
+        "sitting",
+        "standing",
+        "walking"
+      ],
+      "train_subjects": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17
+      ],
+      "test_subjects": [
+        8,
+        9,
+        10,
+        18,
+        19,
+        20
+      ]
+    },
+    "capture24": {
+      "display_name": "CAPTURE-24",
+      "num_sessions": 48518,
+      "sampling_rate_hz": 100,
+      "channels": [
+        "acc_x",
+        "acc_y",
+        "acc_z"
+      ],
+      "core_channels": {
+        "acc_x": "acc_x",
+        "acc_y": "acc_y",
+        "acc_z": "acc_z"
+      },
+      "extra_channels": [],
+      "note": "TRAIN-ONLY. Wrist accelerometer only (no gyro); raw acc in g INCLUDES gravity (heterogeneity vs iOS userAcceleration). Free-living, WillettsSpecific2018 labels. train/test_subjects empty because this dataset is not used as an eval split; subjects are P001..P151 strings.",
+      "placement": "wrist",
+      "num_subjects": 151,
+      "activities": [
+        "bicycling",
+        "household_chores",
+        "manual_work",
+        "mixed_activity",
+        "sitting",
+        "sleeping",
+        "sports",
+        "standing",
+        "vehicle",
+        "walking"
+      ],
+      "train_subjects": [],
+      "test_subjects": []
     }
   }
 }

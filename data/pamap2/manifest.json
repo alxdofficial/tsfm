@@ -74,22 +74,22 @@
     },
     {
       "name": "hand_ori_1",
-      "description": "Orientation quaternion component 1 from wrist-mounted IMU",
+      "description": "Orientation quaternion component 1 from wrist-mounted IMU (INVALID: orientation turned off in PAMAP2; constant placeholder)",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "hand_ori_2",
-      "description": "Orientation quaternion component 2 from wrist-mounted IMU",
+      "description": "Orientation quaternion component 2 from wrist-mounted IMU (INVALID: orientation turned off in PAMAP2; constant placeholder)",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "hand_ori_3",
-      "description": "Orientation quaternion component 3 from wrist-mounted IMU",
+      "description": "Orientation quaternion component 3 from wrist-mounted IMU (INVALID: orientation turned off in PAMAP2; constant placeholder)",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "hand_ori_4",
-      "description": "Orientation quaternion component 4 from wrist-mounted IMU",
+      "description": "Orientation quaternion component 4 from wrist-mounted IMU (INVALID: orientation turned off in PAMAP2; constant placeholder)",
       "sampling_rate_hz": 100.0
     },
     {
@@ -159,22 +159,22 @@
     },
     {
       "name": "chest_ori_1",
-      "description": "Orientation quaternion component 1 from chest-mounted IMU",
+      "description": "Orientation quaternion component 1 from chest-mounted IMU (INVALID: orientation turned off in PAMAP2; constant placeholder)",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "chest_ori_2",
-      "description": "Orientation quaternion component 2 from chest-mounted IMU",
+      "description": "Orientation quaternion component 2 from chest-mounted IMU (INVALID: orientation turned off in PAMAP2; constant placeholder)",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "chest_ori_3",
-      "description": "Orientation quaternion component 3 from chest-mounted IMU",
+      "description": "Orientation quaternion component 3 from chest-mounted IMU (INVALID: orientation turned off in PAMAP2; constant placeholder)",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "chest_ori_4",
-      "description": "Orientation quaternion component 4 from chest-mounted IMU",
+      "description": "Orientation quaternion component 4 from chest-mounted IMU (INVALID: orientation turned off in PAMAP2; constant placeholder)",
       "sampling_rate_hz": 100.0
     },
     {
@@ -244,22 +244,22 @@
     },
     {
       "name": "ankle_ori_1",
-      "description": "Orientation quaternion component 1 from ankle-mounted IMU",
+      "description": "Orientation quaternion component 1 from ankle-mounted IMU (INVALID: orientation turned off in PAMAP2; constant placeholder)",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "ankle_ori_2",
-      "description": "Orientation quaternion component 2 from ankle-mounted IMU",
+      "description": "Orientation quaternion component 2 from ankle-mounted IMU (INVALID: orientation turned off in PAMAP2; constant placeholder)",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "ankle_ori_3",
-      "description": "Orientation quaternion component 3 from ankle-mounted IMU",
+      "description": "Orientation quaternion component 3 from ankle-mounted IMU (INVALID: orientation turned off in PAMAP2; constant placeholder)",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "ankle_ori_4",
-      "description": "Orientation quaternion component 4 from ankle-mounted IMU",
+      "description": "Orientation quaternion component 4 from ankle-mounted IMU (INVALID: orientation turned off in PAMAP2; constant placeholder)",
       "sampling_rate_hz": 100.0
     }
   ]

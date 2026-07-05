@@ -1,37 +1,37 @@
 {
-  "dataset_name": "MobiFall",
-  "description": "MobiFall v2.0: Fall detection and ADL recognition dataset. 31 subjects performing 9 ADL activities and 4 fall types with waist-mounted Samsung Galaxy S3. Triaxial accelerometer and gyroscope resampled to 50.0Hz.",
+  "dataset_name": "MobiAct",
+  "description": "MobiAct (v2.0): smartphone ADL + fall dataset. Samsung Galaxy S3 in a trouser pocket, freely chosen in any random orientation. Subset of subjects converted here; 9 ADLs + 4 fall types, accelerometer+gyroscope. (Derived from but distinct from MobiFall.)",
   "source": "https://bmi.hmu.gr/the-mobifall-and-mobiact-datasets-2/",
   "num_subjects": 31,
   "channels": [
     {
       "name": "acc_x",
-      "description": "Accelerometer X-axis (waist-mounted smartphone)",
+      "description": "Accelerometer X-axis (trouser-pocket smartphone (random orientation))",
       "sampling_rate_hz": 50.0
     },
     {
       "name": "acc_y",
-      "description": "Accelerometer Y-axis (waist-mounted smartphone)",
+      "description": "Accelerometer Y-axis (trouser-pocket smartphone (random orientation))",
       "sampling_rate_hz": 50.0
     },
     {
       "name": "acc_z",
-      "description": "Accelerometer Z-axis (waist-mounted smartphone)",
+      "description": "Accelerometer Z-axis (trouser-pocket smartphone (random orientation))",
       "sampling_rate_hz": 50.0
     },
     {
       "name": "gyro_x",
-      "description": "Gyroscope X-axis (waist-mounted smartphone)",
+      "description": "Gyroscope X-axis (trouser-pocket smartphone (random orientation))",
       "sampling_rate_hz": 50.0
     },
     {
       "name": "gyro_y",
-      "description": "Gyroscope Y-axis (waist-mounted smartphone)",
+      "description": "Gyroscope Y-axis (trouser-pocket smartphone (random orientation))",
       "sampling_rate_hz": 50.0
     },
     {
       "name": "gyro_z",
-      "description": "Gyroscope Z-axis (waist-mounted smartphone)",
+      "description": "Gyroscope Z-axis (trouser-pocket smartphone (random orientation))",
       "sampling_rate_hz": 50.0
     }
   ]

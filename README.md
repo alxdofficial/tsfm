@@ -53,7 +53,7 @@ source .venv/bin/activate
 # Install dependencies (requires CUDA-compatible PyTorch — adjust for your GPU)
 pip install -r requirements.txt
 
-# Download and convert all 20 datasets to standardized session format
+# Download and convert all 18 datasets to standardized session format
 python datascripts/setup_all_ts_datasets.py
 
 # Generate benchmark evaluation data
@@ -235,7 +235,7 @@ tsfm/
 │   ├── label_groups.py            # 87 labels -> 34 semantic groups
 │   └── augmentations.py           # Physical augmentations
 │
-├── datascripts/                    # Dataset download + conversion (20 datasets)
+├── datascripts/                    # Dataset download + conversion (18 datasets)
 ├── benchmark_data/                 # Standardized evaluation data + preprocessing scripts
 ├── docs/baselines/                 # Evaluation protocol, results, fairness analysis
 ├── scripts/                        # Utility scripts (runner, results table)

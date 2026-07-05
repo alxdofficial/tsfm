@@ -85,7 +85,7 @@ LABEL_GROUPS = {
     # Cycling variants (pedaling motion)
     # DSADS has cycling_horizontal, cycling_vertical
     # HARTH: cycling_sit, cycling_stand (seated vs standing cycling)
-    'cycling': ['cycling', 'cycling_horizontal', 'cycling_vertical',
+    'cycling': ['cycling', 'bicycling', 'cycling_horizontal', 'cycling_vertical',
                 'cycling_sit', 'cycling_stand'],
 
     # Cardio exercise machines (rhythmic full-body motion)
@@ -99,8 +99,10 @@ LABEL_GROUPS = {
     # USC-HAD: elevator_up, elevator_down (directional elevator)
     'elevator': ['moving_elevator', 'elevator_up', 'elevator_down'],
 
-    # Ball sports (throwing, catching, dribbling patterns)
-    'sports': ['playing_basketball', 'playing_catch', 'dribbling', 'kicking'],
+    # Ball sports (throwing, catching, dribbling patterns). NOTE: keyed 'ball_sports'
+    # (not 'sports') so CAPTURE-24's free-living 'sports' label does not collide with
+    # this group name and get silently merged with ball-handling motions.
+    'ball_sports': ['playing_basketball', 'playing_catch', 'dribbling', 'kicking'],
 
     # Hand/arm activities - fine motor movements (WISDM, MHEALTH activities)
     'typing': ['typing', 'writing'],  # Fine motor, similar wrist patterns
@@ -121,8 +123,9 @@ LABEL_GROUPS = {
     'sit_up': ['sit_up'],
     'picking_up': ['picking_up'],  # Bending to pick something up
 
-    # Ball sports / general sports (KU-HAR: table-tennis maps to playing_sports)
-    'playing_sports': ['playing_sports'],
+    # General/free-living sports (KU-HAR table-tennis -> playing_sports;
+    # CAPTURE-24 WillettsSpecific 'sports' is the same broad concept).
+    'playing_sports': ['playing_sports', 'sports'],
 
     # Construction/manual work (VTT-ConIoT activities)
     'carrying': ['carrying', 'lifting', 'pushing_cart'],
@@ -165,7 +168,7 @@ LABEL_GROUPS_SIMPLE = {
                'stairs_up', 'stairs_down'],
 
     # Locomotion - cycling
-    'cycling': ['cycling', 'cycling_horizontal', 'cycling_vertical',
+    'cycling': ['cycling', 'bicycling', 'cycling_horizontal', 'cycling_vertical',
                 'cycling_sit', 'cycling_stand'],
 
     # Stationary - sitting (seated postures only, no transitions)
@@ -218,8 +221,9 @@ LABEL_GROUPS_SIMPLE = {
     # Household chores (varied whole-body movements)
     'household': ['ironing', 'vacuum_cleaning'],
 
-    # Ball sports (throwing, catching, kicking patterns)
-    'sports': ['playing_catch', 'dribbling', 'kicking', 'playing_basketball', 'playing_sports'],
+    # Ball / general sports (throwing, catching, kicking patterns).
+    # Keyed 'ball_sports' to avoid colliding with a literal 'sports' label.
+    'ball_sports': ['playing_catch', 'dribbling', 'kicking', 'playing_basketball', 'playing_sports', 'sports'],
 
     # Falling (loss of balance - grouped for safety applications)
     'falling': ['falling_backward', 'falling_backward_sitting', 'falling_forward',

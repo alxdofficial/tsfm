@@ -248,6 +248,21 @@
   "subject101_seg000_0082": [
     "lying"
   ],
+  "subject101_seg000_0083": [
+    "lying"
+  ],
+  "subject101_seg000_0084": [
+    "lying"
+  ],
+  "subject101_seg000_0085": [
+    "lying"
+  ],
+  "subject101_seg000_0086": [
+    "lying"
+  ],
+  "subject101_seg000_0087": [
+    "lying"
+  ],
   "subject101_seg001_0000": [
     "sitting"
   ],
@@ -458,9 +473,6 @@
   "subject101_seg001_0069": [
     "sitting"
   ],
-  "subject101_seg001_0070": [
-    "sitting"
-  ],
   "subject101_seg002_0000": [
     "standing"
   ],
@@ -662,12 +674,6 @@
   "subject101_seg002_0066": [
     "standing"
   ],
-  "subject101_seg002_0067": [
-    "standing"
-  ],
-  "subject101_seg002_0068": [
-    "standing"
-  ],
   "subject101_seg003_0000": [
     "ironing"
   ],
@@ -722,6 +728,9 @@
   "subject101_seg003_0017": [
     "ironing"
   ],
+  "subject101_seg003_0018": [
+    "ironing"
+  ],
   "subject101_seg004_0000": [
     "vacuum_cleaning"
   ],
@@ -768,18 +777,6 @@
     "vacuum_cleaning"
   ],
   "subject101_seg004_0015": [
-    "vacuum_cleaning"
-  ],
-  "subject101_seg004_0016": [
-    "vacuum_cleaning"
-  ],
-  "subject101_seg004_0017": [
-    "vacuum_cleaning"
-  ],
-  "subject101_seg004_0018": [
-    "vacuum_cleaning"
-  ],
-  "subject101_seg004_0019": [
     "vacuum_cleaning"
   ],
   "subject101_seg005_0000": [
@@ -839,12 +836,6 @@
   "subject101_seg005_0018": [
     "ascending_stairs"
   ],
-  "subject101_seg005_0019": [
-    "ascending_stairs"
-  ],
-  "subject101_seg005_0020": [
-    "ascending_stairs"
-  ],
   "subject101_seg006_0000": [
     "descending_stairs"
   ],
@@ -893,6 +884,15 @@
   "subject101_seg006_0015": [
     "descending_stairs"
   ],
+  "subject101_seg006_0016": [
+    "descending_stairs"
+  ],
+  "subject101_seg006_0017": [
+    "descending_stairs"
+  ],
+  "subject101_seg006_0018": [
+    "descending_stairs"
+  ],
   "subject101_seg007_0000": [
     "ascending_stairs"
   ],
@@ -939,6 +939,18 @@
     "ascending_stairs"
   ],
   "subject101_seg007_0015": [
+    "ascending_stairs"
+  ],
+  "subject101_seg007_0016": [
+    "ascending_stairs"
+  ],
+  "subject101_seg007_0017": [
+    "ascending_stairs"
+  ],
+  "subject101_seg007_0018": [
+    "ascending_stairs"
+  ],
+  "subject101_seg007_0019": [
     "ascending_stairs"
   ],
   "subject101_seg008_0000": [
@@ -993,6 +1005,12 @@
     "descending_stairs"
   ],
   "subject101_seg008_0017": [
+    "descending_stairs"
+  ],
+  "subject101_seg008_0018": [
+    "descending_stairs"
+  ],
+  "subject101_seg008_0019": [
     "descending_stairs"
   ],
   "subject101_seg009_0000": [
@@ -1251,6 +1269,12 @@
     "nordic_walking"
   ],
   "subject101_seg010_0031": [
+    "nordic_walking"
+  ],
+  "subject101_seg010_0032": [
+    "nordic_walking"
+  ],
+  "subject101_seg010_0033": [
     "nordic_walking"
   ],
   "subject101_seg011_0000": [
@@ -1619,6 +1643,15 @@
   "subject101_seg012_0065": [
     "running"
   ],
+  "subject101_seg012_0066": [
+    "running"
+  ],
+  "subject101_seg012_0067": [
+    "running"
+  ],
+  "subject101_seg012_0068": [
+    "running"
+  ],
   "subject101_seg013_0000": [
     "rope_jumping"
   ],
@@ -1674,21 +1707,6 @@
     "rope_jumping"
   ],
   "subject101_seg013_0018": [
-    "rope_jumping"
-  ],
-  "subject101_seg013_0019": [
-    "rope_jumping"
-  ],
-  "subject101_seg013_0020": [
-    "rope_jumping"
-  ],
-  "subject101_seg013_0021": [
-    "rope_jumping"
-  ],
-  "subject101_seg013_0022": [
-    "rope_jumping"
-  ],
-  "subject101_seg013_0023": [
     "rope_jumping"
   ],
   "subject102_seg000_0000": [
@@ -1907,15 +1925,6 @@
   "subject102_seg000_0071": [
     "lying"
   ],
-  "subject102_seg000_0072": [
-    "lying"
-  ],
-  "subject102_seg000_0073": [
-    "lying"
-  ],
-  "subject102_seg000_0074": [
-    "lying"
-  ],
   "subject102_seg001_0000": [
     "sitting"
   ],
@@ -2109,15 +2118,6 @@
     "sitting"
   ],
   "subject102_seg001_0064": [
-    "sitting"
-  ],
-  "subject102_seg001_0065": [
-    "sitting"
-  ],
-  "subject102_seg001_0066": [
-    "sitting"
-  ],
-  "subject102_seg001_0067": [
     "sitting"
   ],
   "subject102_seg002_0000": [
@@ -2345,36 +2345,6 @@
   "subject102_seg002_0074": [
     "standing"
   ],
-  "subject102_seg002_0075": [
-    "standing"
-  ],
-  "subject102_seg002_0076": [
-    "standing"
-  ],
-  "subject102_seg002_0077": [
-    "standing"
-  ],
-  "subject102_seg002_0078": [
-    "standing"
-  ],
-  "subject102_seg002_0079": [
-    "standing"
-  ],
-  "subject102_seg002_0080": [
-    "standing"
-  ],
-  "subject102_seg002_0081": [
-    "standing"
-  ],
-  "subject102_seg002_0082": [
-    "standing"
-  ],
-  "subject102_seg002_0083": [
-    "standing"
-  ],
-  "subject102_seg002_0084": [
-    "standing"
-  ],
   "subject102_seg003_0000": [
     "ironing"
   ],
@@ -2432,15 +2402,6 @@
   "subject102_seg003_0018": [
     "ironing"
   ],
-  "subject102_seg003_0019": [
-    "ironing"
-  ],
-  "subject102_seg003_0020": [
-    "ironing"
-  ],
-  "subject102_seg003_0021": [
-    "ironing"
-  ],
   "subject102_seg004_0000": [
     "vacuum_cleaning"
   ],
@@ -2487,12 +2448,6 @@
     "vacuum_cleaning"
   ],
   "subject102_seg004_0015": [
-    "vacuum_cleaning"
-  ],
-  "subject102_seg004_0016": [
-    "vacuum_cleaning"
-  ],
-  "subject102_seg004_0017": [
     "vacuum_cleaning"
   ],
   "subject102_seg005_0000": [
@@ -2612,6 +2567,12 @@
   "subject102_seg006_0017": [
     "descending_stairs"
   ],
+  "subject102_seg006_0018": [
+    "descending_stairs"
+  ],
+  "subject102_seg006_0019": [
+    "descending_stairs"
+  ],
   "subject102_seg007_0000": [
     "ascending_stairs"
   ],
@@ -2675,6 +2636,24 @@
   "subject102_seg007_0020": [
     "ascending_stairs"
   ],
+  "subject102_seg007_0021": [
+    "ascending_stairs"
+  ],
+  "subject102_seg007_0022": [
+    "ascending_stairs"
+  ],
+  "subject102_seg007_0023": [
+    "ascending_stairs"
+  ],
+  "subject102_seg007_0024": [
+    "ascending_stairs"
+  ],
+  "subject102_seg007_0025": [
+    "ascending_stairs"
+  ],
+  "subject102_seg007_0026": [
+    "ascending_stairs"
+  ],
   "subject102_seg008_0000": [
     "descending_stairs"
   ],
@@ -2721,6 +2700,15 @@
     "descending_stairs"
   ],
   "subject102_seg008_0015": [
+    "descending_stairs"
+  ],
+  "subject102_seg008_0016": [
+    "descending_stairs"
+  ],
+  "subject102_seg008_0017": [
+    "descending_stairs"
+  ],
+  "subject102_seg008_0018": [
     "descending_stairs"
   ],
   "subject102_seg009_0000": [
@@ -2954,30 +2942,6 @@
   "subject102_seg009_0076": [
     "walking"
   ],
-  "subject102_seg009_0077": [
-    "walking"
-  ],
-  "subject102_seg009_0078": [
-    "walking"
-  ],
-  "subject102_seg009_0079": [
-    "walking"
-  ],
-  "subject102_seg009_0080": [
-    "walking"
-  ],
-  "subject102_seg009_0081": [
-    "walking"
-  ],
-  "subject102_seg009_0082": [
-    "walking"
-  ],
-  "subject102_seg009_0083": [
-    "walking"
-  ],
-  "subject102_seg009_0084": [
-    "walking"
-  ],
   "subject102_seg010_0000": [
     "nordic_walking"
   ],
@@ -3129,27 +3093,6 @@
     "nordic_walking"
   ],
   "subject102_seg010_0050": [
-    "nordic_walking"
-  ],
-  "subject102_seg010_0051": [
-    "nordic_walking"
-  ],
-  "subject102_seg010_0052": [
-    "nordic_walking"
-  ],
-  "subject102_seg010_0053": [
-    "nordic_walking"
-  ],
-  "subject102_seg010_0054": [
-    "nordic_walking"
-  ],
-  "subject102_seg010_0055": [
-    "nordic_walking"
-  ],
-  "subject102_seg010_0056": [
-    "nordic_walking"
-  ],
-  "subject102_seg010_0057": [
     "nordic_walking"
   ],
   "subject102_seg011_0000": [
@@ -3323,18 +3266,6 @@
   "subject102_seg011_0056": [
     "cycling"
   ],
-  "subject102_seg011_0057": [
-    "cycling"
-  ],
-  "subject102_seg011_0058": [
-    "cycling"
-  ],
-  "subject102_seg011_0059": [
-    "cycling"
-  ],
-  "subject102_seg011_0060": [
-    "cycling"
-  ],
   "subject102_seg012_0000": [
     "running"
   ],
@@ -3410,6 +3341,27 @@
   "subject102_seg012_0024": [
     "running"
   ],
+  "subject102_seg012_0025": [
+    "running"
+  ],
+  "subject102_seg012_0026": [
+    "running"
+  ],
+  "subject102_seg012_0027": [
+    "running"
+  ],
+  "subject102_seg012_0028": [
+    "running"
+  ],
+  "subject102_seg012_0029": [
+    "running"
+  ],
+  "subject102_seg012_0030": [
+    "running"
+  ],
+  "subject102_seg012_0031": [
+    "running"
+  ],
   "subject102_seg013_0000": [
     "rope_jumping"
   ],
@@ -3474,6 +3426,12 @@
     "rope_jumping"
   ],
   "subject102_seg013_0021": [
+    "rope_jumping"
+  ],
+  "subject102_seg013_0022": [
+    "rope_jumping"
+  ],
+  "subject102_seg013_0023": [
     "rope_jumping"
   ],
   "subject103_seg000_0000": [
@@ -3678,15 +3636,6 @@
     "lying"
   ],
   "subject103_seg000_0067": [
-    "lying"
-  ],
-  "subject103_seg000_0068": [
-    "lying"
-  ],
-  "subject103_seg000_0069": [
-    "lying"
-  ],
-  "subject103_seg000_0070": [
     "lying"
   ],
   "subject103_seg001_0000": [
@@ -3959,6 +3908,9 @@
   "subject103_seg001_0089": [
     "sitting"
   ],
+  "subject103_seg001_0090": [
+    "sitting"
+  ],
   "subject103_seg002_0000": [
     "standing"
   ],
@@ -4148,12 +4100,6 @@
   "subject103_seg002_0062": [
     "standing"
   ],
-  "subject103_seg002_0063": [
-    "standing"
-  ],
-  "subject103_seg002_0064": [
-    "standing"
-  ],
   "subject103_seg003_0000": [
     "ironing"
   ],
@@ -4226,6 +4172,18 @@
   "subject103_seg003_0023": [
     "ironing"
   ],
+  "subject103_seg003_0024": [
+    "ironing"
+  ],
+  "subject103_seg003_0025": [
+    "ironing"
+  ],
+  "subject103_seg003_0026": [
+    "ironing"
+  ],
+  "subject103_seg003_0027": [
+    "ironing"
+  ],
   "subject103_seg004_0000": [
     "vacuum_cleaning"
   ],
@@ -4271,9 +4229,6 @@
   "subject103_seg004_0014": [
     "vacuum_cleaning"
   ],
-  "subject103_seg004_0015": [
-    "vacuum_cleaning"
-  ],
   "subject103_seg005_0000": [
     "descending_stairs"
   ],
@@ -4316,9 +4271,6 @@
   "subject103_seg005_0013": [
     "descending_stairs"
   ],
-  "subject103_seg005_0014": [
-    "descending_stairs"
-  ],
   "subject103_seg006_0000": [
     "ascending_stairs"
   ],
@@ -4358,15 +4310,6 @@
   "subject103_seg006_0012": [
     "ascending_stairs"
   ],
-  "subject103_seg006_0013": [
-    "ascending_stairs"
-  ],
-  "subject103_seg006_0014": [
-    "ascending_stairs"
-  ],
-  "subject103_seg006_0015": [
-    "ascending_stairs"
-  ],
   "subject103_seg007_0000": [
     "descending_stairs"
   ],
@@ -4403,6 +4346,9 @@
   "subject103_seg007_0011": [
     "descending_stairs"
   ],
+  "subject103_seg007_0012": [
+    "descending_stairs"
+  ],
   "subject103_seg008_0000": [
     "ascending_stairs"
   ],
@@ -4431,6 +4377,9 @@
     "ascending_stairs"
   ],
   "subject103_seg008_0009": [
+    "ascending_stairs"
+  ],
+  "subject103_seg008_0010": [
     "ascending_stairs"
   ],
   "subject103_seg009_0000": [
@@ -4688,9 +4637,6 @@
   "subject103_seg010_0073": [
     "walking"
   ],
-  "subject103_seg010_0074": [
-    "walking"
-  ],
   "subject104_seg000_0000": [
     "lying"
   ],
@@ -4905,6 +4851,12 @@
     "lying"
   ],
   "subject104_seg000_0071": [
+    "lying"
+  ],
+  "subject104_seg000_0072": [
+    "lying"
+  ],
+  "subject104_seg000_0073": [
     "lying"
   ],
   "subject104_seg001_0000": [
@@ -5145,18 +5097,6 @@
     "sitting"
   ],
   "subject104_seg001_0079": [
-    "sitting"
-  ],
-  "subject104_seg001_0080": [
-    "sitting"
-  ],
-  "subject104_seg001_0081": [
-    "sitting"
-  ],
-  "subject104_seg001_0082": [
-    "sitting"
-  ],
-  "subject104_seg001_0083": [
     "sitting"
   ],
   "subject104_seg002_0000": [
@@ -5402,9 +5342,6 @@
   "subject104_seg002_0080": [
     "standing"
   ],
-  "subject104_seg002_0081": [
-    "standing"
-  ],
   "subject104_seg003_0000": [
     "ironing"
   ],
@@ -5468,12 +5405,6 @@
   "subject104_seg003_0020": [
     "ironing"
   ],
-  "subject104_seg003_0021": [
-    "ironing"
-  ],
-  "subject104_seg003_0022": [
-    "ironing"
-  ],
   "subject104_seg004_0000": [
     "vacuum_cleaning"
   ],
@@ -5526,6 +5457,9 @@
     "vacuum_cleaning"
   ],
   "subject104_seg004_0017": [
+    "vacuum_cleaning"
+  ],
+  "subject104_seg004_0018": [
     "vacuum_cleaning"
   ],
   "subject104_seg005_0000": [
@@ -5585,6 +5519,12 @@
   "subject104_seg005_0018": [
     "ascending_stairs"
   ],
+  "subject104_seg005_0019": [
+    "ascending_stairs"
+  ],
+  "subject104_seg005_0020": [
+    "ascending_stairs"
+  ],
   "subject104_seg006_0000": [
     "descending_stairs"
   ],
@@ -5636,9 +5576,6 @@
   "subject104_seg006_0016": [
     "descending_stairs"
   ],
-  "subject104_seg006_0017": [
-    "descending_stairs"
-  ],
   "subject104_seg007_0000": [
     "ascending_stairs"
   ],
@@ -5688,15 +5625,6 @@
     "ascending_stairs"
   ],
   "subject104_seg007_0016": [
-    "ascending_stairs"
-  ],
-  "subject104_seg007_0017": [
-    "ascending_stairs"
-  ],
-  "subject104_seg007_0018": [
-    "ascending_stairs"
-  ],
-  "subject104_seg007_0019": [
     "ascending_stairs"
   ],
   "subject104_seg008_0000": [
@@ -5754,6 +5682,9 @@
     "descending_stairs"
   ],
   "subject104_seg008_0018": [
+    "descending_stairs"
+  ],
+  "subject104_seg008_0019": [
     "descending_stairs"
   ],
   "subject104_seg009_0000": [
@@ -5972,18 +5903,6 @@
   "subject104_seg009_0071": [
     "walking"
   ],
-  "subject104_seg009_0072": [
-    "walking"
-  ],
-  "subject104_seg009_0073": [
-    "walking"
-  ],
-  "subject104_seg009_0074": [
-    "walking"
-  ],
-  "subject104_seg009_0075": [
-    "walking"
-  ],
   "subject104_seg010_0000": [
     "nordic_walking"
   ],
@@ -6126,9 +6045,6 @@
     "nordic_walking"
   ],
   "subject104_seg010_0047": [
-    "nordic_walking"
-  ],
-  "subject104_seg010_0048": [
     "nordic_walking"
   ],
   "subject104_seg011_0000": [
@@ -6276,6 +6192,24 @@
     "cycling"
   ],
   "subject104_seg011_0048": [
+    "cycling"
+  ],
+  "subject104_seg011_0049": [
+    "cycling"
+  ],
+  "subject104_seg011_0050": [
+    "cycling"
+  ],
+  "subject104_seg011_0051": [
+    "cycling"
+  ],
+  "subject104_seg011_0052": [
+    "cycling"
+  ],
+  "subject104_seg011_0053": [
+    "cycling"
+  ],
+  "subject104_seg011_0054": [
     "cycling"
   ],
   "subject105_seg000_0000": [
@@ -6477,15 +6411,6 @@
     "lying"
   ],
   "subject105_seg000_0066": [
-    "lying"
-  ],
-  "subject105_seg000_0067": [
-    "lying"
-  ],
-  "subject105_seg000_0068": [
-    "lying"
-  ],
-  "subject105_seg000_0069": [
     "lying"
   ],
   "subject105_seg001_0000": [
@@ -6728,30 +6653,6 @@
   "subject105_seg001_0079": [
     "sitting"
   ],
-  "subject105_seg001_0080": [
-    "sitting"
-  ],
-  "subject105_seg001_0081": [
-    "sitting"
-  ],
-  "subject105_seg001_0082": [
-    "sitting"
-  ],
-  "subject105_seg001_0083": [
-    "sitting"
-  ],
-  "subject105_seg001_0084": [
-    "sitting"
-  ],
-  "subject105_seg001_0085": [
-    "sitting"
-  ],
-  "subject105_seg001_0086": [
-    "sitting"
-  ],
-  "subject105_seg001_0087": [
-    "sitting"
-  ],
   "subject105_seg002_0000": [
     "standing"
   ],
@@ -6965,15 +6866,6 @@
   "subject105_seg002_0070": [
     "standing"
   ],
-  "subject105_seg002_0071": [
-    "standing"
-  ],
-  "subject105_seg002_0072": [
-    "standing"
-  ],
-  "subject105_seg002_0073": [
-    "standing"
-  ],
   "subject105_seg003_0000": [
     "ironing"
   ],
@@ -7049,6 +6941,15 @@
   "subject105_seg003_0024": [
     "ironing"
   ],
+  "subject105_seg003_0025": [
+    "ironing"
+  ],
+  "subject105_seg003_0026": [
+    "ironing"
+  ],
+  "subject105_seg003_0027": [
+    "ironing"
+  ],
   "subject105_seg004_0000": [
     "vacuum_cleaning"
   ],
@@ -7103,15 +7004,6 @@
   "subject105_seg004_0017": [
     "vacuum_cleaning"
   ],
-  "subject105_seg004_0018": [
-    "vacuum_cleaning"
-  ],
-  "subject105_seg004_0019": [
-    "vacuum_cleaning"
-  ],
-  "subject105_seg004_0020": [
-    "vacuum_cleaning"
-  ],
   "subject105_seg005_0000": [
     "ascending_stairs"
   ],
@@ -7160,6 +7052,12 @@
   "subject105_seg005_0015": [
     "ascending_stairs"
   ],
+  "subject105_seg005_0016": [
+    "ascending_stairs"
+  ],
+  "subject105_seg005_0017": [
+    "ascending_stairs"
+  ],
   "subject105_seg006_0000": [
     "descending_stairs"
   ],
@@ -7197,6 +7095,18 @@
     "descending_stairs"
   ],
   "subject105_seg006_0012": [
+    "descending_stairs"
+  ],
+  "subject105_seg006_0013": [
+    "descending_stairs"
+  ],
+  "subject105_seg006_0014": [
+    "descending_stairs"
+  ],
+  "subject105_seg006_0015": [
+    "descending_stairs"
+  ],
+  "subject105_seg006_0016": [
     "descending_stairs"
   ],
   "subject105_seg007_0000": [
@@ -7256,12 +7166,6 @@
   "subject105_seg007_0018": [
     "ascending_stairs"
   ],
-  "subject105_seg007_0019": [
-    "ascending_stairs"
-  ],
-  "subject105_seg007_0020": [
-    "ascending_stairs"
-  ],
   "subject105_seg008_0000": [
     "descending_stairs"
   ],
@@ -7296,6 +7200,18 @@
     "descending_stairs"
   ],
   "subject105_seg008_0011": [
+    "descending_stairs"
+  ],
+  "subject105_seg008_0012": [
+    "descending_stairs"
+  ],
+  "subject105_seg008_0013": [
+    "descending_stairs"
+  ],
+  "subject105_seg008_0014": [
+    "descending_stairs"
+  ],
+  "subject105_seg008_0015": [
     "descending_stairs"
   ],
   "subject105_seg009_0000": [
@@ -7529,15 +7445,6 @@
   "subject105_seg009_0076": [
     "walking"
   ],
-  "subject105_seg009_0077": [
-    "walking"
-  ],
-  "subject105_seg009_0078": [
-    "walking"
-  ],
-  "subject105_seg009_0079": [
-    "walking"
-  ],
   "subject105_seg010_0000": [
     "nordic_walking"
   ],
@@ -7650,6 +7557,27 @@
     "nordic_walking"
   ],
   "subject105_seg010_0037": [
+    "nordic_walking"
+  ],
+  "subject105_seg010_0038": [
+    "nordic_walking"
+  ],
+  "subject105_seg010_0039": [
+    "nordic_walking"
+  ],
+  "subject105_seg010_0040": [
+    "nordic_walking"
+  ],
+  "subject105_seg010_0041": [
+    "nordic_walking"
+  ],
+  "subject105_seg010_0042": [
+    "nordic_walking"
+  ],
+  "subject105_seg010_0043": [
+    "nordic_walking"
+  ],
+  "subject105_seg010_0044": [
     "nordic_walking"
   ],
   "subject105_seg011_0000": [
@@ -7827,6 +7755,21 @@
     "cycling"
   ],
   "subject105_seg011_0058": [
+    "cycling"
+  ],
+  "subject105_seg011_0059": [
+    "cycling"
+  ],
+  "subject105_seg011_0060": [
+    "cycling"
+  ],
+  "subject105_seg011_0061": [
+    "cycling"
+  ],
+  "subject105_seg011_0062": [
+    "cycling"
+  ],
+  "subject105_seg011_0063": [
     "cycling"
   ],
   "subject105_seg012_0000": [
@@ -8057,18 +8000,6 @@
   "subject105_seg012_0075": [
     "running"
   ],
-  "subject105_seg012_0076": [
-    "running"
-  ],
-  "subject105_seg012_0077": [
-    "running"
-  ],
-  "subject105_seg012_0078": [
-    "running"
-  ],
-  "subject105_seg012_0079": [
-    "running"
-  ],
   "subject105_seg013_0000": [
     "rope_jumping"
   ],
@@ -8100,6 +8031,9 @@
     "rope_jumping"
   ],
   "subject105_seg013_0010": [
+    "rope_jumping"
+  ],
+  "subject105_seg013_0011": [
     "rope_jumping"
   ],
   "subject106_seg000_0000": [
@@ -8312,6 +8246,30 @@
   "subject106_seg000_0069": [
     "lying"
   ],
+  "subject106_seg000_0070": [
+    "lying"
+  ],
+  "subject106_seg000_0071": [
+    "lying"
+  ],
+  "subject106_seg000_0072": [
+    "lying"
+  ],
+  "subject106_seg000_0073": [
+    "lying"
+  ],
+  "subject106_seg000_0074": [
+    "lying"
+  ],
+  "subject106_seg000_0075": [
+    "lying"
+  ],
+  "subject106_seg000_0076": [
+    "lying"
+  ],
+  "subject106_seg000_0077": [
+    "lying"
+  ],
   "subject106_seg001_0000": [
     "sitting"
   ],
@@ -8505,6 +8463,51 @@
     "sitting"
   ],
   "subject106_seg001_0064": [
+    "sitting"
+  ],
+  "subject106_seg001_0065": [
+    "sitting"
+  ],
+  "subject106_seg001_0066": [
+    "sitting"
+  ],
+  "subject106_seg001_0067": [
+    "sitting"
+  ],
+  "subject106_seg001_0068": [
+    "sitting"
+  ],
+  "subject106_seg001_0069": [
+    "sitting"
+  ],
+  "subject106_seg001_0070": [
+    "sitting"
+  ],
+  "subject106_seg001_0071": [
+    "sitting"
+  ],
+  "subject106_seg001_0072": [
+    "sitting"
+  ],
+  "subject106_seg001_0073": [
+    "sitting"
+  ],
+  "subject106_seg001_0074": [
+    "sitting"
+  ],
+  "subject106_seg001_0075": [
+    "sitting"
+  ],
+  "subject106_seg001_0076": [
+    "sitting"
+  ],
+  "subject106_seg001_0077": [
+    "sitting"
+  ],
+  "subject106_seg001_0078": [
+    "sitting"
+  ],
+  "subject106_seg001_0079": [
     "sitting"
   ],
   "subject106_seg002_0000": [
@@ -8726,9 +8729,6 @@
   "subject106_seg002_0072": [
     "standing"
   ],
-  "subject106_seg002_0073": [
-    "standing"
-  ],
   "subject106_seg003_0000": [
     "ironing"
   ],
@@ -8814,6 +8814,9 @@
     "ironing"
   ],
   "subject106_seg003_0028": [
+    "ironing"
+  ],
+  "subject106_seg003_0029": [
     "ironing"
   ],
   "subject106_seg004_0000": [
@@ -8909,6 +8912,18 @@
   "subject106_seg005_0013": [
     "ascending_stairs"
   ],
+  "subject106_seg005_0014": [
+    "ascending_stairs"
+  ],
+  "subject106_seg005_0015": [
+    "ascending_stairs"
+  ],
+  "subject106_seg005_0016": [
+    "ascending_stairs"
+  ],
+  "subject106_seg005_0017": [
+    "ascending_stairs"
+  ],
   "subject106_seg006_0000": [
     "descending_stairs"
   ],
@@ -8949,9 +8964,6 @@
     "descending_stairs"
   ],
   "subject106_seg006_0013": [
-    "descending_stairs"
-  ],
-  "subject106_seg006_0014": [
     "descending_stairs"
   ],
   "subject106_seg007_0000": [
@@ -9005,6 +9017,9 @@
   "subject106_seg007_0016": [
     "ascending_stairs"
   ],
+  "subject106_seg007_0017": [
+    "ascending_stairs"
+  ],
   "subject106_seg008_0000": [
     "descending_stairs"
   ],
@@ -9039,6 +9054,12 @@
     "descending_stairs"
   ],
   "subject106_seg008_0011": [
+    "descending_stairs"
+  ],
+  "subject106_seg008_0012": [
+    "descending_stairs"
+  ],
+  "subject106_seg008_0013": [
     "descending_stairs"
   ],
   "subject106_seg009_0000": [
@@ -9218,18 +9239,6 @@
   "subject106_seg009_0058": [
     "walking"
   ],
-  "subject106_seg009_0059": [
-    "walking"
-  ],
-  "subject106_seg009_0060": [
-    "walking"
-  ],
-  "subject106_seg009_0061": [
-    "walking"
-  ],
-  "subject106_seg009_0062": [
-    "walking"
-  ],
   "subject106_seg010_0000": [
     "nordic_walking"
   ],
@@ -9339,6 +9348,21 @@
     "nordic_walking"
   ],
   "subject106_seg010_0036": [
+    "nordic_walking"
+  ],
+  "subject106_seg010_0037": [
+    "nordic_walking"
+  ],
+  "subject106_seg010_0038": [
+    "nordic_walking"
+  ],
+  "subject106_seg010_0039": [
+    "nordic_walking"
+  ],
+  "subject106_seg010_0040": [
+    "nordic_walking"
+  ],
+  "subject106_seg010_0041": [
     "nordic_walking"
   ],
   "subject106_seg011_0000": [
@@ -9692,6 +9716,24 @@
   "subject106_seg012_0067": [
     "running"
   ],
+  "subject106_seg012_0068": [
+    "running"
+  ],
+  "subject106_seg012_0069": [
+    "running"
+  ],
+  "subject106_seg012_0070": [
+    "running"
+  ],
+  "subject106_seg012_0071": [
+    "running"
+  ],
+  "subject106_seg012_0072": [
+    "running"
+  ],
+  "subject106_seg012_0073": [
+    "running"
+  ],
   "subject107_seg000_0000": [
     "lying"
   ],
@@ -9927,6 +9969,9 @@
     "lying"
   ],
   "subject107_seg000_0078": [
+    "lying"
+  ],
+  "subject107_seg000_0079": [
     "lying"
   ],
   "subject107_seg001_0000": [
@@ -10283,9 +10328,6 @@
   "subject107_seg002_0082": [
     "standing"
   ],
-  "subject107_seg002_0083": [
-    "standing"
-  ],
   "subject107_seg003_0000": [
     "ironing"
   ],
@@ -10352,18 +10394,6 @@
   "subject107_seg003_0021": [
     "ironing"
   ],
-  "subject107_seg003_0022": [
-    "ironing"
-  ],
-  "subject107_seg003_0023": [
-    "ironing"
-  ],
-  "subject107_seg003_0024": [
-    "ironing"
-  ],
-  "subject107_seg003_0025": [
-    "ironing"
-  ],
   "subject107_seg004_0000": [
     "vacuum_cleaning"
   ],
@@ -10410,6 +10440,12 @@
     "vacuum_cleaning"
   ],
   "subject107_seg004_0015": [
+    "vacuum_cleaning"
+  ],
+  "subject107_seg004_0016": [
+    "vacuum_cleaning"
+  ],
+  "subject107_seg004_0017": [
     "vacuum_cleaning"
   ],
   "subject107_seg005_0000": [
@@ -10478,6 +10514,15 @@
   "subject107_seg005_0021": [
     "ascending_stairs"
   ],
+  "subject107_seg005_0022": [
+    "ascending_stairs"
+  ],
+  "subject107_seg005_0023": [
+    "ascending_stairs"
+  ],
+  "subject107_seg005_0024": [
+    "ascending_stairs"
+  ],
   "subject107_seg006_0000": [
     "descending_stairs"
   ],
@@ -10524,15 +10569,6 @@
     "descending_stairs"
   ],
   "subject107_seg006_0015": [
-    "descending_stairs"
-  ],
-  "subject107_seg006_0016": [
-    "descending_stairs"
-  ],
-  "subject107_seg006_0017": [
-    "descending_stairs"
-  ],
-  "subject107_seg006_0018": [
     "descending_stairs"
   ],
   "subject107_seg007_0000": [
@@ -10589,12 +10625,6 @@
   "subject107_seg007_0017": [
     "ascending_stairs"
   ],
-  "subject107_seg007_0018": [
-    "ascending_stairs"
-  ],
-  "subject107_seg007_0019": [
-    "ascending_stairs"
-  ],
   "subject107_seg008_0000": [
     "descending_stairs"
   ],
@@ -10632,15 +10662,6 @@
     "descending_stairs"
   ],
   "subject107_seg008_0012": [
-    "descending_stairs"
-  ],
-  "subject107_seg008_0013": [
-    "descending_stairs"
-  ],
-  "subject107_seg008_0014": [
-    "descending_stairs"
-  ],
-  "subject107_seg008_0015": [
     "descending_stairs"
   ],
   "subject107_seg009_0000": [
@@ -10895,6 +10916,9 @@
   "subject107_seg009_0083": [
     "walking"
   ],
+  "subject107_seg009_0084": [
+    "walking"
+  ],
   "subject107_seg010_0000": [
     "nordic_walking"
   ],
@@ -11037,6 +11061,27 @@
     "nordic_walking"
   ],
   "subject107_seg010_0047": [
+    "nordic_walking"
+  ],
+  "subject107_seg010_0048": [
+    "nordic_walking"
+  ],
+  "subject107_seg010_0049": [
+    "nordic_walking"
+  ],
+  "subject107_seg010_0050": [
+    "nordic_walking"
+  ],
+  "subject107_seg010_0051": [
+    "nordic_walking"
+  ],
+  "subject107_seg010_0052": [
+    "nordic_walking"
+  ],
+  "subject107_seg010_0053": [
+    "nordic_walking"
+  ],
+  "subject107_seg010_0054": [
     "nordic_walking"
   ],
   "subject107_seg011_0000": [
@@ -11193,6 +11238,27 @@
     "cycling"
   ],
   "subject107_seg011_0051": [
+    "cycling"
+  ],
+  "subject107_seg011_0052": [
+    "cycling"
+  ],
+  "subject107_seg011_0053": [
+    "cycling"
+  ],
+  "subject107_seg011_0054": [
+    "cycling"
+  ],
+  "subject107_seg011_0055": [
+    "cycling"
+  ],
+  "subject107_seg011_0056": [
+    "cycling"
+  ],
+  "subject107_seg011_0057": [
+    "cycling"
+  ],
+  "subject107_seg011_0058": [
     "cycling"
   ],
   "subject107_seg012_0000": [
@@ -11447,6 +11513,42 @@
   "subject108_seg000_0071": [
     "lying"
   ],
+  "subject108_seg000_0072": [
+    "lying"
+  ],
+  "subject108_seg000_0073": [
+    "lying"
+  ],
+  "subject108_seg000_0074": [
+    "lying"
+  ],
+  "subject108_seg000_0075": [
+    "lying"
+  ],
+  "subject108_seg000_0076": [
+    "lying"
+  ],
+  "subject108_seg000_0077": [
+    "lying"
+  ],
+  "subject108_seg000_0078": [
+    "lying"
+  ],
+  "subject108_seg000_0079": [
+    "lying"
+  ],
+  "subject108_seg000_0080": [
+    "lying"
+  ],
+  "subject108_seg000_0081": [
+    "lying"
+  ],
+  "subject108_seg000_0082": [
+    "lying"
+  ],
+  "subject108_seg000_0083": [
+    "lying"
+  ],
   "subject108_seg001_0000": [
     "sitting"
   ],
@@ -11664,6 +11766,21 @@
     "sitting"
   ],
   "subject108_seg001_0072": [
+    "sitting"
+  ],
+  "subject108_seg001_0073": [
+    "sitting"
+  ],
+  "subject108_seg001_0074": [
+    "sitting"
+  ],
+  "subject108_seg001_0075": [
+    "sitting"
+  ],
+  "subject108_seg001_0076": [
+    "sitting"
+  ],
+  "subject108_seg001_0077": [
     "sitting"
   ],
   "subject108_seg002_0000": [
@@ -11906,12 +12023,6 @@
   "subject108_seg002_0079": [
     "standing"
   ],
-  "subject108_seg002_0080": [
-    "standing"
-  ],
-  "subject108_seg002_0081": [
-    "standing"
-  ],
   "subject108_seg003_0000": [
     "ironing"
   ],
@@ -11990,21 +12101,6 @@
   "subject108_seg003_0025": [
     "ironing"
   ],
-  "subject108_seg003_0026": [
-    "ironing"
-  ],
-  "subject108_seg003_0027": [
-    "ironing"
-  ],
-  "subject108_seg003_0028": [
-    "ironing"
-  ],
-  "subject108_seg003_0029": [
-    "ironing"
-  ],
-  "subject108_seg003_0030": [
-    "ironing"
-  ],
   "subject108_seg004_0000": [
     "vacuum_cleaning"
   ],
@@ -12071,6 +12167,9 @@
   "subject108_seg004_0021": [
     "vacuum_cleaning"
   ],
+  "subject108_seg004_0022": [
+    "vacuum_cleaning"
+  ],
   "subject108_seg005_0000": [
     "ascending_stairs"
   ],
@@ -12108,6 +12207,12 @@
     "ascending_stairs"
   ],
   "subject108_seg005_0012": [
+    "ascending_stairs"
+  ],
+  "subject108_seg005_0013": [
+    "ascending_stairs"
+  ],
+  "subject108_seg005_0014": [
     "ascending_stairs"
   ],
   "subject108_seg006_0000": [
@@ -12443,6 +12548,15 @@
   "subject108_seg009_0076": [
     "walking"
   ],
+  "subject108_seg009_0077": [
+    "walking"
+  ],
+  "subject108_seg009_0078": [
+    "walking"
+  ],
+  "subject108_seg009_0079": [
+    "walking"
+  ],
   "subject108_seg010_0000": [
     "cycling"
   ],
@@ -12617,6 +12731,27 @@
   "subject108_seg010_0057": [
     "cycling"
   ],
+  "subject108_seg010_0058": [
+    "cycling"
+  ],
+  "subject108_seg010_0059": [
+    "cycling"
+  ],
+  "subject108_seg010_0060": [
+    "cycling"
+  ],
+  "subject108_seg010_0061": [
+    "cycling"
+  ],
+  "subject108_seg010_0062": [
+    "cycling"
+  ],
+  "subject108_seg010_0063": [
+    "cycling"
+  ],
+  "subject108_seg010_0064": [
+    "cycling"
+  ],
   "subject108_seg011_0000": [
     "nordic_walking"
   ],
@@ -12750,27 +12885,6 @@
     "nordic_walking"
   ],
   "subject108_seg011_0044": [
-    "nordic_walking"
-  ],
-  "subject108_seg011_0045": [
-    "nordic_walking"
-  ],
-  "subject108_seg011_0046": [
-    "nordic_walking"
-  ],
-  "subject108_seg011_0047": [
-    "nordic_walking"
-  ],
-  "subject108_seg011_0048": [
-    "nordic_walking"
-  ],
-  "subject108_seg011_0049": [
-    "nordic_walking"
-  ],
-  "subject108_seg011_0050": [
-    "nordic_walking"
-  ],
-  "subject108_seg011_0051": [
     "nordic_walking"
   ],
   "subject108_seg012_0000": [
@@ -12935,6 +13049,12 @@
   "subject108_seg012_0053": [
     "running"
   ],
+  "subject108_seg012_0054": [
+    "running"
+  ],
+  "subject108_seg012_0055": [
+    "running"
+  ],
   "subject108_seg013_0000": [
     "rope_jumping"
   ],
@@ -12975,21 +13095,6 @@
     "rope_jumping"
   ],
   "subject108_seg013_0013": [
-    "rope_jumping"
-  ],
-  "subject108_seg013_0014": [
-    "rope_jumping"
-  ],
-  "subject108_seg013_0015": [
-    "rope_jumping"
-  ],
-  "subject108_seg013_0016": [
-    "rope_jumping"
-  ],
-  "subject108_seg013_0017": [
-    "rope_jumping"
-  ],
-  "subject108_seg013_0018": [
     "rope_jumping"
   ],
   "subject109_seg000_0000": [

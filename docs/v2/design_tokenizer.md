@@ -34,8 +34,11 @@ Center frequencies `f_1..f_K` fixed in Hz, log-spaced over the human-motion band
 `f_k = f_min·(f_max/f_min)^{(k−1)/(K−1)}`, e.g. `f_min=0.3, f_max=15, K=32`.
 Constant-Q Gaussian weights (bandwidth scales with center → log resolution):
 `H_k[m] = exp( −½ ((φ[m] − f_k)/σ_k)² )`, `σ_k = f_k /(2Q)`, `Q≈4`.
-Band energy (physical units):
-`E_{k,c} = Σ_m H_k[m] · |X_c[m]|²`.
+Band energy (physical units), **normalized by window energy** `Σ_n w[n]²` so it is a
+power estimate independent of the sample count `N=r·D` (by Parseval `Σ_m|X|² ∝ Σ_n w² ∝ N`;
+without this both `E` and the amplitude scalar would scale with `r·D` and silently encode
+the sampling rate — caught in the M1 debug sweep):
+`E_{k,c} = (Σ_m H_k[m] · |X_c[m]|²) / Σ_n w[n]²`.
 
 Because `H_k` is a fixed function of **physical Hz** and `φ[m]` is computed from native `(r,S)`, a 2 Hz gait signal deposits energy in the same `f_k≈2 Hz` filter at 20/50/100 Hz. *Verified:* raw log-`E` cosine across rates = 0.997/0.991/0.995 (D=1.0–2.5 s); top-2 energy bands coincide exactly at 1.99 Hz and ~5 Hz for all three rates.
 
@@ -120,5 +123,46 @@ Filterbank is applied **identically and independently per channel** → channel-
 - **Untouched (preserve):** `token_text_encoder.py` (`ChannelTextFusion`, label banks), `positional_encoding.py` channel-semantic path, `transformer.py`, `semantic_alignment.py`, `semantic_loss.py`.
 - **Config keys added:** `{n_bands:32, f_min:0.3, f_max:15.0, Q:4.0, dft_size:256, nyquist_margin:0.9, tokenizer_learnable:false, tokenizer_norm:"frozen", use_amplitude:true}`.
 - **PoC (validated numbers):** rate-invariance cosine 0.997/0.991/0.995 across 20/50/100 Hz; exact peak-band coincidence at 2 Hz & 5 Hz; aliasing contrast 22 Hz→20.67 Hz phantom under current interp-to-64.
+
+---
+
+## Implementation status (M1 build + debug sweep)
+
+**Built + verified.** `model/feature_extractor.py::PhysicalFilterbankTokenizer` (Arm A default,
+Arm B/`learnable` selectable), wired as a selectable `feature_extractor_type='physical_filterbank'`
+through `preprocessing.py` (`zero_pad_patches` + `pad_to_size` mode), `encoder.py` (rate/N threaded
+into `forward`/`encode_from_raw`), and `config.py` (`small_deep_fb`). `tests/test_physical_filterbank_tokenizer.py`
+= 20 passing tests (rate-invariance, streaming==offline, masks, guardrails, calibration, Arm B). No
+regressions in the existing model suite. Current checkpoint/eval path untouched.
+
+**Debug sweep (6 adversarial lenses) — findings resolved:**
+1. *(CONFIRMED, fixed)* Band energy `E` and the amplitude scalar scaled with `N=r·D` (unnormalized
+   rDFT) → now divided by window energy `Σw²` (§1.2). Regression tests assert amp is rate- and
+   duration-invariant for a fixed physical tone.
+2. *(fixed)* `encoder.forward` now **requires** `patch_len_samples` in filterbank mode (was silently
+   defaulting to `N=S`, corrupting Hann/DC for padded patches) — loud error, symmetric with the rate guard.
+3. *(fixed)* Arm B learnable centers use a smooth `sigmoid`→`(f_min,f_max)` map instead of a hard
+   `clamp` (which froze the top band from step 0 and could produce `0·inf=NaN`).
+4. *(fixed)* Calibration (`accumulate_norm_stats`) now applies the Nyquist mask per band, so high
+   bands' frozen stats are not dragged toward 0 by low-rate samples; unseen bands fall back to identity.
+5. *(noted for M4)* Tokenizer hyperparameters are not yet threaded through the checkpoint save/load
+   chain (`get_config()` added on the tokenizer; see M4 checklist). Inert today (config == defaults).
+
+**Deferred to the M4 retrain cutover (co-designed with an actual training run):**
+- Training-loop path: thread `sampling_rate_hz` + `patch_len_samples` through
+  `SemanticAlignmentModel.forward`/`_preprocess_raw_batch`, and have the DataLoader emit patches
+  zero-padded to `S` (not interpolated to `TARGET_PATCH_SIZE`). Until then the training path fails
+  *loudly* under `small_deep_fb` (verified: missing-rate ValueError + `seq_len==dft_size` assert).
+- Chain-of-custody for tokenizer hyperparams: persist `n_bands/f_min/f_max/tokenizer_Q/dft_size/
+  nyquist_margin/tokenizer_learnable/tokenizer_norm/use_amplitude/use_resolution_mask` in the saved
+  `encoder` config block; read + pass them in `model_loading.load_model`; add a reload-equality guard.
+- Run `fit_norm_stats` over the **augmented** `(r,D)` distribution during the first training epoch,
+  then freeze.
+- **Strip sampling rate + window duration from the channel-description text** (multi_dataset_loader.py):
+  keep placement + gravity only. Rate/duration are conveyed by the tokenizer + the `o_k`/`res_k` masks;
+  the frozen-SBERT text can't do numeracy and a raw rate scalar is a dataset fingerprint (leakage risk).
+  Decision recorded in `research_conditioning.md` §7 — masks only, no rate/duration embedding. Must land
+  *with* the tokenizer swap, not before (the current CNN model relies on the text as its only rate signal).
+- The "exact deletions" above (remove CNN/spectral classes + interpolation) happen at cutover.
 
 **References:** [AaSP 2025](https://consensus.app/papers/details/519c2b54e3ee5ed99ebb9d68b231a4c7/), [BlurPool/Zhang 2019](https://consensus.app/papers/details/74cb2454204e5c6191b34d32f37f05b4/), [Michau 2021](https://consensus.app/papers/details/5e035cb6e5425a97b056e1c803d74770/), [Wave-U-Net DWT 2021](https://consensus.app/papers/details/a6ecb83c936a5363a48db16cec92f805/), [Ghaffari 2024 (learnable frontends)](https://consensus.app/papers/details/59964a2584355a5ba01c23cb2b451dbc/), [Koneripalli 2020 (rate-invariant AE)](https://consensus.app/papers/details/92264aa39b645e5999bff8f27a41169f/), [Han TKDE'23 (CI)](https://consensus.app/papers/details/6739ef37d4ab5af28979718e661fe3dd/), [PatchTST](https://consensus.app/papers/details/7425f108b08556ce919a01fa9d1376ac/), [P2LHAP 2024](https://consensus.app/papers/details/ca93f18a1445527fb380739fba835277/), [GOAT IMWUT'24](https://consensus.app/papers/details/ed52d465eb1d5e1f8a35fb611d3ba628/), [Ghosh 2026 (macro-F1)](https://consensus.app/papers/details/5e6c92a6f65a5f029618ecf827a0f54c/).

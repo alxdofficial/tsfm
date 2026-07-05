@@ -130,7 +130,7 @@ DATA_ROOT = os.environ.get("TSFM_DATA_ROOT", os.path.join(os.path.dirname(os.pat
 # Training datasets (10 diverse HAR datasets)
 # Zero-shot test datasets are EXCLUDED (6): motionsense, realworld, mobiact, shoaib, opportunity, harth
 # Zero-shot test datasets (6): motionsense, realworld, mobiact, shoaib, opportunity, harth
-DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'recgym']
+DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'recgym', 'capture24']
 random.seed(42)
 PATCH_SIZE_PER_DATASET = {
     # Fixed-length sessions (2.56s) - use 1.0s patches for 2 patches/session
@@ -148,6 +148,7 @@ PATCH_SIZE_PER_DATASET = {
     'recgym': 1.5,        # 20 Hz, min_session=2.0s → use 1.5s (was 2.5s)
     'hapt': 1.25,         # 50 Hz, min_session=1.48s → use 1.25s (was 1.5s)
     'kuhar': 1.5,         # 100 Hz, min_session=2.0s → use 1.5s
+    'capture24': 1.5,     # 100 Hz free-living wrist accel, min window ≥2.0s → use 1.5s
     # Zero-shot datasets (NOT trained on, only for evaluation)
     'motionsense': 1.5,   # 50 Hz — zero-shot (primary eval dataset)
     'opportunity': 1.5,   # 30 Hz — zero-shot (GOAT baseline comparison)
@@ -174,6 +175,27 @@ CNN_KERNEL_SIZES = _cfg["cnn_kernel_sizes"]
 TARGET_PATCH_SIZE = _cfg["target_patch_size"]
 FEATURE_EXTRACTOR_TYPE = _cfg.get("feature_extractor_type", "cnn")  # From config (no override)
 SPECTRAL_RATIO = _cfg.get("spectral_ratio", 0.25)
+# PHz-Filterbank tokenizer (feature_extractor_type='physical_filterbank'); ignored for CNN/spectral.
+IS_FILTERBANK = FEATURE_EXTRACTOR_TYPE == "physical_filterbank"
+N_BANDS = _cfg.get("n_bands", 32)
+F_MIN = _cfg.get("f_min", 0.3)
+F_MAX = _cfg.get("f_max", 15.0)
+TOKENIZER_Q = _cfg.get("tokenizer_Q", 4.0)
+DFT_SIZE = _cfg.get("dft_size", 512)
+NYQUIST_MARGIN = _cfg.get("nyquist_margin", 0.9)
+TOKENIZER_LEARNABLE = _cfg.get("tokenizer_learnable", False)
+TOKENIZER_NORM = _cfg.get("tokenizer_norm", "frozen")
+USE_AMPLITUDE = _cfg.get("use_amplitude", True)
+USE_RESOLUTION_MASK = _cfg.get("use_resolution_mask", True)
+# Streamable encoder (Phase E)
+USE_ROPE = _cfg.get("use_rope", False)
+ROPE_MIN_PERIOD = _cfg.get("rope_min_period", 1.0)
+ROPE_MAX_PERIOD = _cfg.get("rope_max_period", 1000.0)
+STREAM_CAUSAL_PROB = _cfg.get("stream_causal_prob", 0.0)
+STREAM_WINDOW_SEC = _cfg.get("stream_window_sec", 8.0)
+STREAM_LOOKAHEAD_PATCHES = _cfg.get("stream_lookahead_patches", 0)
+DISTILL_WEIGHT = _cfg.get("distill_weight", 1.0)
+ATTENTION_SINK = _cfg.get("attention_sink", True)
 
 # Semantic alignment head
 D_MODEL_FUSED = _cfg["d_model_fused"]
@@ -318,7 +340,36 @@ USE_GROUP_BALANCED_SAMPLING = True  # Default: enable group-balanced sampling
 # During training, randomly sample patch sizes from valid ranges per dataset
 # Ranges are constrained by session duration (need ≥2 patches per session)
 USE_PATCH_SIZE_AUGMENTATION = True  # Enable patch size augmentation for better generalization
-USE_ROTATION_AUGMENTATION = False  # Disabled — destroys gravity orientation signal
+USE_ROTATION_AUGMENTATION = False  # DEPRECATED (superseded by AUG_CONFIG.yaw_rotation)
+
+# =================================================================
+# Signal augmentation curriculum — SINGLE SOURCE OF TRUTH.
+# Every augmentation is switched on/off + tuned here; AUG_CONFIG.summary() prints
+# the active set at startup. Preset via TSFM_AUG_PRESET = v2 | legacy | none:
+#   v2     -> P1-P4 (gravity-remove, yaw-only rotation, anti-aliased rate,
+#             channel dropout) + jitter + scale        [default]
+#   legacy -> jitter + scale only (pre-V2 behaviour)
+#   none   -> no signal augmentation
+# Physics-changing augs (gravity/rate/dropout) co-vary the channel-text so the
+# model's channel conditioning stays consistent with the transformed signal.
+# =================================================================
+from datasets.imu_pretraining_dataset.augmentations import AugmentationConfig as _AugCfg
+_AUG_PRESET = os.environ.get("TSFM_AUG_PRESET", "v2").lower()
+_AUG_FACTORIES = {
+    "v2": _AugCfg.default_v2,
+    "legacy": _AugCfg.legacy,
+    "none": _AugCfg.none,
+}
+_AUG_PRESET_EFFECTIVE = _AUG_PRESET if _AUG_PRESET in _AUG_FACTORIES else "v2"
+AUG_CONFIG = _AUG_FACTORIES[_AUG_PRESET_EFFECTIVE]()
+# Honour the legacy ABLATION_SIGNAL_AUG=0 kill-switch (disables jitter + scale).
+if not ABLATION_SIGNAL_AUG:
+    AUG_CONFIG.jitter.enabled = False
+    AUG_CONFIG.scale.enabled = False
+# --- per-augmentation overrides go here, e.g.: ---
+#   AUG_CONFIG.rate.enabled = False
+#   AUG_CONFIG.gravity.p = 0.7
+#   AUG_CONFIG.channel_dropout.groups = ("gyro", "mag")
 MIN_PATCHES_PER_SAMPLE = 1  # Minimum patches required per sample
 
 # Valid patch size ranges per dataset: (min_sec, max_sec, step_sec)
@@ -339,6 +390,7 @@ PATCH_SIZE_RANGE_PER_DATASET = {
     'recgym':       (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
     'hapt':         (0.75, 1.25, 0.25),  # min_session=1.48s → [0.75, 1.0, 1.25]
     'kuhar':        (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
+    'capture24':    (1.0, 1.75, 0.25),   # min window=2.0s → [1.0, 1.25, 1.5, 1.75]
 }
 
 # =================================================================
@@ -422,9 +474,13 @@ class SemanticAlignmentModel(nn.Module):
 
         return random.choice(valid_sizes)
 
-    def forward(self, patches, channel_descriptions, channel_mask, patch_mask):
+    def forward(self, patches, channel_descriptions, channel_mask, patch_mask, metadata=None,
+                temporal_mask=None):
         """
         Forward pass with pre-patched data from DataLoader.
+
+        temporal_mask: optional (P,P) or per-sample (B,P,P) causal/windowed mask for the
+        temporal attention — full/None = offline (teacher), causal-window = streaming (student).
 
         Args:
             patches: (batch, max_patches, target_patch_size, max_channels) padded patches
@@ -452,14 +508,31 @@ class SemanticAlignmentModel(nn.Module):
             for descs in channel_descriptions
         ]
 
+        # Filterbank tokenizer needs per-sample native rate + patch length (from batch metadata).
+        fb_kwargs = {}
+        if getattr(self.encoder, 'is_filterbank', False):
+            if metadata is None or metadata[0].get('patch_len_samples') is None:
+                raise ValueError(
+                    "physical_filterbank encoder requires batch metadata with sampling_rate_hz + "
+                    "patch_len_samples per sample (build the DataLoader with dft_size set)"
+                )
+            fb_kwargs = {
+                'sampling_rate_hz': torch.tensor([m['sampling_rate_hz'] for m in metadata],
+                                                 dtype=torch.float32, device=patches.device),
+                'patch_len_samples': torch.tensor([m['patch_len_samples'] for m in metadata],
+                                                  dtype=torch.long, device=patches.device),
+            }
+
         # Encode with frozen/unfrozen encoder (already batched — patches from DataLoader)
         if FREEZE_ENCODER:
             with torch.no_grad():
                 encoded_batch = self.encoder(patches, batched_channel_descs, channel_mask=channel_mask,
-                                              patch_attention_mask=patch_mask)
+                                              patch_attention_mask=patch_mask, temporal_mask=temporal_mask,
+                                              **fb_kwargs)
         else:
             encoded_batch = self.encoder(patches, batched_channel_descs, channel_mask=channel_mask,
-                                          patch_attention_mask=patch_mask)
+                                          patch_attention_mask=patch_mask, temporal_mask=temporal_mask,
+                                          **fb_kwargs)
 
         # Batch-encode ALL channel descriptions at once (per-label cache handles dedup)
         # Flatten: B lists of max_channels strings → B*max_channels strings
@@ -501,6 +574,7 @@ class SemanticAlignmentModel(nn.Module):
 
         all_patches = []
         all_channel_descs = []
+        all_meta = []
         valid_samples = []
 
         for i in range(batch_size):
@@ -511,12 +585,13 @@ class SemanticAlignmentModel(nn.Module):
             else:
                 sample_data = data[i]
 
-            patches, _ = self.encoder.preprocess(
+            patches, pmeta = self.encoder.preprocess(
                 sample_data, sampling_rate_hz=sampling_rates[i], patch_size_sec=patch_sizes[i]
             )
             if patches is None or len(patches) == 0:
                 all_patches.append(None)
                 all_channel_descs.append(None)
+                all_meta.append(None)
                 valid_samples.append(False)
                 continue
             if len(patches) > MAX_PATCHES_PER_SAMPLE:
@@ -524,6 +599,9 @@ class SemanticAlignmentModel(nn.Module):
             channel_descs = channel_descriptions[i]
             all_patches.append(patches)
             all_channel_descs.append(channel_descs)
+            # Per-sample rate + native patch length for the filterbank tokenizer.
+            all_meta.append({'sampling_rate_hz': sampling_rates[i],
+                             'patch_len_samples': pmeta.get('patch_len_samples')})
             valid_samples.append(True)
 
         valid_indices = [i for i, v in enumerate(valid_samples) if v]
@@ -533,10 +611,14 @@ class SemanticAlignmentModel(nn.Module):
         max_patches_valid = max(len(all_patches[i]) for i in valid_indices)
         max_channels = data.shape[2]
         num_valid = len(valid_indices)
+        # Filterbank patches are zero-padded to dft_size (S); legacy patches are interpolated
+        # to TARGET_PATCH_SIZE. Size the batch tensor to whatever the patches actually carry.
+        patch_time = self.encoder.dft_size if getattr(self.encoder, 'is_filterbank', False) else TARGET_PATCH_SIZE
 
-        batched_patches = torch.zeros(num_valid, max_patches_valid, TARGET_PATCH_SIZE, max_channels, device=device)
+        batched_patches = torch.zeros(num_valid, max_patches_valid, patch_time, max_channels, device=device)
         patch_mask = torch.zeros(num_valid, max_patches_valid, dtype=torch.bool, device=device)
         batched_channel_descs = []
+        batched_metadata = []
 
         for batch_idx, sample_idx in enumerate(valid_indices):
             patches = all_patches[sample_idx]
@@ -544,12 +626,13 @@ class SemanticAlignmentModel(nn.Module):
             batched_patches[batch_idx, :num_patches] = patches
             patch_mask[batch_idx, :num_patches] = True
             batched_channel_descs.append(all_channel_descs[sample_idx])
+            batched_metadata.append(all_meta[sample_idx])
 
         # Subset channel_mask to valid samples only
         valid_indices_t = torch.tensor(valid_indices, device=device)
         batched_channel_mask = channel_mask[valid_indices_t]
 
-        return batched_patches, patch_mask, batched_channel_mask, batched_channel_descs, valid_indices
+        return batched_patches, patch_mask, batched_channel_mask, batched_channel_descs, valid_indices, batched_metadata
 
     def forward_from_raw(self, data, channel_descriptions, channel_mask, sampling_rates, patch_sizes,
                          attention_mask=None, return_per_patch=False):
@@ -587,8 +670,9 @@ class SemanticAlignmentModel(nn.Module):
                 return torch.zeros(0, 0, self.semantic_dim, device=data.device), torch.zeros(0, 0, dtype=torch.bool, device=data.device)
             return torch.zeros(0, self.semantic_dim, device=data.device)
 
-        batched_patches, patch_mask, batched_channel_mask, batched_channel_descs, valid_indices = result
-        embeddings = self.forward(batched_patches, batched_channel_descs, batched_channel_mask, patch_mask)
+        batched_patches, patch_mask, batched_channel_mask, batched_channel_descs, valid_indices, batched_metadata = result
+        embeddings = self.forward(batched_patches, batched_channel_descs, batched_channel_mask, patch_mask,
+                                  metadata=batched_metadata)
 
         # Per-patch model: embeddings are (B, P, D)
         if self.semantic_head.per_patch_prediction and embeddings.dim() == 3:
@@ -692,7 +776,7 @@ def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_b
             text_embeddings = label_bank.encode(label_texts, normalize=True)
 
             # Forward pass (no gradients)
-            imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
+            imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask, metadata=metadata)
 
             if PER_PATCH_PREDICTION:
                 flat_imu, flat_text, _ = flatten_per_patch_embeddings(
@@ -862,7 +946,7 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
             imu_queue, text_queue = None, None
 
         with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
-            imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
+            imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask, metadata=metadata)
 
             if PER_PATCH_PREDICTION:
                 flat_imu, flat_text, flat_labels = flatten_per_patch_embeddings(
@@ -878,6 +962,21 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
                 loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
                                          return_metrics=True, imu_queue=imu_queue, text_queue=text_queue,
                                          frozen_text_embeddings=frozen_text)
+
+        # Dual-forward + in-place offline->online distillation (streaming recipe): the forward
+        # above is the FULL-context teacher; sample a causal-window student mask and distill the
+        # student's per-patch embeddings toward the (detached) teacher (research_streaming_design.md).
+        _enc = getattr(model, 'module', model).encoder
+        if (PER_PATCH_PREDICTION and getattr(_enc, 'is_filterbank', False)
+                and DISTILL_WEIGHT > 0 and STREAM_CAUSAL_PROB > 0):
+            _student_mask = _sample_stream_mask(_positions_from_metadata(metadata, patches.shape[1], device))
+            if _student_mask is not None:
+                with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
+                    _student = model(patches, channel_descriptions, channel_mask, patch_mask,
+                                     metadata=metadata, temporal_mask=_student_mask)
+                    _distill = _distillation_loss(_student, imu_embeddings, patch_mask)
+                loss = loss + DISTILL_WEIGHT * _distill
+                metrics['distill_loss'] = float(_distill.detach())
 
         window_samples += current_bs
         window_micro_batches += 1
@@ -1124,7 +1223,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
 
             with torch.inference_mode():
                 with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
-                    mb_imu_emb = model(mb_patches, mb_channel_descriptions, mb_channel_mask, mb_patch_mask)
+                    mb_imu_emb = model(mb_patches, mb_channel_descriptions, mb_channel_mask, mb_patch_mask, metadata=mb_metadata)
                 mb_text_emb = label_bank.encode(mb_label_texts, normalize=True)
                 mb_frozen_text = label_bank.encode_frozen(mb_label_texts, normalize=True)
 
@@ -1157,6 +1256,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
                 'patch_mask': mb_patch_mask.cpu().pin_memory(),
                 'label_texts': mb_label_texts,
                 'channel_descriptions': mb_channel_descriptions,
+                'metadata': mb_metadata,  # per-sample rate + patch_len for the filterbank re-forward
             })
 
         # --- Phase 2: Compute loss over ALL cached embeddings ---
@@ -1197,7 +1297,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
                 dbg_p_mask = first_mb['patch_mask'].to(device, non_blocking=True)
                 with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
                     dbg_imu = model(dbg_patches, first_mb['channel_descriptions'],
-                                    dbg_ch_mask, dbg_p_mask)
+                                    dbg_ch_mask, dbg_p_mask, metadata=first_mb.get('metadata'))
                 dbg_text = label_bank.encode(first_mb['label_texts'], normalize=True)
                 if PER_PATCH_PREDICTION:
                     dbg_flat_imu, dbg_flat_text, _ = flatten_per_patch_embeddings(
@@ -1219,7 +1319,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
                 mb_imu_emb = model(
                     mb_patches, mb_data['channel_descriptions'],
-                    mb_channel_mask, mb_patch_mask
+                    mb_channel_mask, mb_patch_mask, metadata=mb_data.get('metadata')
                 )
 
             if PER_PATCH_PREDICTION:
@@ -1402,7 +1502,7 @@ def validate(model, label_bank, dataloader, criterion, device, epoch, stage="sta
             text_embeddings = label_bank.encode(label_texts, normalize=True)
 
             with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
-                imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
+                imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask, metadata=metadata)
 
                 if PER_PATCH_PREDICTION:
                     flat_imu, flat_text, flat_labels = flatten_per_patch_embeddings(
@@ -1547,7 +1647,7 @@ def evaluate_unseen(model, label_bank, dataloader, device, epoch):
             channel_descriptions = [m['channel_descriptions'] for m in metadata]
 
             with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
-                imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask)
+                imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask, metadata=metadata)
 
             all_imu_embeddings.append(imu_embeddings)
             if PER_PATCH_PREDICTION:
@@ -1604,12 +1704,73 @@ def is_main_process():
     return not dist.is_initialized() or dist.get_rank() == 0
 
 
+def _positions_from_metadata(metadata, num_patches, device):
+    """Per-patch physical start times (B, P) seconds from batch metadata (non-overlapping)."""
+    D = torch.tensor([m['patch_len_samples'] / max(m['sampling_rate_hz'], 1e-6) for m in metadata],
+                     dtype=torch.float32, device=device)
+    p = torch.arange(num_patches, device=device, dtype=torch.float32)
+    return p.unsqueeze(0) * D.unsqueeze(1)
+
+
+def _sample_stream_mask(positions):
+    """Train-both mask sampler: None (full/teacher) with prob (1-STREAM_CAUSAL_PROB), else a
+    per-sample causal-window mask (student). Uses the module-level streaming config."""
+    if positions is None or STREAM_CAUSAL_PROB <= 0.0 or torch.rand(()).item() >= STREAM_CAUSAL_PROB:
+        return None
+    from model.transformer import build_temporal_mask
+    return build_temporal_mask(positions, mode='window', window_sec=STREAM_WINDOW_SEC,
+                               lookahead_patches=STREAM_LOOKAHEAD_PATCHES,
+                               attention_sink=ATTENTION_SINK)
+
+
+def _distillation_loss(student_emb, teacher_emb, patch_mask):
+    """MSE between L2-normalized student (causal) and detached teacher (full) per-patch
+    embeddings over valid patches — offline->online in-place distillation (Dual-mode ASR)."""
+    s = F.normalize(student_emb.float(), dim=-1)
+    t = F.normalize(teacher_emb.float().detach(), dim=-1)
+    m = patch_mask.unsqueeze(-1).float()
+    return ((s - t) ** 2 * m).sum() / m.sum().clamp(min=1)
+
+
+@torch.no_grad()
+def calibrate_filterbank_norm(model, loader, device, max_batches=200):
+    """Estimate the PHz-Filterbank's frozen per-band standardization stats over the
+    AUGMENTED train distribution, then freeze them (design_tokenizer.md §1.3). No-op unless
+    the encoder is the filterbank and stats are not already fitted (e.g. on resume).
+    Single-GPU: computed on the local model; a multi-GPU run would broadcast the buffers.
+    """
+    enc = getattr(model, 'module', model).encoder
+    tok = getattr(enc, 'feature_extractor', None)
+    if not getattr(enc, 'is_filterbank', False):
+        return
+    if tok is None or float(tok._norm_fitted.item()) > 0.5:
+        return
+    print(f"Calibrating filterbank per-band norm over up to {max_batches} augmented batches...")
+    tok.reset_norm_accumulator()
+    n = 0
+    for batch in loader:
+        metadata = batch['metadata']
+        rates = torch.tensor([m['sampling_rate_hz'] for m in metadata], dtype=torch.float32, device=device)
+        lens = torch.tensor([m['patch_len_samples'] for m in metadata], dtype=torch.long, device=device)
+        tok.accumulate_norm_stats(batch['patches'].to(device), rates, lens,
+                                  patch_mask=batch['patch_mask'].to(device))
+        n += 1
+        if n >= max_batches:
+            break
+    tok.finalize_norm_stats()
+    print(f"  ✓ Filterbank norm calibrated over {n} batches "
+          f"(sd range [{float(tok.norm_sd.min()):.3f}, {float(tok.norm_sd.max()):.3f}])")
+
+
 def main():
     """Main training function."""
     global CHECKPOINT_DIR
     global D_MODEL, NUM_HEADS, NUM_TEMPORAL_LAYERS, DIM_FEEDFORWARD, DROPOUT
     global USE_CROSS_CHANNEL, CNN_CHANNELS, CNN_KERNEL_SIZES, TARGET_PATCH_SIZE
     global FEATURE_EXTRACTOR_TYPE, SPECTRAL_RATIO
+    global IS_FILTERBANK, N_BANDS, F_MIN, F_MAX, TOKENIZER_Q, DFT_SIZE, NYQUIST_MARGIN
+    global TOKENIZER_LEARNABLE, TOKENIZER_NORM, USE_AMPLITUDE, USE_RESOLUTION_MASK
+    global USE_ROPE, ROPE_MIN_PERIOD, ROPE_MAX_PERIOD
     global D_MODEL_FUSED, SEMANTIC_DIM, NUM_SEMANTIC_TEMPORAL_LAYERS
     global NUM_FUSION_QUERIES, USE_FUSION_SELF_ATTENTION
     global NUM_POOL_QUERIES, USE_POOL_SELF_ATTENTION
@@ -1657,6 +1818,23 @@ def main():
                 TARGET_PATCH_SIZE = saved_cfg['target_patch_size']
                 FEATURE_EXTRACTOR_TYPE = saved_cfg.get('feature_extractor_type', 'cnn')
                 SPECTRAL_RATIO = saved_cfg.get('spectral_ratio', 0.25)
+                # PHz-Filterbank tokenizer + RoPE keys — restore from the checkpoint so a resumed
+                # run rebuilds the EXACT tokenizer/encoder its weights were trained with. These do
+                # not change tensor shapes, so a drifted value would otherwise load silently.
+                N_BANDS = saved_cfg.get('n_bands', N_BANDS)
+                F_MIN = saved_cfg.get('f_min', F_MIN)
+                F_MAX = saved_cfg.get('f_max', F_MAX)
+                TOKENIZER_Q = saved_cfg.get('tokenizer_Q', TOKENIZER_Q)
+                DFT_SIZE = saved_cfg.get('dft_size', DFT_SIZE)
+                NYQUIST_MARGIN = saved_cfg.get('nyquist_margin', NYQUIST_MARGIN)
+                TOKENIZER_LEARNABLE = saved_cfg.get('tokenizer_learnable', TOKENIZER_LEARNABLE)
+                TOKENIZER_NORM = saved_cfg.get('tokenizer_norm', TOKENIZER_NORM)
+                USE_AMPLITUDE = saved_cfg.get('use_amplitude', USE_AMPLITUDE)
+                USE_RESOLUTION_MASK = saved_cfg.get('use_resolution_mask', USE_RESOLUTION_MASK)
+                USE_ROPE = saved_cfg.get('use_rope', USE_ROPE)
+                ROPE_MIN_PERIOD = saved_cfg.get('rope_min_period', ROPE_MIN_PERIOD)
+                ROPE_MAX_PERIOD = saved_cfg.get('rope_max_period', ROPE_MAX_PERIOD)
+                IS_FILTERBANK = FEATURE_EXTRACTOR_TYPE == "physical_filterbank"
                 D_MODEL_FUSED = saved_cfg['d_model_fused']
                 SEMANTIC_DIM = saved_cfg['semantic_dim']
                 NUM_SEMANTIC_TEMPORAL_LAYERS = saved_cfg['num_semantic_temporal_layers']
@@ -1759,6 +1937,14 @@ def main():
         "cnn_channels": CNN_CHANNELS, "cnn_kernel_sizes": CNN_KERNEL_SIZES,
         "target_patch_size": TARGET_PATCH_SIZE,
         "feature_extractor_type": FEATURE_EXTRACTOR_TYPE, "spectral_ratio": SPECTRAL_RATIO,
+        "n_bands": N_BANDS, "f_min": F_MIN, "f_max": F_MAX, "tokenizer_Q": TOKENIZER_Q,
+        "dft_size": DFT_SIZE, "nyquist_margin": NYQUIST_MARGIN,
+        "tokenizer_learnable": TOKENIZER_LEARNABLE, "tokenizer_norm": TOKENIZER_NORM,
+        "use_amplitude": USE_AMPLITUDE, "use_resolution_mask": USE_RESOLUTION_MASK,
+        "use_rope": USE_ROPE, "rope_min_period": ROPE_MIN_PERIOD, "rope_max_period": ROPE_MAX_PERIOD,
+        "stream_causal_prob": STREAM_CAUSAL_PROB, "stream_window_sec": STREAM_WINDOW_SEC,
+        "stream_lookahead_patches": STREAM_LOOKAHEAD_PATCHES, "distill_weight": DISTILL_WEIGHT,
+        "attention_sink": ATTENTION_SINK,
         "normalization_method": "zscore", "interpolation_method": "linear",
         "temporal_init_scale": 0.1, "channel_init_scale": 0.1, "use_channel_encoding": True,
         "max_patches": 5000,
@@ -1783,6 +1969,11 @@ def main():
             'cnn_channels': CNN_CHANNELS, 'cnn_kernel_sizes': CNN_KERNEL_SIZES,
             'target_patch_size': TARGET_PATCH_SIZE, 'use_channel_encoding': False,
             'feature_extractor_type': FEATURE_EXTRACTOR_TYPE, 'spectral_ratio': SPECTRAL_RATIO,
+            'n_bands': N_BANDS, 'f_min': F_MIN, 'f_max': F_MAX, 'tokenizer_Q': TOKENIZER_Q,
+            'dft_size': DFT_SIZE, 'nyquist_margin': NYQUIST_MARGIN,
+            'tokenizer_learnable': TOKENIZER_LEARNABLE, 'tokenizer_norm': TOKENIZER_NORM,
+            'use_amplitude': USE_AMPLITUDE, 'use_resolution_mask': USE_RESOLUTION_MASK,
+            'use_rope': USE_ROPE, 'rope_min_period': ROPE_MIN_PERIOD, 'rope_max_period': ROPE_MAX_PERIOD,
         },
         'semantic_head': {
             'd_model_fused': D_MODEL_FUSED, 'semantic_dim': SEMANTIC_DIM,
@@ -1844,6 +2035,11 @@ def main():
         use_channel_encoding=False,  # Disabled: ChannelTextFusion handles channel semantics
         feature_extractor_type=FEATURE_EXTRACTOR_TYPE,
         spectral_ratio=SPECTRAL_RATIO,
+        n_bands=N_BANDS, f_min=F_MIN, f_max=F_MAX, tokenizer_Q=TOKENIZER_Q,
+        dft_size=DFT_SIZE, nyquist_margin=NYQUIST_MARGIN,
+        tokenizer_learnable=TOKENIZER_LEARNABLE, tokenizer_norm=TOKENIZER_NORM,
+        use_amplitude=USE_AMPLITUDE, use_resolution_mask=USE_RESOLUTION_MASK,
+        use_rope=USE_ROPE, rope_min_period=ROPE_MIN_PERIOD, rope_max_period=ROPE_MAX_PERIOD,
     ).to(device)
 
     if PRETRAINED_ENCODER_PATH and Path(PRETRAINED_ENCODER_PATH).exists():
@@ -1975,6 +2171,7 @@ def main():
 
     # Create datasets
     # Pass patch_size_range for training (augmentation), but not for validation (fixed sizes)
+    print("\n" + AUG_CONFIG.summary() + "\n")
     train_dataset = IMUPretrainingDataset(
         data_root=DATA_ROOT,
         datasets=DATASETS,
@@ -1984,9 +2181,9 @@ def main():
         max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
         seed=SEED,
         target_patch_size=TARGET_PATCH_SIZE,
+        dft_size=DFT_SIZE if IS_FILTERBANK else None,
         max_patches_per_sample=MAX_PATCHES_PER_SAMPLE,
-        use_rotation_augmentation=USE_ROTATION_AUGMENTATION,
-        use_signal_augmentation=ABLATION_SIGNAL_AUG,
+        aug_config=AUG_CONFIG,
         use_text_augmentation=ABLATION_TEXT_AUG,
     )
     val_dataset = IMUPretrainingDataset(
@@ -1998,6 +2195,7 @@ def main():
         max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
         seed=SEED,
         target_patch_size=TARGET_PATCH_SIZE,
+        dft_size=DFT_SIZE if IS_FILTERBANK else None,
         max_patches_per_sample=MAX_PATCHES_PER_SAMPLE,
     )
 
@@ -2093,6 +2291,7 @@ def main():
                 max_sessions_per_dataset=MAX_SESSIONS_PER_DATASET,
                 seed=SEED,
                 target_patch_size=TARGET_PATCH_SIZE,
+                dft_size=DFT_SIZE if IS_FILTERBANK else None,
                 max_patches_per_sample=MAX_PATCHES_PER_SAMPLE,
             )
             unseen_loader = DataLoader(
@@ -2266,6 +2465,11 @@ def main():
         model = DDP(model, device_ids=[local_rank], find_unused_parameters=True, static_graph=True)
         if is_main_process():
             print(f"✓ Wrapped model in DistributedDataParallel ({world_size} GPUs)")
+
+    # Calibrate the filterbank tokenizer's frozen per-band norm over the augmented train
+    # distribution before training (no-op for CNN/spectral or on resume).
+    if resume_checkpoint is None:
+        calibrate_filterbank_norm(model, train_loader, device)
 
     # Warmup memory bank if enabled (reduces early training volatility)
     # Skip if resuming since memory bank is restored from checkpoint

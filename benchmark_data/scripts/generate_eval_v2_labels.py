@@ -42,13 +42,15 @@ SEMANTIC_PAIR_MIN_COS = 0.60  # proposal threshold only; pairs still need human 
 # category. HARTH is a regular test dataset. VTT-ConIoT is dropped from the
 # benchmark (its ~50% no-training-equivalent construction labels made every
 # model's zero-shot number a coverage artifact rather than a capability signal).
+# opportunity demoted to appendix 2026-07 (4 subjects -> degenerate CIs; object/ambient
+# sensors, not phone/watch). Converter + data kept for an optional appendix row.
 EVALUATED_DATASETS = [
     "motionsense",
     "realworld",
     "mobiact",
     "shoaib",
-    "opportunity",
     "harth",
+    "inclusivehar",
 ]
 
 

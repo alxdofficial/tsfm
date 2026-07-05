@@ -323,7 +323,7 @@ if __name__ == "__main__":
 
     if len(sys.argv) < 2:
         print("Usage: python visualization_utils.py <dataset_path>")
-        print("Example: python visualization_utils.py data/actionsense")
+        print("Example: python visualization_utils.py data/capture24")
         sys.exit(1)
 
     dataset_path = Path(sys.argv[1])

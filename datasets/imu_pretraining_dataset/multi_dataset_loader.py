@@ -140,10 +140,12 @@ class IMUPretrainingDataset(Dataset):
         channel_filter: Optional[List[str]] = None,  # Filter channels by prefix patterns (e.g., ['acc_', 'gyro_'])
         seed: int = 42,
         target_patch_size: Optional[int] = None,  # If set, preprocess patches in DataLoader (faster training)
+        dft_size: Optional[int] = None,  # If set, FILTERBANK mode: zero-pad native patches to S (no interp), carry true N
         max_patches_per_sample: int = 48,  # Max patches per sample (only used when target_patch_size is set)
-        use_rotation_augmentation: bool = False,  # Apply SO(3) rotation to sensor triads (Stage 2)
-        use_signal_augmentation: bool = True,  # Jitter + scale augmentation
+        use_rotation_augmentation: bool = False,  # DEPRECATED: use aug_config
+        use_signal_augmentation: bool = True,  # DEPRECATED: use aug_config (jitter+scale fallback)
         use_text_augmentation: bool = True,  # Label synonyms/templates + Hz/window suffix
+        aug_config: Optional["AugmentationConfig"] = None,  # V2 unified augmentation config
     ):
         """
         Args:
@@ -189,16 +191,29 @@ class IMUPretrainingDataset(Dataset):
         self.max_sessions_per_dataset = max_sessions_per_dataset
         self.channel_filter = channel_filter
         self.target_patch_size = target_patch_size
+        self.dft_size = dft_size
+        self.filterbank_mode = dft_size is not None
         self.max_patches_per_sample = max_patches_per_sample
         self.use_rotation_augmentation = use_rotation_augmentation
         self.use_signal_augmentation = use_signal_augmentation
         self.use_text_augmentation = use_text_augmentation
 
-        # Pre-create augmentation objects (reused across __getitem__ calls)
+        # Build the unified augmentation pipeline (train split only). All
+        # augmentations are switched on/off + tuned from a single AugmentationConfig.
+        self.aug_config = None
+        self._augmenter = None
+        self._IMUSample = None
         if self.split == 'train':
-            from datasets.imu_pretraining_dataset.augmentations import IMUAugmentation
-            self._rotation_aug = IMUAugmentation(aug_types=['rotation_3d'], aug_prob=0.8)
-            self._jitter_scale_aug = IMUAugmentation(aug_types=[], aug_prob=1.0)
+            from datasets.imu_pretraining_dataset.augmentations import (
+                AugmentationConfig, IMUAugmenter, IMUSample,
+            )
+            if aug_config is None:
+                # Backward-compat fallback from the legacy bool flags (jitter+scale).
+                aug_config = (AugmentationConfig.legacy()
+                              if use_signal_augmentation else AugmentationConfig.none())
+            self.aug_config = aug_config
+            self._augmenter = IMUAugmenter(aug_config)
+            self._IMUSample = IMUSample
 
         # Set and store random seed (used by worker_init_fn)
         self.seed = seed
@@ -467,24 +482,27 @@ class IMUPretrainingDataset(Dataset):
             use_templates=True
         )
 
-        # Apply augmentations before patching (operates on raw timestep data)
-        # This runs in DataLoader workers for free parallelism
-        if self.split == 'train':
-            # SO(3) rotation augmentation for orientation invariance
-            if self.use_rotation_augmentation:
-                data = self._rotation_aug.apply(
-                    data.unsqueeze(0), None, channel_names=selected_channels
-                ).squeeze(0)
+        # Apply augmentations before patching (operates on raw timestep data).
+        # Runs in DataLoader workers for free parallelism. Physics-changing augs
+        # (gravity / rate / channel-dropout) update sampling_rate / channels /
+        # descriptions so the channel text built below stays consistent.
+        if self.split == 'train' and self._augmenter is not None:
+            aug = self._augmenter(self._IMUSample(
+                data=data,
+                channel_names=selected_channels,
+                sampling_rate=sampling_rate,
+                channel_descriptions=base_channel_descriptions,
+            ))
+            data = aug.data
+            selected_channels = aug.channel_names
+            sampling_rate = aug.sampling_rate
+            base_channel_descriptions = aug.channel_descriptions
+            num_channels = len(selected_channels)
+            # Rate resample / channel dropout may change T or C -> rebuild the mask.
+            attention_mask = torch.ones(data.shape[0], dtype=torch.bool)
 
-            # Jitter + scale augmentation for sensor noise/calibration invariance
-            if self.use_signal_augmentation:
-                if random.random() < 0.5:
-                    data = self._jitter_scale_aug.jitter(data.unsqueeze(0), sigma=0.05).squeeze(0)
-                if random.random() < 0.5:
-                    data = self._jitter_scale_aug.scale(data.unsqueeze(0), scale_range=(0.9, 1.1)).squeeze(0)
-
-        # If target_patch_size is set, preprocess patches here (parallelized across workers)
-        if self.target_patch_size is not None:
+        # If target_patch_size OR dft_size is set, preprocess patches here (parallelized across workers)
+        if self.target_patch_size is not None or self.dft_size is not None:
             from model.preprocessing import preprocess_imu_data
 
             # Patch size augmentation: randomly select from valid range during training
@@ -500,36 +518,49 @@ class IMUPretrainingDataset(Dataset):
                     actual_patch_size = random.choice(valid_sizes)
 
             try:
-                patches, _ = preprocess_imu_data(
+                patches, pmeta = preprocess_imu_data(
                     data=data,
                     sampling_rate_hz=sampling_rate,
                     patch_size_sec=actual_patch_size,
                     target_patch_size=self.target_patch_size,
+                    pad_to_size=self.dft_size,  # filterbank: zero-pad to S; None = legacy interpolation
                 )
             except ValueError:
                 # Session too short for this patch size — use full session as one patch
-                patches, _ = preprocess_imu_data(
+                actual_patch_size = len(data) / sampling_rate
+                patches, pmeta = preprocess_imu_data(
                     data=data,
                     sampling_rate_hz=sampling_rate,
-                    patch_size_sec=len(data) / sampling_rate,
+                    patch_size_sec=actual_patch_size,
                     target_patch_size=self.target_patch_size,
+                    pad_to_size=self.dft_size,
                 )
 
             # Cap patches
             if len(patches) > self.max_patches_per_sample:
                 patches = patches[:self.max_patches_per_sample]
 
-            # Append Hz/patch suffix using ACTUAL patch size (after augmentation)
-            if self.use_text_augmentation:
-                channel_descriptions = [
-                    f"{desc} (sampled at {sampling_rate:.0f}Hz, {actual_patch_size:.1f}s window)"
-                    for desc in base_channel_descriptions
-                ]
-            else:
+            if self.filterbank_mode:
+                # Filterbank: rate + duration are consumed by the tokenizer + the Nyquist/
+                # resolution masks, NOT by the frozen-SBERT text (which can't do numeracy).
+                # So the channel text stays purely semantic — no Hz/window suffix
+                # (conditioning decision, docs/v2/research_conditioning.md §7).
                 channel_descriptions = list(base_channel_descriptions)
+                patch_len_samples = pmeta.get('patch_len_samples')
+            else:
+                # Legacy CNN/spectral path interpolates rate away, so the text suffix is
+                # the ONLY rate signal — keep it.
+                if self.use_text_augmentation:
+                    channel_descriptions = [
+                        f"{desc} (sampled at {sampling_rate:.0f}Hz, {actual_patch_size:.1f}s window)"
+                        for desc in base_channel_descriptions
+                    ]
+                else:
+                    channel_descriptions = list(base_channel_descriptions)
+                patch_len_samples = None
 
             return {
-                'patches': patches,  # (num_patches, target_patch_size, num_channels)
+                'patches': patches,  # (num_patches, S or target_patch_size, num_channels)
                 'label_text': label_text,
                 'metadata': {
                     'dataset': dataset_name,
@@ -540,6 +571,7 @@ class IMUPretrainingDataset(Dataset):
                     'channel_descriptions': channel_descriptions,
                     'sampling_rate_hz': sampling_rate,
                     'patch_size_sec': actual_patch_size,
+                    'patch_len_samples': patch_len_samples,  # true native N (filterbank); None legacy
                     'num_channels': num_channels
                 }
             }

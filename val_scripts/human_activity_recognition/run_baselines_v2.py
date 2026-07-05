@@ -27,7 +27,7 @@ from val_scripts.human_activity_recognition import eval_v2
 from val_scripts.human_activity_recognition import baselines as B
 
 OUTPUT_DIR = PROJECT_ROOT / "test_output" / "eval_v2"
-DATASETS = ["motionsense", "realworld", "mobiact", "shoaib", "opportunity", "harth"]
+DATASETS = ["motionsense", "realworld", "mobiact", "shoaib", "harth", "inclusivehar"]
 
 
 def run_one(name: str, datasets, device, sbert, out_path: Path) -> dict:

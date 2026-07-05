@@ -1,6 +1,6 @@
 # Dataset Pipeline Documentation
 
-This directory contains scripts to download and convert 20 time series activity recognition
+This directory contains scripts to download and convert 18 time series activity recognition
 datasets into a standardized session format for training and evaluation.
 
 ## Quick Start
@@ -16,9 +16,9 @@ python datascripts/setup_all_ts_datasets.py uci_har
 python datascripts/verify_conversions.py
 ```
 
-## All 20 Datasets
+## All 18 Datasets
 
-### Training Datasets (10)
+### Training Datasets (11)
 
 | Dataset | Activities | Hz | Channels | Auto-Download? | Source |
 |---------|:---:|:---:|:---:|:---:|-------------|
@@ -32,21 +32,19 @@ python datascripts/verify_conversions.py
 | **unimib_shar** | 17 | 50 | 3 | Manual | [UniMiB SHAR Project](http://www.sal.disco.unimib.it/technologies/unimib-shar/) |
 | **hapt** | 12 | 50 | 6 | Manual | [UCI ML Repository](https://archive.ics.uci.edu/dataset/341) |
 | **recgym** | 11 | 20 | 6 | Manual | Contact dataset authors |
+| **capture24** | 10 | 100 | 3 | Manual | [Oxford ORA](https://ora.ox.ac.uk/objects/uuid:99d7c092-d865-4a19-b096-cc16440cd001) |
 
-### Zero-Shot Test Datasets (10)
+### Zero-Shot Test Datasets (7)
 
 | Dataset | Activities | Hz | Channels | Auto-Download? | Source |
 |---------|:---:|:---:|:---:|:---:|-------------|
 | **motionsense** | 6 | 50 | 6 | Yes | [GitHub](https://github.com/mmalekzadeh/motion-sense) |
 | **realworld** | 8 | 50 | 6 | Manual | [Sensor.Informatik](http://sensor.informatik.uni-mannheim.de/#dataset_realworld) |
 | **mobiact** | 13 | 50 | 6 | Manual | [BioSEC Group](https://bmi.hmu.gr/the-mobifall-and-mobiact-datasets-2/) |
-| **vtt_coniot** | 16 | 50 | 6 | Manual | Contact VTT Finland |
 | **shoaib** | 7 | 50 | 6 | Manual | [UTwente Research](https://research.utwente.nl/en/datasets/activity-recognition-data) |
 | **opportunity** | 4 | 30 | 113 | Manual | [UCI ML Repository](https://archive.ics.uci.edu/dataset/226) |
 | **harth** | 12 | 50 | 6 | Manual | [Machine Learning Repository](https://archive.ics.uci.edu/dataset/779) |
-| **realdisp** | 33 | 50 | 6 | Manual | [UCI ML Repository](https://archive.ics.uci.edu/dataset/305) |
-| **daphnet_fog** | 2 | 64 | 9 | Manual | [UCI ML Repository](https://archive.ics.uci.edu/dataset/245) |
-| **usc_had** | 12 | 100 | 6 | Manual | [USC SIPI](https://sipi.usc.edu/had/) |
+| **inclusivehar** | 6 | 50 | 6 | Manual | [Mendeley Data](https://data.mendeley.com/datasets/r78dn3f6nc/4) |
 
 **Manual download**: Download the raw dataset to `datascripts/{dataset}/raw/` or the path
 specified in `setup_all_ts_datasets.py`, then run the pipeline. The script will tell you

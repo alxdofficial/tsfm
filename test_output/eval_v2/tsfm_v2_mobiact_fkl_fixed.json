@@ -1,0 +1,63 @@
+{
+  "_protocol": {
+    "version": "v2",
+    "checkpoint": "training_output/semantic_alignment/small_deep_v2_4b3fdd6/best.pt",
+    "channel_text": "native",
+    "eval_rate": "native",
+    "pooling": "soft_logit(tau=0.07)",
+    "primary_metric": "f1_macro over GT-present classes",
+    "splits": "zero-shot: none needed; few-shot: subject-disjoint",
+    "seed": 3431
+  },
+  "mobiact": {
+    "sampling_rate_hz": 50.0,
+    "n_windows": 4345,
+    "zs_xd": {
+      "f1_macro": 20.740236849893463,
+      "balanced_accuracy": 23.918504558037778,
+      "accuracy": 54.70655926352129,
+      "f1_weighted": 48.17442510465086,
+      "n_samples": 4345,
+      "n_gt_classes": 13,
+      "n_scored_classes": 13,
+      "f1_macro_ci_lo": 16.174529877797337,
+      "f1_macro_ci_hi": 24.03752691141269,
+      "bootstrap_B": 1000,
+      "n_subjects": 24,
+      "ci_degenerate": false,
+      "per_class_f1": {
+        "car_step_in": 0.0,
+        "car_step_out": 0.0,
+        "fall_backward_sitting": 0.0,
+        "fall_forward": 0.0,
+        "fall_forward_knees": 0.0,
+        "fall_sideways": 0.0,
+        "jogging": 47.93713163064833,
+        "jumping": 27.791563275434246,
+        "sitting_chair": 2.2408963585434174,
+        "stairs_down": 28.2312925170068,
+        "stairs_up": 12.949640287769784,
+        "standing": 67.04581358609795,
+        "walking": 83.42674139311448
+      }
+    },
+    "zs_xd_vote": {
+      "f1_macro": 20.75925968282127,
+      "balanced_accuracy": 23.910041528554643,
+      "accuracy": 54.614499424626004,
+      "f1_weighted": 48.23050973187975,
+      "n_samples": 4345,
+      "n_gt_classes": 13,
+      "n_scored_classes": 13
+    },
+    "zs_xd_meanpool": {
+      "f1_macro": 20.734107196553087,
+      "balanced_accuracy": 23.91212090020184,
+      "accuracy": 54.68354430379747,
+      "f1_weighted": 48.165746543418564,
+      "n_samples": 4345,
+      "n_gt_classes": 13,
+      "n_scored_classes": 13
+    }
+  }
+}

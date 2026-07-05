@@ -34,32 +34,32 @@
     },
     {
       "name": "back_acc_x",
-      "description": "Accelerometer X-axis from back-mounted (lower back) XSens IMU",
+      "description": "Accelerometer X-axis from back-mounted (back/trunk-mounted XSens IMU) XSens IMU",
       "sampling_rate_hz": 30.0
     },
     {
       "name": "back_acc_y",
-      "description": "Accelerometer Y-axis from back-mounted (lower back) XSens IMU",
+      "description": "Accelerometer Y-axis from back-mounted (back/trunk-mounted XSens IMU) XSens IMU",
       "sampling_rate_hz": 30.0
     },
     {
       "name": "back_acc_z",
-      "description": "Accelerometer Z-axis from back-mounted (lower back) XSens IMU",
+      "description": "Accelerometer Z-axis from back-mounted (back/trunk-mounted XSens IMU) XSens IMU",
       "sampling_rate_hz": 30.0
     },
     {
       "name": "back_gyro_x",
-      "description": "Gyroscope X-axis from back-mounted (lower back) XSens IMU",
+      "description": "Gyroscope X-axis from back-mounted (back/trunk-mounted XSens IMU) XSens IMU",
       "sampling_rate_hz": 30.0
     },
     {
       "name": "back_gyro_y",
-      "description": "Gyroscope Y-axis from back-mounted (lower back) XSens IMU",
+      "description": "Gyroscope Y-axis from back-mounted (back/trunk-mounted XSens IMU) XSens IMU",
       "sampling_rate_hz": 30.0
     },
     {
       "name": "back_gyro_z",
-      "description": "Gyroscope Z-axis from back-mounted (lower back) XSens IMU",
+      "description": "Gyroscope Z-axis from back-mounted (back/trunk-mounted XSens IMU) XSens IMU",
       "sampling_rate_hz": 30.0
     },
     {

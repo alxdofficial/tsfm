@@ -60,62 +60,78 @@ def load_and_merge_sensor_data(acc_path: Path, gyro_path: Path) -> pd.DataFrame:
     for chunk in pd.read_csv(acc_path, chunksize=1000000):
         # Filter out null activities and keep only needed columns
         chunk = chunk[chunk['gt'].notna() & (chunk['gt'] != 'null')]
-        chunk = chunk[['Creation_Time', 'x', 'y', 'z', 'User', 'gt']]
+        chunk = chunk[['Creation_Time', 'x', 'y', 'z', 'User', 'Device', 'gt']]
         acc_chunks.append(chunk)
 
     acc_df = pd.concat(acc_chunks, ignore_index=True)
-    acc_df.columns = ['timestamp_ns', 'acc_x', 'acc_y', 'acc_z', 'user', 'activity']
+    acc_df.columns = ['timestamp_ns', 'acc_x', 'acc_y', 'acc_z', 'user', 'device', 'activity']
     print(f"    Loaded {len(acc_df):,} accelerometer samples")
 
     print("  Loading gyroscope data...")
     gyro_chunks = []
     for chunk in pd.read_csv(gyro_path, chunksize=1000000):
         chunk = chunk[chunk['gt'].notna() & (chunk['gt'] != 'null')]
-        chunk = chunk[['Creation_Time', 'x', 'y', 'z', 'User', 'gt']]
+        chunk = chunk[['Creation_Time', 'x', 'y', 'z', 'User', 'Device', 'gt']]
         gyro_chunks.append(chunk)
 
     gyro_df = pd.concat(gyro_chunks, ignore_index=True)
-    gyro_df.columns = ['timestamp_ns', 'gyro_x', 'gyro_y', 'gyro_z', 'user', 'activity']
+    gyro_df.columns = ['timestamp_ns', 'gyro_x', 'gyro_y', 'gyro_z', 'user', 'device', 'activity']
     print(f"    Loaded {len(gyro_df):,} gyroscope samples")
 
     # Merge on timestamp, user, and activity (approximate matching)
     print("  Merging sensor data...")
 
-    # Sort both dataframes by user, activity, and timestamp
-    acc_df = acc_df.sort_values(['user', 'activity', 'timestamp_ns']).reset_index(drop=True)
-    gyro_df = gyro_df.sort_values(['user', 'activity', 'timestamp_ns']).reset_index(drop=True)
+    # Sort by user, DEVICE, activity, timestamp. Streams are physical: never merge
+    # across devices (their rates AND biases differ — the whole point of HHAR).
+    acc_df = acc_df.sort_values(['user', 'device', 'activity', 'timestamp_ns']).reset_index(drop=True)
+    gyro_df = gyro_df.sort_values(['user', 'device', 'activity', 'timestamp_ns']).reset_index(drop=True)
 
-    # For efficiency, we'll process per-user-activity and align timestamps
     merged_data = []
+    keys = acc_df[['user', 'device', 'activity']].drop_duplicates()
+    for user, device, activity in keys.itertuples(index=False):
+        acc_subset = acc_df[(acc_df['user'] == user) & (acc_df['device'] == device)
+                            & (acc_df['activity'] == activity)].sort_values('timestamp_ns')
+        gyro_subset = gyro_df[(gyro_df['user'] == user) & (gyro_df['device'] == device)
+                              & (gyro_df['activity'] == activity)].sort_values('timestamp_ns')
+        if len(acc_subset) == 0 or len(gyro_subset) == 0:
+            continue
 
-    for user in acc_df['user'].unique():
-        for activity in acc_df[acc_df['user'] == user]['activity'].unique():
-            acc_subset = acc_df[(acc_df['user'] == user) & (acc_df['activity'] == activity)].copy()
-            gyro_subset = gyro_df[(gyro_df['user'] == user) & (gyro_df['activity'] == activity)].copy()
-
-            if len(acc_subset) == 0 or len(gyro_subset) == 0:
-                continue
-
-            # Use merge_asof for nearest timestamp matching (within 50ms tolerance)
-            acc_subset = acc_subset.sort_values('timestamp_ns')
-            gyro_subset = gyro_subset.sort_values('timestamp_ns')
-
-            merged = pd.merge_asof(
-                acc_subset,
-                gyro_subset[['timestamp_ns', 'gyro_x', 'gyro_y', 'gyro_z']],
-                on='timestamp_ns',
-                direction='nearest',
-                tolerance=50_000_000  # 50ms in nanoseconds
-            )
-
-            # Drop rows where gyro couldn't be matched
-            merged = merged.dropna(subset=['gyro_x', 'gyro_y', 'gyro_z'])
-            merged_data.append(merged)
+        # Match gyro to acc timestamps within one physical device (50ms tolerance)
+        merged = pd.merge_asof(
+            acc_subset,
+            gyro_subset[['timestamp_ns', 'gyro_x', 'gyro_y', 'gyro_z']],
+            on='timestamp_ns',
+            direction='nearest',
+            tolerance=50_000_000,  # 50ms in nanoseconds
+        )
+        merged = merged.dropna(subset=['gyro_x', 'gyro_y', 'gyro_z'])
+        merged_data.append(merged)
 
     result = pd.concat(merged_data, ignore_index=True)
     print(f"    Merged: {len(result):,} samples with both acc and gyro")
 
     return result
+
+
+def resample_stream(group, rate=TARGET_SAMPLE_RATE):
+    """Resample one physical (user,device,activity) stream to a uniform `rate` Hz on
+    its REAL Creation_Time clock via linear interpolation, BEFORE windowing. Native
+    HHAR rates are 50-200 Hz; without this a 128-sample window from a 200 Hz device
+    spans only ~0.64 s of motion yet was stamped 2.56 s @ 50 Hz."""
+    g = group.sort_values('timestamp_ns').drop_duplicates('timestamp_ns')
+    if len(g) < 2:
+        return None
+    t = g['timestamp_ns'].to_numpy(np.float64) / 1e9
+    t = t - t[0]
+    duration = float(t[-1])
+    if duration <= 0:
+        return None
+    n = int(duration * rate) + 1
+    grid = np.arange(n) / rate
+    out = {'timestamp_sec': grid}
+    for c in ['acc_x', 'acc_y', 'acc_z', 'gyro_x', 'gyro_y', 'gyro_z']:
+        out[c] = np.interp(grid, t, g[c].to_numpy(np.float64))
+    return pd.DataFrame(out)
 
 
 def create_windows(df: pd.DataFrame) -> Tuple[List[str], Dict[str, List[str]]]:
@@ -130,14 +146,17 @@ def create_windows(df: pd.DataFrame) -> Tuple[List[str], Dict[str, List[str]]]:
     labels_dict = {}
     session_idx = 0
 
-    # Group by user and activity
-    for (user, activity), group in df.groupby(['user', 'activity']):
-        group = group.sort_values('timestamp_ns').reset_index(drop=True)
+    # Group by user, DEVICE, activity — resample each physical stream to a true
+    # 50 Hz on its real clock before windowing (native rates are 50-200 Hz).
+    for (user, device, activity), group in df.groupby(['user', 'device', 'activity']):
+        group = resample_stream(group)
+        if group is None or len(group) < WINDOW_SIZE:
+            continue
 
         # Map activity to standardized name
         std_activity = ACTIVITIES.get(activity, activity)
 
-        # Create sliding windows
+        # Create sliding windows over the resampled (true 50 Hz) stream
         num_samples = len(group)
         num_windows = max(0, (num_samples - WINDOW_SIZE) // WINDOW_STRIDE + 1)
 
@@ -183,7 +202,7 @@ def create_manifest():
     """Create minimal manifest.json."""
     manifest = {
         "dataset_name": "HHAR",
-        "description": "Heterogeneity Human Activity Recognition dataset. 9 users performing 6 activities with smartphones. Triaxial accelerometer and gyroscope data.",
+        "description": "Heterogeneity Human Activity Recognition dataset. 9 users performing 6 activities with smartphones (Nexus 4, Galaxy S+, Galaxy S3, S3 mini) carried in a WAIST POUCH. Phones sampled at their native 50-200 Hz; resampled to a true 50 Hz here. Triaxial accelerometer and gyroscope (phone data only; watch streams not used).",
         "channels": [
             {
                 "name": "acc_x",

@@ -252,7 +252,7 @@ def create_manifest():
     """Create manifest.json with channel metadata."""
     manifest = {
         "dataset_name": "KU-HAR",
-        "description": "KU-HAR (Korea University Human Activity Recognition) dataset. 90 subjects performing 18 activities including walking, running, jumping, stairs, sitting, standing, lying, and exercises (push-ups, sit-ups). Smartphone IMU at 100Hz with triaxial accelerometer and gyroscope.",
+        "description": "KU-HAR (Khulna University Human Activity Recognition) dataset. 90 subjects performing 18 activities including walking, running, jumping, stairs, sitting, standing, lying, and exercises (push-ups, sit-ups). Smartphone IMU at 100Hz with triaxial accelerometer and gyroscope.",
         "source": "https://www.kaggle.com/datasets/niloy333/kuhar",
         "num_subjects": 90,
         "channels": [

@@ -80,3 +80,7 @@ test_output/ablation_evaluation/
 test_output/baseline_evaluation/
 test_output/harth_analysis/
 docs/baselines/results/
+
+# Reference papers: keep the large PDFs/pages LOCAL; track only the citation metadata
+references/**/paper.pdf
+references/**/webpage.html

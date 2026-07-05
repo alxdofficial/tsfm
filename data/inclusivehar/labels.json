@@ -1,0 +1,6149 @@
+{
+  "inclusivehar_01_ramp_descent_000_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_ramp_descent_000_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_ramp_descent_000_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_ramp_descent_000_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_ramp_descent_000_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_ramp_descent_000_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_ramp_descent_000_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_ramp_descent_000_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_ramp_descent_000_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_ramp_descent_000_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_ramp_descent_000_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_ramp_descent_000_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_ramp_descent_000_0012": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_ramp_descent_000_0013": [
+    "ramp_descent"
+  ],
+  "inclusivehar_01_jogging_001_0000": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0001": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0002": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0003": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0004": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0005": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0006": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0007": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0008": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0009": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0010": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0011": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0012": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0013": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0014": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0015": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0016": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0017": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0018": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0019": [
+    "jogging"
+  ],
+  "inclusivehar_01_jogging_001_0020": [
+    "jogging"
+  ],
+  "inclusivehar_01_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0020": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0021": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0022": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0023": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0024": [
+    "sitting"
+  ],
+  "inclusivehar_01_sitting_002_0025": [
+    "sitting"
+  ],
+  "inclusivehar_01_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_01_standing_003_0020": [
+    "standing"
+  ],
+  "inclusivehar_01_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_01_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_01_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_01_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_01_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_01_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_01_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_01_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_01_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_01_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_01_walking_005_0000": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0001": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0002": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0003": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0004": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0005": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0006": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0007": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0008": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0009": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0010": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0011": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0012": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0013": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0014": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0015": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0016": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0017": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0018": [
+    "walking"
+  ],
+  "inclusivehar_01_walking_005_0019": [
+    "walking"
+  ],
+  "inclusivehar_02_ramp_descent_000_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_02_ramp_descent_000_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_02_ramp_descent_000_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_02_ramp_descent_000_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_02_ramp_descent_000_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_02_ramp_descent_000_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_02_ramp_descent_000_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_02_ramp_descent_000_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_02_ramp_descent_000_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_02_ramp_descent_000_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_02_ramp_descent_000_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_02_ramp_descent_000_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_02_jogging_001_0000": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0001": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0002": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0003": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0004": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0005": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0006": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0007": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0008": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0009": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0010": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0011": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0012": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0013": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0014": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0015": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0016": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0017": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0018": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0019": [
+    "jogging"
+  ],
+  "inclusivehar_02_jogging_001_0020": [
+    "jogging"
+  ],
+  "inclusivehar_02_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_02_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_02_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_02_standing_003_0020": [
+    "standing"
+  ],
+  "inclusivehar_02_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_02_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_02_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_02_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_02_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_02_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_02_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_02_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_02_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_02_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_02_walking_005_0000": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0001": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0002": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0003": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0004": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0005": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0006": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0007": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0008": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0009": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0010": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0011": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0012": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0013": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0014": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0015": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0016": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0017": [
+    "walking"
+  ],
+  "inclusivehar_02_walking_005_0018": [
+    "walking"
+  ],
+  "inclusivehar_03_ramp_descent_000_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0012": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0013": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0014": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_ramp_descent_000_0015": [
+    "ramp_descent"
+  ],
+  "inclusivehar_03_jogging_001_0000": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0001": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0002": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0003": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0004": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0005": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0006": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0007": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0008": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0009": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0010": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0011": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0012": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0013": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0014": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0015": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0016": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0017": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0018": [
+    "jogging"
+  ],
+  "inclusivehar_03_jogging_001_0019": [
+    "jogging"
+  ],
+  "inclusivehar_03_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_03_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_03_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_03_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_03_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_03_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_03_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_03_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_03_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_03_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_03_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_03_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_03_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_03_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_03_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_03_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_03_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_03_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_03_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_03_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_03_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_03_walking_005_0000": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0001": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0002": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0003": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0004": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0005": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0006": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0007": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0008": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0009": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0010": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0011": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0012": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0013": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0014": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0015": [
+    "walking"
+  ],
+  "inclusivehar_03_walking_005_0016": [
+    "walking"
+  ],
+  "inclusivehar_04_ramp_descent_000_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_04_ramp_descent_000_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_04_ramp_descent_000_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_04_ramp_descent_000_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_04_ramp_descent_000_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_04_ramp_descent_000_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_04_ramp_descent_000_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_04_ramp_descent_000_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_04_ramp_descent_000_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_04_ramp_descent_000_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_04_ramp_descent_000_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_04_jogging_001_0000": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0001": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0002": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0003": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0004": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0005": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0006": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0007": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0008": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0009": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0010": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0011": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0012": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0013": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0014": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0015": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0016": [
+    "jogging"
+  ],
+  "inclusivehar_04_jogging_001_0017": [
+    "jogging"
+  ],
+  "inclusivehar_04_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_04_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_04_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_04_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_04_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_04_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_04_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_04_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_04_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_04_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_04_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_04_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_04_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_04_walking_005_0000": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0001": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0002": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0003": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0004": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0005": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0006": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0007": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0008": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0009": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0010": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0011": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0012": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0013": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0014": [
+    "walking"
+  ],
+  "inclusivehar_04_walking_005_0015": [
+    "walking"
+  ],
+  "inclusivehar_05_ramp_descent_000_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0012": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0013": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_ramp_descent_000_0014": [
+    "ramp_descent"
+  ],
+  "inclusivehar_05_jogging_001_0000": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0001": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0002": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0003": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0004": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0005": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0006": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0007": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0008": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0009": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0010": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0011": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0012": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0013": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0014": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0015": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0016": [
+    "jogging"
+  ],
+  "inclusivehar_05_jogging_001_0017": [
+    "jogging"
+  ],
+  "inclusivehar_05_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_05_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_05_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_05_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_05_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_05_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_05_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_05_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_05_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_05_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_05_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_05_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_05_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_05_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_05_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_05_walking_005_0000": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0001": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0002": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0003": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0004": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0005": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0006": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0007": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0008": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0009": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0010": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0011": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0012": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0013": [
+    "walking"
+  ],
+  "inclusivehar_05_walking_005_0014": [
+    "walking"
+  ],
+  "inclusivehar_06_ramp_descent_000_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_06_ramp_descent_000_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_06_ramp_descent_000_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_06_ramp_descent_000_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_06_ramp_descent_000_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_06_ramp_descent_000_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_06_ramp_descent_000_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_06_ramp_descent_000_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_06_ramp_descent_000_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_06_ramp_descent_000_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_06_ramp_descent_000_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_06_jogging_001_0000": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0001": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0002": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0003": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0004": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0005": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0006": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0007": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0008": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0009": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0010": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0011": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0012": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0013": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0014": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0015": [
+    "jogging"
+  ],
+  "inclusivehar_06_jogging_001_0016": [
+    "jogging"
+  ],
+  "inclusivehar_06_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0020": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0021": [
+    "sitting"
+  ],
+  "inclusivehar_06_sitting_002_0022": [
+    "sitting"
+  ],
+  "inclusivehar_06_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_06_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_06_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_06_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_06_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_06_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_06_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_06_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_06_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_06_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_06_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_06_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_06_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_06_walking_005_0000": [
+    "walking"
+  ],
+  "inclusivehar_06_walking_005_0001": [
+    "walking"
+  ],
+  "inclusivehar_06_walking_005_0002": [
+    "walking"
+  ],
+  "inclusivehar_06_walking_005_0003": [
+    "walking"
+  ],
+  "inclusivehar_06_walking_005_0004": [
+    "walking"
+  ],
+  "inclusivehar_06_walking_005_0005": [
+    "walking"
+  ],
+  "inclusivehar_06_walking_005_0006": [
+    "walking"
+  ],
+  "inclusivehar_06_walking_005_0007": [
+    "walking"
+  ],
+  "inclusivehar_06_walking_005_0008": [
+    "walking"
+  ],
+  "inclusivehar_06_walking_005_0009": [
+    "walking"
+  ],
+  "inclusivehar_06_walking_005_0010": [
+    "walking"
+  ],
+  "inclusivehar_06_walking_005_0011": [
+    "walking"
+  ],
+  "inclusivehar_06_walking_005_0012": [
+    "walking"
+  ],
+  "inclusivehar_07_ramp_descent_000_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_07_ramp_descent_000_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_07_ramp_descent_000_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_07_ramp_descent_000_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_07_ramp_descent_000_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_07_ramp_descent_000_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_07_ramp_descent_000_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_07_jogging_001_0000": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0001": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0002": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0003": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0004": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0005": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0006": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0007": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0008": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0009": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0010": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0011": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0012": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0013": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0014": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0015": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0016": [
+    "jogging"
+  ],
+  "inclusivehar_07_jogging_001_0017": [
+    "jogging"
+  ],
+  "inclusivehar_07_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_07_sitting_002_0020": [
+    "sitting"
+  ],
+  "inclusivehar_07_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_07_standing_003_0020": [
+    "standing"
+  ],
+  "inclusivehar_07_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_07_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_07_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_07_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_07_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_07_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_07_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_07_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_07_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_07_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_07_walking_005_0000": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0001": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0002": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0003": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0004": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0005": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0006": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0007": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0008": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0009": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0010": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0011": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0012": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0013": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0014": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0015": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0016": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0017": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0018": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0019": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0020": [
+    "walking"
+  ],
+  "inclusivehar_07_walking_005_0021": [
+    "walking"
+  ],
+  "inclusivehar_08_ramp_descent_000_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_08_ramp_descent_000_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_08_ramp_descent_000_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_08_ramp_descent_000_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_08_ramp_descent_000_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_08_ramp_descent_000_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_08_ramp_descent_000_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_08_ramp_descent_000_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_08_ramp_descent_000_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_08_ramp_descent_000_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_08_ramp_descent_000_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_08_ramp_descent_000_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_08_jogging_001_0000": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0001": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0002": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0003": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0004": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0005": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0006": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0007": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0008": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0009": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0010": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0011": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0012": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0013": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0014": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0015": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0016": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0017": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0018": [
+    "jogging"
+  ],
+  "inclusivehar_08_jogging_001_0019": [
+    "jogging"
+  ],
+  "inclusivehar_08_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_08_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_08_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_08_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_08_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_08_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_08_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_08_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_08_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_08_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_08_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_08_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_08_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_08_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_08_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_08_ramp_ascent_004_0011": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_08_walking_005_0000": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0001": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0002": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0003": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0004": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0005": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0006": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0007": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0008": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0009": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0010": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0011": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0012": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0013": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0014": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0015": [
+    "walking"
+  ],
+  "inclusivehar_08_walking_005_0016": [
+    "walking"
+  ],
+  "inclusivehar_09_ramp_descent_000_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_09_ramp_descent_000_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_09_ramp_descent_000_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_09_ramp_descent_000_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_09_ramp_descent_000_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_09_ramp_descent_000_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_09_ramp_descent_000_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_09_ramp_descent_000_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_09_jogging_001_0000": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0001": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0002": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0003": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0004": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0005": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0006": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0007": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0008": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0009": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0010": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0011": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0012": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0013": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0014": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0015": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0016": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0017": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0018": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0019": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0020": [
+    "jogging"
+  ],
+  "inclusivehar_09_jogging_001_0021": [
+    "jogging"
+  ],
+  "inclusivehar_09_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_09_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_09_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_09_standing_003_0020": [
+    "standing"
+  ],
+  "inclusivehar_09_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_09_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_09_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_09_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_09_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_09_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_09_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_09_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_09_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_09_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_09_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_09_ramp_ascent_004_0011": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_09_walking_005_0000": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0001": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0002": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0003": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0004": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0005": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0006": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0007": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0008": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0009": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0010": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0011": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0012": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0013": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0014": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0015": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0016": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0017": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0018": [
+    "walking"
+  ],
+  "inclusivehar_09_walking_005_0019": [
+    "walking"
+  ],
+  "inclusivehar_10_ramp_descent_000_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_10_ramp_descent_000_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_10_ramp_descent_000_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_10_ramp_descent_000_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_10_ramp_descent_000_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_10_ramp_descent_000_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_10_ramp_descent_000_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_10_ramp_descent_000_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_10_ramp_descent_000_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_10_ramp_descent_000_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_10_ramp_descent_000_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_10_jogging_001_0000": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0001": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0002": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0003": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0004": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0005": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0006": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0007": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0008": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0009": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0010": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0011": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0012": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0013": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0014": [
+    "jogging"
+  ],
+  "inclusivehar_10_jogging_001_0015": [
+    "jogging"
+  ],
+  "inclusivehar_10_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_10_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_10_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_10_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_10_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_10_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_10_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_10_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_10_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_10_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_10_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_10_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_10_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_10_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_10_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_10_ramp_ascent_004_0011": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_10_walking_005_0000": [
+    "walking"
+  ],
+  "inclusivehar_10_walking_005_0001": [
+    "walking"
+  ],
+  "inclusivehar_10_walking_005_0002": [
+    "walking"
+  ],
+  "inclusivehar_10_walking_005_0003": [
+    "walking"
+  ],
+  "inclusivehar_10_walking_005_0004": [
+    "walking"
+  ],
+  "inclusivehar_10_walking_005_0005": [
+    "walking"
+  ],
+  "inclusivehar_10_walking_005_0006": [
+    "walking"
+  ],
+  "inclusivehar_10_walking_005_0007": [
+    "walking"
+  ],
+  "inclusivehar_10_walking_005_0008": [
+    "walking"
+  ],
+  "inclusivehar_10_walking_005_0009": [
+    "walking"
+  ],
+  "inclusivehar_10_walking_005_0010": [
+    "walking"
+  ],
+  "inclusivehar_10_walking_005_0011": [
+    "walking"
+  ],
+  "inclusivehar_10_walking_005_0012": [
+    "walking"
+  ],
+  "inclusivehar_10_walking_005_0013": [
+    "walking"
+  ],
+  "inclusivehar_11_jogging_000_0000": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0001": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0002": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0003": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0004": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0005": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0006": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0007": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0008": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0009": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0010": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0011": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0012": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0013": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0014": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0015": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0016": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0017": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0018": [
+    "jogging"
+  ],
+  "inclusivehar_11_jogging_000_0019": [
+    "jogging"
+  ],
+  "inclusivehar_11_walking_001_0000": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0001": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0002": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0003": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0004": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0005": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0006": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0007": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0008": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0009": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0010": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0011": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0012": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0013": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0014": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0015": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0016": [
+    "walking"
+  ],
+  "inclusivehar_11_walking_001_0017": [
+    "walking"
+  ],
+  "inclusivehar_11_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0020": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0021": [
+    "sitting"
+  ],
+  "inclusivehar_11_sitting_002_0022": [
+    "sitting"
+  ],
+  "inclusivehar_11_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0020": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0021": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0022": [
+    "standing"
+  ],
+  "inclusivehar_11_standing_003_0023": [
+    "standing"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0011": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0012": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0013": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_ascent_004_0014": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0012": [
+    "ramp_descent"
+  ],
+  "inclusivehar_11_ramp_descent_005_0013": [
+    "ramp_descent"
+  ],
+  "inclusivehar_12_jogging_000_0000": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0001": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0002": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0003": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0004": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0005": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0006": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0007": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0008": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0009": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0010": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0011": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0012": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0013": [
+    "jogging"
+  ],
+  "inclusivehar_12_jogging_000_0014": [
+    "jogging"
+  ],
+  "inclusivehar_12_walking_001_0000": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0001": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0002": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0003": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0004": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0005": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0006": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0007": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0008": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0009": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0010": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0011": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0012": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0013": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0014": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0015": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0016": [
+    "walking"
+  ],
+  "inclusivehar_12_walking_001_0017": [
+    "walking"
+  ],
+  "inclusivehar_12_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0020": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0021": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0022": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0023": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0024": [
+    "sitting"
+  ],
+  "inclusivehar_12_sitting_002_0025": [
+    "sitting"
+  ],
+  "inclusivehar_12_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_12_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_12_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_12_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_12_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_12_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_12_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_12_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_12_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_12_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_12_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_12_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_12_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_12_ramp_ascent_004_0011": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_12_ramp_descent_005_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_12_ramp_descent_005_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_12_ramp_descent_005_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_12_ramp_descent_005_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_12_ramp_descent_005_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_12_ramp_descent_005_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_12_ramp_descent_005_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_12_ramp_descent_005_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_12_ramp_descent_005_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_12_ramp_descent_005_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_12_ramp_descent_005_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_12_ramp_descent_005_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_jogging_000_0000": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0001": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0002": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0003": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0004": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0005": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0006": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0007": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0008": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0009": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0010": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0011": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0012": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0013": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0014": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0015": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0016": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0017": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0018": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0019": [
+    "jogging"
+  ],
+  "inclusivehar_13_jogging_000_0020": [
+    "jogging"
+  ],
+  "inclusivehar_13_walking_001_0000": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0001": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0002": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0003": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0004": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0005": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0006": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0007": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0008": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0009": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0010": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0011": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0012": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0013": [
+    "walking"
+  ],
+  "inclusivehar_13_walking_001_0014": [
+    "walking"
+  ],
+  "inclusivehar_13_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0020": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0021": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0022": [
+    "sitting"
+  ],
+  "inclusivehar_13_sitting_002_0023": [
+    "sitting"
+  ],
+  "inclusivehar_13_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0020": [
+    "standing"
+  ],
+  "inclusivehar_13_standing_003_0021": [
+    "standing"
+  ],
+  "inclusivehar_13_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_13_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_13_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_13_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_13_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_13_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_13_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_13_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_13_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_13_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_13_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_13_ramp_ascent_004_0011": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_13_ramp_ascent_004_0012": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0012": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0013": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0014": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0015": [
+    "ramp_descent"
+  ],
+  "inclusivehar_13_ramp_descent_005_0016": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_jogging_000_0000": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0001": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0002": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0003": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0004": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0005": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0006": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0007": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0008": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0009": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0010": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0011": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0012": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0013": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0014": [
+    "jogging"
+  ],
+  "inclusivehar_14_jogging_000_0015": [
+    "jogging"
+  ],
+  "inclusivehar_14_walking_001_0000": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0001": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0002": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0003": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0004": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0005": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0006": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0007": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0008": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0009": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0010": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0011": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0012": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0013": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0014": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0015": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0016": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0017": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0018": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0019": [
+    "walking"
+  ],
+  "inclusivehar_14_walking_001_0020": [
+    "walking"
+  ],
+  "inclusivehar_14_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0020": [
+    "sitting"
+  ],
+  "inclusivehar_14_sitting_002_0021": [
+    "sitting"
+  ],
+  "inclusivehar_14_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0020": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0021": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0022": [
+    "standing"
+  ],
+  "inclusivehar_14_standing_003_0023": [
+    "standing"
+  ],
+  "inclusivehar_14_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_14_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_14_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_14_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_14_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_14_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_14_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_14_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_14_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_14_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_14_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_14_ramp_ascent_004_0011": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_14_ramp_ascent_004_0012": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0012": [
+    "ramp_descent"
+  ],
+  "inclusivehar_14_ramp_descent_005_0013": [
+    "ramp_descent"
+  ],
+  "inclusivehar_15_jogging_000_0000": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0001": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0002": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0003": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0004": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0005": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0006": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0007": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0008": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0009": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0010": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0011": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0012": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0013": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0014": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0015": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0016": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0017": [
+    "jogging"
+  ],
+  "inclusivehar_15_jogging_000_0018": [
+    "jogging"
+  ],
+  "inclusivehar_15_walking_001_0000": [
+    "walking"
+  ],
+  "inclusivehar_15_walking_001_0001": [
+    "walking"
+  ],
+  "inclusivehar_15_walking_001_0002": [
+    "walking"
+  ],
+  "inclusivehar_15_walking_001_0003": [
+    "walking"
+  ],
+  "inclusivehar_15_walking_001_0004": [
+    "walking"
+  ],
+  "inclusivehar_15_walking_001_0005": [
+    "walking"
+  ],
+  "inclusivehar_15_walking_001_0006": [
+    "walking"
+  ],
+  "inclusivehar_15_walking_001_0007": [
+    "walking"
+  ],
+  "inclusivehar_15_walking_001_0008": [
+    "walking"
+  ],
+  "inclusivehar_15_walking_001_0009": [
+    "walking"
+  ],
+  "inclusivehar_15_walking_001_0010": [
+    "walking"
+  ],
+  "inclusivehar_15_walking_001_0011": [
+    "walking"
+  ],
+  "inclusivehar_15_walking_001_0012": [
+    "walking"
+  ],
+  "inclusivehar_15_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0020": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0021": [
+    "sitting"
+  ],
+  "inclusivehar_15_sitting_002_0022": [
+    "sitting"
+  ],
+  "inclusivehar_15_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0020": [
+    "standing"
+  ],
+  "inclusivehar_15_standing_003_0021": [
+    "standing"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0011": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0012": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0013": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0014": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0015": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0016": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_ascent_004_0017": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_15_ramp_descent_005_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_15_ramp_descent_005_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_15_ramp_descent_005_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_15_ramp_descent_005_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_15_ramp_descent_005_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_15_ramp_descent_005_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_15_ramp_descent_005_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_15_ramp_descent_005_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_15_ramp_descent_005_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_15_ramp_descent_005_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_15_ramp_descent_005_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_15_ramp_descent_005_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_16_jogging_000_0000": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0001": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0002": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0003": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0004": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0005": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0006": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0007": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0008": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0009": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0010": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0011": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0012": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0013": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0014": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0015": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0016": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0017": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0018": [
+    "jogging"
+  ],
+  "inclusivehar_16_jogging_000_0019": [
+    "jogging"
+  ],
+  "inclusivehar_16_walking_001_0000": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0001": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0002": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0003": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0004": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0005": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0006": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0007": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0008": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0009": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0010": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0011": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0012": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0013": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0014": [
+    "walking"
+  ],
+  "inclusivehar_16_walking_001_0015": [
+    "walking"
+  ],
+  "inclusivehar_16_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0020": [
+    "sitting"
+  ],
+  "inclusivehar_16_sitting_002_0021": [
+    "sitting"
+  ],
+  "inclusivehar_16_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_16_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_16_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_16_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_16_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_16_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_16_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_16_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_16_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_16_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_16_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_16_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_16_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_16_ramp_descent_005_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_16_ramp_descent_005_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_16_ramp_descent_005_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_16_ramp_descent_005_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_16_ramp_descent_005_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_16_ramp_descent_005_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_16_ramp_descent_005_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_16_ramp_descent_005_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_16_ramp_descent_005_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_16_ramp_descent_005_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_16_ramp_descent_005_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_16_ramp_descent_005_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_jogging_000_0000": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0001": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0002": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0003": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0004": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0005": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0006": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0007": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0008": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0009": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0010": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0011": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0012": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0013": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0014": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0015": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0016": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0017": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0018": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0019": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0020": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0021": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0022": [
+    "jogging"
+  ],
+  "inclusivehar_17_jogging_000_0023": [
+    "jogging"
+  ],
+  "inclusivehar_17_walking_001_0000": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0001": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0002": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0003": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0004": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0005": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0006": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0007": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0008": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0009": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0010": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0011": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0012": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0013": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0014": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0015": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0016": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0017": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0018": [
+    "walking"
+  ],
+  "inclusivehar_17_walking_001_0019": [
+    "walking"
+  ],
+  "inclusivehar_17_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0020": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0021": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0022": [
+    "sitting"
+  ],
+  "inclusivehar_17_sitting_002_0023": [
+    "sitting"
+  ],
+  "inclusivehar_17_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_17_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0011": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0012": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0013": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0014": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_ascent_004_0015": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0012": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0013": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0014": [
+    "ramp_descent"
+  ],
+  "inclusivehar_17_ramp_descent_005_0015": [
+    "ramp_descent"
+  ],
+  "inclusivehar_18_jogging_000_0000": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0001": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0002": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0003": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0004": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0005": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0006": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0007": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0008": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0009": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0010": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0011": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0012": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0013": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0014": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0015": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0016": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0017": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0018": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0019": [
+    "jogging"
+  ],
+  "inclusivehar_18_jogging_000_0020": [
+    "jogging"
+  ],
+  "inclusivehar_18_walking_001_0000": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0001": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0002": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0003": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0004": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0005": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0006": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0007": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0008": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0009": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0010": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0011": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0012": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0013": [
+    "walking"
+  ],
+  "inclusivehar_18_walking_001_0014": [
+    "walking"
+  ],
+  "inclusivehar_18_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0020": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0021": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0022": [
+    "sitting"
+  ],
+  "inclusivehar_18_sitting_002_0023": [
+    "sitting"
+  ],
+  "inclusivehar_18_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_18_standing_003_0020": [
+    "standing"
+  ],
+  "inclusivehar_18_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_18_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_18_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_18_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_18_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_18_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_18_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_18_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_18_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_18_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_18_ramp_descent_005_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_18_ramp_descent_005_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_18_ramp_descent_005_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_18_ramp_descent_005_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_18_ramp_descent_005_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_18_ramp_descent_005_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_18_ramp_descent_005_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_18_ramp_descent_005_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_18_ramp_descent_005_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_19_jogging_000_0000": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0001": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0002": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0003": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0004": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0005": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0006": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0007": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0008": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0009": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0010": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0011": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0012": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0013": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0014": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0015": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0016": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0017": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0018": [
+    "jogging"
+  ],
+  "inclusivehar_19_jogging_000_0019": [
+    "jogging"
+  ],
+  "inclusivehar_19_walking_001_0000": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0001": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0002": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0003": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0004": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0005": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0006": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0007": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0008": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0009": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0010": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0011": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0012": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0013": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0014": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0015": [
+    "walking"
+  ],
+  "inclusivehar_19_walking_001_0016": [
+    "walking"
+  ],
+  "inclusivehar_19_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_19_sitting_002_0020": [
+    "sitting"
+  ],
+  "inclusivehar_19_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_19_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0011": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0012": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_ascent_004_0013": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_19_ramp_descent_005_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_19_ramp_descent_005_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_19_ramp_descent_005_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_19_ramp_descent_005_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_19_ramp_descent_005_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_19_ramp_descent_005_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_19_ramp_descent_005_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_19_ramp_descent_005_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_19_ramp_descent_005_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_19_ramp_descent_005_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_19_ramp_descent_005_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_19_ramp_descent_005_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_19_ramp_descent_005_0012": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_jogging_000_0000": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0001": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0002": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0003": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0004": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0005": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0006": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0007": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0008": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0009": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0010": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0011": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0012": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0013": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0014": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0015": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0016": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0017": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0018": [
+    "jogging"
+  ],
+  "inclusivehar_20_jogging_000_0019": [
+    "jogging"
+  ],
+  "inclusivehar_20_walking_001_0000": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0001": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0002": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0003": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0004": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0005": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0006": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0007": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0008": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0009": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0010": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0011": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0012": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0013": [
+    "walking"
+  ],
+  "inclusivehar_20_walking_001_0014": [
+    "walking"
+  ],
+  "inclusivehar_20_sitting_002_0000": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0001": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0002": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0003": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0004": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0005": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0006": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0007": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0008": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0009": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0010": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0011": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0012": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0013": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0014": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0015": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0016": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0017": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0018": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0019": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0020": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0021": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0022": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0023": [
+    "sitting"
+  ],
+  "inclusivehar_20_sitting_002_0024": [
+    "sitting"
+  ],
+  "inclusivehar_20_standing_003_0000": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0001": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0002": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0003": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0004": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0005": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0006": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0007": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0008": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0009": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0010": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0011": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0012": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0013": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0014": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0015": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0016": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0017": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0018": [
+    "standing"
+  ],
+  "inclusivehar_20_standing_003_0019": [
+    "standing"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0000": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0001": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0002": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0003": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0004": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0005": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0006": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0007": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0008": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0009": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0010": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0011": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0012": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_ascent_004_0013": [
+    "ramp_ascent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0000": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0001": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0002": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0003": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0004": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0005": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0006": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0007": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0008": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0009": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0010": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0011": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0012": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0013": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0014": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0015": [
+    "ramp_descent"
+  ],
+  "inclusivehar_20_ramp_descent_005_0016": [
+    "ramp_descent"
+  ]
+}

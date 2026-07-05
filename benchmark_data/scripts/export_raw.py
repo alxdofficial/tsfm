@@ -85,6 +85,15 @@ def extract_subject(session_name: str, dataset: str):
     elif dataset == "harth":
         # harth_S006_walking_0000_0000 -> 'S006'
         return session_name.split("_")[1]
+    elif dataset == "inclusivehar":
+        # inclusivehar_01_ramp_descent_000_0000 -> 1 (subject is always field 1)
+        return int(session_name.split("_")[1])
+    elif dataset == "capture24":
+        # capture24_P001_walking_0000 -> 'P001'
+        return session_name.split("_")[1]
+    elif dataset == "extrasensory":
+        # extrasensory_<UUID>_walking_0003_0000 -> '<UUID>' (UUID has no underscores)
+        return session_name.split("_")[1]
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
 

@@ -5,9 +5,9 @@
   "labels": [
     "car_step_in",
     "car_step_out",
-    "fall_backward_knees",
     "fall_backward_sitting",
     "fall_forward",
+    "fall_forward_knees",
     "fall_sideways",
     "jogging",
     "jumping",
@@ -20,9 +20,9 @@
   "idx_to_label": {
     "0": "car_step_in",
     "1": "car_step_out",
-    "2": "fall_backward_knees",
-    "3": "fall_backward_sitting",
-    "4": "fall_forward",
+    "2": "fall_backward_sitting",
+    "3": "fall_forward",
+    "4": "fall_forward_knees",
     "5": "fall_sideways",
     "6": "jogging",
     "7": "jumping",
@@ -44,11 +44,6 @@
     "walking"
   ],
   "proposed_semantic_pairs": {
-    "fall_backward_knees": {
-      "train_label": "falling_backward",
-      "cosine": 0.7785,
-      "status": "PENDING_REVIEW"
-    },
     "fall_backward_sitting": {
       "train_label": "falling_backward_sitting",
       "cosine": 0.9785,
@@ -57,6 +52,11 @@
     "fall_forward": {
       "train_label": "falling_forward",
       "cosine": 0.9261,
+      "status": "PENDING_REVIEW"
+    },
+    "fall_forward_knees": {
+      "train_label": "knees_bending",
+      "cosine": 0.7566,
       "status": "PENDING_REVIEW"
     },
     "fall_sideways": {

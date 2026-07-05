@@ -4,7 +4,8 @@ Generate UMAP visualization of distribution gap between training and
 zero-shot test HAR datasets (Fig. X in paper).
 
 Methodology:
-  1. Sample up to 400 sessions per dataset from all 17 HAR datasets
+  1. Sample up to 400 sessions per dataset from all 18 HAR datasets
+     (11 train + 7 zero-shot test)
   2. Extract 6 IMU channels (acc + gyro) via core_channels mapping
   3. Resample to 128 timesteps, compute 52 raw statistical + spectral
      features per session (no z-score — we want to show actual gap)
@@ -48,7 +49,7 @@ TRAIN_DATASETS = [
     "kuhar", "unimib_shar", "hapt", "mhealth", "recgym",
 ]
 ZEROSHOT_TEST = [
-    "motionsense", "realworld", "mobiact", "harth", "vtt_coniot",
+    "motionsense", "realworld", "mobiact", "harth",
     "shoaib", "opportunity",
 ]
 ALL_DATASETS = TRAIN_DATASETS + ZEROSHOT_TEST
@@ -59,7 +60,7 @@ DISPLAY_NAMES = {
     "unimib_shar": "UniMiB", "hapt": "HAPT", "mhealth": "MHEALTH",
     "recgym": "RecGym", "motionsense": "MotionSense",
     "realworld": "RealWorld", "mobiact": "MobiAct",
-    "harth": "HARTH", "vtt_coniot": "VTT-ConIoT",
+    "harth": "HARTH",
     "shoaib": "Shoaib", "opportunity": "OPPORTUNITY",
 }
 
@@ -237,7 +238,7 @@ def main():
     # Test/OOD color per dataset
     TEST_COLORS = {
         "motionsense": "#e15759", "realworld": "#f28e2b", "mobiact": "#b07aa1",
-        "harth": "#ff9da7", "vtt_coniot": "#59a14f",
+        "harth": "#ff9da7",
         "shoaib": "#edc948", "opportunity": "#333333",
     }
 

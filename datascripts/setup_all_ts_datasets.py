@@ -19,21 +19,18 @@ Available datasets:
     - mhealth (12 activities, 6 channels, 50Hz)
     - wisdm (18 activities, 6 channels, 20Hz)
     - unimib_shar (9 activities, 3 channels ACC ONLY, 50Hz) - uses Kaggle API
-    - actionsense (requires manual download first)
     - hhar (6 activities, 6 channels, variable Hz)
     - mobiact (13 activities, 6 channels, 50Hz) - uses Kaggle API (MobiFall)
     - realworld (8 activities, 9 channels, 50Hz) - waist position only
     - dsads (19 activities, 9 channels, 25Hz) - torso position only
     - recgym (11 gym exercises, 6 channels, 20Hz) - uses Kaggle API, wrist position
-    - vtt_coniot (16 construction activities, 9 channels, 50Hz) - hip position
+    - capture24 (10 activities, 3 channels ACC ONLY, 100Hz) - TRAIN, 151-subject free-living wrist
     - hapt (12 activities incl. transitions, 6 channels, 50Hz)
     - kuhar (18 activities, 6 channels, 100Hz) - uses Kaggle API
     - shoaib (7 activities, 45 channels, 50Hz) - ZERO-SHOT TEST, manual download
     - opportunity (4 locomotion, 30 channels, 30Hz) - manual download
-    - realdisp (33 fitness activities, 81 channels, 50Hz) - manual download
-    - daphnet_fog (2 activities, 9 channels, 64Hz) - manual download
-    - usc_had (12 activities, 6 channels, 100Hz) - ZERO-SHOT TEST, manual download
     - harth (12 activities, 6 channels, 50Hz) - ZERO-SHOT TEST, manual download
+    - inclusivehar (6 activities incl. ramp_ascent/ramp_descent, 6 channels, 50Hz) - ZERO-SHOT TEST, iPhone iOS CoreMotion
 """
 
 import sys
@@ -73,12 +70,6 @@ DATASETS = {
         "requires_manual": False,  # Uses Kaggle API
         "note": "Requires: pip install kaggle && kaggle API key in ~/.kaggle/kaggle.json"
     },
-    "actionsense": {
-        "name": "ActionSense",
-        "download_script": None,  # Manual download
-        "convert_script": "datascripts/actionsense/convert.py",
-        "requires_manual": True
-    },
     "hhar": {
         "name": "HHAR",
         "download_script": "datascripts/shared/download_all_datasets.py",
@@ -111,12 +102,6 @@ DATASETS = {
         "requires_manual": False,
         "note": "Uses Kaggle API. Requires: pip install kaggle && kaggle API key"
     },
-    "vtt_coniot": {
-        "name": "VTT-ConIoT",
-        "download_script": "datascripts/vtt_coniot/download.py",
-        "convert_script": "datascripts/vtt_coniot/convert.py",
-        "requires_manual": False
-    },
     "hapt": {
         "name": "HAPT",
         "download_script": "datascripts/hapt/download.py",
@@ -146,33 +131,34 @@ DATASETS = {
         "requires_manual": True,
         "note": "4 subjects, 4 locomotion activities, 5 body IMUs, 30Hz. Download from UCI ML Repository."
     },
-    "realdisp": {
-        "name": "REALDISP",
-        "download_script": None,  # Manual download from UCI
-        "convert_script": "datascripts/realdisp/convert.py",
-        "requires_manual": True,
-        "note": "17 subjects, 33 fitness activities, 9 body sensors, 50Hz. Download from UCI ML Repository."
-    },
-    "daphnet_fog": {
-        "name": "Daphnet FoG",
-        "download_script": None,  # Manual download from UCI
-        "convert_script": "datascripts/daphnet_fog/convert.py",
-        "requires_manual": True,
-        "note": "10 Parkinson's patients, 2 activities (walking, freezing), 3 accelerometers, 64Hz. Download from UCI."
-    },
-    "usc_had": {
-        "name": "USC-HAD",
-        "download_script": None,  # Manual download from USC
-        "convert_script": "datascripts/usc_had/convert.py",
-        "requires_manual": True,
-        "note": "ZERO-SHOT TEST SET. 14 subjects, 12 activities, waist IMU (acc+gyro), 100Hz. Download from USC SIPI."
-    },
     "harth": {
         "name": "HARTH",
         "download_script": None,  # Manual download from UCI
         "convert_script": "datascripts/harth/convert.py",
         "requires_manual": True,
         "note": "ZERO-SHOT TEST SET. 22 subjects, 12 activities, 2 accelerometers (back+thigh), 50Hz. Download from UCI."
+    },
+    # V2 adds (2026-07): broaden toward real-world phone/watch HAR
+    "inclusivehar": {
+        "name": "InclusiveHAR",
+        "download_script": None,  # Manual: single CSV from Mendeley r78dn3f6nc (v4)
+        "convert_script": "datascripts/inclusivehar/convert.py",
+        "requires_manual": True,
+        "note": "ZERO-SHOT TEST SET. 20 subjects (10 able-bodied, 10 with disabilities), 6 activities, iPhone iOS CoreMotion, 50Hz. Download InclusiveHAR_dataset_v2.csv from Mendeley to data/raw/inclusivehar/InclusiveHAR.csv"
+    },
+    "capture24": {
+        "name": "CAPTURE-24",
+        "download_script": None,  # Manual: capture24.zip (CC BY) from Oxford ORA
+        "convert_script": "datascripts/capture24/convert.py",
+        "requires_manual": True,
+        "note": "TRAIN corpus. 151 subjects, ~2500h free-living wrist accel (no gyro), 100Hz, WillettsSpecific2018 10-class labels. Download capture24.zip from Oxford ORA, unzip under data/raw/capture24/"
+    },
+    "extrasensory": {
+        "name": "ExtraSensory",
+        "download_script": None,  # Manual: raw_acc.zip + features_labels.zip from extrasensory.ucsd.edu
+        "convert_script": "datascripts/extrasensory/convert.py",
+        "requires_manual": True,
+        "note": "ZERO-SHOT TEST SET. 60 users, in-the-wild free-living phone accel (~40Hz, in g), multi-label projected to single movement primitive. Download raw_acc + features_labels from extrasensory.ucsd.edu into data/raw/extrasensory/{raw_acc,labels}/"
     },
 }
 
