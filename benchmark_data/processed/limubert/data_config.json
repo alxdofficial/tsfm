@@ -57,5 +57,54 @@
     "user_label_size": 150,
     "has_gyro": false,
     "size": 41183
+  },
+  "harth_20_120": {
+    "sr": 20,
+    "seq_len": 120,
+    "dimension": 6,
+    "activity_label_index": 0,
+    "activity_label_size": 10,
+    "activity_label": [
+      "cycling_sit",
+      "cycling_stand",
+      "lying",
+      "running",
+      "shuffling",
+      "sitting",
+      "stairs_down",
+      "stairs_up",
+      "standing",
+      "walking"
+    ],
+    "user_label_index": 1,
+    "user_label_size": 22,
+    "has_gyro": false,
+    "size": 49713
+  },
+  "mobiact_20_120": {
+    "sr": 20,
+    "seq_len": 120,
+    "dimension": 6,
+    "activity_label_index": 0,
+    "activity_label_size": 13,
+    "activity_label": [
+      "car_step_in",
+      "car_step_out",
+      "fall_backward_sitting",
+      "fall_forward",
+      "fall_forward_knees",
+      "fall_sideways",
+      "jogging",
+      "jumping",
+      "sitting_chair",
+      "stairs_down",
+      "stairs_up",
+      "standing",
+      "walking"
+    ],
+    "user_label_index": 1,
+    "user_label_size": 24,
+    "has_gyro": true,
+    "size": 4345
   }
 }

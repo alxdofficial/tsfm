@@ -32,6 +32,7 @@ https://archive.ics.uci.edu/dataset/779/harth
 """
 
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Optional
@@ -99,6 +100,64 @@ OUTPUT_COLUMNS = [
 ]
 
 
+def _timestamp_seconds(df: pd.DataFrame) -> Optional[np.ndarray]:
+    """Return relative timestamp seconds from the raw HARTH timestamp column."""
+    candidates = [c for c in df.columns if "time" in c]
+    if not candidates:
+        return None
+
+    raw = df[candidates[0]]
+    numeric = pd.to_numeric(raw, errors="coerce")
+    if numeric.notna().mean() > 0.95:
+        values = numeric.to_numpy(dtype=np.float64)
+        values = values - values[0]
+        return values if np.isfinite(values).all() else None
+
+    timestamps = pd.to_datetime(raw, errors="coerce", utc=True)
+    if timestamps.notna().mean() <= 0.95:
+        return None
+    values = (timestamps - timestamps.iloc[0]).dt.total_seconds().to_numpy(dtype=np.float64)
+    return values if np.isfinite(values).all() else None
+
+
+def _infer_sample_rate(timestamp_sec: Optional[np.ndarray]) -> float:
+    """Infer native rate from median raw timestamp spacing."""
+    if timestamp_sec is None or len(timestamp_sec) < 3:
+        return SAMPLE_RATE
+    diffs = np.diff(timestamp_sec)
+    diffs = diffs[np.isfinite(diffs) & (diffs > 0)]
+    if len(diffs) < 3:
+        return SAMPLE_RATE
+    return float(1.0 / np.median(diffs))
+
+
+def _resample_to_target_rate(df: pd.DataFrame, native_rate: float, subject_name: str) -> pd.DataFrame:
+    """Resample a uniformly sampled subject stream to HARTH's canonical 50 Hz."""
+    if native_rate <= 0:
+        native_rate = SAMPLE_RATE
+
+    source_t = np.arange(len(df), dtype=np.float64) / native_rate
+    if abs(native_rate - SAMPLE_RATE) <= 0.5:
+        out = df.copy()
+        out["timestamp_sec"] = np.arange(len(out), dtype=np.float64) / SAMPLE_RATE
+        return out
+
+    target_t = np.arange(0.0, source_t[-1] + (0.5 / SAMPLE_RATE), 1.0 / SAMPLE_RATE)
+    target_t = target_t[target_t <= source_t[-1] + 1e-9]
+
+    out = pd.DataFrame({"timestamp_sec": target_t})
+    for col in OUTPUT_COLUMNS:
+        out[col] = np.interp(target_t, source_t, df[col].to_numpy(dtype=np.float64))
+
+    label_idx = np.searchsorted(source_t, target_t, side="right") - 1
+    label_idx = np.clip(label_idx, 0, len(df) - 1)
+    out["activity"] = df["activity"].to_numpy()[label_idx]
+
+    print(f"    Resampled {subject_name}: {native_rate:.2f} Hz -> {SAMPLE_RATE:.1f} Hz "
+          f"({len(df)} -> {len(out)} rows)")
+    return out
+
+
 def parse_label(label_value) -> Optional[str]:
     """Convert a label value (int or string) to standardized activity name."""
     if isinstance(label_value, (int, float, np.integer, np.floating)):
@@ -136,6 +195,8 @@ def load_subject_csv(filepath: Path) -> Optional[pd.DataFrame]:
 
         # Normalize column names
         df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+        raw_timestamp_sec = _timestamp_seconds(df)
+        native_rate = _infer_sample_rate(raw_timestamp_sec)
 
         # Find sensor columns (back and thigh accelerometers)
         back_cols = []
@@ -177,16 +238,13 @@ def load_subject_csv(filepath: Path) -> Optional[pd.DataFrame]:
         result["thigh_acc_z"] = df[thigh_cols[2]].values
         result["activity"] = df[label_col].values
 
-        # Add timestamp
-        result.insert(0, "timestamp_sec", np.arange(len(result)) / SAMPLE_RATE)
-
         # Interpolate any NaN values in sensor data
         for col in OUTPUT_COLUMNS:
             if result[col].isna().any():
                 result[col] = result[col].interpolate(method="linear", limit_direction="both")
                 result[col] = result[col].fillna(0)
 
-        return result
+        return _resample_to_target_rate(result, native_rate, filepath.stem)
 
     except Exception as e:
         print(f"    Error loading {filepath}: {e}")
@@ -208,9 +266,13 @@ def convert_dataset():
         print("Expected: data/raw/harth/S006.csv, S008.csv, ...")
         return False
 
-    # Create output directory
+    # Create output directory. Clear any prior conversion first so re-runs don't
+    # leave orphan session dirs (e.g. when a subject's window count changes after
+    # a resampling fix); the loader indexes labels.json, so orphans are inert but
+    # they desync the on-disk count and bloat disk.
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     sessions_dir = OUTPUT_DIR / "sessions"
+    shutil.rmtree(sessions_dir, ignore_errors=True)
     sessions_dir.mkdir(exist_ok=True)
 
     # Find subject CSV files

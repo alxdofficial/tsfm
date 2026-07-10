@@ -14,8 +14,39 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from datasets.imu_pretraining_dataset.multi_dataset_loader import (
+    IMUPretrainingDataset,
     group_channels_by_sensor,
+    is_imu_channel,
 )
+
+
+def test_is_imu_channel_excludes_mhealth_magnetometer_artifacts():
+    assert not is_imu_channel("timestamp_sec", "mhealth")
+    assert not is_imu_channel("ankle_mag_x", "mhealth")
+    assert not is_imu_channel("arm_mag_z", "mhealth")
+    assert is_imu_channel("chest_acc_x", "mhealth")
+    assert is_imu_channel("hand_mag_x", "pamap2")
+
+
+def test_session_cache_key_includes_manifest_and_labels(tmp_path):
+    root = tmp_path / "data"
+    ds = root / "toy"
+    ds.mkdir(parents=True)
+    manifest = ds / "manifest.json"
+    labels = ds / "labels.json"
+    manifest.write_text('{"channels":[{"name":"acc_x","description":"a","sampling_rate_hz":50}]}')
+    labels.write_text('{"session_001":"walking"}')
+
+    dataset = IMUPretrainingDataset.__new__(IMUPretrainingDataset)
+    dataset.data_root = root
+    dataset.datasets = ["toy"]
+    dataset.max_sessions_per_dataset = None
+    dataset.seed = 42
+
+    key1 = dataset._get_cache_key()
+    manifest.write_text('{"channels":[{"name":"acc_x","description":"changed","sampling_rate_hz":50}]}')
+    key2 = dataset._get_cache_key()
+    assert key1 != key2
 
 
 class TestGroupChannelsBySensor:

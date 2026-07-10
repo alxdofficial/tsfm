@@ -576,7 +576,7 @@ from scipy import signal as _sps
 # ---- Per-augmentation config specs (each has `enabled` + `p` + its params) ----
 @dataclass
 class JitterCfg:
-    """Additive Gaussian sensor noise."""
+    """Additive Gaussian sensor noise, scaled by each channel's local signal std."""
     enabled: bool = True
     p: float = 0.5
     sigma: float = 0.05
@@ -632,11 +632,28 @@ class GravityCfg:
 class YawRotationCfg:
     """P2 — rotate sensor triads about the (estimated) gravity axis only. Randomizes
     heading (arbitrary for a pocketed phone) while preserving 'which way is down',
-    so the posture cue survives (unlike full SO(3), which is why plain rotation
-    was disabled)."""
+    so the posture cue survives. Yaw-only was the conservative choice when the
+    tokenizer discarded gravity; with the DC/gravity feature present, prefer the
+    full-SO(3) `rotation_3d` below (which yaw is a special case of)."""
     enabled: bool = False
     p: float = 0.5
     max_deg: float = 180.0
+
+
+@dataclass
+class Rotation3dCfg:
+    """P2b — full uniform-random SO(3) rotation of every co-located sensor triad
+    (acc+gyro+mag share one rotation per body location). This is the placement/
+    orientation-invariance lever (cf. UniMTS): the gravity DC vector rotates WITH the
+    accel signal, so the model learns 'gravity can point any direction' rather than
+    memorizing each dataset's fixed orientation. Principled ONLY because the filterbank
+    now carries a signed DC feature (else full SO(3) scrambles an unrepresented gravity
+    cue — the reason plain rotation was originally disabled). Gated on a gravity-present
+    acc triad so normalized / gravity-removed data (recgym, iOS userAcceleration) is not
+    rotated destructively."""
+    enabled: bool = False
+    p: float = 0.5
+    require_gravity: bool = True   # skip locations whose acc triad is gravity-removed/normalized
 
 
 @dataclass
@@ -679,7 +696,7 @@ class LabelTextCfg:
 class ChannelTextPhraseCfg:
     """Paraphrase each channel description: swap ONLY sensor-family / axis surface forms and
     wrap in a template. Placement, units, and gravity state are left verbatim, so the
-    load-bearing semantics are provably preserved (checked by the measurement harness)."""
+    load-bearing semantics are preserved."""
     enabled: bool = False
     p: float = 0.5   # fraction of samples whose channel descriptions get paraphrased
 
@@ -697,8 +714,8 @@ class ChannelTextDropoutCfg:
 # Conservative, meaning-preserving substitutions for channel-description paraphrase. Only
 # sensor-family + axis SURFACE FORMS are swapped; placement/units/gravity are never touched.
 _CH_SYNONYMS = [
-    (r"\baccelerometer\b", ["accelerometer", "acceleration sensor", "accelerometer sensor"]),
-    (r"\bacceleration\b", ["acceleration", "linear acceleration"]),
+    (r"\baccelerometer\b", ["accelerometer", "accelerometer sensor"]),
+    (r"\bacceleration\b", ["acceleration", "acceleration signal"]),
     (r"\bgyroscope\b", ["gyroscope", "gyro", "angular rate sensor"]),
     (r"\bangular velocity\b", ["angular velocity", "angular rate", "rotational velocity"]),
     (r"\bmagnetometer\b", ["magnetometer", "magnetic field sensor"]),
@@ -738,6 +755,7 @@ class AugmentationConfig:
     time_warp: TimeWarpCfg = field(default_factory=TimeWarpCfg)
     magnitude_warp: MagnitudeWarpCfg = field(default_factory=MagnitudeWarpCfg)
     gravity: GravityCfg = field(default_factory=GravityCfg)
+    rotation_3d: Rotation3dCfg = field(default_factory=Rotation3dCfg)
     yaw_rotation: YawRotationCfg = field(default_factory=YawRotationCfg)
     rate: RateCfg = field(default_factory=RateCfg)
     channel_dropout: ChannelDropoutCfg = field(default_factory=ChannelDropoutCfg)
@@ -750,7 +768,7 @@ class AugmentationConfig:
     # (so channel-text augs see the final, physics-mutated channel set/descriptions).
     # yaw_rotation runs BEFORE gravity (it needs gravity present in the acc to estimate the
     # rotation axis); rate runs after gravity/rotation.
-    ORDER = ("channel_dropout", "yaw_rotation", "gravity", "rate",
+    ORDER = ("channel_dropout", "yaw_rotation", "rotation_3d", "gravity", "rate",
              "time_warp", "time_shift", "magnitude_warp", "scale", "jitter",
              "channel_text_phrase", "channel_text_dropout", "label_text")
 
@@ -758,7 +776,11 @@ class AugmentationConfig:
     def default_v2(cls) -> "AugmentationConfig":
         cfg = cls()
         cfg.gravity.enabled = True
-        cfg.yaw_rotation.enabled = True
+        # Full SO(3) rotation (rotation_3d) is the placement-invariance lever and
+        # subsumes yaw; enable it instead of yaw_rotation so a triad is not rotated
+        # twice. Principled now that the filterbank carries a signed DC/gravity feature.
+        cfg.rotation_3d.enabled = True
+        cfg.yaw_rotation.enabled = False
         cfg.rate.enabled = True
         cfg.channel_dropout.enabled = True
         cfg.channel_text_phrase.enabled = True
@@ -821,6 +843,8 @@ def _gravity_present(triad: "np.ndarray", descs=None) -> bool:
     """
     if descs:
         j = " ".join(str(d).lower() for d in descs)
+        if "recgym" in j or "min-max normalized" in j or "dimensionless" in j:
+            return False
         if any(k in j for k in ("gravity removed", "gravity-removed", "user acceleration",
                                 "useracceleration", "linear acceleration")):
             return False
@@ -847,6 +871,23 @@ def _mark_gravity_removed(desc: str) -> str:
     if "gravity removed" not in d.lower():
         d = f"{d} (gravity removed)"
     return d
+
+
+def _random_so3() -> "torch.Tensor":
+    """Uniform-random rotation matrix (3x3, float32) from SO(3) (Haar measure).
+
+    Sampled via a random unit quaternion (Marsaglia): four i.i.d. N(0,1), normalized,
+    mapped to a rotation matrix. Uniform over orientations and always a proper rotation
+    (det=+1, no reflection)."""
+    q = np.random.randn(4)
+    q = q / (np.linalg.norm(q) + 1e-12)
+    w, x, y, z = q
+    R = np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w),     2 * (x * z + y * w)],
+        [2 * (x * y + z * w),     1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+        [2 * (x * z - y * w),     2 * (y * z + x * w),     1 - 2 * (x * x + y * y)],
+    ], dtype=np.float32)
+    return torch.from_numpy(R)
 
 
 def _rodrigues(axis: "torch.Tensor", theta: float) -> "torch.Tensor":
@@ -910,7 +951,8 @@ class IMUAugmenter:
 
     # ---------- value-space (ported) ----------
     def _jitter(self, s, spec):
-        s.data = s.data + torch.randn_like(s.data) * spec.sigma
+        scale = s.data.std(dim=0, unbiased=False, keepdim=True).clamp_min(1e-6)
+        s.data = s.data + torch.randn_like(s.data) * (spec.sigma * scale)
         return s
 
     def _scale(self, s, spec):
@@ -1037,6 +1079,37 @@ class IMUAugmenter:
         s.data = x
         return s
 
+    # ---------- P2b: full uniform-random SO(3) rotation ----------
+    def _rotation_3d(self, s, spec):
+        """Rotate every co-located sensor triad by one shared uniform-random SO(3) R
+        per body location (acc/gyro/mag at the same place rotate together, preserving
+        their physical relationship). The gravity DC rotates with the accel signal, so
+        this teaches gravity-direction invariance rather than scrambling an unseen cue."""
+        triloc = self._triads(s.channel_names)
+        if not triloc:
+            return s
+        x = s.data
+
+        def loc_has_gravity(triads):
+            for idxs, gname in triads:
+                if "acc" in gname:
+                    tri = x[:, idxs]
+                    if _gravity_present(tri.detach().cpu().numpy(),
+                                        [s.channel_descriptions[k] for k in idxs]):
+                        return True
+            return False
+
+        for _loc, triads in triloc.items():
+            # Only rotate locations whose accel still carries gravity — rotating
+            # normalized / gravity-removed data would be a meaningless mixing of axes.
+            if spec.require_gravity and not loc_has_gravity(triads):
+                continue
+            R = _random_so3().to(x.dtype).to(x.device)
+            for idxs, _gname in triads:
+                x[:, idxs] = torch.einsum("ij,tj->ti", R, x[:, idxs])
+        s.data = x
+        return s
+
     # ---------- P3: anti-aliased rate resample ----------
     def _rate(self, s, spec):
         old = float(s.sampling_rate)
@@ -1105,7 +1178,6 @@ class IMUAugmenter:
             use_synonyms=spec.use_synonyms, use_templates=spec.use_templates,
         )
         return s
-
 
 
 

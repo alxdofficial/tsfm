@@ -52,8 +52,10 @@ def test_jitter_adds_bounded_noise():
     s = make_sample()
     out = only("jitter", sigma=0.05)(make_sample())
     d = (out.data - s.data)
+    channel_std = s.data.std(dim=0, unbiased=False).clamp_min(1e-6)
+    rel_noise = d.std(dim=0, unbiased=False) / channel_std
     assert torch.isfinite(out.data).all()
-    assert 0.03 < d.std().item() < 0.08          # ~sigma
+    assert 0.03 < rel_noise.mean().item() < 0.08  # ~sigma relative to each channel
     assert out.data.shape == s.data.shape
 
 
@@ -79,6 +81,14 @@ def test_gravity_removal_drops_dc_on_acc_only():
     assert any("gravity removed" in d.lower() for d in out.channel_descriptions[:3])
 
 
+def test_gravity_detection_rejects_normalized_recgym_text():
+    triad = np.full((200, 3), 0.5, dtype=np.float32)
+    descs = ["RecGym min-max normalized Accelerometer X-axis (wrist)",
+             "RecGym min-max normalized Accelerometer Y-axis (wrist)",
+             "RecGym min-max normalized Accelerometer Z-axis (wrist)"]
+    assert not _gravity_present(triad, descs)
+
+
 def test_yaw_rotation_preserves_gravity_and_norm():
     s = make_sample(gravity=True)
     out = only("yaw_rotation")(make_sample(gravity=True))
@@ -89,6 +99,49 @@ def test_yaw_rotation_preserves_gravity_and_norm():
     # "which way is down" (mean gravity magnitude) preserved
     assert abs(s.data[:, :3].mean(0).norm() - out.data[:, :3].mean(0).norm()) < 1e-2
     assert torch.isfinite(out.data).all()
+
+
+def test_rotation_3d_preserves_norm_and_rotates_jointly():
+    """Full SO(3): acc + gyro triads rotate by ONE shared R per location, norm-preserving."""
+    from datasets.imu_pretraining_dataset.augmentations import _random_so3
+    s = make_sample(gravity=True)
+    out = only("rotation_3d")(make_sample(gravity=True))
+    # per-timestep triad norms preserved (rotation is orthogonal) for BOTH acc and gyro
+    assert torch.allclose(s.data[:, :3].norm(dim=1), out.data[:, :3].norm(dim=1), atol=1e-3)
+    assert torch.allclose(s.data[:, 3:].norm(dim=1), out.data[:, 3:].norm(dim=1), atol=1e-3)
+    # the data actually changed (rotation applied)
+    assert not torch.allclose(s.data, out.data, atol=1e-3)
+    # acc and gyro share the SAME rotation: recover R from acc (Procrustes), apply to gyro
+    A_ = s.data[:, :3].numpy(); B = out.data[:, :3].numpy()
+    U, _, Vt = np.linalg.svd(A_.T @ B)
+    R_acc = torch.tensor((U @ Vt).T, dtype=torch.float32)
+    gyro_pred = torch.einsum("ij,tj->ti", R_acc, s.data[:, 3:])
+    assert torch.allclose(gyro_pred, out.data[:, 3:], atol=1e-2)
+    assert torch.isfinite(out.data).all()
+
+
+def test_random_so3_is_proper_rotation():
+    """_random_so3 returns proper rotations (orthogonal, det=+1) — no reflections."""
+    from datasets.imu_pretraining_dataset.augmentations import _random_so3
+    for _ in range(200):
+        R = _random_so3()
+        assert torch.allclose(R @ R.T, torch.eye(3), atol=1e-4)
+        assert abs(torch.det(R).item() - 1.0) < 1e-4
+
+
+def test_rotation_3d_skips_gravity_removed():
+    """require_gravity gate: gravity-removed / normalized acc is NOT rotated (avoids a
+    meaningless SO(2/3) mixing of a signal with no physical 'down')."""
+    # gravity=False -> acc mean ~0, no gravity DC -> _gravity_present False -> skipped
+    s = make_sample(gravity=False)
+    out = only("rotation_3d")(make_sample(gravity=False))
+    assert torch.allclose(s.data, out.data, atol=1e-6)
+
+
+def test_default_v2_uses_full_rotation_not_yaw():
+    """default_v2 enables full SO(3) rotation and disables yaw (SO(3) subsumes it)."""
+    cfg = AugmentationConfig.default_v2()
+    assert cfg.rotation_3d.enabled and not cfg.yaw_rotation.enabled
 
 
 def test_rate_changes_sampling_rate_no_nan():
@@ -142,6 +195,13 @@ def test_channel_phrase_preserves_semantics_over_many_samples():
             if p != d:
                 changed += 1
     assert changed > 0                               # paraphrase actually varies the text
+
+
+def test_channel_phrase_does_not_invent_linear_acceleration():
+    desc = "accelerometer x-axis, left wrist, includes gravity"
+    for _ in range(50):
+        p = _paraphrase_channel(desc).lower()
+        assert "linear acceleration" not in p
 
 
 def test_channel_text_dropout_neutralizes_subset_keeps_signal():

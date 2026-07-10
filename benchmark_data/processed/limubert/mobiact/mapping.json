@@ -2,9 +2,9 @@
   "activity_to_idx": {
     "car_step_in": 0,
     "car_step_out": 1,
-    "fall_backward_knees": 2,
-    "fall_backward_sitting": 3,
-    "fall_forward": 4,
+    "fall_backward_sitting": 2,
+    "fall_forward": 3,
+    "fall_forward_knees": 4,
     "fall_sideways": 5,
     "jogging": 6,
     "jumping": 7,

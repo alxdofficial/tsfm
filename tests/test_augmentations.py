@@ -50,8 +50,11 @@ class TestAugmentationConfig:
 
     def test_default_v2_enables_p1_p4(self):
         cfg = AugmentationConfig.default_v2()
-        for n in ("gravity", "yaw_rotation", "rate", "channel_dropout"):
+        for n in ("gravity", "rate", "channel_dropout"):
             assert getattr(cfg, n).enabled, n
+        # P2 rotation slot: default_v2 uses full SO(3) (rotation_3d), which subsumes
+        # yaw_rotation, so exactly one of the two is enabled (rotation_3d).
+        assert cfg.rotation_3d.enabled and not cfg.yaw_rotation.enabled
 
     def test_none_disables_all(self):
         cfg = AugmentationConfig.none()

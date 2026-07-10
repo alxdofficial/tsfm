@@ -30,6 +30,23 @@ import random
 
 from datasets.imu_pretraining_dataset.label_augmentation import augment_label
 
+IMU_PATTERNS = ('acc', 'gyro', 'mag')  # 'ori' dropped: PAMAP2 orientation is documented invalid
+DATASET_CHANNEL_EXCLUDES = {
+    # MHealth mag channels are motion-coupled artifacts, not valid Earth-field magnetometer data.
+    "mhealth": ("_mag_",),
+}
+
+
+def is_imu_channel(channel_name: str, dataset_name: Optional[str] = None) -> bool:
+    """Return whether a parquet/manifest column should be consumed as model IMU input."""
+    lower = channel_name.lower()
+    if lower == "timestamp_sec":
+        return False
+    for pattern in DATASET_CHANNEL_EXCLUDES.get(dataset_name or "", ()):
+        if pattern in lower:
+            return False
+    return any(pattern in lower for pattern in IMU_PATTERNS)
+
 
 def _subject_of(session_id: str, dataset: str):
     """Subject id for a session, for SUBJECT-DISJOINT train/val/test splits (model
@@ -252,10 +269,19 @@ class IMUPretrainingDataset(Dataset):
         print(f"Loaded {len(self.sessions)} sessions for {split} split from {len(self.datasets)} datasets")
 
     def _get_cache_key(self) -> str:
-        """Generate a cache key from dataset config (datasets, max_sessions, seed)."""
+        """Generate a cache key from dataset config plus manifest/label contents."""
         _msd = self.max_sessions_per_dataset
         _msd_key = str(sorted(_msd.items())) if isinstance(_msd, dict) else str(_msd)
         key_parts = sorted(self.datasets) + [_msd_key, str(self.seed)]
+        for dataset_name in sorted(self.datasets):
+            dataset_path = self.data_root / dataset_name
+            for filename in ("manifest.json", "labels.json"):
+                path = dataset_path / filename
+                if not path.exists():
+                    key_parts.append(f"{dataset_name}:{filename}:missing")
+                    continue
+                digest = hashlib.md5(path.read_bytes()).hexdigest()
+                key_parts.append(f"{dataset_name}:{filename}:{digest}")
         return hashlib.md5(",".join(key_parts).encode()).hexdigest()[:12]
 
     def _load_datasets_cached(self):
@@ -263,7 +289,7 @@ class IMUPretrainingDataset(Dataset):
 
         First run: scans all session directories (slow on network/overlay FS).
         Subsequent runs: loads cached session index from pickle (~instant).
-        Cache is invalidated when datasets, max_sessions, or seed change.
+        Cache is invalidated when datasets, max_sessions, seed, manifest.json, or labels.json change.
         """
         cache_dir = self.data_root / ".cache"
         cache_file = cache_dir / f"session_index_{self._get_cache_key()}.pkl"
@@ -417,14 +443,11 @@ class IMUPretrainingDataset(Dataset):
         # Load session data
         df = pd.read_parquet(session_info['path'])
 
-        # Get available channels (exclude timestamp_sec and non-IMU channels)
-        # Filter to only IMU channels: accelerometer, gyroscope, magnetometer, orientation
-        # This excludes heart_rate (9 Hz in PAMAP2) and temperature sensors
-        IMU_PATTERNS = ['acc', 'gyro', 'mag']  # 'ori' dropped: PAMAP2 orientation is documented invalid
+        # Get available channels (exclude timestamp_sec, non-IMU channels, and known bad sensor streams).
+        # This excludes heart_rate (9 Hz in PAMAP2), temperature sensors, and MHealth artifact mag.
         available_channels = [
             col for col in df.columns
-            if col != 'timestamp_sec'
-            and any(p in col.lower() for p in IMU_PATTERNS)
+            if is_imu_channel(col, dataset_name)
         ]
 
         # Group channels by sensor type and location
@@ -476,7 +499,8 @@ class IMUPretrainingDataset(Dataset):
         # Create attention mask (all valid for now, padding handled in collate)
         attention_mask = torch.ones(len(data), dtype=torch.bool)
 
-        # Get dataset description for context
+        # Keep dataset description as metadata only. Channel text must stay short enough
+        # that axis/placement/unit/rate semantics survive the 64-token SBERT limit.
         dataset_desc = dataset_info['manifest'].get('description', '')
 
         # Get patch size for this dataset (use per-dataset if available, otherwise default)
@@ -491,13 +515,7 @@ class IMUPretrainingDataset(Dataset):
                 # Fallback for missing channel info
                 ch_desc = f"Channel: {ch}"
 
-            # Prepend dataset description for richer semantic context
-            if dataset_desc:
-                full_desc = f"{dataset_desc} {ch_desc}"
-            else:
-                full_desc = ch_desc
-
-            base_channel_descriptions.append(full_desc)
+            base_channel_descriptions.append(ch_desc)
 
         # Get patch size range for augmentation (if configured)
         # Format: (min_sec, max_sec, step_sec) or None
@@ -752,7 +770,6 @@ class IMUPretrainingDataset(Dataset):
         # single-sensor 3-ch sessions though its manifest lists 12, which would otherwise mis-bucket
         # every WISDM sample into a phantom 12-ch bucket (padding waste + wrong grouping).
         import pyarrow.parquet as pq
-        IMU_PATTERNS = ['acc', 'gyro', 'mag']  # 'ori' dropped: PAMAP2 orientation is documented invalid
         cache = getattr(self, "_chan_count_cache", None)
         if cache is None:
             cache = self._chan_count_cache = {}
@@ -763,11 +780,10 @@ class IMUPretrainingDataset(Dataset):
             if c is None:
                 try:
                     names = pq.ParquetFile(p).schema_arrow.names
-                    c = sum(1 for n in names if n != 'timestamp_sec'
-                            and any(pat in n.lower() for pat in IMU_PATTERNS))
+                    c = sum(1 for n in names if is_imu_channel(n, session['dataset']))
                 except Exception:   # fall back to manifest count
                     chs = self.dataset_info[session['dataset']]['channels']
-                    c = sum(1 for ch in chs if any(pat in ch.lower() for pat in IMU_PATTERNS))
+                    c = sum(1 for ch in chs if is_imu_channel(ch, session['dataset']))
                 cache[p] = c
             channel_counts.append(c)
         return channel_counts

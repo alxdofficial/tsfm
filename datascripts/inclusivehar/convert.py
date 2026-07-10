@@ -188,7 +188,7 @@ def create_manifest(ability_by_subject: dict) -> dict:
             "physical abilities. 20 subjects (10 able-bodied, 10 with physical "
             "disabilities) performing 6 activities (walking, jogging, sitting, "
             "standing, ramp ascent, ramp descent) at 50 Hz via the SensorLog app, "
-            "with the phone carried in a pocket or hand-held."
+            "with the phone worn vertically in a waist pouch."
         ),
         "source": "https://data.mendeley.com/datasets/r78dn3f6nc/4",
         "num_subjects": 20,

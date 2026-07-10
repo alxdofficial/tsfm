@@ -1,12 +1,9 @@
 {
-  "harth_S006_walking_0001_0000": [
+  "harth_S006_walking_0001": [
     "walking"
   ],
-  "harth_S006_standing_0002_0000": [
+  "harth_S006_standing_0002": [
     "standing"
-  ],
-  "harth_S006_shuffling_0003": [
-    "shuffling"
   ],
   "harth_S006_standing_0004_0000": [
     "standing"
@@ -26,25 +23,7 @@
   "harth_S006_standing_0004_0005": [
     "standing"
   ],
-  "harth_S006_standing_0004_0006": [
-    "standing"
-  ],
-  "harth_S006_standing_0004_0007": [
-    "standing"
-  ],
-  "harth_S006_standing_0004_0008": [
-    "standing"
-  ],
-  "harth_S006_standing_0004_0009": [
-    "standing"
-  ],
-  "harth_S006_standing_0004_0010": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0005": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0006_0000": [
+  "harth_S006_standing_0006": [
     "standing"
   ],
   "harth_S006_standing_0010_0000": [
@@ -58,21 +37,6 @@
   ],
   "harth_S006_standing_0010_0003": [
     "standing"
-  ],
-  "harth_S006_standing_0010_0004": [
-    "standing"
-  ],
-  "harth_S006_standing_0010_0005": [
-    "standing"
-  ],
-  "harth_S006_standing_0010_0006": [
-    "standing"
-  ],
-  "harth_S006_standing_0010_0007": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0011": [
-    "shuffling"
   ],
   "harth_S006_standing_0012_0000": [
     "standing"
@@ -152,78 +116,6 @@
   "harth_S006_standing_0012_0025": [
     "standing"
   ],
-  "harth_S006_standing_0012_0026": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0027": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0028": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0029": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0030": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0031": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0032": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0033": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0034": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0035": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0036": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0037": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0038": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0039": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0040": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0041": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0042": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0043": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0044": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0045": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0046": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0047": [
-    "standing"
-  ],
-  "harth_S006_standing_0012_0048": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0013": [
-    "shuffling"
-  ],
   "harth_S006_standing_0014_0000": [
     "standing"
   ],
@@ -238,27 +130,6 @@
   ],
   "harth_S006_standing_0014_0004": [
     "standing"
-  ],
-  "harth_S006_standing_0014_0005": [
-    "standing"
-  ],
-  "harth_S006_standing_0014_0006": [
-    "standing"
-  ],
-  "harth_S006_standing_0014_0007": [
-    "standing"
-  ],
-  "harth_S006_standing_0014_0008": [
-    "standing"
-  ],
-  "harth_S006_standing_0014_0009": [
-    "standing"
-  ],
-  "harth_S006_standing_0014_0010": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0015": [
-    "shuffling"
   ],
   "harth_S006_standing_0016_0000": [
     "standing"
@@ -287,130 +158,73 @@
   "harth_S006_standing_0016_0008": [
     "standing"
   ],
-  "harth_S006_standing_0016_0009": [
-    "standing"
-  ],
-  "harth_S006_standing_0016_0010": [
-    "standing"
-  ],
-  "harth_S006_standing_0016_0011": [
-    "standing"
-  ],
-  "harth_S006_standing_0016_0012": [
-    "standing"
-  ],
-  "harth_S006_standing_0016_0013": [
-    "standing"
-  ],
-  "harth_S006_standing_0016_0014": [
-    "standing"
-  ],
-  "harth_S006_standing_0016_0015": [
-    "standing"
-  ],
-  "harth_S006_walking_0018": [
+  "harth_S006_walking_0022": [
     "walking"
   ],
-  "harth_S006_shuffling_0021": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0022_0000": [
-    "walking"
-  ],
-  "harth_S006_shuffling_0025_0000": [
+  "harth_S006_shuffling_0025": [
     "shuffling"
   ],
   "harth_S006_standing_0026_0000": [
     "standing"
   ],
-  "harth_S006_standing_0026_0001": [
-    "standing"
-  ],
   "harth_S006_walking_0028_0000": [
     "walking"
-  ],
-  "harth_S006_shuffling_0029": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0030": [
-    "standing"
   ],
   "harth_S006_walking_0032_0000": [
     "walking"
   ],
-  "harth_S006_standing_0034": [
-    "standing"
-  ],
-  "harth_S006_walking_0036_0000": [
+  "harth_S006_walking_0036": [
     "walking"
   ],
-  "harth_S006_standing_0037_0000": [
+  "harth_S006_standing_0037": [
     "standing"
   ],
-  "harth_S006_shuffling_0038_0000": [
+  "harth_S006_shuffling_0038": [
     "shuffling"
   ],
-  "harth_S006_standing_0039_0000": [
+  "harth_S006_standing_0039": [
     "standing"
   ],
-  "harth_S006_walking_0040_0000": [
+  "harth_S006_walking_0040": [
     "walking"
   ],
-  "harth_S006_standing_0041_0000": [
+  "harth_S006_standing_0041": [
     "standing"
   ],
-  "harth_S006_standing_0043_0000": [
+  "harth_S006_standing_0043": [
     "standing"
   ],
-  "harth_S006_walking_0045_0000": [
+  "harth_S006_walking_0045": [
     "walking"
   ],
-  "harth_S006_standing_0046_0000": [
+  "harth_S006_standing_0046": [
     "standing"
   ],
-  "harth_S006_shuffling_0047": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0048_0000": [
+  "harth_S006_walking_0048": [
     "walking"
-  ],
-  "harth_S006_shuffling_0049": [
-    "shuffling"
   ],
   "harth_S006_walking_0050_0000": [
     "walking"
   ],
-  "harth_S006_standing_0052_0000": [
+  "harth_S006_standing_0052": [
     "standing"
   ],
-  "harth_S006_shuffling_0053_0000": [
+  "harth_S006_shuffling_0053": [
     "shuffling"
   ],
-  "harth_S006_standing_0054": [
+  "harth_S006_standing_0056": [
     "standing"
   ],
-  "harth_S006_standing_0056_0000": [
-    "standing"
-  ],
-  "harth_S006_walking_0058_0000": [
+  "harth_S006_walking_0058": [
     "walking"
   ],
-  "harth_S006_shuffling_0059": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0060_0000": [
+  "harth_S006_walking_0060": [
     "walking"
   ],
   "harth_S006_standing_0061_0000": [
     "standing"
   ],
-  "harth_S006_standing_0061_0001": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0062": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0063_0000": [
+  "harth_S006_walking_0063": [
     "walking"
   ],
   "harth_S006_standing_0065_0000": [
@@ -422,20 +236,8 @@
   "harth_S006_standing_0065_0002": [
     "standing"
   ],
-  "harth_S006_standing_0065_0003": [
+  "harth_S006_standing_0067": [
     "standing"
-  ],
-  "harth_S006_standing_0065_0004": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0066": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0067_0000": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0068": [
-    "shuffling"
   ],
   "harth_S006_walking_0069_0000": [
     "walking"
@@ -446,46 +248,28 @@
   "harth_S006_standing_0070_0001": [
     "standing"
   ],
-  "harth_S006_standing_0070_0002": [
-    "standing"
-  ],
-  "harth_S006_standing_0070_0003": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0071_0000": [
+  "harth_S006_shuffling_0071": [
     "shuffling"
   ],
-  "harth_S006_standing_0072_0000": [
+  "harth_S006_standing_0072": [
     "standing"
   ],
-  "harth_S006_walking_0073_0000": [
+  "harth_S006_walking_0073": [
     "walking"
   ],
   "harth_S006_walking_0077_0000": [
     "walking"
   ],
-  "harth_S006_walking_0077_0001": [
-    "walking"
-  ],
-  "harth_S006_shuffling_0078_0000": [
+  "harth_S006_shuffling_0078": [
     "shuffling"
   ],
   "harth_S006_walking_0079_0000": [
     "walking"
   ],
-  "harth_S006_walking_0079_0001": [
-    "walking"
-  ],
   "harth_S006_standing_0081_0000": [
     "standing"
   ],
-  "harth_S006_standing_0081_0001": [
-    "standing"
-  ],
-  "harth_S006_standing_0081_0002": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0082_0000": [
+  "harth_S006_shuffling_0082": [
     "shuffling"
   ],
   "harth_S006_sitting_0083_0000": [
@@ -527,68 +311,14 @@
   "harth_S006_sitting_0083_0012": [
     "sitting"
   ],
-  "harth_S006_sitting_0083_0013": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0083_0014": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0083_0015": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0083_0016": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0083_0017": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0083_0018": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0083_0019": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0083_0020": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0083_0021": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0083_0022": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0083_0023": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0083_0024": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0083_0025": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0083_0026": [
-    "sitting"
-  ],
   "harth_S006_walking_0084_0000": [
     "walking"
   ],
   "harth_S006_standing_0086_0000": [
     "standing"
   ],
-  "harth_S006_standing_0086_0001": [
-    "standing"
-  ],
-  "harth_S006_standing_0086_0002": [
-    "standing"
-  ],
   "harth_S006_walking_0088_0000": [
     "walking"
-  ],
-  "harth_S006_walking_0088_0001": [
-    "walking"
-  ],
-  "harth_S006_shuffling_0089": [
-    "shuffling"
   ],
   "harth_S006_sitting_0090_0000": [
     "sitting"
@@ -1424,870 +1154,6 @@
   "harth_S006_sitting_0090_0277": [
     "sitting"
   ],
-  "harth_S006_sitting_0090_0278": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0279": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0280": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0281": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0282": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0283": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0284": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0285": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0286": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0287": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0288": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0289": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0290": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0291": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0292": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0293": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0294": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0295": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0296": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0297": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0298": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0299": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0300": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0301": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0302": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0303": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0304": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0305": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0306": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0307": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0308": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0309": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0310": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0311": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0312": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0313": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0314": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0315": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0316": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0317": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0318": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0319": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0320": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0321": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0322": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0323": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0324": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0325": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0326": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0327": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0328": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0329": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0330": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0331": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0332": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0333": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0334": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0335": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0336": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0337": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0338": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0339": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0340": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0341": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0342": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0343": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0344": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0345": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0346": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0347": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0348": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0349": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0350": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0351": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0352": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0353": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0354": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0355": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0356": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0357": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0358": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0359": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0360": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0361": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0362": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0363": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0364": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0365": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0366": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0367": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0368": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0369": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0370": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0371": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0372": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0373": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0374": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0375": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0376": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0377": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0378": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0379": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0380": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0381": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0382": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0383": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0384": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0385": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0386": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0387": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0388": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0389": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0390": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0391": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0392": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0393": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0394": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0395": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0396": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0397": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0398": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0399": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0400": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0401": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0402": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0403": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0404": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0405": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0406": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0407": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0408": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0409": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0410": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0411": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0412": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0413": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0414": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0415": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0416": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0417": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0418": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0419": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0420": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0421": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0422": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0423": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0424": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0425": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0426": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0427": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0428": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0429": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0430": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0431": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0432": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0433": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0434": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0435": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0436": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0437": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0438": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0439": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0440": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0441": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0442": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0443": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0444": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0445": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0446": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0447": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0448": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0449": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0450": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0451": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0452": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0453": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0454": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0455": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0456": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0457": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0458": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0459": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0460": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0461": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0462": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0463": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0464": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0465": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0466": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0467": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0468": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0469": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0470": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0471": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0472": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0473": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0474": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0475": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0476": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0477": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0478": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0479": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0480": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0481": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0482": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0483": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0484": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0485": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0486": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0487": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0488": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0489": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0490": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0491": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0492": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0493": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0494": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0495": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0496": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0497": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0498": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0499": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0500": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0501": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0502": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0503": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0504": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0505": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0506": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0507": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0508": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0509": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0510": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0511": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0512": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0513": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0514": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0515": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0516": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0517": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0518": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0519": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0520": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0521": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0522": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0523": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0524": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0525": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0526": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0527": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0528": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0529": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0530": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0531": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0532": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0533": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0534": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0535": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0536": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0537": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0538": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0539": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0540": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0541": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0542": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0543": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0544": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0545": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0546": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0547": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0548": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0549": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0550": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0551": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0552": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0553": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0554": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0555": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0556": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0557": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0558": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0559": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0560": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0561": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0562": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0563": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0564": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0090_0565": [
-    "sitting"
-  ],
   "harth_S006_standing_0091_0000": [
     "standing"
   ],
@@ -2300,43 +1166,13 @@
   "harth_S006_standing_0091_0003": [
     "standing"
   ],
-  "harth_S006_standing_0091_0004": [
-    "standing"
-  ],
-  "harth_S006_standing_0091_0005": [
-    "standing"
-  ],
-  "harth_S006_standing_0091_0006": [
-    "standing"
-  ],
-  "harth_S006_standing_0091_0007": [
-    "standing"
-  ],
-  "harth_S006_standing_0091_0008": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0092": [
-    "shuffling"
-  ],
   "harth_S006_standing_0093_0000": [
-    "standing"
-  ],
-  "harth_S006_standing_0093_0001": [
-    "standing"
-  ],
-  "harth_S006_standing_0093_0002": [
     "standing"
   ],
   "harth_S006_standing_0095_0000": [
     "standing"
   ],
-  "harth_S006_standing_0095_0001": [
-    "standing"
-  ],
   "harth_S006_walking_0097_0000": [
-    "walking"
-  ],
-  "harth_S006_walking_0097_0001": [
     "walking"
   ],
   "harth_S006_shuffling_0098_0000": [
@@ -2345,98 +1181,59 @@
   "harth_S006_standing_0099_0000": [
     "standing"
   ],
-  "harth_S006_standing_0099_0001": [
+  "harth_S006_standing_0101": [
     "standing"
   ],
-  "harth_S006_standing_0101_0000": [
-    "standing"
-  ],
-  "harth_S006_walking_0103_0000": [
+  "harth_S006_walking_0103": [
     "walking"
-  ],
-  "harth_S006_shuffling_0104": [
-    "shuffling"
   ],
   "harth_S006_standing_0105_0000": [
     "standing"
   ],
-  "harth_S006_standing_0105_0001": [
-    "standing"
-  ],
-  "harth_S006_walking_0107_0000": [
+  "harth_S006_walking_0107": [
     "walking"
   ],
   "harth_S006_standing_0109_0000": [
     "standing"
   ],
-  "harth_S006_standing_0109_0001": [
-    "standing"
-  ],
   "harth_S006_standing_0111_0000": [
     "standing"
   ],
-  "harth_S006_standing_0111_0001": [
-    "standing"
-  ],
-  "harth_S006_walking_0114_0000": [
+  "harth_S006_walking_0114": [
     "walking"
   ],
-  "harth_S006_shuffling_0115": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0116_0000": [
+  "harth_S006_walking_0116": [
     "walking"
   ],
-  "harth_S006_standing_0117_0000": [
+  "harth_S006_standing_0117": [
     "standing"
   ],
   "harth_S006_shuffling_0118_0000": [
     "shuffling"
   ],
-  "harth_S006_shuffling_0118_0001": [
-    "shuffling"
-  ],
-  "harth_S006_shuffling_0118_0002": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0119_0000": [
+  "harth_S006_walking_0119": [
     "walking"
   ],
-  "harth_S006_standing_0121_0000": [
+  "harth_S006_standing_0121": [
     "standing"
   ],
-  "harth_S006_shuffling_0122": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0123_0000": [
+  "harth_S006_walking_0123": [
     "walking"
   ],
-  "harth_S006_shuffling_0124": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0125_0000": [
+  "harth_S006_walking_0125": [
     "walking"
   ],
   "harth_S006_standing_0126_0000": [
     "standing"
   ],
-  "harth_S006_standing_0126_0001": [
-    "standing"
-  ],
-  "harth_S006_standing_0126_0002": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0127_0000": [
+  "harth_S006_shuffling_0127": [
     "shuffling"
   ],
-  "harth_S006_walking_0128_0000": [
+  "harth_S006_walking_0128": [
     "walking"
   ],
-  "harth_S006_standing_0130_0000": [
+  "harth_S006_standing_0130": [
     "standing"
-  ],
-  "harth_S006_shuffling_0131": [
-    "shuffling"
   ],
   "harth_S006_standing_0132_0000": [
     "standing"
@@ -2444,94 +1241,52 @@
   "harth_S006_standing_0132_0001": [
     "standing"
   ],
-  "harth_S006_standing_0132_0002": [
-    "standing"
-  ],
-  "harth_S006_standing_0132_0003": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0133": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0134_0000": [
+  "harth_S006_walking_0134": [
     "walking"
   ],
   "harth_S006_standing_0135_0000": [
     "standing"
   ],
-  "harth_S006_standing_0135_0001": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0136_0000": [
+  "harth_S006_shuffling_0136": [
     "shuffling"
   ],
   "harth_S006_standing_0137_0000": [
     "standing"
   ],
-  "harth_S006_standing_0137_0001": [
-    "standing"
-  ],
-  "harth_S006_walking_0138_0000": [
+  "harth_S006_walking_0138": [
     "walking"
   ],
   "harth_S006_standing_0140_0000": [
     "standing"
   ],
-  "harth_S006_standing_0140_0001": [
-    "standing"
-  ],
-  "harth_S006_standing_0140_0002": [
-    "standing"
-  ],
-  "harth_S006_standing_0142": [
-    "standing"
-  ],
-  "harth_S006_walking_0143_0000": [
+  "harth_S006_walking_0143": [
     "walking"
   ],
-  "harth_S006_standing_0144": [
+  "harth_S006_shuffling_0147": [
+    "shuffling"
+  ],
+  "harth_S006_standing_0148": [
     "standing"
-  ],
-  "harth_S006_shuffling_0145": [
-    "shuffling"
-  ],
-  "harth_S006_shuffling_0147_0000": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0148_0000": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0149": [
-    "shuffling"
   ],
   "harth_S006_walking_0150": [
     "walking"
   ],
-  "harth_S006_shuffling_0151": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0152_0000": [
+  "harth_S006_standing_0152": [
     "standing"
   ],
-  "harth_S006_walking_0154_0000": [
+  "harth_S006_walking_0154": [
     "walking"
-  ],
-  "harth_S006_standing_0155": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0156": [
-    "shuffling"
   ],
   "harth_S006_standing_0157_0000": [
     "standing"
   ],
-  "harth_S006_shuffling_0158_0000": [
+  "harth_S006_shuffling_0158": [
     "shuffling"
   ],
   "harth_S006_standing_0159": [
     "standing"
   ],
-  "harth_S006_shuffling_0160_0000": [
+  "harth_S006_shuffling_0160": [
     "shuffling"
   ],
   "harth_S006_standing_0161_0000": [
@@ -2543,104 +1298,53 @@
   "harth_S006_standing_0161_0002": [
     "standing"
   ],
-  "harth_S006_standing_0161_0003": [
-    "standing"
-  ],
-  "harth_S006_standing_0161_0004": [
-    "standing"
-  ],
-  "harth_S006_standing_0161_0005": [
-    "standing"
-  ],
-  "harth_S006_standing_0161_0006": [
-    "standing"
-  ],
-  "harth_S006_standing_0161_0007": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0162_0000": [
+  "harth_S006_shuffling_0162": [
     "shuffling"
   ],
   "harth_S006_standing_0163_0000": [
     "standing"
   ],
-  "harth_S006_standing_0163_0001": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0164_0000": [
+  "harth_S006_shuffling_0164": [
     "shuffling"
   ],
   "harth_S006_standing_0165_0000": [
     "standing"
   ],
-  "harth_S006_shuffling_0166_0000": [
+  "harth_S006_shuffling_0166": [
     "shuffling"
   ],
-  "harth_S006_standing_0167_0000": [
+  "harth_S006_standing_0167": [
     "standing"
   ],
-  "harth_S006_shuffling_0168_0000": [
+  "harth_S006_shuffling_0168": [
     "shuffling"
   ],
-  "harth_S006_walking_0171_0000": [
+  "harth_S006_walking_0171": [
     "walking"
   ],
   "harth_S006_standing_0172_0000": [
     "standing"
   ],
-  "harth_S006_standing_0172_0001": [
-    "standing"
-  ],
-  "harth_S006_walking_0173_0000": [
+  "harth_S006_walking_0173": [
     "walking"
   ],
-  "harth_S006_shuffling_0174": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0175_0000": [
+  "harth_S006_walking_0175": [
     "walking"
   ],
-  "harth_S006_standing_0176": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0177": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0178_0000": [
-    "standing"
-  ],
-  "harth_S006_standing_0178_0001": [
+  "harth_S006_standing_0178": [
     "standing"
   ],
   "harth_S006_standing_0180_0000": [
     "standing"
   ],
-  "harth_S006_shuffling_0181_0000": [
+  "harth_S006_shuffling_0181": [
     "shuffling"
   ],
   "harth_S006_standing_0182_0000": [
     "standing"
   ],
-  "harth_S006_standing_0182_0001": [
-    "standing"
-  ],
-  "harth_S006_standing_0182_0002": [
-    "standing"
-  ],
-  "harth_S006_walking_0183": [
-    "walking"
-  ],
-  "harth_S006_shuffling_0184": [
-    "shuffling"
-  ],
   "harth_S006_standing_0185_0000": [
     "standing"
-  ],
-  "harth_S006_standing_0185_0001": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0186": [
-    "shuffling"
   ],
   "harth_S006_standing_0187_0000": [
     "standing"
@@ -2684,55 +1388,7 @@
   "harth_S006_standing_0187_0013": [
     "standing"
   ],
-  "harth_S006_standing_0187_0014": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0015": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0016": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0017": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0018": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0019": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0020": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0021": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0022": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0023": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0024": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0025": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0026": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0027": [
-    "standing"
-  ],
-  "harth_S006_standing_0187_0028": [
-    "standing"
-  ],
   "harth_S006_shuffling_0188_0000": [
-    "shuffling"
-  ],
-  "harth_S006_shuffling_0188_0001": [
     "shuffling"
   ],
   "harth_S006_standing_0189_0000": [
@@ -2744,26 +1400,11 @@
   "harth_S006_standing_0189_0002": [
     "standing"
   ],
-  "harth_S006_standing_0189_0003": [
-    "standing"
-  ],
-  "harth_S006_standing_0189_0004": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0190": [
-    "shuffling"
-  ],
   "harth_S006_standing_0191_0000": [
     "standing"
   ],
   "harth_S006_standing_0191_0001": [
     "standing"
-  ],
-  "harth_S006_standing_0191_0002": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0192": [
-    "shuffling"
   ],
   "harth_S006_standing_0193_0000": [
     "standing"
@@ -2777,31 +1418,10 @@
   "harth_S006_standing_0193_0003": [
     "standing"
   ],
-  "harth_S006_standing_0193_0004": [
+  "harth_S006_standing_0195": [
     "standing"
   ],
-  "harth_S006_standing_0193_0005": [
-    "standing"
-  ],
-  "harth_S006_standing_0193_0006": [
-    "standing"
-  ],
-  "harth_S006_standing_0193_0007": [
-    "standing"
-  ],
-  "harth_S006_standing_0193_0008": [
-    "standing"
-  ],
-  "harth_S006_standing_0193_0009": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0194": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0195_0000": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0196_0000": [
+  "harth_S006_shuffling_0196": [
     "shuffling"
   ],
   "harth_S006_standing_0197_0000": [
@@ -2813,19 +1433,7 @@
   "harth_S006_standing_0197_0002": [
     "standing"
   ],
-  "harth_S006_standing_0197_0003": [
-    "standing"
-  ],
-  "harth_S006_standing_0197_0004": [
-    "standing"
-  ],
-  "harth_S006_standing_0197_0005": [
-    "standing"
-  ],
-  "harth_S006_standing_0197_0006": [
-    "standing"
-  ],
-  "harth_S006_walking_0198_0000": [
+  "harth_S006_walking_0198": [
     "walking"
   ],
   "harth_S006_standing_0200_0000": [
@@ -2846,85 +1454,34 @@
   "harth_S006_standing_0200_0005": [
     "standing"
   ],
-  "harth_S006_standing_0200_0006": [
-    "standing"
-  ],
-  "harth_S006_standing_0200_0007": [
-    "standing"
-  ],
-  "harth_S006_standing_0200_0008": [
-    "standing"
-  ],
-  "harth_S006_standing_0200_0009": [
-    "standing"
-  ],
-  "harth_S006_standing_0200_0010": [
-    "standing"
-  ],
-  "harth_S006_standing_0200_0011": [
-    "standing"
-  ],
-  "harth_S006_standing_0200_0012": [
-    "standing"
-  ],
-  "harth_S006_standing_0200_0013": [
-    "standing"
-  ],
-  "harth_S006_standing_0200_0014": [
-    "standing"
-  ],
-  "harth_S006_walking_0202_0000": [
+  "harth_S006_walking_0202": [
     "walking"
   ],
-  "harth_S006_standing_0203_0000": [
+  "harth_S006_standing_0203": [
     "standing"
   ],
-  "harth_S006_shuffling_0204": [
-    "shuffling"
-  ],
-  "harth_S006_shuffling_0206_0000": [
+  "harth_S006_shuffling_0206": [
     "shuffling"
   ],
   "harth_S006_standing_0207_0000": [
     "standing"
   ],
-  "harth_S006_standing_0207_0001": [
-    "standing"
-  ],
-  "harth_S006_walking_0209_0000": [
+  "harth_S006_walking_0209": [
     "walking"
   ],
   "harth_S006_standing_0210_0000": [
     "standing"
   ],
-  "harth_S006_standing_0210_0001": [
-    "standing"
-  ],
-  "harth_S006_standing_0210_0002": [
-    "standing"
-  ],
-  "harth_S006_standing_0210_0003": [
-    "standing"
-  ],
-  "harth_S006_walking_0211_0000": [
+  "harth_S006_walking_0211": [
     "walking"
   ],
-  "harth_S006_shuffling_0212_0000": [
+  "harth_S006_shuffling_0212": [
     "shuffling"
   ],
   "harth_S006_walking_0213_0000": [
     "walking"
   ],
-  "harth_S006_walking_0213_0001": [
-    "walking"
-  ],
-  "harth_S006_walking_0213_0002": [
-    "walking"
-  ],
   "harth_S006_stairs_up_0214_0000": [
-    "stairs_up"
-  ],
-  "harth_S006_stairs_up_0214_0001": [
     "stairs_up"
   ],
   "harth_S006_walking_0215_0000": [
@@ -2933,16 +1490,7 @@
   "harth_S006_standing_0217_0000": [
     "standing"
   ],
-  "harth_S006_standing_0217_0001": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0218": [
-    "shuffling"
-  ],
   "harth_S006_standing_0219_0000": [
-    "standing"
-  ],
-  "harth_S006_standing_0219_0001": [
     "standing"
   ],
   "harth_S006_shuffling_0220_0000": [
@@ -2966,55 +1514,19 @@
   "harth_S006_standing_0221_0005": [
     "standing"
   ],
-  "harth_S006_standing_0221_0006": [
-    "standing"
-  ],
-  "harth_S006_standing_0221_0007": [
-    "standing"
-  ],
-  "harth_S006_standing_0221_0008": [
-    "standing"
-  ],
-  "harth_S006_standing_0221_0009": [
-    "standing"
-  ],
-  "harth_S006_standing_0221_0010": [
-    "standing"
-  ],
-  "harth_S006_standing_0221_0011": [
-    "standing"
-  ],
-  "harth_S006_walking_0222_0000": [
+  "harth_S006_walking_0222": [
     "walking"
-  ],
-  "harth_S006_standing_0223": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0224": [
-    "shuffling"
   ],
   "harth_S006_standing_0225_0000": [
     "standing"
   ],
-  "harth_S006_standing_0225_0001": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0226": [
-    "shuffling"
-  ],
   "harth_S006_standing_0227_0000": [
     "standing"
   ],
-  "harth_S006_standing_0227_0001": [
-    "standing"
-  ],
-  "harth_S006_walking_0229_0000": [
+  "harth_S006_walking_0229": [
     "walking"
   ],
   "harth_S006_stairs_down_0230_0000": [
-    "stairs_down"
-  ],
-  "harth_S006_stairs_down_0230_0001": [
     "stairs_down"
   ],
   "harth_S006_shuffling_0231": [
@@ -3035,34 +1547,13 @@
   "harth_S006_standing_0232_0004": [
     "standing"
   ],
-  "harth_S006_standing_0232_0005": [
-    "standing"
-  ],
-  "harth_S006_standing_0232_0006": [
-    "standing"
-  ],
-  "harth_S006_standing_0232_0007": [
-    "standing"
-  ],
-  "harth_S006_standing_0232_0008": [
-    "standing"
-  ],
   "harth_S006_walking_0233_0000": [
     "walking"
   ],
-  "harth_S006_walking_0233_0001": [
-    "walking"
-  ],
-  "harth_S006_standing_0235": [
-    "standing"
-  ],
-  "harth_S006_walking_0236_0000": [
+  "harth_S006_walking_0236": [
     "walking"
   ],
   "harth_S006_shuffling_0237_0000": [
-    "shuffling"
-  ],
-  "harth_S006_shuffling_0237_0001": [
     "shuffling"
   ],
   "harth_S006_walking_0238_0000": [
@@ -3071,43 +1562,16 @@
   "harth_S006_shuffling_0239_0000": [
     "shuffling"
   ],
-  "harth_S006_shuffling_0239_0001": [
-    "shuffling"
-  ],
-  "harth_S006_shuffling_0239_0002": [
-    "shuffling"
-  ],
-  "harth_S006_shuffling_0239_0003": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0240": [
+  "harth_S006_standing_0242": [
     "standing"
   ],
-  "harth_S006_shuffling_0241": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0242_0000": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0243_0000": [
-    "shuffling"
-  ],
-  "harth_S006_shuffling_0243_0001": [
+  "harth_S006_shuffling_0243": [
     "shuffling"
   ],
   "harth_S006_walking_0244_0000": [
     "walking"
   ],
-  "harth_S006_walking_0244_0001": [
-    "walking"
-  ],
-  "harth_S006_shuffling_0245": [
-    "shuffling"
-  ],
   "harth_S006_standing_0246_0000": [
-    "standing"
-  ],
-  "harth_S006_standing_0246_0001": [
     "standing"
   ],
   "harth_S006_sitting_0248_0000": [
@@ -4043,921 +2507,6 @@
   "harth_S006_sitting_0248_0310": [
     "sitting"
   ],
-  "harth_S006_sitting_0248_0311": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0312": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0313": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0314": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0315": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0316": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0317": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0318": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0319": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0320": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0321": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0322": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0323": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0324": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0325": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0326": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0327": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0328": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0329": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0330": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0331": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0332": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0333": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0334": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0335": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0336": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0337": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0338": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0339": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0340": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0341": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0342": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0343": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0344": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0345": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0346": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0347": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0348": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0349": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0350": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0351": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0352": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0353": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0354": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0355": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0356": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0357": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0358": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0359": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0360": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0361": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0362": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0363": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0364": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0365": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0366": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0367": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0368": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0369": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0370": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0371": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0372": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0373": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0374": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0375": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0376": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0377": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0378": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0379": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0380": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0381": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0382": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0383": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0384": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0385": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0386": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0387": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0388": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0389": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0390": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0391": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0392": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0393": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0394": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0395": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0396": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0397": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0398": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0399": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0400": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0401": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0402": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0403": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0404": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0405": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0406": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0407": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0408": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0409": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0410": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0411": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0412": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0413": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0414": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0415": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0416": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0417": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0418": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0419": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0420": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0421": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0422": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0423": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0424": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0425": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0426": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0427": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0428": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0429": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0430": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0431": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0432": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0433": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0434": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0435": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0436": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0437": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0438": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0439": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0440": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0441": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0442": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0443": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0444": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0445": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0446": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0447": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0448": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0449": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0450": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0451": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0452": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0453": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0454": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0455": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0456": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0457": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0458": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0459": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0460": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0461": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0462": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0463": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0464": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0465": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0466": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0467": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0468": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0469": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0470": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0471": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0472": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0473": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0474": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0475": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0476": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0477": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0478": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0479": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0480": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0481": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0482": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0483": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0484": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0485": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0486": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0487": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0488": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0489": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0490": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0491": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0492": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0493": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0494": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0495": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0496": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0497": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0498": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0499": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0500": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0501": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0502": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0503": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0504": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0505": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0506": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0507": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0508": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0509": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0510": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0511": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0512": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0513": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0514": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0515": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0516": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0517": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0518": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0519": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0520": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0521": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0522": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0523": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0524": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0525": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0526": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0527": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0528": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0529": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0530": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0531": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0532": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0533": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0534": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0535": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0536": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0537": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0538": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0539": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0540": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0541": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0542": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0543": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0544": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0545": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0546": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0547": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0548": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0549": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0550": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0551": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0552": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0553": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0554": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0555": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0556": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0557": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0558": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0559": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0560": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0561": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0562": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0563": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0564": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0565": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0566": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0567": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0568": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0569": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0570": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0571": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0572": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0573": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0574": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0575": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0576": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0577": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0578": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0579": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0580": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0581": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0582": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0583": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0584": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0585": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0586": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0587": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0588": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0589": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0590": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0591": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0592": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0593": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0594": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0595": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0596": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0597": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0598": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0599": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0600": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0601": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0602": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0603": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0604": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0605": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0606": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0607": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0608": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0609": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0610": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0611": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0612": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0613": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0614": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0248_0615": [
-    "sitting"
-  ],
   "harth_S006_walking_0249_0000": [
     "walking"
   ],
@@ -4976,35 +2525,11 @@
   "harth_S006_standing_0250_0004": [
     "standing"
   ],
-  "harth_S006_standing_0250_0005": [
-    "standing"
-  ],
-  "harth_S006_standing_0250_0006": [
-    "standing"
-  ],
-  "harth_S006_standing_0250_0007": [
-    "standing"
-  ],
-  "harth_S006_standing_0250_0008": [
-    "standing"
-  ],
-  "harth_S006_standing_0250_0009": [
-    "standing"
-  ],
-  "harth_S006_standing_0250_0010": [
-    "standing"
-  ],
-  "harth_S006_standing_0250_0011": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0251_0000": [
+  "harth_S006_shuffling_0251": [
     "shuffling"
   ],
-  "harth_S006_standing_0252_0000": [
+  "harth_S006_standing_0252": [
     "standing"
-  ],
-  "harth_S006_shuffling_0253": [
-    "shuffling"
   ],
   "harth_S006_standing_0256_0000": [
     "standing"
@@ -5015,37 +2540,10 @@
   "harth_S006_standing_0256_0002": [
     "standing"
   ],
-  "harth_S006_standing_0256_0003": [
-    "standing"
-  ],
-  "harth_S006_standing_0256_0004": [
-    "standing"
-  ],
-  "harth_S006_standing_0256_0005": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0257": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0258": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0259": [
-    "shuffling"
-  ],
   "harth_S006_walking_0261_0000": [
     "walking"
   ],
-  "harth_S006_walking_0261_0001": [
-    "walking"
-  ],
-  "harth_S006_walking_0261_0002": [
-    "walking"
-  ],
   "harth_S006_standing_0262_0000": [
-    "standing"
-  ],
-  "harth_S006_standing_0262_0001": [
     "standing"
   ],
   "harth_S006_walking_0263_0000": [
@@ -5057,38 +2555,17 @@
   "harth_S006_standing_0266_0000": [
     "standing"
   ],
-  "harth_S006_standing_0266_0001": [
-    "standing"
-  ],
-  "harth_S006_standing_0266_0002": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0267_0000": [
+  "harth_S006_shuffling_0267": [
     "shuffling"
   ],
   "harth_S006_standing_0268_0000": [
     "standing"
   ],
-  "harth_S006_standing_0268_0001": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0269": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0270_0000": [
+  "harth_S006_standing_0270": [
     "standing"
   ],
   "harth_S006_walking_0271_0000": [
     "walking"
-  ],
-  "harth_S006_walking_0271_0001": [
-    "walking"
-  ],
-  "harth_S006_walking_0271_0002": [
-    "walking"
-  ],
-  "harth_S006_shuffling_0272": [
-    "shuffling"
   ],
   "harth_S006_lying_0273_0000": [
     "lying"
@@ -5199,105 +2676,6 @@
     "lying"
   ],
   "harth_S006_lying_0273_0036": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0037": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0038": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0039": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0040": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0041": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0042": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0043": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0044": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0045": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0046": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0047": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0048": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0049": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0050": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0051": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0052": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0053": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0054": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0055": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0056": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0057": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0058": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0059": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0060": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0061": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0062": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0063": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0064": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0065": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0066": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0067": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0068": [
-    "lying"
-  ],
-  "harth_S006_lying_0273_0069": [
     "lying"
   ],
   "harth_S006_sitting_0274_0000": [
@@ -5495,197 +2873,8 @@
   "harth_S006_sitting_0274_0064": [
     "sitting"
   ],
-  "harth_S006_sitting_0274_0065": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0066": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0067": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0068": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0069": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0070": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0071": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0072": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0073": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0074": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0075": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0076": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0077": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0078": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0079": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0080": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0081": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0082": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0083": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0084": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0085": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0086": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0087": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0088": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0089": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0090": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0091": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0092": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0093": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0094": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0095": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0096": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0097": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0098": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0099": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0100": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0101": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0102": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0103": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0104": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0105": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0106": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0107": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0108": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0109": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0110": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0111": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0112": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0113": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0114": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0115": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0116": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0117": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0118": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0119": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0120": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0121": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0122": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0123": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0124": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0274_0125": [
-    "sitting"
-  ],
   "harth_S006_walking_0275_0000": [
     "walking"
-  ],
-  "harth_S006_standing_0276": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0277": [
-    "shuffling"
   ],
   "harth_S006_walking_0278_0000": [
     "walking"
@@ -5693,26 +2882,14 @@
   "harth_S006_standing_0279_0000": [
     "standing"
   ],
-  "harth_S006_standing_0279_0001": [
-    "standing"
-  ],
-  "harth_S006_walking_0280_0000": [
+  "harth_S006_walking_0280": [
     "walking"
   ],
-  "harth_S006_walking_0282_0000": [
+  "harth_S006_walking_0282": [
     "walking"
   ],
   "harth_S006_walking_0284_0000": [
     "walking"
-  ],
-  "harth_S006_walking_0284_0001": [
-    "walking"
-  ],
-  "harth_S006_standing_0285": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0286": [
-    "shuffling"
   ],
   "harth_S006_lying_0287_0000": [
     "lying"
@@ -5720,56 +2897,23 @@
   "harth_S006_lying_0287_0001": [
     "lying"
   ],
-  "harth_S006_lying_0287_0002": [
-    "lying"
-  ],
-  "harth_S006_lying_0287_0003": [
-    "lying"
-  ],
-  "harth_S006_lying_0287_0004": [
-    "lying"
-  ],
   "harth_S006_walking_0290_0000": [
     "walking"
   ],
-  "harth_S006_walking_0290_0001": [
+  "harth_S006_walking_0292": [
     "walking"
   ],
-  "harth_S006_shuffling_0291": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0292_0000": [
-    "walking"
-  ],
-  "harth_S006_standing_0293_0000": [
+  "harth_S006_standing_0293": [
     "standing"
   ],
   "harth_S006_walking_0294_0000": [
     "walking"
   ],
-  "harth_S006_walking_0294_0001": [
-    "walking"
-  ],
-  "harth_S006_shuffling_0295": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0296": [
-    "standing"
-  ],
   "harth_S006_standing_0298_0000": [
     "standing"
   ],
-  "harth_S006_standing_0298_0001": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0299": [
-    "shuffling"
-  ],
   "harth_S006_walking_0300_0000": [
     "walking"
-  ],
-  "harth_S006_shuffling_0301": [
-    "shuffling"
   ],
   "harth_S006_walking_0302_0000": [
     "walking"
@@ -5813,119 +2957,50 @@
   "harth_S006_standing_0303_0011": [
     "standing"
   ],
-  "harth_S006_standing_0303_0012": [
-    "standing"
-  ],
-  "harth_S006_standing_0303_0013": [
-    "standing"
-  ],
-  "harth_S006_standing_0303_0014": [
-    "standing"
-  ],
-  "harth_S006_standing_0303_0015": [
-    "standing"
-  ],
-  "harth_S006_standing_0303_0016": [
-    "standing"
-  ],
-  "harth_S006_standing_0303_0017": [
-    "standing"
-  ],
-  "harth_S006_standing_0303_0018": [
-    "standing"
-  ],
-  "harth_S006_standing_0303_0019": [
-    "standing"
-  ],
-  "harth_S006_standing_0303_0020": [
-    "standing"
-  ],
-  "harth_S006_standing_0303_0021": [
-    "standing"
-  ],
-  "harth_S006_standing_0303_0022": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0304": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0305_0000": [
+  "harth_S006_walking_0305": [
     "walking"
   ],
   "harth_S006_standing_0306_0000": [
     "standing"
   ],
-  "harth_S006_standing_0306_0001": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0307_0000": [
+  "harth_S006_shuffling_0307": [
     "shuffling"
   ],
   "harth_S006_standing_0308_0000": [
     "standing"
   ],
-  "harth_S006_standing_0308_0001": [
-    "standing"
-  ],
   "harth_S006_standing_0310_0000": [
     "standing"
   ],
-  "harth_S006_standing_0310_0001": [
-    "standing"
-  ],
-  "harth_S006_standing_0310_0002": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0311": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0312": [
-    "standing"
-  ],
-  "harth_S006_walking_0314_0000": [
+  "harth_S006_walking_0314": [
     "walking"
   ],
-  "harth_S006_standing_0315_0000": [
+  "harth_S006_standing_0315": [
     "standing"
   ],
-  "harth_S006_shuffling_0316_0000": [
+  "harth_S006_shuffling_0316": [
     "shuffling"
   ],
   "harth_S006_walking_0317_0000": [
     "walking"
   ],
-  "harth_S006_shuffling_0318_0000": [
+  "harth_S006_shuffling_0318": [
     "shuffling"
   ],
-  "harth_S006_standing_0319_0000": [
+  "harth_S006_standing_0319": [
     "standing"
   ],
-  "harth_S006_walking_0321_0000": [
+  "harth_S006_walking_0321": [
     "walking"
   ],
   "harth_S006_stairs_up_0322_0000": [
     "stairs_up"
   ],
-  "harth_S006_stairs_up_0322_0001": [
-    "stairs_up"
-  ],
-  "harth_S006_stairs_up_0322_0002": [
-    "stairs_up"
-  ],
-  "harth_S006_walking_0323_0000": [
+  "harth_S006_walking_0323": [
     "walking"
   ],
   "harth_S006_standing_0325_0000": [
     "standing"
-  ],
-  "harth_S006_shuffling_0326": [
-    "shuffling"
-  ],
-  "harth_S006_standing_0327": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0328": [
-    "shuffling"
   ],
   "harth_S006_standing_0329_0000": [
     "standing"
@@ -5936,16 +3011,7 @@
   "harth_S006_standing_0329_0002": [
     "standing"
   ],
-  "harth_S006_standing_0329_0003": [
-    "standing"
-  ],
-  "harth_S006_standing_0329_0004": [
-    "standing"
-  ],
-  "harth_S006_standing_0329_0005": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0330_0000": [
+  "harth_S006_shuffling_0330": [
     "shuffling"
   ],
   "harth_S006_walking_0331_0000": [
@@ -5955,12 +3021,6 @@
     "walking"
   ],
   "harth_S006_walking_0331_0002": [
-    "walking"
-  ],
-  "harth_S006_walking_0331_0003": [
-    "walking"
-  ],
-  "harth_S006_walking_0331_0004": [
     "walking"
   ],
   "harth_S006_cycling_sit_0332_0000": [
@@ -5979,21 +3039,6 @@
     "cycling_sit"
   ],
   "harth_S006_cycling_sit_0332_0005": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0332_0006": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0332_0007": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0332_0008": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0332_0009": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0332_0010": [
     "cycling_sit"
   ],
   "harth_S006_cycling_sit_0333_0000": [
@@ -6047,66 +3092,6 @@
   "harth_S006_cycling_sit_0333_0016": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0333_0017": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0018": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0019": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0020": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0021": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0022": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0023": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0024": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0025": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0026": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0027": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0028": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0029": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0030": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0031": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0032": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0033": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0034": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0035": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0333_0036": [
-    "cycling_sit"
-  ],
   "harth_S006_cycling_sit_0334_0000": [
     "cycling_sit"
   ],
@@ -6128,28 +3113,10 @@
   "harth_S006_cycling_sit_0334_0006": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0334_0007": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0334_0008": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0334_0009": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0334_0010": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0335_0000": [
+  "harth_S006_cycling_sit_0335": [
     "cycling_sit"
   ],
   "harth_S006_cycling_stand_0336_0000": [
-    "cycling_stand"
-  ],
-  "harth_S006_cycling_stand_0336_0001": [
-    "cycling_stand"
-  ],
-  "harth_S006_cycling_stand_0336_0002": [
     "cycling_stand"
   ],
   "harth_S006_cycling_sit_0337_0000": [
@@ -6164,15 +3131,6 @@
   "harth_S006_cycling_sit_0337_0003": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0337_0004": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0337_0005": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0337_0006": [
-    "cycling_sit"
-  ],
   "harth_S006_cycling_stand_0338_0000": [
     "cycling_stand"
   ],
@@ -6185,18 +3143,6 @@
   "harth_S006_cycling_stand_0338_0003": [
     "cycling_stand"
   ],
-  "harth_S006_cycling_stand_0338_0004": [
-    "cycling_stand"
-  ],
-  "harth_S006_cycling_stand_0338_0005": [
-    "cycling_stand"
-  ],
-  "harth_S006_cycling_stand_0338_0006": [
-    "cycling_stand"
-  ],
-  "harth_S006_cycling_stand_0338_0007": [
-    "cycling_stand"
-  ],
   "harth_S006_cycling_sit_0339_0000": [
     "cycling_sit"
   ],
@@ -6206,16 +3152,7 @@
   "harth_S006_cycling_sit_0339_0002": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0339_0003": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0339_0004": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0340_0000": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0340_0001": [
+  "harth_S006_cycling_sit_0340": [
     "cycling_sit"
   ],
   "harth_S006_cycling_sit_0341_0000": [
@@ -6230,25 +3167,10 @@
   "harth_S006_cycling_sit_0341_0003": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0341_0004": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0341_0005": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0341_0006": [
-    "cycling_sit"
-  ],
   "harth_S006_cycling_sit_0342_0000": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0342_0001": [
-    "cycling_sit"
-  ],
   "harth_S006_cycling_stand_0343_0000": [
-    "cycling_stand"
-  ],
-  "harth_S006_cycling_stand_0343_0001": [
     "cycling_stand"
   ],
   "harth_S006_cycling_sit_0344_0000": [
@@ -6260,28 +3182,10 @@
   "harth_S006_cycling_sit_0344_0002": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0344_0003": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0344_0004": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0344_0005": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0344_0006": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0344_0007": [
-    "cycling_sit"
-  ],
   "harth_S006_cycling_sit_0345_0000": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0345_0001": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0346_0000": [
+  "harth_S006_cycling_sit_0346": [
     "cycling_sit"
   ],
   "harth_S006_cycling_sit_0347_0000": [
@@ -6290,19 +3194,7 @@
   "harth_S006_cycling_sit_0347_0001": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0347_0002": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0347_0003": [
-    "cycling_sit"
-  ],
   "harth_S006_cycling_sit_0348_0000": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0348_0001": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0348_0002": [
     "cycling_sit"
   ],
   "harth_S006_cycling_sit_0349_0000": [
@@ -6314,22 +3206,7 @@
   "harth_S006_cycling_sit_0349_0002": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0349_0003": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0349_0004": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0350": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0351_0000": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0351_0001": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0352": [
+  "harth_S006_cycling_sit_0351": [
     "cycling_sit"
   ],
   "harth_S006_cycling_sit_0353_0000": [
@@ -6341,15 +3218,6 @@
   "harth_S006_cycling_sit_0353_0002": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0353_0003": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0353_0004": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0353_0005": [
-    "cycling_sit"
-  ],
   "harth_S006_cycling_sit_0354_0000": [
     "cycling_sit"
   ],
@@ -6357,21 +3225,6 @@
     "cycling_sit"
   ],
   "harth_S006_cycling_sit_0354_0002": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0354_0003": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0354_0004": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0354_0005": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0354_0006": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0354_0007": [
     "cycling_sit"
   ],
   "harth_S006_cycling_sit_0355_0000": [
@@ -6386,28 +3239,10 @@
   "harth_S006_cycling_sit_0355_0003": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0355_0004": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0355_0005": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0355_0006": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0355_0007": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0355_0008": [
-    "cycling_sit"
-  ],
   "harth_S006_cycling_sit_0356_0000": [
     "cycling_sit"
   ],
   "harth_S006_cycling_sit_0356_0001": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0356_0002": [
     "cycling_sit"
   ],
   "harth_S006_cycling_sit_0357_0000": [
@@ -6422,24 +3257,6 @@
   "harth_S006_cycling_sit_0357_0003": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0357_0004": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0357_0005": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0357_0006": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0357_0007": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0357_0008": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0357_0009": [
-    "cycling_sit"
-  ],
   "harth_S006_sitting_0358_0000": [
     "sitting"
   ],
@@ -6452,28 +3269,10 @@
   "harth_S006_sitting_0358_0003": [
     "sitting"
   ],
-  "harth_S006_sitting_0358_0004": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0358_0005": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0358_0006": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0358_0007": [
-    "sitting"
-  ],
-  "harth_S006_cycling_sit_0359_0000": [
+  "harth_S006_cycling_sit_0359": [
     "cycling_sit"
   ],
   "harth_S006_cycling_sit_0360_0000": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0360_0001": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0360_0002": [
     "cycling_sit"
   ],
   "harth_S006_cycling_sit_0362": [
@@ -6527,67 +3326,16 @@
   "harth_S006_cycling_sit_0363_0015": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0363_0016": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0363_0017": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0363_0018": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0363_0019": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0363_0020": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0363_0021": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0363_0022": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0363_0023": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0363_0024": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0363_0025": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0363_0026": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0363_0027": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0363_0028": [
-    "cycling_sit"
-  ],
-  "harth_S006_cycling_sit_0363_0029": [
-    "cycling_sit"
-  ],
   "harth_S006_cycling_stand_0364_0000": [
-    "cycling_stand"
-  ],
-  "harth_S006_cycling_stand_0364_0001": [
-    "cycling_stand"
-  ],
-  "harth_S006_cycling_stand_0364_0002": [
     "cycling_stand"
   ],
   "harth_S006_cycling_sit_0365_0000": [
     "cycling_sit"
   ],
-  "harth_S006_cycling_sit_0365_0001": [
-    "cycling_sit"
-  ],
-  "harth_S006_walking_0366_0000": [
+  "harth_S006_walking_0366": [
     "walking"
   ],
-  "harth_S006_standing_0367_0000": [
+  "harth_S006_standing_0367": [
     "standing"
   ],
   "harth_S006_standing_0369_0000": [
@@ -6596,28 +3344,13 @@
   "harth_S006_standing_0369_0001": [
     "standing"
   ],
-  "harth_S006_standing_0369_0002": [
+  "harth_S006_standing_0371": [
     "standing"
-  ],
-  "harth_S006_standing_0369_0003": [
-    "standing"
-  ],
-  "harth_S006_standing_0371_0000": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0372": [
-    "shuffling"
   ],
   "harth_S006_standing_0373_0000": [
     "standing"
   ],
-  "harth_S006_standing_0373_0001": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0374": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0375_0000": [
+  "harth_S006_walking_0375": [
     "walking"
   ],
   "harth_S006_stairs_down_0376_0000": [
@@ -6626,49 +3359,19 @@
   "harth_S006_stairs_down_0376_0001": [
     "stairs_down"
   ],
-  "harth_S006_stairs_down_0376_0002": [
-    "stairs_down"
-  ],
   "harth_S006_walking_0377_0000": [
-    "walking"
-  ],
-  "harth_S006_walking_0377_0001": [
     "walking"
   ],
   "harth_S006_standing_0378_0000": [
     "standing"
   ],
-  "harth_S006_standing_0378_0001": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0379": [
-    "shuffling"
-  ],
   "harth_S006_walking_0380_0000": [
     "walking"
-  ],
-  "harth_S006_walking_0380_0001": [
-    "walking"
-  ],
-  "harth_S006_walking_0380_0002": [
-    "walking"
-  ],
-  "harth_S006_standing_0382": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0383": [
-    "shuffling"
   ],
   "harth_S006_walking_0384_0000": [
     "walking"
   ],
-  "harth_S006_walking_0384_0001": [
-    "walking"
-  ],
-  "harth_S006_shuffling_0385": [
-    "shuffling"
-  ],
-  "harth_S006_walking_0387_0000": [
+  "harth_S006_walking_0387": [
     "walking"
   ],
   "harth_S006_stairs_up_0388_0000": [
@@ -6692,40 +3395,13 @@
   "harth_S006_walking_0389_0005": [
     "walking"
   ],
-  "harth_S006_walking_0389_0006": [
-    "walking"
-  ],
-  "harth_S006_walking_0389_0007": [
-    "walking"
-  ],
-  "harth_S006_walking_0389_0008": [
-    "walking"
-  ],
-  "harth_S006_standing_0390": [
-    "standing"
-  ],
-  "harth_S006_standing_0392": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0393_0000": [
+  "harth_S006_shuffling_0393": [
     "shuffling"
   ],
   "harth_S006_walking_0394_0000": [
     "walking"
   ],
-  "harth_S006_walking_0394_0001": [
-    "walking"
-  ],
-  "harth_S006_shuffling_0395": [
-    "shuffling"
-  ],
   "harth_S006_walking_0396_0000": [
-    "walking"
-  ],
-  "harth_S006_walking_0396_0001": [
-    "walking"
-  ],
-  "harth_S006_walking_0396_0002": [
     "walking"
   ],
   "harth_S006_walking_0398_0000": [
@@ -6746,19 +3422,7 @@
   "harth_S006_walking_0398_0005": [
     "walking"
   ],
-  "harth_S006_walking_0398_0006": [
-    "walking"
-  ],
-  "harth_S006_walking_0398_0007": [
-    "walking"
-  ],
-  "harth_S006_walking_0398_0008": [
-    "walking"
-  ],
-  "harth_S006_walking_0398_0009": [
-    "walking"
-  ],
-  "harth_S006_standing_0399_0000": [
+  "harth_S006_standing_0399": [
     "standing"
   ],
   "harth_S006_walking_0400_0000": [
@@ -6776,44 +3440,20 @@
   "harth_S006_walking_0400_0004": [
     "walking"
   ],
-  "harth_S006_walking_0400_0005": [
-    "walking"
-  ],
-  "harth_S006_walking_0400_0006": [
-    "walking"
-  ],
-  "harth_S006_walking_0400_0007": [
-    "walking"
-  ],
-  "harth_S006_walking_0400_0008": [
-    "walking"
-  ],
-  "harth_S006_walking_0400_0009": [
-    "walking"
-  ],
   "harth_S006_stairs_down_0401_0000": [
-    "stairs_down"
-  ],
-  "harth_S006_stairs_down_0401_0001": [
     "stairs_down"
   ],
   "harth_S006_walking_0402_0000": [
     "walking"
   ],
-  "harth_S006_walking_0402_0001": [
-    "walking"
-  ],
-  "harth_S006_shuffling_0403_0000": [
+  "harth_S006_shuffling_0403": [
     "shuffling"
   ],
-  "harth_S006_walking_0404_0000": [
+  "harth_S006_walking_0404": [
     "walking"
   ],
   "harth_S006_standing_0405": [
     "standing"
-  ],
-  "harth_S006_shuffling_0406": [
-    "shuffling"
   ],
   "harth_S006_walking_0407_0000": [
     "walking"
@@ -6821,49 +3461,22 @@
   "harth_S006_standing_0408_0000": [
     "standing"
   ],
-  "harth_S006_standing_0408_0001": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0409": [
-    "shuffling"
-  ],
   "harth_S006_standing_0410_0000": [
-    "standing"
-  ],
-  "harth_S006_standing_0410_0001": [
-    "standing"
-  ],
-  "harth_S006_standing_0410_0002": [
     "standing"
   ],
   "harth_S006_shuffling_0411_0000": [
     "shuffling"
   ],
-  "harth_S006_shuffling_0411_0001": [
-    "shuffling"
-  ],
   "harth_S006_standing_0412_0000": [
-    "standing"
-  ],
-  "harth_S006_standing_0412_0001": [
     "standing"
   ],
   "harth_S006_walking_0414_0000": [
     "walking"
   ],
-  "harth_S006_walking_0414_0001": [
-    "walking"
-  ],
-  "harth_S006_walking_0414_0002": [
-    "walking"
-  ],
-  "harth_S006_shuffling_0415": [
-    "shuffling"
-  ],
   "harth_S006_walking_0416_0000": [
     "walking"
   ],
-  "harth_S006_standing_0417_0000": [
+  "harth_S006_standing_0417": [
     "standing"
   ],
   "harth_S006_walking_0419_0000": [
@@ -6875,13 +3488,7 @@
   "harth_S006_standing_0420_0001": [
     "standing"
   ],
-  "harth_S006_standing_0420_0002": [
-    "standing"
-  ],
-  "harth_S006_standing_0420_0003": [
-    "standing"
-  ],
-  "harth_S006_shuffling_0421_0000": [
+  "harth_S006_shuffling_0421": [
     "shuffling"
   ],
   "harth_S006_sitting_0422_0000": [
@@ -7260,387 +3867,6 @@
     "sitting"
   ],
   "harth_S006_sitting_0422_0125": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0126": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0127": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0128": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0129": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0130": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0131": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0132": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0133": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0134": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0135": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0136": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0137": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0138": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0139": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0140": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0141": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0142": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0143": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0144": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0145": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0146": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0147": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0148": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0149": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0150": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0151": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0152": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0153": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0154": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0155": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0156": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0157": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0158": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0159": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0160": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0161": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0162": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0163": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0164": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0165": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0166": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0167": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0168": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0169": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0170": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0171": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0172": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0173": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0174": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0175": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0176": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0177": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0178": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0179": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0180": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0181": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0182": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0183": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0184": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0185": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0186": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0187": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0188": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0189": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0190": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0191": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0192": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0193": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0194": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0195": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0196": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0197": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0198": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0199": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0200": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0201": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0202": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0203": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0204": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0205": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0206": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0207": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0208": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0209": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0210": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0211": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0212": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0213": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0214": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0215": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0216": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0217": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0218": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0219": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0220": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0221": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0222": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0223": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0224": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0225": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0226": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0227": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0228": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0229": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0230": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0231": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0232": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0233": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0234": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0235": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0236": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0237": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0238": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0239": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0240": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0241": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0242": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0243": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0244": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0245": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0246": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0247": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0248": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0249": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0250": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0251": [
-    "sitting"
-  ],
-  "harth_S006_sitting_0422_0252": [
     "sitting"
   ],
   "harth_S008_standing_0000_0000": [

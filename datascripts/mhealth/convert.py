@@ -212,17 +212,17 @@ def create_manifest():
             },
             {
                 "name": "ankle_mag_x",
-                "description": "Left ankle magnetic field X-axis",
+                "description": "Left ankle magnetic-field artifact X-axis (low reliability; excluded from HALO training input)",
                 "sampling_rate_hz": 50.0
             },
             {
                 "name": "ankle_mag_y",
-                "description": "Left ankle magnetic field Y-axis",
+                "description": "Left ankle magnetic-field artifact Y-axis (low reliability; excluded from HALO training input)",
                 "sampling_rate_hz": 50.0
             },
             {
                 "name": "ankle_mag_z",
-                "description": "Left ankle magnetic field Z-axis",
+                "description": "Left ankle magnetic-field artifact Z-axis (low reliability; excluded from HALO training input)",
                 "sampling_rate_hz": 50.0
             },
             {
@@ -257,17 +257,17 @@ def create_manifest():
             },
             {
                 "name": "arm_mag_x",
-                "description": "Right wrist magnetic field X-axis",
+                "description": "Right wrist magnetic-field artifact X-axis (low reliability; excluded from HALO training input)",
                 "sampling_rate_hz": 50.0
             },
             {
                 "name": "arm_mag_y",
-                "description": "Right wrist magnetic field Y-axis",
+                "description": "Right wrist magnetic-field artifact Y-axis (low reliability; excluded from HALO training input)",
                 "sampling_rate_hz": 50.0
             },
             {
                 "name": "arm_mag_z",
-                "description": "Right wrist magnetic field Z-axis",
+                "description": "Right wrist magnetic-field artifact Z-axis (low reliability; excluded from HALO training input)",
                 "sampling_rate_hz": 50.0
             }
         ]

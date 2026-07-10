@@ -78,7 +78,7 @@ def test_scalar_rate_and_default_length(tok):
 def test_rate_invariance_2hz(tok):
     """A pure 2 Hz tone deposits energy in the same physical-Hz band at 20/50/100 Hz."""
     patches, rates, N = make_sinusoid_batch([2.0, 2.0, 2.0], [20.0, 50.0, 100.0], D=2.0, S=tok.S)
-    E, _, _ = tok._band_energy(patches, rates, N)          # (3,1,1,K)
+    E, _, _, _ = tok._band_energy(patches, rates, N)          # (3,1,1,K)
     logE = torch.log1p(E).squeeze(1).squeeze(1)            # (3, K)
 
     # peak band coincides across all three rates
@@ -95,7 +95,7 @@ def test_peak_band_matches_frequency(tok):
     """The peak band's center frequency should be near the injected tone."""
     for f0 in [1.0, 3.0, 5.0]:
         patches, rates, N = make_sinusoid_batch([f0], [50.0], D=2.0, S=tok.S)
-        E, centers, _ = tok._band_energy(patches, rates, N)
+        E, centers, _, _ = tok._band_energy(patches, rates, N)
         peak = torch.log1p(E).reshape(-1).argmax().item()
         assert abs(centers[peak].item() - f0) < 0.6 * f0  # within ~half an octave
 
@@ -120,7 +120,7 @@ def test_nyquist_mask_zeros_bands_in_forward(tok):
     patches = torch.randn(1, 1, tok.S, 1)
     o, _ = tok.masks(torch.tensor([20.0]), torch.tensor([40]))
     # Recompute e_hat the way forward does and confirm masked bands are zero.
-    E, centers, sigma = tok._band_energy(patches, torch.tensor([20.0]), torch.tensor([40]))
+    E, centers, sigma, _ = tok._band_energy(patches, torch.tensor([20.0]), torch.tensor([40]))
     e = torch.log1p(E)
     e_hat = (e - tok.norm_mu) / tok.norm_sd
     e_hat = e_hat * o.view(1, 1, 1, -1)
@@ -149,7 +149,7 @@ def test_no_empty_bands(tok):
     """Gaussian filters have soft support: every band gets nonzero energy from noise."""
     patches = torch.randn(2, 3, tok.S, 4)
     # keep everything within Nyquist so no legitimate zeros from masking
-    E, _, _ = tok._band_energy(patches, torch.full((2,), 100.0), torch.full((2,), 200))
+    E, _, _, _ = tok._band_energy(patches, torch.full((2,), 100.0), torch.full((2,), 200))
     assert (E > 0).all()
     assert torch.isfinite(E).all()
 
@@ -168,11 +168,63 @@ def test_amplitude_preserves_magnitude(tok):
     """Scaling the signal up must raise the amplitude scalar (running != walking)."""
     patches, rates, N = make_sinusoid_batch([2.0], [50.0], D=2.0, S=tok.S, amp=1.0)
     patches_loud = patches * 5.0
-    E_soft, _, _ = tok._band_energy(patches, rates, N)
-    E_loud, _, _ = tok._band_energy(patches_loud, rates, N)
+    E_soft, _, _, _ = tok._band_energy(patches, rates, N)
+    E_loud, _, _, _ = tok._band_energy(patches_loud, rates, N)
     amp_soft = torch.log1p(E_soft.sum())
     amp_loud = torch.log1p(E_loud.sum())
     assert amp_loud > amp_soft + 1.0
+
+
+def test_dc_feature_encodes_gravity_axis():
+    """The signed DC feature restores static-posture discrimination: two still postures
+    with gravity on different accel axes must produce DIFFERENT DC features, and removing
+    the DC dim collapses them (proving DC is the sole discriminator for static postures)."""
+    S = 512
+    tok = PhysicalFilterbankTokenizer(d_model=384, dft_size=S, use_dc=True, norm="frozen")
+
+    def static(axis, g=9.8, n=1):
+        x = torch.randn(n, 1, S, 3) * 0.02
+        x[:, :, :100, axis] += g
+        x[:, :, 100:, :] = 0
+        return x
+
+    # calibrate over static postures on all axes + both unit scales (g and m/s^2)
+    calib = torch.cat([static(a, g, n=8) for a in range(3) for g in (1.0, 9.8)], dim=0)
+    tok.fit_norm_stats(calib, torch.full((calib.shape[0],), 50.0), torch.full((calib.shape[0],), 100))
+    tok.eval()
+
+    # DC value per channel should spike on the gravity axis and be low elsewhere.
+    with torch.no_grad():
+        r, N = tok._prep_rate_len(torch.tensor([50.0]), torch.tensor([100]), 1, torch.device("cpu"), torch.float32)
+        _, _, _, dc_z = tok._band_energy(static(2), r, N)   # gravity on Z
+        _, _, _, dc_y = tok._band_energy(static(1), r, N)   # gravity on Y
+    dc_z, dc_y = dc_z.reshape(3), dc_y.reshape(3)
+    assert dc_z.argmax().item() == 2 and dc_y.argmax().item() == 1, (dc_z, dc_y)
+    # standardized: the gravity-axis DC is well above the off-axis DC
+    assert (dc_z[2] - dc_z[0]) > 1.0
+
+    # in_dim includes exactly one DC slot; zeroing it makes the two postures collapse.
+    assert tok.use_dc and tok.in_dim == 32 * 3 + 1 + 1
+
+
+def test_dc_disabled_is_blind_to_posture():
+    """Regression guard: with use_dc=False the tokenizer is (correctly) posture-blind,
+    documenting WHY the DC feature exists."""
+    S = 512
+    tok = PhysicalFilterbankTokenizer(d_model=384, dft_size=S, use_dc=False, norm="none")
+    tok.eval()
+
+    def static(axis, g=9.8):
+        x = torch.randn(1, 1, S, 3) * 0.02
+        x[:, :, :100, axis] += g
+        x[:, :, 100:, :] = 0
+        return x
+
+    with torch.no_grad():
+        tz = tok(static(2), torch.tensor([50.0]), torch.tensor([100])).reshape(3, -1)
+        ty = tok(static(1), torch.tensor([50.0]), torch.tensor([100])).reshape(3, -1)
+    cos = torch.nn.functional.cosine_similarity(tz, ty, dim=-1).mean()
+    assert cos > 0.99  # posture-blind without DC
 
 
 def test_gradient_flow(tok):
@@ -216,13 +268,16 @@ def test_calibration_streaming_matches_oneshot():
 def test_param_count_matches_spec():
     """Arm A, K=32, no resolution mask -> Linear(65->384) = 25,344 (spec §2)."""
     t = PhysicalFilterbankTokenizer(d_model=384, n_bands=32, use_resolution_mask=False,
-                                    use_amplitude=True)
+                                    use_amplitude=True, use_dc=False)
     assert t.in_dim == 65
     n_proj = t.proj.weight.numel() + t.proj.bias.numel()
     assert n_proj == 65 * 384 + 384 == 25344
     # with the resolution flag on: Linear(97->384)
-    t2 = PhysicalFilterbankTokenizer(d_model=384, n_bands=32, use_resolution_mask=True)
+    t2 = PhysicalFilterbankTokenizer(d_model=384, n_bands=32, use_resolution_mask=True, use_dc=False)
     assert t2.in_dim == 97
+    # DC feature adds exactly one input dim (signed per-channel gravity/tilt scalar).
+    t3 = PhysicalFilterbankTokenizer(d_model=384, n_bands=32, use_resolution_mask=True, use_dc=True)
+    assert t3.in_dim == 98
 
 
 def test_learnable_arm_b_trains():
@@ -250,7 +305,7 @@ def test_amplitude_rate_invariant(tok):
     N=r*D, so amp drifted ~log(rate ratio) for the same physical motion.
     """
     patches, rates, N = make_sinusoid_batch([2.0, 2.0, 2.0], [20.0, 50.0, 100.0], D=2.0, S=tok.S)
-    E, _, _ = tok._band_energy(patches, rates, N)
+    E, _, _, _ = tok._band_energy(patches, rates, N)
     amp = torch.log1p(E.sum(dim=-1)).reshape(-1)          # (3,)
     assert (amp.max() - amp.min()) < 0.3, f"amp rate-drift {amp.tolist()} (was ~1.6 pre-fix)"
 

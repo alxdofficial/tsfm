@@ -127,9 +127,9 @@ class ChannelBucketBatchSampler:
 
 # Data configuration
 DATA_ROOT = os.environ.get("TSFM_DATA_ROOT", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data"))
-# Training datasets (10 diverse HAR datasets)
-# Zero-shot test datasets are EXCLUDED (6): motionsense, realworld, mobiact, shoaib, opportunity, harth
-# Zero-shot test datasets (6): motionsense, realworld, mobiact, shoaib, opportunity, harth
+# Training datasets (11 diverse HAR datasets)
+# Active zero-shot test datasets are excluded:
+# motionsense, realworld, mobiact, shoaib, harth, inclusivehar.
 DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'recgym', 'capture24']
 random.seed(int(os.environ.get("TSFM_SEED", "42")))  # follows TSFM_SEED for multi-seed runs
 PATCH_SIZE_PER_DATASET = {
@@ -141,7 +141,7 @@ PATCH_SIZE_PER_DATASET = {
     'pamap2': 2.0,        # 9 Hz, min_session=22.2s → plenty of room
     'wisdm': 1.5,         # 20 Hz, min_session=2.0s → use 1.5s (was 2.0s)
     'unimib_shar': 1.0,   # 50 Hz, 3.02s fixed sessions
-    # New datasets
+    # Current train datasets
     'dsads': 2.0,         # 25 Hz, min_session=5.0s → use 2.0s
     'mobiact': 1.5,       # 50 Hz, min_session=2.0s → use 1.5s
     'realworld': 1.5,     # 50 Hz, min_session=2.0s → use 1.5s (was 2.0s)
@@ -149,11 +149,12 @@ PATCH_SIZE_PER_DATASET = {
     'hapt': 1.25,         # 50 Hz, min_session=1.48s → use 1.25s (was 1.5s)
     'kuhar': 1.5,         # 100 Hz, min_session=2.0s → use 1.5s
     'capture24': 1.5,     # 100 Hz free-living wrist accel, min window ≥2.0s → use 1.5s
-    # Zero-shot datasets (NOT trained on, only for evaluation)
+    # Zero-shot / appendix datasets (NOT trained on, only for evaluation)
     'motionsense': 1.5,   # 50 Hz — zero-shot (primary eval dataset)
-    'opportunity': 1.5,   # 30 Hz — zero-shot (GOAT baseline comparison)
-    'shoaib': 1.5,        # 50 Hz — zero-shot (LanHAR/CrossHAR baseline comparison)
+    'opportunity': 1.5,   # 30 Hz — appendix-only (4-subject CI degeneracy)
+    'shoaib': 1.5,        # 50 Hz — zero-shot (multi-placement smartphone)
     'harth': 1.5,         # 50 Hz — zero-shot (acc only, back+thigh)
+    'inclusivehar': 1.5,  # 50 Hz — zero-shot (waist-pouch phone, ability diversity)
 }
 
 # ---- Training data budget: target ~400 h of original trainable recording ----
@@ -211,6 +212,7 @@ NYQUIST_MARGIN = _cfg.get("nyquist_margin", 0.9)
 TOKENIZER_LEARNABLE = _cfg.get("tokenizer_learnable", False)
 TOKENIZER_NORM = _cfg.get("tokenizer_norm", "frozen")
 USE_AMPLITUDE = _cfg.get("use_amplitude", True)
+USE_DC = _cfg.get("use_dc", True)
 USE_RESOLUTION_MASK = _cfg.get("use_resolution_mask", True)
 # Streamable encoder (Phase E)
 USE_ROPE = _cfg.get("use_rope", False)
@@ -273,7 +275,7 @@ LEARNING_RATE = float(os.environ.get("TSFM_LR", "8e-5"))  # Scaled down for medi
 TEMPERATURE = 0.07             # CLIP default
 WEIGHT_DECAY = 1e-5
 USE_GRAD_CACHE = os.environ.get("TSFM_GRAD_CACHE", "0") == "1"  # Off for small_deep, on for medium+
-USE_MEMORY_BANK = os.environ.get("TSFM_MEMORY_BANK", "1") == "1"
+USE_MEMORY_BANK = os.environ.get("TSFM_MEMORY_BANK", "0") == "1"
 MEMORY_BANK_SIZE = int(os.environ.get("TSFM_MEMORY_BANK_SIZE", "512"))
 USE_GRADIENT_CHECKPOINTING = os.environ.get("TSFM_GRAD_CHECKPOINT", "0") == "1"
 
@@ -345,7 +347,7 @@ DEBUG_METRIC_FREQUENCY = 50  # Compute expensive debug metrics every N batches (
 # Example: ABLATION_CHANNEL_TEXT_FUSION=0 python semantic_alignment_train.py
 # =================================================================
 ABLATION_CHANNEL_TEXT_FUSION = os.environ.get("ABLATION_CHANNEL_TEXT_FUSION", "1") == "1"
-ABLATION_LEARNABLE_LABEL_BANK = os.environ.get("ABLATION_LEARNABLE_LABEL_BANK", "1") == "1"
+ABLATION_LEARNABLE_LABEL_BANK = os.environ.get("ABLATION_LEARNABLE_LABEL_BANK", "0") == "1"
 ABLATION_SOFT_TARGETS = os.environ.get("ABLATION_SOFT_TARGETS", "1") == "1"
 ABLATION_SIGNAL_AUG = os.environ.get("ABLATION_SIGNAL_AUG", "1") == "1"
 ABLATION_TEXT_AUG = os.environ.get("ABLATION_TEXT_AUG", "1") == "1"
@@ -385,12 +387,13 @@ _AUG_FACTORIES = {
     "legacy": _AugCfg.legacy,
     "none": _AugCfg.none,
 }
-_AUG_PRESET_EFFECTIVE = _AUG_PRESET if _AUG_PRESET in _AUG_FACTORIES else "v2"
+if _AUG_PRESET not in _AUG_FACTORIES:
+    raise ValueError(f"Unknown TSFM_AUG_PRESET={_AUG_PRESET!r}; expected one of {sorted(_AUG_FACTORIES)}")
+_AUG_PRESET_EFFECTIVE = _AUG_PRESET
 AUG_CONFIG = _AUG_FACTORIES[_AUG_PRESET_EFFECTIVE]()
-# Honour the legacy ABLATION_SIGNAL_AUG=0 kill-switch (disables jitter + scale).
+# Honour the legacy ABLATION_SIGNAL_AUG=0 kill-switch (disables all signal/physics augmentation).
 if not ABLATION_SIGNAL_AUG:
-    AUG_CONFIG.jitter.enabled = False
-    AUG_CONFIG.scale.enabled = False
+    AUG_CONFIG = _AugCfg.none()
 # ABLATION_TEXT_AUG=0 disables ALL text augmentation (label paraphrase + channel-description
 # phrase + channel-description dropout), now unified in AUG_CONFIG.
 if not ABLATION_TEXT_AUG:
@@ -423,6 +426,26 @@ PATCH_SIZE_RANGE_PER_DATASET = {
     'kuhar':        (1.0, 1.75, 0.25),   # min_session=2.0s → [1.0, 1.25, 1.5, 1.75]
     'capture24':    (1.0, 1.75, 0.25),   # min window=2.0s → [1.0, 1.25, 1.5, 1.75]
 }
+
+# Filterbank safety: the tokenizer zero-pads each native-rate patch to DFT_SIZE (S),
+# and a patch longer than S is a hard error at preprocess time. The worst-case patch
+# length is max(patch_seconds) * max_rate, where rate augmentation (RateCfg) can push
+# any patch up to its max_hz. Assert the coupling at config-load so an edit that raises
+# a patch duration or the rate ceiling fails loudly HERE, not mid-epoch. (See FB_DFT_SIZE
+# in model/feature_extractor.py for why S=256 is the corpus-correct value.)
+if IS_FILTERBANK:
+    import math as _math
+    _max_patch_sec = max(
+        [rng[1] for rng in PATCH_SIZE_RANGE_PER_DATASET.values()]
+        + list(PATCH_SIZE_PER_DATASET.values())
+    ) if USE_PATCH_SIZE_AUGMENTATION else max(PATCH_SIZE_PER_DATASET.values())
+    _max_rate = float(_AugCfg.default_v2().rate.max_hz)  # rate-aug ceiling (>= any native rate here)
+    _worst_N = _math.ceil(_max_patch_sec * _max_rate) + 2  # +2 for resample rounding
+    assert DFT_SIZE >= _worst_N, (
+        f"DFT_SIZE ({DFT_SIZE}) < worst-case patch length ({_worst_N} = "
+        f"ceil(max_patch_sec {_max_patch_sec} * max_rate {_max_rate}) + 2). "
+        f"Raise dft_size (to the next power of two >= {_worst_N}) in the model config."
+    )
 
 # =================================================================
 
@@ -1800,7 +1823,7 @@ def main():
     global USE_CROSS_CHANNEL, CNN_CHANNELS, CNN_KERNEL_SIZES, TARGET_PATCH_SIZE
     global FEATURE_EXTRACTOR_TYPE, SPECTRAL_RATIO
     global IS_FILTERBANK, N_BANDS, F_MIN, F_MAX, TOKENIZER_Q, DFT_SIZE, NYQUIST_MARGIN
-    global TOKENIZER_LEARNABLE, TOKENIZER_NORM, USE_AMPLITUDE, USE_RESOLUTION_MASK
+    global TOKENIZER_LEARNABLE, TOKENIZER_NORM, USE_AMPLITUDE, USE_DC, USE_RESOLUTION_MASK
     global USE_ROPE, ROPE_MIN_PERIOD, ROPE_MAX_PERIOD
     global D_MODEL_FUSED, SEMANTIC_DIM, NUM_SEMANTIC_TEMPORAL_LAYERS
     global NUM_FUSION_QUERIES, USE_FUSION_SELF_ATTENTION
@@ -1861,6 +1884,7 @@ def main():
                 TOKENIZER_LEARNABLE = saved_cfg.get('tokenizer_learnable', TOKENIZER_LEARNABLE)
                 TOKENIZER_NORM = saved_cfg.get('tokenizer_norm', TOKENIZER_NORM)
                 USE_AMPLITUDE = saved_cfg.get('use_amplitude', USE_AMPLITUDE)
+                USE_DC = saved_cfg.get('use_dc', USE_DC)
                 USE_RESOLUTION_MASK = saved_cfg.get('use_resolution_mask', USE_RESOLUTION_MASK)
                 USE_ROPE = saved_cfg.get('use_rope', USE_ROPE)
                 ROPE_MIN_PERIOD = saved_cfg.get('rope_min_period', ROPE_MIN_PERIOD)
@@ -1971,7 +1995,7 @@ def main():
         "n_bands": N_BANDS, "f_min": F_MIN, "f_max": F_MAX, "tokenizer_Q": TOKENIZER_Q,
         "dft_size": DFT_SIZE, "nyquist_margin": NYQUIST_MARGIN,
         "tokenizer_learnable": TOKENIZER_LEARNABLE, "tokenizer_norm": TOKENIZER_NORM,
-        "use_amplitude": USE_AMPLITUDE, "use_resolution_mask": USE_RESOLUTION_MASK,
+        "use_amplitude": USE_AMPLITUDE, "use_dc": USE_DC, "use_resolution_mask": USE_RESOLUTION_MASK,
         "use_rope": USE_ROPE, "rope_min_period": ROPE_MIN_PERIOD, "rope_max_period": ROPE_MAX_PERIOD,
         "stream_causal_prob": STREAM_CAUSAL_PROB, "stream_window_sec": STREAM_WINDOW_SEC,
         "stream_lookahead_patches": STREAM_LOOKAHEAD_PATCHES, "distill_weight": DISTILL_WEIGHT,
@@ -2003,7 +2027,7 @@ def main():
             'n_bands': N_BANDS, 'f_min': F_MIN, 'f_max': F_MAX, 'tokenizer_Q': TOKENIZER_Q,
             'dft_size': DFT_SIZE, 'nyquist_margin': NYQUIST_MARGIN,
             'tokenizer_learnable': TOKENIZER_LEARNABLE, 'tokenizer_norm': TOKENIZER_NORM,
-            'use_amplitude': USE_AMPLITUDE, 'use_resolution_mask': USE_RESOLUTION_MASK,
+            'use_amplitude': USE_AMPLITUDE, 'use_dc': USE_DC, 'use_resolution_mask': USE_RESOLUTION_MASK,
             'use_rope': USE_ROPE, 'rope_min_period': ROPE_MIN_PERIOD, 'rope_max_period': ROPE_MAX_PERIOD,
         },
         'semantic_head': {
@@ -2069,7 +2093,7 @@ def main():
         n_bands=N_BANDS, f_min=F_MIN, f_max=F_MAX, tokenizer_Q=TOKENIZER_Q,
         dft_size=DFT_SIZE, nyquist_margin=NYQUIST_MARGIN,
         tokenizer_learnable=TOKENIZER_LEARNABLE, tokenizer_norm=TOKENIZER_NORM,
-        use_amplitude=USE_AMPLITUDE, use_resolution_mask=USE_RESOLUTION_MASK,
+        use_amplitude=USE_AMPLITUDE, use_dc=USE_DC, use_resolution_mask=USE_RESOLUTION_MASK,
         use_rope=USE_ROPE, rope_min_period=ROPE_MIN_PERIOD, rope_max_period=ROPE_MAX_PERIOD,
     ).to(device)
 

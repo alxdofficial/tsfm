@@ -90,6 +90,7 @@ class IMUActivityRecognitionEncoder(nn.Module):
         tokenizer_learnable: bool = False,
         tokenizer_norm: str = 'frozen',
         use_amplitude: bool = True,
+        use_dc: bool = True,
         use_resolution_mask: bool = True,
 
         # RoPE over physical time (streamable encoder; dual-branch only)
@@ -153,6 +154,7 @@ class IMUActivityRecognitionEncoder(nn.Module):
                 nyquist_margin=nyquist_margin,
                 learnable=tokenizer_learnable,
                 use_amplitude=use_amplitude,
+                use_dc=use_dc,
                 use_resolution_mask=use_resolution_mask,
                 norm=tokenizer_norm,
             )

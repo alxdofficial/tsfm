@@ -186,16 +186,20 @@ SMALL_DEEP_CONFIG: Dict[str, Any] = {
 SMALL_DEEP_FB_CONFIG: Dict[str, Any] = {
     **SMALL_DEEP_CONFIG,
     "feature_extractor_type": "physical_filterbank",
-    # PHz-Filterbank tokenizer hyperparameters
+    # PHz-Filterbank tokenizer hyperparameters. Defaults + physics justification live
+    # at the top of model/feature_extractor.py (FB_* constants); this is the per-run
+    # override surface. Keep the two in sync.
     "n_bands": 32,
     "f_min": 0.3,
     "f_max": 15.0,
     "tokenizer_Q": 4.0,
-    "dft_size": 512,               # S >= max(r*D); 100Hz*5.1s or 200Hz*2.5s
+    "dft_size": 256,               # smallest pow2 >= corpus worst-case N (2.5s*100Hz=250);
+                                    # padding-invariant output, ~2x cheaper than 512. See FB_DFT_SIZE.
     "nyquist_margin": 0.9,
     "tokenizer_learnable": False,  # Arm A (fixed filterbank); True -> Arm B
     "tokenizer_norm": "frozen",    # 'frozen' per-band standardization | 'none'
     "use_amplitude": True,
+    "use_dc": True,                # signed per-channel DC (gravity/tilt) feature — restores static-posture discrimination
     "use_resolution_mask": True,   # low-freq mirror of the Nyquist mask
     # --- Streamable encoder (Phase E, research_streaming_design.md) ---
     "use_rope": True,              # RoPE over physical time (dual-branch temporal attn)
