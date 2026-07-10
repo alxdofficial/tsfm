@@ -9,6 +9,8 @@ Output: data/pamap2/
 """
 
 import os
+import random
+import shutil
 import sys
 import json
 import numpy as np
@@ -197,7 +199,7 @@ def create_manifest():
             for axis in ['x', 'y', 'z']:
                 channels.append({
                     "name": f"{location}_acc{scale}_{axis}",
-                    "description": f"Acceleration {axis}-axis (±{scale}g scale) from {location_desc} IMU",
+                    "description": f"Acceleration {axis}-axis (±{scale}g sensor range, values in m/s^2 including gravity) from {location_desc} IMU",
                     "sampling_rate_hz": 100.0
                 })
 
@@ -217,17 +219,17 @@ def create_manifest():
                 "sampling_rate_hz": 100.0
             })
 
-        # Orientation (quaternion)
+        # Orientation (quaternion) — invalid in PAMAP2 (sensor orientation was off)
         for i in range(1, 5):
             channels.append({
                 "name": f"{location}_ori_{i}",
-                "description": f"Orientation component {i} from {location_desc} IMU (INVALID: orientation was turned off during PAMAP2 collection; constant placeholder)",
+                "description": f"Orientation quaternion component {i} from {location_desc} IMU (INVALID: orientation turned off in PAMAP2; constant placeholder)",
                 "sampling_rate_hz": 100.0
             })
 
     manifest = {
         "dataset_name": "PAMAP2",
-        "description": "Physical activity monitoring with 3 IMUs (hand, chest, ankle) and heart rate. 9 subjects performing 18 activities including walking, running, cycling, and household tasks.",
+        "description": "Physical activity monitoring with 3 IMUs (hand, chest, ankle) and heart rate. 9 subjects performing 12 protocol activities including walking, running, cycling, and household tasks.",
         "channels": channels
     }
 
@@ -250,8 +252,16 @@ def main():
         print("Run: python datascripts/download_all_datasets.py pamap2")
         return
 
-    # Create output directory
+    # Seed once (not per-call) so windowing is reproducible while preserving
+    # window-length variety across segments (create_variable_windows only
+    # re-seeds when passed an explicit seed, so it draws from this global state).
+    random.seed(42)
+
+    # Create output directory. Clear any prior conversion so re-runs don't leave
+    # stale orphan session dirs (the loader indexes labels.json, so orphans are
+    # inert but they inflate disk and desync on-disk vs labels.json counts).
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(OUTPUT_DIR / "sessions", ignore_errors=True)
 
     # Process all subject files
     subject_files = sorted(RAW_DIR.glob("subject*.dat"))

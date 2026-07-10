@@ -197,17 +197,17 @@ def create_manifest():
             },
             {
                 "name": "ankle_gyro_x",
-                "description": "Left ankle angular velocity X-axis",
+                "description": "Left ankle angular velocity X-axis, low-reliability gyro (sample-and-hold ~14 Hz effective, near-constant magnitude)",
                 "sampling_rate_hz": 50.0
             },
             {
                 "name": "ankle_gyro_y",
-                "description": "Left ankle angular velocity Y-axis",
+                "description": "Left ankle angular velocity Y-axis, low-reliability gyro (sample-and-hold ~14 Hz effective, near-constant magnitude)",
                 "sampling_rate_hz": 50.0
             },
             {
                 "name": "ankle_gyro_z",
-                "description": "Left ankle angular velocity Z-axis",
+                "description": "Left ankle angular velocity Z-axis, low-reliability gyro (sample-and-hold ~14 Hz effective, near-constant magnitude)",
                 "sampling_rate_hz": 50.0
             },
             {
@@ -242,17 +242,17 @@ def create_manifest():
             },
             {
                 "name": "arm_gyro_x",
-                "description": "Right wrist angular velocity X-axis",
+                "description": "Right wrist angular velocity X-axis, low-reliability gyro (sample-and-hold ~14 Hz effective, near-constant magnitude)",
                 "sampling_rate_hz": 50.0
             },
             {
                 "name": "arm_gyro_y",
-                "description": "Right wrist angular velocity Y-axis",
+                "description": "Right wrist angular velocity Y-axis, low-reliability gyro (sample-and-hold ~14 Hz effective, near-constant magnitude)",
                 "sampling_rate_hz": 50.0
             },
             {
                 "name": "arm_gyro_z",
-                "description": "Right wrist angular velocity Z-axis",
+                "description": "Right wrist angular velocity Z-axis, low-reliability gyro (sample-and-hold ~14 Hz effective, near-constant magnitude)",
                 "sampling_rate_hz": 50.0
             },
             {

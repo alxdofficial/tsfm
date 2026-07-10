@@ -1,6 +1,6 @@
 {
   "dataset_name": "MotionSense",
-  "description": "Human activity recognition from iPhone 6s sensors. 24 subjects performing 6 activities (walking, jogging, stairs up, stairs down, sitting, standing) with smartphone in front trouser pocket. DeviceMotion data from Core Motion framework at 50Hz.",
+  "description": "Human activity recognition from iPhone 6s sensors. 24 subjects performing 6 activities (walking, jogging, stairs up, stairs down, sitting, standing) with smartphone in front trouser pocket. DeviceMotion data from Core Motion framework.",
   "channels": [
     {
       "name": "acc_x",

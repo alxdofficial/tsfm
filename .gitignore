@@ -84,3 +84,8 @@ docs/baselines/results/
 # Reference papers: keep the large PDFs/pages LOCAL; track only the citation metadata
 references/**/paper.pdf
 references/**/webpage.html
+
+# Loader session-index cache (regenerable)
+data/.cache/
+# Data-QA plots (regenerable via datascripts/shared/plot_sessions.py)
+test_output/data_qa/

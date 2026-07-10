@@ -131,7 +131,7 @@ DATA_ROOT = os.environ.get("TSFM_DATA_ROOT", os.path.join(os.path.dirname(os.pat
 # Zero-shot test datasets are EXCLUDED (6): motionsense, realworld, mobiact, shoaib, opportunity, harth
 # Zero-shot test datasets (6): motionsense, realworld, mobiact, shoaib, opportunity, harth
 DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'recgym', 'capture24']
-random.seed(42)
+random.seed(int(os.environ.get("TSFM_SEED", "42")))  # follows TSFM_SEED for multi-seed runs
 PATCH_SIZE_PER_DATASET = {
     # Fixed-length sessions (2.56s) - use 1.0s patches for 2 patches/session
     'uci_har': 1.0,       # 50 Hz, 2.56s fixed sessions
@@ -156,8 +156,33 @@ PATCH_SIZE_PER_DATASET = {
     'harth': 1.5,         # 50 Hz — zero-shot (acc only, back+thigh)
 }
 
-MAX_PATCHES_PER_SAMPLE = 48  # Matches good small_v1_best checkpoint config
-MAX_SESSIONS_PER_DATASET = 10000  # Limit sessions per dataset for faster experimentation (None = all)
+# ---- Training data budget: target ~400 h of original trainable recording ----
+# See docs/v2/data_quantity_report.md §8. Session caps are derived from a per-dataset HOURS
+# budget using measured mean session lengths (report §3); None = use ALL available sessions.
+# All small/medium sets + all free-living capture24 are used in full; the two large scripted
+# reservoirs (hhar, wisdm) are capped. Yields ~399 h / ~171k windows (capture24 ~42% free-living).
+_MEAN_SESSION_SEC = {  # measured, docs/v2/data_quantity_report.md §3
+    "uci_har": 2.56, "hhar": 2.56, "pamap2": 11.88, "wisdm": 12.75, "dsads": 5.00,
+    "kuhar": 8.33, "unimib_shar": 3.02, "hapt": 6.30, "mhealth": 8.56,
+    "recgym": 14.25, "capture24": 12.44,
+}
+TRAIN_HOURS_PER_DATASET = {  # None = use ALL sessions
+    "uci_har": None, "pamap2": None, "dsads": None, "unimib_shar": None,
+    "hapt": None, "mhealth": None, "recgym": None, "kuhar": None,
+    "capture24": None,   # 168 h free-living — used in full
+    "wisdm": 85.0,       # cap ~85 h of 572 h available
+    "hhar": 24.0,        # cap ~24 h of 226 h available
+}
+def _hours_to_session_cap(ds):
+    h = TRAIN_HOURS_PER_DATASET.get(ds)
+    return None if h is None else max(1, round(h * 3600.0 / _MEAN_SESSION_SEC[ds]))
+# Per-dataset session caps (None value = no cap). Set TSFM_SESSION_CAP=<int> to override with a
+# flat global cap (e.g. for a fast smoke test).
+MAX_SESSIONS_PER_DATASET = {ds: _hours_to_session_cap(ds) for ds in TRAIN_HOURS_PER_DATASET}
+if os.environ.get("TSFM_SESSION_CAP"):
+    MAX_SESSIONS_PER_DATASET = int(os.environ["TSFM_SESSION_CAP"])
+
+MAX_PATCHES_PER_SAMPLE = 48  # Matches good small_v1_best checkpoint config; window = up to 48 patches
 
 # ---- Architecture configuration (single source of truth: model/config.py) ----
 MODEL_SIZE = "small_deep"  # Options: "tiny", "small", "small_deep", "medium", "large"
@@ -235,7 +260,7 @@ SAVE_EVERY = 5
 # Resume configuration - set to a folder path to resume training from that checkpoint
 # Example: RESUME_FROM = "training_output/semantic_alignment/20251124_234942"
 RESUME_FROM = None  # Fresh training with small_deep config
-SEED = 42
+SEED = int(os.environ.get("TSFM_SEED", "42"))  # set TSFM_SEED for multi-seed runs (report mean±std)
 MAX_GRAD_NORM = 1.0  # Gradient clipping threshold
 
 # ---- Training hyperparameters ----
@@ -366,6 +391,12 @@ AUG_CONFIG = _AUG_FACTORIES[_AUG_PRESET_EFFECTIVE]()
 if not ABLATION_SIGNAL_AUG:
     AUG_CONFIG.jitter.enabled = False
     AUG_CONFIG.scale.enabled = False
+# ABLATION_TEXT_AUG=0 disables ALL text augmentation (label paraphrase + channel-description
+# phrase + channel-description dropout), now unified in AUG_CONFIG.
+if not ABLATION_TEXT_AUG:
+    AUG_CONFIG.label_text.enabled = False
+    AUG_CONFIG.channel_text_phrase.enabled = False
+    AUG_CONFIG.channel_text_dropout.enabled = False
 # --- per-augmentation overrides go here, e.g.: ---
 #   AUG_CONFIG.rate.enabled = False
 #   AUG_CONFIG.gravity.p = 0.7

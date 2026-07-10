@@ -1,6 +1,6 @@
 {
   "dataset_name": "HHAR",
-  "description": "Heterogeneity Human Activity Recognition dataset. 9 users performing 6 activities with smartphones. Triaxial accelerometer and gyroscope data.",
+  "description": "Heterogeneity Human Activity Recognition dataset. 9 users performing 6 activities with smartphones (Nexus 4, Galaxy S+, Galaxy S3, S3 mini) carried in a WAIST POUCH. Phones sampled at their native 50-200 Hz; resampled to a true 50 Hz here. Triaxial accelerometer and gyroscope (phone data only; watch streams not used).",
   "channels": [
     {
       "name": "acc_x",

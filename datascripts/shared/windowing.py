@@ -90,7 +90,7 @@ ACTIVITY_WINDOW_RANGES = {
     "picking_up": (2, 10),
     "push_up": (3, 20),
     "sit_up": (3, 20),
-    "playing_sports": (5, 30),
+    "table_tennis": (5, 30),
     "walking_backwards": (5, 30),
     "talking_sitting": (10, 60),
     "talking_standing": (10, 60),
@@ -144,7 +144,7 @@ ACTIVITY_WINDOW_RANGES = {
 
     # DSADS treadmill/gym activities
     "lying_back": (2, 15),
-    "lying_side": (2, 15),
+    "lying_right_side": (2, 15),
     "stairs_up": (3, 20),
     "stairs_down": (3, 20),
     "walking_parking": (2, 20),

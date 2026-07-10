@@ -135,7 +135,9 @@ def load_limubert_model(device):
         n_layers=4, n_heads=4, seq_len=120, emb_norm=True
     )
     model = LIMUBertModel4Pretrain(cfg, output_embed=True)
-    checkpoint_path = LIMUBERT_REPO / "saved" / "pretrain_base_recgym_20_120" / "pretrained_combined.pt"
+    # Combined 10-dataset pretrained encoder. (The legacy `pretrain_base_recgym_20_120`
+    # dir held a byte-identical copy; point at the canonical combined_train dir for clarity.)
+    checkpoint_path = LIMUBERT_REPO / "saved" / "pretrain_base_combined_train_20_120" / "pretrained_combined.pt"
     model.load_state_dict(torch.load(str(checkpoint_path), map_location=device))
     model.to(device)
     return model
@@ -870,4 +872,11 @@ def main():
 
 
 if __name__ == '__main__':
+    import os
+    if os.environ.get("TSFM_ALLOW_LEGACY_LIMUBERT") != "1":
+        print("LEGACY v1 LiMU-BERT scoring — NOT the v2 protocol; its numbers must not be reported "
+              "(they are known not to reconcile with the v2 driver).\n"
+              "Use:  python val_scripts/human_activity_recognition/run_baselines_v2.py --baselines limubert\n"
+              "(set TSFM_ALLOW_LEGACY_LIMUBERT=1 to run the legacy path anyway for debugging.)")
+        raise SystemExit(1)
     main()

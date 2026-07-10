@@ -1,6 +1,6 @@
 {
   "dataset_name": "PAMAP2",
-  "description": "Physical activity monitoring with 3 IMUs (hand, chest, ankle) and heart rate. 9 subjects performing 18 activities including walking, running, cycling, and household tasks.",
+  "description": "Physical activity monitoring with 3 IMUs (hand, chest, ankle) and heart rate. 9 subjects performing 12 protocol activities including walking, running, cycling, and household tasks.",
   "channels": [
     {
       "name": "heart_rate",
@@ -14,32 +14,32 @@
     },
     {
       "name": "hand_acc16_x",
-      "description": "Acceleration x-axis (\u00b116g scale) from wrist-mounted IMU",
+      "description": "Acceleration x-axis (\u00b116g sensor range, values in m/s^2 including gravity) from wrist-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "hand_acc16_y",
-      "description": "Acceleration y-axis (\u00b116g scale) from wrist-mounted IMU",
+      "description": "Acceleration y-axis (\u00b116g sensor range, values in m/s^2 including gravity) from wrist-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "hand_acc16_z",
-      "description": "Acceleration z-axis (\u00b116g scale) from wrist-mounted IMU",
+      "description": "Acceleration z-axis (\u00b116g sensor range, values in m/s^2 including gravity) from wrist-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "hand_acc6_x",
-      "description": "Acceleration x-axis (\u00b16g scale) from wrist-mounted IMU",
+      "description": "Acceleration x-axis (\u00b16g sensor range, values in m/s^2 including gravity) from wrist-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "hand_acc6_y",
-      "description": "Acceleration y-axis (\u00b16g scale) from wrist-mounted IMU",
+      "description": "Acceleration y-axis (\u00b16g sensor range, values in m/s^2 including gravity) from wrist-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "hand_acc6_z",
-      "description": "Acceleration z-axis (\u00b16g scale) from wrist-mounted IMU",
+      "description": "Acceleration z-axis (\u00b16g sensor range, values in m/s^2 including gravity) from wrist-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
@@ -99,32 +99,32 @@
     },
     {
       "name": "chest_acc16_x",
-      "description": "Acceleration x-axis (\u00b116g scale) from chest-mounted IMU",
+      "description": "Acceleration x-axis (\u00b116g sensor range, values in m/s^2 including gravity) from chest-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "chest_acc16_y",
-      "description": "Acceleration y-axis (\u00b116g scale) from chest-mounted IMU",
+      "description": "Acceleration y-axis (\u00b116g sensor range, values in m/s^2 including gravity) from chest-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "chest_acc16_z",
-      "description": "Acceleration z-axis (\u00b116g scale) from chest-mounted IMU",
+      "description": "Acceleration z-axis (\u00b116g sensor range, values in m/s^2 including gravity) from chest-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "chest_acc6_x",
-      "description": "Acceleration x-axis (\u00b16g scale) from chest-mounted IMU",
+      "description": "Acceleration x-axis (\u00b16g sensor range, values in m/s^2 including gravity) from chest-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "chest_acc6_y",
-      "description": "Acceleration y-axis (\u00b16g scale) from chest-mounted IMU",
+      "description": "Acceleration y-axis (\u00b16g sensor range, values in m/s^2 including gravity) from chest-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "chest_acc6_z",
-      "description": "Acceleration z-axis (\u00b16g scale) from chest-mounted IMU",
+      "description": "Acceleration z-axis (\u00b16g sensor range, values in m/s^2 including gravity) from chest-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
@@ -184,32 +184,32 @@
     },
     {
       "name": "ankle_acc16_x",
-      "description": "Acceleration x-axis (\u00b116g scale) from ankle-mounted IMU",
+      "description": "Acceleration x-axis (\u00b116g sensor range, values in m/s^2 including gravity) from ankle-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "ankle_acc16_y",
-      "description": "Acceleration y-axis (\u00b116g scale) from ankle-mounted IMU",
+      "description": "Acceleration y-axis (\u00b116g sensor range, values in m/s^2 including gravity) from ankle-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "ankle_acc16_z",
-      "description": "Acceleration z-axis (\u00b116g scale) from ankle-mounted IMU",
+      "description": "Acceleration z-axis (\u00b116g sensor range, values in m/s^2 including gravity) from ankle-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "ankle_acc6_x",
-      "description": "Acceleration x-axis (\u00b16g scale) from ankle-mounted IMU",
+      "description": "Acceleration x-axis (\u00b16g sensor range, values in m/s^2 including gravity) from ankle-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "ankle_acc6_y",
-      "description": "Acceleration y-axis (\u00b16g scale) from ankle-mounted IMU",
+      "description": "Acceleration y-axis (\u00b16g sensor range, values in m/s^2 including gravity) from ankle-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {
       "name": "ankle_acc6_z",
-      "description": "Acceleration z-axis (\u00b16g scale) from ankle-mounted IMU",
+      "description": "Acceleration z-axis (\u00b16g sensor range, values in m/s^2 including gravity) from ankle-mounted IMU",
       "sampling_rate_hz": 100.0
     },
     {

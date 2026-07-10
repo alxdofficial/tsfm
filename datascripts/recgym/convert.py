@@ -20,12 +20,24 @@ We exclude the "Null" activity (downtime between exercises).
 
 import json
 import os
+import shutil
 import sys
+import zlib
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+
+
+def _stable_id(value) -> int:
+    """Deterministic small integer id for a non-numeric label.
+
+    ``hash()`` is salted by PYTHONHASHSEED, so it produces different ids on every
+    interpreter run (non-reproducible session ids / RNG seeds). ``zlib.crc32`` is
+    a fixed function of the bytes, so re-running the converter is deterministic.
+    """
+    return zlib.crc32(str(value).encode("utf-8")) % 1000
 
 # Add parent to path for shared utilities
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -141,6 +153,18 @@ def convert_recgym():
         df["subject"] = 1
         subject_col = "subject"
 
+    # Find the recording-session column. RecGym repeats each exercise across 5
+    # sessions; concatenating them into one stream makes windows straddle the
+    # session boundaries (artificial discontinuities). Grouping by Session keeps
+    # each contiguous recording separate.
+    session_col = None
+    for candidate in ["Session", "session", "Recording", "recording", "Trial", "trial"]:
+        if candidate in df.columns:
+            session_col = candidate
+            break
+    if session_col is None:
+        print("WARNING: Session column not found — treating each subject/workout as one recording")
+
     # Filter for target position (if position column exists)
     if pos_col:
         unique_positions = df[pos_col].unique()
@@ -160,9 +184,11 @@ def convert_recgym():
             print(f"  WARNING: No wrist position found, using first position: {unique_positions[0]}")
             df = df[df[pos_col] == unique_positions[0]]
 
-    # Create output directory
+    # Create output directory. Clear any prior conversion so re-runs don't leave
+    # stale sessions from an earlier (buggy) pass mixed in with the new ones.
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     sessions_dir = OUTPUT_DIR / "sessions"
+    shutil.rmtree(sessions_dir, ignore_errors=True)
     sessions_dir.mkdir(exist_ok=True)
 
     # Get unique workouts and subjects
@@ -175,7 +201,9 @@ def convert_recgym():
     session_count = 0
     skipped_count = 0
 
-    # Process each subject and workout combination
+    # Process each subject / workout / recording-session combination. Iterating
+    # the recording session as the innermost group keeps each contiguous
+    # recording separate so windows never straddle a session boundary.
     for subject in unique_subjects:
         subject_df = df[df[subject_col] == subject]
 
@@ -185,52 +213,68 @@ def convert_recgym():
                 continue
 
             workout_df = subject_df[subject_df[workout_col] == workout]
-            if len(workout_df) < 20:  # Skip very short segments
-                skipped_count += 1
+            if len(workout_df) == 0:
                 continue
 
             # Map workout to standardized name
             activity_name = ACTIVITIES.get(workout, str(workout).lower().replace(" ", "_"))
 
-            # Create session ID
-            subject_id = int(subject) if isinstance(subject, (int, float)) else hash(str(subject)) % 1000
-            session_id = f"s{subject_id:02d}_{activity_name}"
+            # Deterministic small subject id for non-numeric subject labels.
+            subject_id = int(subject) if isinstance(subject, (int, float)) else _stable_id(subject)
 
-            # Build DataFrame with standardized column names
-            result = pd.DataFrame()
+            # Split into contiguous recording sessions (or one group if absent).
+            if session_col is not None:
+                rec_sessions = list(workout_df[session_col].unique())
+            else:
+                rec_sessions = [None]
 
-            # Create timestamp column
-            num_samples = len(workout_df)
-            result["timestamp_sec"] = np.linspace(0, (num_samples - 1) / SAMPLE_RATE, num_samples)
+            for rec in rec_sessions:
+                if rec is None:
+                    rec_df = workout_df
+                    session_id = f"s{subject_id:02d}_{activity_name}"
+                else:
+                    rec_df = workout_df[workout_df[session_col] == rec]
+                    session_id = f"s{subject_id:02d}_{activity_name}_rec{_stable_id(rec):03d}"
 
-            # Extract sensor columns
-            result["acc_x"] = workout_df["A_x"].values
-            result["acc_y"] = workout_df["A_y"].values
-            result["acc_z"] = workout_df["A_z"].values
-            result["gyro_x"] = workout_df["G_x"].values
-            result["gyro_y"] = workout_df["G_y"].values
-            result["gyro_z"] = workout_df["G_z"].values
+                if len(rec_df) < 20:  # Skip very short segments
+                    skipped_count += 1
+                    continue
 
-            # Split long sessions into variable-length windows
-            windows = create_variable_windows(
-                df=result,
-                session_prefix=session_id,
-                activity=activity_name,
-                sample_rate=SAMPLE_RATE,
-                seed=42 + hash(session_id) % 1000,  # Reproducible but varied
-            )
+                # Build DataFrame with standardized column names
+                result = pd.DataFrame()
 
-            # Save each window as a separate session
-            for window_id, window_df, window_activity in windows:
-                window_path = sessions_dir / window_id
-                window_path.mkdir(exist_ok=True)
+                # Create timestamp column
+                num_samples = len(rec_df)
+                result["timestamp_sec"] = np.linspace(0, (num_samples - 1) / SAMPLE_RATE, num_samples)
 
-                parquet_path = window_path / "data.parquet"
-                window_df.to_parquet(parquet_path, index=False)
+                # Extract sensor columns
+                result["acc_x"] = rec_df["A_x"].values
+                result["acc_y"] = rec_df["A_y"].values
+                result["acc_z"] = rec_df["A_z"].values
+                result["gyro_x"] = rec_df["G_x"].values
+                result["gyro_y"] = rec_df["G_y"].values
+                result["gyro_z"] = rec_df["G_z"].values
 
-                # Store label
-                all_labels[window_id] = [window_activity]
-                session_count += 1
+                # Split long sessions into variable-length windows (deterministic seed)
+                windows = create_variable_windows(
+                    df=result,
+                    session_prefix=session_id,
+                    activity=activity_name,
+                    sample_rate=SAMPLE_RATE,
+                    seed=42 + _stable_id(session_id),  # deterministic across runs
+                )
+
+                # Save each window as a separate session
+                for window_id, window_df, window_activity in windows:
+                    window_path = sessions_dir / window_id
+                    window_path.mkdir(exist_ok=True)
+
+                    parquet_path = window_path / "data.parquet"
+                    window_df.to_parquet(parquet_path, index=False)
+
+                    # Store label
+                    all_labels[window_id] = [window_activity]
+                    session_count += 1
 
     # Save labels.json
     labels_path = OUTPUT_DIR / "labels.json"

@@ -1,6 +1,6 @@
 {
   "dataset_name": "Shoaib",
-  "description": "Activity recognition with multiple body-worn smartphones. 10 subjects performing 7 physical activities. Sensors at 5 body positions (left_pocket, right_pocket, wrist, upper_arm, belt) with accelerometer, gyroscope, and magnetometer at 50 Hz.",
+  "description": "Activity recognition with multiple body-worn smartphones. 10 subjects performing 7 physical activities. Sensors at 5 body positions (left_pocket, right_pocket, wrist, upper_arm, belt) with accelerometer, gyroscope, and magnetometer.",
   "source": "https://www.utwente.nl/en/eemcs/ps/research/dataset/",
   "num_subjects": 10,
   "channels": [

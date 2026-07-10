@@ -1,6 +1,6 @@
 {
   "dataset_name": "OPPORTUNITY",
-  "description": "Activities of daily living in a sensor-rich kitchen environment. 4 subjects performing locomotion activities (stand, walk, sit, lie). 5 body-worn XSens IMUs on back, upper arms, and lower arms at 30 Hz.",
+  "description": "Activities of daily living in a sensor-rich kitchen environment. 4 subjects performing locomotion activities (stand, walk, sit, lie). 5 body-worn XSens IMUs on back, upper arms, and lower arms.",
   "channels": [
     {
       "name": "lua_acc_x",

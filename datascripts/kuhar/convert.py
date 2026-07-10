@@ -17,7 +17,9 @@ KU-HAR format:
 
 import json
 import re
+import shutil
 import sys
+import zlib
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -27,6 +29,23 @@ import pandas as pd
 # Add parent to path for shared utilities
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared.windowing import create_variable_windows
+
+
+def _estimate_rate(timestamps: np.ndarray, nominal: float) -> float:
+    """Estimate the sampling rate (Hz) from a timestamp column in seconds.
+
+    KU-HAR is nominally 100 Hz, but at least one subject (1016) records ~111 Hz.
+    Windowing counts samples, so using a wrong rate mis-sizes windows in seconds.
+    Returns the nominal rate when timestamps are unusable (constant / non-monotone).
+    """
+    t = np.asarray(timestamps, dtype=float)
+    if t.size < 10:
+        return nominal
+    dt = np.diff(t)
+    dt = dt[(dt > 0) & (dt < 1.0)]
+    if dt.size < 5:
+        return nominal
+    return float(1.0 / np.median(dt))
 
 
 # Activity mapping - folder name to standardized name
@@ -48,7 +67,7 @@ ACTIVITIES = {
     "Run": "running",
     "Stair-up": "walking_upstairs",
     "Stair-down": "walking_downstairs",
-    "Table-tennis": "playing_sports",
+    "Table-tennis": "table_tennis",
 }
 
 # Paths
@@ -133,9 +152,10 @@ def find_data_files(raw_dir: Path) -> List[Dict]:
 
         # Find CSV files in this activity folder
         for csv_file in activity_folder.glob("*.csv"):
-            # Extract subject ID from filename (e.g., "1038_T_1.csv" -> subject 1038)
+            # Extract subject ID from filename (e.g., "1038_T_1.csv" -> subject 1038).
+            # Deterministic fallback (zlib.crc32, not hash()) so re-runs are stable.
             subject_match = re.match(r'(\d+)_', csv_file.stem)
-            subject = int(subject_match.group(1)) if subject_match else hash(csv_file.stem) % 10000
+            subject = int(subject_match.group(1)) if subject_match else zlib.crc32(csv_file.stem.encode()) % 10000
 
             data_files.append({
                 "filepath": csv_file,
@@ -166,20 +186,30 @@ def convert_kuhar():
         print("ERROR: No valid data files found")
         return False
 
-    # Create output directory
+    # Create output directory. Clear any prior conversion so a re-run doesn't mix
+    # stale sessions in with the new ones.
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     sessions_dir = OUTPUT_DIR / "sessions"
+    shutil.rmtree(sessions_dir, ignore_errors=True)
     sessions_dir.mkdir(exist_ok=True)
 
     all_labels = {}
     session_count = 0
     skipped_count = 0
     activity_counts = {}
+    subject_window_counts: Dict[int, int] = {}
+    rate_warned = set()
 
     for i, file_info in enumerate(data_files):
         filepath = file_info["filepath"]
         activity = file_info["activity"]
         subject = file_info["subject"]
+
+        # Documented KU-HAR subject ids are 1001..1090. Flag anything outside that
+        # range (e.g. 1101, which is a single high-volume ~8.7%-of-windows id) so a
+        # re-fetch surfaces the anomaly instead of silently over-weighting it.
+        if not (1001 <= subject <= 1090):
+            print(f"  ⚠ subject {subject} outside documented range 1001–1090 ({filepath.name})")
 
         # Load CSV
         df = load_csv_file(filepath)
@@ -187,17 +217,25 @@ def convert_kuhar():
             skipped_count += 1
             continue
 
+        # Estimate this file's true rate from its timestamps (subject 1016 ≈ 111 Hz).
+        # Windowing counts samples, so a wrong rate mis-sizes windows in seconds.
+        file_rate = _estimate_rate(df["timestamp_sec"].values, SAMPLE_RATE)
+        if abs(file_rate - SAMPLE_RATE) / SAMPLE_RATE > 0.05 and subject not in rate_warned:
+            print(f"  ⚠ subject {subject}: est. rate {file_rate:.1f} Hz (nominal {SAMPLE_RATE}) — windowing at true rate")
+            rate_warned.add(subject)
+
         # Create session ID prefix
         session_prefix = f"s{subject:04d}_{activity}_{i:04d}"
 
-        # Apply windowing
+        # Apply windowing (deterministic seed; true per-file rate)
         windows = create_variable_windows(
             df=df,
             session_prefix=session_prefix,
             activity=activity,
-            sample_rate=SAMPLE_RATE,
+            sample_rate=file_rate,
             seed=42 + subject + i,
         )
+        subject_window_counts[subject] = subject_window_counts.get(subject, 0) + len(windows)
 
         # Save each window
         for window_id, window_df, window_activity in windows:
@@ -237,6 +275,13 @@ def convert_kuhar():
     for activity, count in sorted(activity_counts.items(), key=lambda x: -x[1]):
         print(f"  {activity}: {count}")
 
+    # Surface per-subject over-representation (subject 1101 held ~8.7% of windows).
+    if subject_window_counts and session_count > 0:
+        top = sorted(subject_window_counts.items(), key=lambda x: -x[1])[:5]
+        print(f"\nTop subjects by window share (watch for >5% single-subject dominance):")
+        for subj, cnt in top:
+            print(f"  s{subj}: {cnt} ({100 * cnt / session_count:.1f}%)")
+
     # Generate visualizations
     try:
         sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -249,19 +294,31 @@ def convert_kuhar():
 
 
 def create_manifest():
-    """Create manifest.json with channel metadata."""
+    """Create manifest.json with channel metadata.
+
+    Kept in sync with the committed ``data/kuhar/manifest.json`` so re-running the
+    converter does not silently degrade the manifest. Notes captured here:
+      - 17 unique standardized activities (18 source folders; Walk and Walk-circle
+        both map to ``walking``).
+      - Accelerometer is GRAVITY-REMOVED (linear acceleration): |acc| over static
+        activities (standing/sitting/lying) is ~0.06, not ~9.8/1.0. Verified
+        empirically. The gravity-canonicalization augmentation must treat these
+        channels as gravity-free.
+      - Nominal 100 Hz. One subject (1016) records at ~111 Hz; HALO's timestamp-
+        native tokenizer handles this from ``timestamp_sec`` directly.
+    """
     manifest = {
         "dataset_name": "KU-HAR",
-        "description": "KU-HAR (Khulna University Human Activity Recognition) dataset. 90 subjects performing 18 activities including walking, running, jumping, stairs, sitting, standing, lying, and exercises (push-ups, sit-ups). Smartphone IMU at 100Hz with triaxial accelerometer and gyroscope.",
+        "description": "KU-HAR (Khulna University Human Activity Recognition) dataset. 89 subjects performing 17 activities including walking, running, jumping, stairs, sitting, standing, lying, and exercises (push-ups, sit-ups). Smartphone IMU with triaxial accelerometer (gravity removed / linear acceleration) and gyroscope.",
         "source": "https://www.kaggle.com/datasets/niloy333/kuhar",
-        "num_subjects": 90,
+        "num_subjects": 89,
         "channels": [
-            {"name": "acc_x", "description": "Accelerometer X-axis", "sampling_rate_hz": SAMPLE_RATE},
-            {"name": "acc_y", "description": "Accelerometer Y-axis", "sampling_rate_hz": SAMPLE_RATE},
-            {"name": "acc_z", "description": "Accelerometer Z-axis", "sampling_rate_hz": SAMPLE_RATE},
-            {"name": "gyro_x", "description": "Gyroscope X-axis", "sampling_rate_hz": SAMPLE_RATE},
-            {"name": "gyro_y", "description": "Gyroscope Y-axis", "sampling_rate_hz": SAMPLE_RATE},
-            {"name": "gyro_z", "description": "Gyroscope Z-axis", "sampling_rate_hz": SAMPLE_RATE},
+            {"name": "acc_x", "description": "Smartphone accelerometer X-axis (waist), gravity removed", "sampling_rate_hz": SAMPLE_RATE},
+            {"name": "acc_y", "description": "Smartphone accelerometer Y-axis (waist), gravity removed", "sampling_rate_hz": SAMPLE_RATE},
+            {"name": "acc_z", "description": "Smartphone accelerometer Z-axis (waist), gravity removed", "sampling_rate_hz": SAMPLE_RATE},
+            {"name": "gyro_x", "description": "Smartphone gyroscope X-axis (waist)", "sampling_rate_hz": SAMPLE_RATE},
+            {"name": "gyro_y", "description": "Smartphone gyroscope Y-axis (waist)", "sampling_rate_hz": SAMPLE_RATE},
+            {"name": "gyro_z", "description": "Smartphone gyroscope Z-axis (waist)", "sampling_rate_hz": SAMPLE_RATE},
         ],
     }
 

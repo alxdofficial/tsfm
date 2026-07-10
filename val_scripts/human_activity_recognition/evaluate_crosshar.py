@@ -991,4 +991,11 @@ def main():
 
 
 if __name__ == '__main__':
+    import os
+    if os.environ.get("TSFM_ALLOW_LEGACY_CROSSHAR") != "1":
+        print("LEGACY v1 CrossHAR scoring (group-matched scoring + end-to-end fine-tune) — "
+              "this is NOT the v2 protocol and its numbers MUST NOT be reported.\n"
+              "Use:  python val_scripts/human_activity_recognition/run_baselines_v2.py --baselines crosshar\n"
+              "(set TSFM_ALLOW_LEGACY_CROSSHAR=1 to run the legacy path anyway for debugging.)")
+        raise SystemExit(1)
     main()

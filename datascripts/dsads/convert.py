@@ -32,7 +32,7 @@ ACTIVITIES = {
     "a01": "sitting",
     "a02": "standing",
     "a03": "lying_back",
-    "a04": "lying_side",
+    "a04": "lying_right_side",
     "a05": "stairs_up",
     "a06": "stairs_down",
     "a07": "standing_elevator",

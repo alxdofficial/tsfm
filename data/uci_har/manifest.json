@@ -1,6 +1,6 @@
 {
   "dataset_name": "UCI HAR",
-  "description": "Human activity recognition from smartphone sensors. 30 subjects performing 6 activities with waist-mounted Samsung Galaxy S II. Triaxial accelerometer and gyroscope at 50Hz.",
+  "description": "Human activity recognition from smartphone sensors. 30 subjects performing 6 activities with waist-mounted Samsung Galaxy S II. Triaxial accelerometer and gyroscope.",
   "channels": [
     {
       "name": "body_acc_x",

@@ -15,5 +15,47 @@
     "user_label_size": 4,
     "has_gyro": true,
     "size": 6453
+  },
+  "inclusivehar_20_120": {
+    "sr": 20,
+    "seq_len": 120,
+    "dimension": 6,
+    "activity_label_index": 0,
+    "activity_label_size": 6,
+    "activity_label": [
+      "jogging",
+      "ramp_ascent",
+      "ramp_descent",
+      "sitting",
+      "standing",
+      "walking"
+    ],
+    "user_label_index": 1,
+    "user_label_size": 20,
+    "has_gyro": true,
+    "size": 3370
+  },
+  "capture24_20_120": {
+    "sr": 20,
+    "seq_len": 120,
+    "dimension": 6,
+    "activity_label_index": 0,
+    "activity_label_size": 10,
+    "activity_label": [
+      "bicycling",
+      "household_chores",
+      "manual_work",
+      "mixed_activity",
+      "sitting",
+      "sleeping",
+      "sports",
+      "standing",
+      "vehicle",
+      "walking"
+    ],
+    "user_label_index": 1,
+    "user_label_size": 150,
+    "has_gyro": false,
+    "size": 41183
   }
 }

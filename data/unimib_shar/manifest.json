@@ -1,6 +1,6 @@
 {
   "dataset_name": "UniMiB SHAR",
-  "description": "Smartphone accelerometer activity recognition. 30 subjects performing 17 activities (9 ADL + 8 falls) at 50Hz. NOTE: Accelerometer only - no gyroscope data!",
+  "description": "Smartphone accelerometer activity recognition. 30 subjects performing 17 activities (9 ADL + 8 falls). NOTE: Accelerometer only - no gyroscope data!",
   "channels": [
     {
       "name": "acc_x",

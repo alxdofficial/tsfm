@@ -1,6 +1,6 @@
 {
   "dataset_name": "CAPTURE-24",
-  "description": "Large free-living wrist-worn accelerometer corpus. 151 participants, ~24 h each, Axivity AX3 on the dominant wrist at 100 Hz. Raw triaxial acceleration in g (INCLUDES gravity). Camera+diary annotations mapped to the WillettsSpecific2018 10-class activity scheme. Accelerometer only.",
+  "description": "Large free-living wrist-worn accelerometer corpus. 151 participants, ~24 h each, Axivity AX3 on the dominant wrist. Raw triaxial acceleration in g (INCLUDES gravity). Camera+diary annotations mapped to the WillettsSpecific2018 10-class activity scheme. Accelerometer only.",
   "source": "https://ora.ox.ac.uk/objects/uuid:99d7c092-d865-4a19-b096-cc16440cd001",
   "num_subjects": 151,
   "channels": [

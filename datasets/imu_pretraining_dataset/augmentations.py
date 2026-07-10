@@ -665,6 +665,64 @@ class ChannelDropoutCfg:
 
 
 @dataclass
+class LabelTextCfg:
+    """Label paraphrase: dataset-specific synonym swap + template wrapping (augment_label).
+    Effective augmentation rate == `p` (the augmenter's outer gate; augment_label is called
+    with rate=1.0 once selected)."""
+    enabled: bool = False
+    p: float = 0.8
+    use_synonyms: bool = True
+    use_templates: bool = True
+
+
+@dataclass
+class ChannelTextPhraseCfg:
+    """Paraphrase each channel description: swap ONLY sensor-family / axis surface forms and
+    wrap in a template. Placement, units, and gravity state are left verbatim, so the
+    load-bearing semantics are provably preserved (checked by the measurement harness)."""
+    enabled: bool = False
+    p: float = 0.5   # fraction of samples whose channel descriptions get paraphrased
+
+
+@dataclass
+class ChannelTextDropoutCfg:
+    """Neutralize a random subset of channel descriptions (KEEP the signal) so the model is
+    robust to unknown/missing placement metadata. Never neutralizes more than `max_frac`."""
+    enabled: bool = False
+    p: float = 0.15          # fraction of samples that get any channel-text neutralized
+    max_frac: float = 0.5    # never neutralize more than this fraction of a sample's channels
+    neutral: str = "an inertial sensor channel"
+
+
+# Conservative, meaning-preserving substitutions for channel-description paraphrase. Only
+# sensor-family + axis SURFACE FORMS are swapped; placement/units/gravity are never touched.
+_CH_SYNONYMS = [
+    (r"\baccelerometer\b", ["accelerometer", "acceleration sensor", "accelerometer sensor"]),
+    (r"\bacceleration\b", ["acceleration", "linear acceleration"]),
+    (r"\bgyroscope\b", ["gyroscope", "gyro", "angular rate sensor"]),
+    (r"\bangular velocity\b", ["angular velocity", "angular rate", "rotational velocity"]),
+    (r"\bmagnetometer\b", ["magnetometer", "magnetic field sensor"]),
+    (r"\bmagnetic field\b", ["magnetic field", "magnetic flux"]),
+    (r"\bx-axis\b", ["x-axis", "x axis"]),
+    (r"\by-axis\b", ["y-axis", "y axis"]),
+    (r"\bz-axis\b", ["z-axis", "z axis"]),
+    (r"\bmounted\b", ["mounted", "worn", "placed"]),
+]
+_CH_TEMPLATES = ["{}", "channel: {}", "sensor channel — {}", "signal from {}", "this channel measures {}"]
+
+
+def _paraphrase_channel(desc: str) -> str:
+    """Surface-form paraphrase of one channel description (sensor/axis synonyms + template).
+    re.escape not needed — replacements are plain words; placement/units are never matched."""
+    import re
+    out = desc
+    for pat, options in _CH_SYNONYMS:
+        if re.search(pat, out, flags=re.I):
+            out = re.sub(pat, _random.choice(options), out, flags=re.I)
+    return _random.choice(_CH_TEMPLATES).format(out)
+
+
+@dataclass
 class AugmentationConfig:
     """Single source of truth for which augmentations run and how strong they are.
 
@@ -683,12 +741,18 @@ class AugmentationConfig:
     yaw_rotation: YawRotationCfg = field(default_factory=YawRotationCfg)
     rate: RateCfg = field(default_factory=RateCfg)
     channel_dropout: ChannelDropoutCfg = field(default_factory=ChannelDropoutCfg)
+    # Text augmentations (unified here so ALL augmentation lives in one config).
+    channel_text_phrase: ChannelTextPhraseCfg = field(default_factory=ChannelTextPhraseCfg)
+    channel_text_dropout: ChannelTextDropoutCfg = field(default_factory=ChannelTextDropoutCfg)
+    label_text: LabelTextCfg = field(default_factory=LabelTextCfg)
 
-    # Application order: metadata/physics-changing first, then value-space.
-    # yaw_rotation runs BEFORE gravity (it needs gravity present in the acc to
-    # estimate the rotation axis); rate runs after gravity/rotation.
+    # Application order: metadata/physics-changing first, then value-space, then TEXT last
+    # (so channel-text augs see the final, physics-mutated channel set/descriptions).
+    # yaw_rotation runs BEFORE gravity (it needs gravity present in the acc to estimate the
+    # rotation axis); rate runs after gravity/rotation.
     ORDER = ("channel_dropout", "yaw_rotation", "gravity", "rate",
-             "time_warp", "time_shift", "magnitude_warp", "scale", "jitter")
+             "time_warp", "time_shift", "magnitude_warp", "scale", "jitter",
+             "channel_text_phrase", "channel_text_dropout", "label_text")
 
     @classmethod
     def default_v2(cls) -> "AugmentationConfig":
@@ -697,6 +761,9 @@ class AugmentationConfig:
         cfg.yaw_rotation.enabled = True
         cfg.rate.enabled = True
         cfg.channel_dropout.enabled = True
+        cfg.channel_text_phrase.enabled = True
+        cfg.channel_text_dropout.enabled = True
+        cfg.label_text.enabled = True
         return cfg
 
     @classmethod
@@ -726,29 +793,47 @@ class AugmentationConfig:
 
 @dataclass
 class IMUSample:
-    """Per-sample carrier threaded through the augmenter. Physics augmentations
-    mutate sampling_rate / channel_names / channel_descriptions so the loader
-    rebuilds the channel text consistently with the transformed signal."""
+    """Per-sample carrier threaded through the augmenter. Physics augmentations mutate
+    sampling_rate / channel_names / channel_descriptions and the TEXT augmentations mutate
+    channel_descriptions / label_text, so the loader reads back a fully-augmented sample."""
     data: "torch.Tensor"              # (T, C)
     channel_names: List[str]
     sampling_rate: float
     channel_descriptions: List[str]   # base per-channel text (no Hz/window suffix)
+    label: str = ""                   # raw activity label (input to label-text augmentation)
+    dataset_name: str = ""            # for dataset-specific label synonyms
+    label_text: str = ""              # augmented label text (output; defaults to raw label)
+
+    def __post_init__(self):
+        if not self.label_text:
+            self.label_text = self.label
 
 
-def _gravity_present(triad: "np.ndarray") -> bool:
+def _gravity_present(triad: "np.ndarray", descs=None) -> bool:
     """True if an accelerometer triad still contains the gravity DC component.
 
-    Unit-agnostic (works for g or m/s2): compares the DC (mean) magnitude to the
-    signal RMS. Gravity-in acc has a large quasi-constant DC (~1g); gravity-removed
-    acc (uci_har body_acc, iOS userAcceleration) has DC ~ 0. Prevents gravity-aug
-    from double-high-passing already-removed data and yaw-rotation from spinning
-    about a garbage near-zero 'gravity' axis.
+    Prefers the DOCUMENTED gravity state (channel-description text is authoritative);
+    only falls back to a hardened signal heuristic when the text is silent. The old
+    pure DC/RMS ratio misfired on normalized data (e.g. recgym acc centered ~0.5, where
+    dc/rms~1) and on low-motion gravity-removed data (e.g. kuhar static postures), so it
+    now also requires the DC vector to be axis-concentrated (real gravity points ~down =
+    one dominant axis; a uniform per-axis offset spreads across axes and is NOT gravity).
     """
+    if descs:
+        j = " ".join(str(d).lower() for d in descs)
+        if any(k in j for k in ("gravity removed", "gravity-removed", "user acceleration",
+                                "useracceleration", "linear acceleration")):
+            return False
+        if any(k in j for k in ("includes gravity", "including gravity", "with gravity",
+                                "gravity included")):
+            return True
     a = triad if isinstance(triad, np.ndarray) else triad.detach().cpu().numpy()
     a = a.astype(np.float64)
-    dc = float(np.linalg.norm(a.mean(axis=0)))
+    m = a.mean(axis=0)
+    dc = float(np.linalg.norm(m))
     rms = float(np.sqrt((a ** 2).sum(axis=1).mean())) + 1e-8
-    return dc > 0.3 * rms
+    axis_conc = float(np.max(np.abs(m))) / (dc + 1e-8)   # ->1 if one axis dominates
+    return dc > 0.5 * rms and axis_conc > 0.6
 
 
 def _mark_gravity_removed(desc: str) -> str:
@@ -899,7 +984,7 @@ class IMUAugmenter:
             for idxs, gname in triads:
                 if "acc" not in gname:       # only accelerometer carries gravity
                     continue
-                if not _gravity_present(x[:, idxs]):   # already gravity-removed -> skip
+                if not _gravity_present(x[:, idxs], [desc[j] for j in idxs]):  # already gravity-removed -> skip
                     continue
                 for j in idxs:
                     grav = _sps.filtfilt(b, a, x[:, j])
@@ -924,7 +1009,8 @@ class IMUAugmenter:
                     tri = x[:, idxs]
                     # Only a gravity-bearing acc gives a meaningful 'down' axis;
                     # gravity-removed acc (mean~0) would yield an arbitrary axis.
-                    if not _gravity_present(tri.detach().cpu().numpy()):
+                    if not _gravity_present(tri.detach().cpu().numpy(),
+                                            [s.channel_descriptions[k] for k in idxs]):
                         continue
                     g = tri.mean(0)
                     if g.norm() > 1e-6:
@@ -987,6 +1073,37 @@ class IMUAugmenter:
         s.data = s.data[:, keep]
         s.channel_names = kept_names
         s.channel_descriptions = [s.channel_descriptions[i] for i in keep]
+        return s
+
+    # ---------- text: channel-description phrase paraphrase ----------
+    def _channel_text_phrase(self, s, spec):
+        # Paraphrase each channel description independently (surface form only; placement /
+        # units / gravity are preserved by construction — see _paraphrase_channel).
+        s.channel_descriptions = [_paraphrase_channel(d) for d in s.channel_descriptions]
+        return s
+
+    # ---------- text: channel-description dropout (neutralize, keep signal) ----------
+    def _channel_text_dropout(self, s, spec):
+        n = len(s.channel_descriptions)
+        if n <= 1:
+            return s
+        max_drop = max(1, int(spec.max_frac * n))
+        k = _random.randint(1, max_drop)
+        idxs = _random.sample(range(n), min(k, n))
+        desc = list(s.channel_descriptions)
+        for i in idxs:
+            desc[i] = spec.neutral
+        s.channel_descriptions = desc
+        return s
+
+    # ---------- text: label paraphrase (dataset-specific synonyms + templates) ----------
+    def _label_text(self, s, spec):
+        from datasets.imu_pretraining_dataset.label_augmentation import augment_label
+        # Outer `p` already decided we augment; call augment_label unconditionally (rate=1.0).
+        s.label_text = augment_label(
+            s.label, s.dataset_name, augmentation_rate=1.0,
+            use_synonyms=spec.use_synonyms, use_templates=spec.use_templates,
+        )
         return s
 
 

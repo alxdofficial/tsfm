@@ -229,6 +229,21 @@ HHAR_TEMPLATES = [
 
 # Map dataset names to their augmentation configs
 DATASET_CONFIGS = {
+    "capture24": {
+        "synonyms": {
+            "sleeping": ["sleeping", "asleep", "in bed", "resting in bed"],
+            "sitting": ["sitting", "seated", "sitting down", "in a chair"],
+            "standing": ["standing", "upright", "standing still", "on feet"],
+            "walking": ["walking", "strolling", "ambulating", "going for a walk"],
+            "bicycling": ["bicycling", "cycling", "riding a bike", "biking"],
+            "vehicle": ["in a vehicle", "riding in a car", "travelling by vehicle", "in transport"],
+            "household_chores": ["household chores", "doing chores", "housework", "domestic tasks"],
+            "manual_work": ["manual work", "manual labour", "physical work", "labouring"],
+            "sports": ["playing sports", "sports", "athletic activity", "exercising"],
+            "mixed_activity": ["mixed activity", "miscellaneous activity", "varied activity", "general activity"],
+        },
+        "templates": ["{}", "person {}", "subject {}", "individual {}", "{} activity", "person is {}"],
+    },
     "uci_har": {
         "synonyms": UCI_HAR_SYNONYMS,
         "templates": UCI_HAR_TEMPLATES,
@@ -264,7 +279,7 @@ DATASET_CONFIGS = {
             "sitting": ["sitting", "seated", "in a chair", "sitting down"],
             "standing": ["standing", "upright", "on feet", "standing still"],
             "lying_back": ["lying on back", "supine", "reclining on back", "laying face up"],
-            "lying_side": ["lying on side", "side-lying", "lateral recumbent", "laying on side"],
+            "lying_right_side": ["lying on the right side", "right side-lying", "lying on right side", "right lateral recumbent"],
             "stairs_up": ["ascending stairs", "climbing stairs", "going upstairs", "stair climbing"],
             "stairs_down": ["descending stairs", "going downstairs", "walking downstairs", "stair descent"],
             "walking_parking": ["walking in parking lot", "walking outdoors", "outdoor walking", "walking outside"],
@@ -342,7 +357,7 @@ DATASET_CONFIGS = {
             "sit_up": ["doing sit-ups", "sit-up exercise", "abdominal crunch"],
             "talking_sitting": ["talking while sitting", "seated conversation", "chatting while seated"],
             "talking_standing": ["talking while standing", "standing conversation", "chatting while standing"],
-            "playing_sports": ["playing table tennis", "playing sports", "racquet sport"],
+            "table_tennis": ["table tennis", "playing table tennis", "ping pong", "racquet sport"],
         },
         "templates": ["{}", "person {}", "subject {}", "individual {}", "{} activity", "{} movement", "person is {}"],
     },
@@ -456,7 +471,9 @@ def augment_label(
 
     # Get dataset-specific config
     if dataset_name not in DATASET_CONFIGS:
-        # Fallback to generic template if dataset unknown
+        # Fallback to generic template if dataset unknown (de-underscore so multi-word
+        # labels like 'household_chores' never reach the text encoder as raw tokens).
+        label = label.replace("_", " ")
         if use_templates and random.random() < 0.5:
             return random.choice(["person {}", "{} activity", "human {}"]).format(label)
         return label
@@ -468,6 +485,8 @@ def augment_label(
     # Step 1: Apply synonym (if available and enabled)
     if use_synonyms and label in synonyms:
         label = random.choice(synonyms[label])
+    else:
+        label = label.replace("_", " ")   # no synonym -> at least read it naturally
 
     # Step 2: Apply template (if enabled)
     if use_templates:

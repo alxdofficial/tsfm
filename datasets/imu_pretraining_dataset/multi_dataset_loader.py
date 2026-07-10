@@ -31,6 +31,27 @@ import random
 from datasets.imu_pretraining_dataset.label_augmentation import augment_label
 
 
+def _subject_of(session_id: str, dataset: str):
+    """Subject id for a session, for SUBJECT-DISJOINT train/val/test splits (model
+    selection must not be chosen on a same-subject val). Returns None when the id is not
+    recoverable from the session name — that dataset then falls back to per-session grouping
+    (e.g. unimib_shar, whose subject lives only in the raw labels)."""
+    try:
+        if dataset == "uci_har":   return int(session_id.split("_")[1])
+        if dataset == "hhar":      return session_id.split("_")[1]
+        if dataset == "pamap2":    return int(re.search(r"subject(\d+)", session_id).group(1))
+        if dataset == "wisdm":     return int(session_id.split("_")[3])
+        if dataset == "dsads":     return int(session_id.split("_")[1][1:])
+        if dataset == "kuhar":     return int(re.search(r"s(\d+)", session_id).group(1))
+        if dataset == "hapt":      return int(re.search(r"user(\d+)", session_id).group(1))
+        if dataset == "mhealth":   return int(re.search(r"subject(\d+)", session_id).group(1))
+        if dataset == "recgym":    return session_id.split("_")[0]
+        if dataset == "capture24": return session_id.split("_")[1]
+    except (IndexError, AttributeError, ValueError):
+        return None
+    return None  # unimib_shar / unknown -> per-session fallback
+
+
 def group_channels_by_sensor(channel_names: List[str]) -> Dict[str, List[str]]:
     """
     Group channels by sensor type (accelerometer, gyroscope, etc.) and location.
@@ -136,7 +157,7 @@ class IMUPretrainingDataset(Dataset):
         patch_size_range_per_dataset: Optional[Dict[str, Tuple[float, float, float]]] = None,
         min_channel_groups: int = 1,  # Minimum number of sensor groups to select
         max_channel_groups: int = None,  # Maximum groups (None = all available)
-        max_sessions_per_dataset: Optional[int] = None,  # Limit sessions per dataset for faster experiments
+        max_sessions_per_dataset=None,  # int (global cap), or dict {dataset: cap|None} (per-dataset); None = all
         channel_filter: Optional[List[str]] = None,  # Filter channels by prefix patterns (e.g., ['acc_', 'gyro_'])
         seed: int = 42,
         target_patch_size: Optional[int] = None,  # If set, preprocess patches in DataLoader (faster training)
@@ -232,7 +253,9 @@ class IMUPretrainingDataset(Dataset):
 
     def _get_cache_key(self) -> str:
         """Generate a cache key from dataset config (datasets, max_sessions, seed)."""
-        key_parts = sorted(self.datasets) + [str(self.max_sessions_per_dataset), str(self.seed)]
+        _msd = self.max_sessions_per_dataset
+        _msd_key = str(sorted(_msd.items())) if isinstance(_msd, dict) else str(_msd)
+        key_parts = sorted(self.datasets) + [_msd_key, str(self.seed)]
         return hashlib.md5(",".join(key_parts).encode()).hexdigest()[:12]
 
     def _load_datasets_cached(self):
@@ -325,34 +348,54 @@ class IMUPretrainingDataset(Dataset):
                 for session_id, label in sorted(labels.items())
             ]
 
-            # Apply max_sessions_per_dataset limit if specified
-            if self.max_sessions_per_dataset is not None and len(dataset_sessions) > self.max_sessions_per_dataset:
-                # Shuffle before limiting to get diverse samples
+            # Apply session cap: int = global cap; dict = per-dataset cap
+            # (missing key or None value = no cap for that dataset).
+            _msd = self.max_sessions_per_dataset
+            _cap = _msd.get(dataset_name) if isinstance(_msd, dict) else _msd
+            if _cap is not None and len(dataset_sessions) > _cap:
+                # Shuffle before limiting to get a diverse random subsample
                 random.shuffle(dataset_sessions)
-                dataset_sessions = dataset_sessions[:self.max_sessions_per_dataset]
-                print(f"  {dataset_name}: limited to {self.max_sessions_per_dataset} sessions (from {total_count})")
+                dataset_sessions = dataset_sessions[:_cap]
+                print(f"  {dataset_name}: limited to {_cap} sessions (from {total_count})")
 
             self.sessions.extend(dataset_sessions)
 
     def _create_splits(self):
-        """Create train/val/test splits."""
-        # Shuffle sessions
-        random.shuffle(self.sessions)
+        """Create SUBJECT-DISJOINT train/val/test splits: whole subjects are held out, not
+        random sessions, so the model-selection val reflects cross-subject generalization
+        rather than memorized subjects. Grouping key is (dataset, subject); datasets whose
+        subject id is unrecoverable from the session name fall back to per-session groups
+        (documented, e.g. unimib_shar). The split is on the group (subject) count, so
+        per-split session counts are approximate. Re-seeding makes the train/val/test
+        instances agree on the same disjoint partition (no session appears in two splits)."""
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for i, s in enumerate(self.sessions):
+            subj = _subject_of(s['session_id'], s['dataset'])
+            # HAPT is the postural-transition SUPERSET of UCI-HAR (same 30 subjects + recordings),
+            # so co-assign both to ONE provenance family: a subject must never be train for one and
+            # val for the other (cross-dataset subject leakage).
+            fam = "uci_har_family" if s['dataset'] in ("uci_har", "hapt") else s['dataset']
+            key = (fam, subj) if subj is not None else (fam, "__sess__" + str(s['session_id']))
+            groups[key].append(i)
 
-        # Calculate split indices
-        n_total = len(self.sessions)
-        n_train = int(n_total * self.split_ratios[0])
-        n_val = int(n_total * self.split_ratios[1])
+        group_keys = sorted(groups.keys(), key=lambda k: (str(k[0]), str(k[1])))
+        random.seed(self.seed)          # identical group ordering across train/val/test instances
+        random.shuffle(group_keys)
 
-        # Split sessions
+        n_groups = len(group_keys)
+        n_train = int(n_groups * self.split_ratios[0])
+        n_val = int(n_groups * self.split_ratios[1])
         if self.split == 'train':
-            self.sessions = self.sessions[:n_train]
+            keep = group_keys[:n_train]
         elif self.split == 'val':
-            self.sessions = self.sessions[n_train:n_train + n_val]
+            keep = group_keys[n_train:n_train + n_val]
         elif self.split == 'test':
-            self.sessions = self.sessions[n_train + n_val:]
+            keep = group_keys[n_train + n_val:]
         else:
             raise ValueError(f"Invalid split: {self.split}")
+
+        self.sessions = [self.sessions[i] for k in keep for i in groups[k]]
 
     def __len__(self) -> int:
         return len(self.sessions)
@@ -377,7 +420,7 @@ class IMUPretrainingDataset(Dataset):
         # Get available channels (exclude timestamp_sec and non-IMU channels)
         # Filter to only IMU channels: accelerometer, gyroscope, magnetometer, orientation
         # This excludes heart_rate (9 Hz in PAMAP2) and temperature sensors
-        IMU_PATTERNS = ['acc', 'gyro', 'mag', 'ori']
+        IMU_PATTERNS = ['acc', 'gyro', 'mag']  # 'ori' dropped: PAMAP2 orientation is documented invalid
         available_channels = [
             col for col in df.columns
             if col != 'timestamp_sec'
@@ -468,35 +511,29 @@ class IMUPretrainingDataset(Dataset):
         else:
             base_label = str(label_list)
 
-        # Apply dataset-specific label augmentation (only for training split)
-        # Uses synonyms and templates tailored to each dataset's activities
-        if self.use_text_augmentation:
-            augmentation_rate = 0.8 if self.split == 'train' else 0.0
-        else:
-            augmentation_rate = 0.0
-        label_text = augment_label(
-            label=base_label,
-            dataset_name=dataset_name,
-            augmentation_rate=augmentation_rate,
-            use_synonyms=True,
-            use_templates=True
-        )
+        # label_text defaults to the raw label; the unified augmenter (train split) may
+        # paraphrase it via LabelTextCfg. ALL augmentation — signal, physics, and text
+        # (label + channel descriptions) — now flows through the single IMUAugmenter.
+        label_text = base_label
 
-        # Apply augmentations before patching (operates on raw timestep data).
-        # Runs in DataLoader workers for free parallelism. Physics-changing augs
-        # (gravity / rate / channel-dropout) update sampling_rate / channels /
-        # descriptions so the channel text built below stays consistent.
+        # Apply the unified augmentation pipeline before patching (raw timestep data).
+        # Runs in DataLoader workers for free parallelism. Physics augs (gravity / rate /
+        # channel-dropout) update sampling_rate / channels / descriptions, and the text augs
+        # update channel_descriptions / label_text, so everything below stays consistent.
         if self.split == 'train' and self._augmenter is not None:
             aug = self._augmenter(self._IMUSample(
                 data=data,
                 channel_names=selected_channels,
                 sampling_rate=sampling_rate,
                 channel_descriptions=base_channel_descriptions,
+                label=base_label,
+                dataset_name=dataset_name,
             ))
             data = aug.data
             selected_channels = aug.channel_names
             sampling_rate = aug.sampling_rate
             base_channel_descriptions = aug.channel_descriptions
+            label_text = aug.label_text
             num_channels = len(selected_channels)
             # Rate resample / channel dropout may change T or C -> rebuild the mask.
             attention_mask = torch.ones(data.shape[0], dtype=torch.bool)
@@ -711,13 +748,28 @@ class IMUPretrainingDataset(Dataset):
         Used by ChannelBucketBatchSampler to group same-channel-count
         samples into batches, reducing padding waste.
         """
-        IMU_PATTERNS = ['acc', 'gyro', 'mag', 'ori']
+        # Count each session's ACTUAL parquet columns, not the manifest union — e.g. WISDM stores
+        # single-sensor 3-ch sessions though its manifest lists 12, which would otherwise mis-bucket
+        # every WISDM sample into a phantom 12-ch bucket (padding waste + wrong grouping).
+        import pyarrow.parquet as pq
+        IMU_PATTERNS = ['acc', 'gyro', 'mag']  # 'ori' dropped: PAMAP2 orientation is documented invalid
+        cache = getattr(self, "_chan_count_cache", None)
+        if cache is None:
+            cache = self._chan_count_cache = {}
         channel_counts = []
         for session in self.sessions:
-            dataset_name = session['dataset']
-            channels = self.dataset_info[dataset_name]['channels']
-            imu_channels = [ch for ch in channels if any(p in ch.lower() for p in IMU_PATTERNS)]
-            channel_counts.append(len(imu_channels))
+            p = str(session['path'])
+            c = cache.get(p)
+            if c is None:
+                try:
+                    names = pq.ParquetFile(p).schema_arrow.names
+                    c = sum(1 for n in names if n != 'timestamp_sec'
+                            and any(pat in n.lower() for pat in IMU_PATTERNS))
+                except Exception:   # fall back to manifest count
+                    chs = self.dataset_info[session['dataset']]['channels']
+                    c = sum(1 for ch in chs if any(pat in ch.lower() for pat in IMU_PATTERNS))
+                cache[p] = c
+            channel_counts.append(c)
         return channel_counts
 
     def compute_group_weights(self, max_oversample_ratio: float = 20.0, sampling_temperature: float = 0.0) -> torch.Tensor:

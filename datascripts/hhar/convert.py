@@ -114,24 +114,35 @@ def load_and_merge_sensor_data(acc_path: Path, gyro_path: Path) -> pd.DataFrame:
 
 
 def resample_stream(group, rate=TARGET_SAMPLE_RATE):
-    """Resample one physical (user,device,activity) stream to a uniform `rate` Hz on
-    its REAL Creation_Time clock via linear interpolation, BEFORE windowing. Native
-    HHAR rates are 50-200 Hz; without this a 128-sample window from a 200 Hz device
-    spans only ~0.64 s of motion yet was stamped 2.56 s @ 50 Hz."""
+    """Resample one physical (user,device,activity) stream to a uniform `rate` Hz on its REAL
+    Creation_Time clock. The stream is FIRST split into contiguous segments at timestamp gaps so no
+    gap is filled with a fabricated linear ramp — a single corrupt Creation_Time would otherwise
+    open a multi-hour fake 'standing' stream (interpolated dead-flat). Native HHAR rates are
+    50-200 Hz. Returns a LIST of resampled segment DataFrames (one per contiguous run)."""
     g = group.sort_values('timestamp_ns').drop_duplicates('timestamp_ns')
     if len(g) < 2:
-        return None
+        return []
     t = g['timestamp_ns'].to_numpy(np.float64) / 1e9
     t = t - t[0]
-    duration = float(t[-1])
-    if duration <= 0:
-        return None
-    n = int(duration * rate) + 1
-    grid = np.arange(n) / rate
-    out = {'timestamp_sec': grid}
-    for c in ['acc_x', 'acc_y', 'acc_z', 'gyro_x', 'gyro_y', 'gyro_z']:
-        out[c] = np.interp(grid, t, g[c].to_numpy(np.float64))
-    return pd.DataFrame(out)
+    dt = np.diff(t)
+    med = float(np.median(dt)) if len(dt) else 0.0
+    gap = max(0.25, 10.0 * med)               # a real clock break, not sample jitter
+    breaks = np.nonzero(dt > gap)[0] + 1       # a new segment starts after each gap
+    bounds = np.concatenate([[0], breaks, [len(g)]]).astype(int)
+    cols = ['acc_x', 'acc_y', 'acc_z', 'gyro_x', 'gyro_y', 'gyro_z']
+    arr = {c: g[c].to_numpy(np.float64) for c in cols}
+    segments = []
+    for a, b in zip(bounds[:-1], bounds[1:]):
+        ts = t[a:b] - t[a]
+        if len(ts) < 2 or ts[-1] <= 0:
+            continue
+        n = int(ts[-1] * rate) + 1
+        grid = np.arange(n) / rate
+        out = {'timestamp_sec': grid}
+        for c in cols:
+            out[c] = np.interp(grid, ts, arr[c][a:b])
+        segments.append(pd.DataFrame(out))
+    return segments
 
 
 def create_windows(df: pd.DataFrame) -> Tuple[List[str], Dict[str, List[str]]]:
@@ -149,51 +160,33 @@ def create_windows(df: pd.DataFrame) -> Tuple[List[str], Dict[str, List[str]]]:
     # Group by user, DEVICE, activity — resample each physical stream to a true
     # 50 Hz on its real clock before windowing (native rates are 50-200 Hz).
     for (user, device, activity), group in df.groupby(['user', 'device', 'activity']):
-        group = resample_stream(group)
-        if group is None or len(group) < WINDOW_SIZE:
-            continue
-
-        # Map activity to standardized name
         std_activity = ACTIVITIES.get(activity, activity)
+        # Window each CONTIGUOUS resampled segment separately (gap-split), so no window
+        # ever spans a fabricated across-gap interpolation ramp.
+        for seg in resample_stream(group):
+            if len(seg) < WINDOW_SIZE:
+                continue
+            num_windows = max(0, (len(seg) - WINDOW_SIZE) // WINDOW_STRIDE + 1)
+            for win_idx in range(num_windows):
+                start_idx = win_idx * WINDOW_STRIDE
+                window_data = seg.iloc[start_idx:start_idx + WINDOW_SIZE]
 
-        # Create sliding windows over the resampled (true 50 Hz) stream
-        num_samples = len(group)
-        num_windows = max(0, (num_samples - WINDOW_SIZE) // WINDOW_STRIDE + 1)
-
-        for win_idx in range(num_windows):
-            start_idx = win_idx * WINDOW_STRIDE
-            end_idx = start_idx + WINDOW_SIZE
-
-            window_data = group.iloc[start_idx:end_idx]
-
-            # Create session ID
-            session_id = f"hhar_{user}_{activity}_{session_idx:05d}"
-
-            # Create DataFrame for this window
-            window_df = pd.DataFrame({
-                'timestamp_sec': np.arange(WINDOW_SIZE) * (1.0 / TARGET_SAMPLE_RATE),
-                'acc_x': window_data['acc_x'].values,
-                'acc_y': window_data['acc_y'].values,
-                'acc_z': window_data['acc_z'].values,
-                'gyro_x': window_data['gyro_x'].values,
-                'gyro_y': window_data['gyro_y'].values,
-                'gyro_z': window_data['gyro_z'].values,
-            })
-
-            # Save to parquet
-            session_dir = OUTPUT_DIR / "sessions" / session_id
-            session_dir.mkdir(parents=True, exist_ok=True)
-
-            parquet_path = session_dir / "data.parquet"
-            window_df.to_parquet(parquet_path, index=False)
-
-            # Store label
-            labels_dict[session_id] = [std_activity]
-            sessions.append(session_id)
-            session_idx += 1
-
-        if num_windows > 0:
-            print(f"    User {user}, {std_activity}: {num_windows} windows")
+                session_id = f"hhar_{user}_{activity}_{session_idx:05d}"
+                window_df = pd.DataFrame({
+                    'timestamp_sec': np.arange(WINDOW_SIZE) * (1.0 / TARGET_SAMPLE_RATE),
+                    'acc_x': window_data['acc_x'].values,
+                    'acc_y': window_data['acc_y'].values,
+                    'acc_z': window_data['acc_z'].values,
+                    'gyro_x': window_data['gyro_x'].values,
+                    'gyro_y': window_data['gyro_y'].values,
+                    'gyro_z': window_data['gyro_z'].values,
+                })
+                session_dir = OUTPUT_DIR / "sessions" / session_id
+                session_dir.mkdir(parents=True, exist_ok=True)
+                window_df.to_parquet(session_dir / "data.parquet", index=False)
+                labels_dict[session_id] = [std_activity]
+                sessions.append(session_id)
+                session_idx += 1
 
     return sessions, labels_dict
 
@@ -265,6 +258,8 @@ def main():
         return
 
     # Create output directory
+    import shutil
+    shutil.rmtree(OUTPUT_DIR / "sessions", ignore_errors=True)   # clear stale windows -> no orphan dirs
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # Load and merge sensor data

@@ -53,6 +53,12 @@ recognition capability. The evaluated set is defined by
 - **Balanced accuracy** = macro recall over **GT classes only** (recall is
   undefined for a class with no true samples).
 - Secondary: plain accuracy, weighted F1, per-class F1.
+- **Cross-model comparability caveat:** because the macro-F1 denominator is
+  `GT ∪ (that model's own predictions)`, two models on the same dataset can be
+  averaged over different-sized class sets — a model that scatters false positives
+  into extra zero-window candidate classes is averaged over a larger denominator.
+  Read the per-class / per-dataset cells alongside the macro-F1 headline; do not
+  over-interpret small aggregate gaps.
 - **Uncertainty: subject-stratified bootstrap** (B=1000, seed 3431): resample
   subjects with replacement, not windows — windows within a subject are
   correlated. The scoring class set is FROZEN once on the full sample and reused
@@ -86,9 +92,13 @@ Adopted from the literature (see `docs/v2/design_evaluation.md`, addendum rev. 2
 
 ### Fairness rows
 
-- **Parity row:** every model receives the identical anti-aliased 20 Hz signal
-  (`scipy.signal.resample_poly`) + neutral channel text
-  (`evaluate_tsfm_v2.py --channel-text neutral --eval-rate 20`).
+- **Parity row:** matched **nominal 20 Hz** input + neutral channel text — NOT a
+  bit-identical signal. Each model consumes the preprocessing it was built for
+  (HALO: `scipy.signal.resample_poly` anti-aliased 20 Hz via `evaluate_tsfm_v2.py
+  --channel-text neutral --eval-rate 20`; the fixed-rate baselines: bin-and-mean
+  20 Hz + g→m/s² via the LiMU-BERT pipeline). So the parity row removes HALO's
+  native-rate and rich-text advantages, but the anti-aliasing filter itself still
+  differs by model.
 - **Capability-Δ rows:** native-rate and rich-channel-text deltas reported
   explicitly and separately.
 

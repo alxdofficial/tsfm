@@ -43,7 +43,7 @@ LABEL_GROUPS = {
 
     # Lying/laying (horizontal posture)
     # USC-HAD: sleeping (extended horizontal posture)
-    'lying': ['lying', 'laying', 'lying_back', 'lying_side', 'laying_back', 'sleeping'],
+    'lying': ['lying', 'laying', 'lying_back', 'lying_right_side', 'laying_back', 'sleeping'],
 
     # Sitting (seated posture)
     # HARTH: transport_sit (seated in vehicle — same seated posture)
@@ -123,9 +123,9 @@ LABEL_GROUPS = {
     'sit_up': ['sit_up'],
     'picking_up': ['picking_up'],  # Bending to pick something up
 
-    # General/free-living sports (KU-HAR table-tennis -> playing_sports;
+    # General/free-living sports (KU-HAR table-tennis -> table_tennis;
     # CAPTURE-24 WillettsSpecific 'sports' is the same broad concept).
-    'playing_sports': ['playing_sports', 'sports'],
+    'table_tennis': ['table_tennis', 'sports'],
 
     # Construction/manual work (VTT-ConIoT activities)
     'carrying': ['carrying', 'lifting', 'pushing_cart'],
@@ -179,7 +179,7 @@ LABEL_GROUPS_SIMPLE = {
                  'elevator_up', 'elevator_down', 'transport_stand'],
 
     # Stationary - lying (horizontal postures only, no transitions)
-    'lying': ['lying', 'laying', 'lying_back', 'lying_side', 'laying_back', 'sleeping'],
+    'lying': ['lying', 'laying', 'lying_back', 'lying_right_side', 'laying_back', 'sleeping'],
 
     # Postural transitions (whole-body repositioning — distinct motion patterns)
     'postural_transition': ['standing_up_from_laying', 'standing_up_from_sitting',
@@ -223,7 +223,7 @@ LABEL_GROUPS_SIMPLE = {
 
     # Ball / general sports (throwing, catching, kicking patterns).
     # Keyed 'ball_sports' to avoid colliding with a literal 'sports' label.
-    'ball_sports': ['playing_catch', 'dribbling', 'kicking', 'playing_basketball', 'playing_sports', 'sports'],
+    'ball_sports': ['playing_catch', 'dribbling', 'kicking', 'playing_basketball', 'table_tennis', 'sports'],
 
     # Falling (loss of balance - grouped for safety applications)
     'falling': ['falling_backward', 'falling_backward_sitting', 'falling_forward',

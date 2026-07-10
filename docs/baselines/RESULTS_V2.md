@@ -37,6 +37,13 @@ CIs: subject-stratified bootstrap, B=1000.
 
 ## ZS-XD — HALO vs baselines (macro-F1)
 
+> **Baseline heterogeneity flexibility** (how much each model can flex on sampling rate,
+> channel count, window/session length, modality, placement, streaming, open-vocab) is
+> documented in [`baseline_flexibility.md`](baseline_flexibility.md). Each baseline is run in the
+> exact input format it was built for (LiMU-BERT/CrossHAR 20 Hz/6-ch, ssl-wearables 30 Hz/3-ch,
+> UniMTS resampled/skeleton, …); HALO runs native. This is the fairness basis for the per-model
+> preprocessing.
+
 All models scored under the SAME v2 rule: zero-shot, argmax over each dataset's
 own label strings, exact match, macro-F1 over GT∪predicted. Text-aligned models
 (HALO, LanHAR) encode `L_D` directly; **†** closed-vocab classifiers are bridged

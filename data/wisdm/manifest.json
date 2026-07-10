@@ -1,6 +1,6 @@
 {
   "dataset_name": "WISDM",
-  "description": "Smartphone and smartwatch activity recognition. 51 subjects performing 18 activities with accelerometer and gyroscope on phone (pocket) and watch (wrist) at 20Hz.",
+  "description": "Smartphone and smartwatch activity recognition. 51 subjects performing 18 activities with accelerometer and gyroscope on phone (pocket) and watch (wrist).",
   "channels": [
     {
       "name": "phone_accel_x",
