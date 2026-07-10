@@ -63,61 +63,6 @@ def create_patches(
     return patches.contiguous()
 
 
-def interpolate_patches(
-    patches: torch.Tensor,
-    target_size: int = 64,
-    method: str = 'linear'
-) -> torch.Tensor:
-    """
-    Interpolate patches to a fixed target size.
-
-    Uses torch.nn.functional.interpolate for vectorized operation across all
-    patches and channels simultaneously (no per-channel loops).
-
-    Args:
-        patches: Input tensor of shape (num_patches, patch_timesteps, num_channels)
-        target_size: Target number of timesteps per patch (default: 64)
-        method: Interpolation method. Options: 'linear', 'nearest'
-
-    Returns:
-        Interpolated patches of shape (num_patches, target_size, num_channels)
-
-    Example:
-        >>> patches = torch.randn(10, 200, 9)  # 10 patches of 200 timesteps
-        >>> interpolated = interpolate_patches(patches, target_size=64)
-        >>> interpolated.shape  # (10, 64, 9)
-    """
-    num_patches, patch_timesteps, num_channels = patches.shape
-
-    if patch_timesteps == target_size:
-        return patches
-
-    if not isinstance(patches, torch.Tensor):
-        patches = torch.as_tensor(patches, dtype=torch.float32)
-    elif patches.device.type != 'cpu':
-        patches = patches.cpu()
-
-    # Validate method
-    SUPPORTED_METHODS = {'linear', 'cubic', 'nearest'}
-    if method not in SUPPORTED_METHODS:
-        raise ValueError(f"Unknown interpolation method: '{method}'. Supported: {SUPPORTED_METHODS}")
-
-    # F.interpolate expects (batch, channels, length)
-    x = patches.permute(0, 2, 1)  # (num_patches, num_channels, patch_timesteps)
-
-    # Map method to F.interpolate mode
-    # Note: F.interpolate 1D doesn't support cubic; we approximate with linear for 'cubic'
-    # since the difference is negligible for IMU signal resampling (smooth signals)
-    if method == 'nearest':
-        x = F.interpolate(x, size=target_size, mode='nearest')
-    else:
-        # 'linear' and 'cubic' both use linear mode (1D cubic not available in F.interpolate)
-        x = F.interpolate(x, size=target_size, mode='linear', align_corners=False)
-
-    # Back to (num_patches, target_size, num_channels)
-    return x.permute(0, 2, 1).contiguous()
-
-
 def zero_pad_patches(
     patches: torch.Tensor,
     target_size: int
@@ -148,140 +93,47 @@ def zero_pad_patches(
     return out
 
 
-def normalize_patches(
-    patches: torch.Tensor,
-    method: str = 'zscore',
-    epsilon: float = 1e-8
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Normalize patches using per-patch, per-channel statistics.
-
-    This normalization is applied independently to each patch and each channel,
-    which helps the model focus on the shape and pattern of signals rather than
-    absolute magnitude.
-
-    Args:
-        patches: Input tensor of shape (num_patches, patch_timesteps, num_channels)
-        method: Normalization method. Options: 'zscore', 'minmax', 'none'
-        epsilon: Small constant to avoid division by zero
-
-    Returns:
-        Tuple of (normalized_patches, means, stds) where:
-        - normalized_patches: shape (num_patches, patch_timesteps, num_channels)
-        - means: shape (num_patches, num_channels) - mean per patch per channel
-        - stds: shape (num_patches, num_channels) - std per patch per channel
-
-    Example:
-        >>> patches = torch.randn(10, 96, 9)
-        >>> normalized, means, stds = normalize_patches(patches, method='zscore')
-        >>> normalized.shape  # (10, 96, 9)
-        >>> means.shape  # (10, 9)
-        >>> stds.shape  # (10, 9)
-    """
-    if method == 'none':
-        num_patches, _, num_channels = patches.shape
-        means = torch.zeros(num_patches, num_channels)
-        stds = torch.ones(num_patches, num_channels)
-        return patches, means, stds
-
-    # Calculate statistics per patch, per channel
-    # Shape: (num_patches, num_channels)
-    means = patches.mean(dim=1)  # Average over time dimension
-
-    if method == 'zscore':
-        # Z-score normalization: (x - mean) / std
-        stds = patches.std(dim=1, unbiased=False)  # Std over time dimension
-        stds = torch.clamp(stds, min=epsilon)  # Avoid division by zero
-
-        # Normalize: subtract mean and divide by std
-        # Broadcasting: (num_patches, patch_timesteps, num_channels) - (num_patches, 1, num_channels)
-        normalized = (patches - means.unsqueeze(1)) / stds.unsqueeze(1)
-
-    elif method == 'minmax':
-        # Min-max normalization: (x - min) / (max - min)
-        mins = patches.min(dim=1)[0]  # Min over time dimension
-        maxs = patches.max(dim=1)[0]  # Max over time dimension
-        ranges = maxs - mins
-        ranges = torch.clamp(ranges, min=epsilon)  # Avoid division by zero
-
-        normalized = (patches - mins.unsqueeze(1)) / ranges.unsqueeze(1)
-
-        # Return mins as "means" and ranges as "stds" for consistency
-        stds = ranges
-        means = mins
-
-    else:
-        raise ValueError(f"Unknown normalization method: {method}. Choose from: 'zscore', 'minmax', 'none'")
-
-    return normalized, means, stds
-
-
 def preprocess_imu_data(
     data: torch.Tensor,
     sampling_rate_hz: float,
     patch_size_sec: float,
     stride_sec: Optional[float] = None,
-    target_patch_size: int = 64,
-    normalization_method: str = 'zscore',
-    interpolation_method: str = 'linear',
-    pad_to_size: Optional[int] = None,
+    pad_to_size: int = None,
 ) -> Tuple[torch.Tensor, dict]:
     """
-    Complete preprocessing pipeline for IMU data.
+    Preprocessing pipeline for the V2 filterbank tokenizer.
 
-    Two modes:
-    - Legacy (pad_to_size=None): create patches -> interpolate to target_patch_size
-      -> per-patch z-score. Feeds the CNN / spectral-temporal extractors.
-    - Filterbank (pad_to_size=S): create native-rate patches -> zero-pad to S, NO
-      interpolation and NO z-score (the PHz-Filterbank tokenizer does its own DC
-      removal + amplitude preservation). Metadata carries patch_len_samples (true N).
+    Create native-rate patches -> zero-pad each to the DFT size S (pad_to_size).
+    NO interpolation and NO per-patch z-score — the PHz-Filterbank tokenizer does its
+    own DC removal + amplitude preservation. Metadata carries patch_len_samples (true
+    N). The legacy interpolate-to-fixed-size + z-score path was removed with the CNN /
+    spectral-temporal extractors.
 
     Args:
         data: Input tensor of shape (num_timesteps, num_channels)
         sampling_rate_hz: Sampling rate in Hz
         patch_size_sec: Duration of each patch in seconds
         stride_sec: Stride between patches in seconds (default: patch_size_sec)
-        target_patch_size: Target timesteps per patch after interpolation (legacy mode)
-        normalization_method: 'zscore', 'minmax', or 'none' (legacy mode)
-        interpolation_method: 'linear', 'cubic', or 'nearest' (legacy mode)
-        pad_to_size: If set, use filterbank mode and zero-pad native patches to this
-                     DFT size S instead of interpolating.
+        pad_to_size: DFT size S to zero-pad native patches to (required).
 
     Returns:
-        Tuple of (preprocessed_patches, metadata). In filterbank mode the patches are
-        (num_patches, pad_to_size, num_channels) and metadata['patch_len_samples'] is N.
+        Tuple of (patches (num_patches, S, num_channels), metadata) with
+        metadata['patch_len_samples'] = true N.
     """
-    # Step 1: Create native-rate patches
+    if pad_to_size is None:
+        raise ValueError("preprocess_imu_data requires pad_to_size (the filterbank DFT size S)")
+
     patches = create_patches(data, sampling_rate_hz, patch_size_sec, stride_sec)
     original_patch_size = patches.shape[1]
-
-    # Filterbank mode: zero-pad to S, no interpolation / no per-patch z-score.
-    if pad_to_size is not None:
-        patches = zero_pad_patches(patches, target_size=pad_to_size)
-        metadata = {
-            'means': None,
-            'stds': None,
-            'original_patch_size': original_patch_size,
-            'patch_len_samples': original_patch_size,   # true N for the tokenizer
-            'dft_size': pad_to_size,
-            'sampling_rate_hz': sampling_rate_hz,
-            'patch_size_sec': patch_size_sec,
-            'num_channels': data.shape[1],
-        }
-        return patches, metadata
-
-    # Legacy mode: interpolate to fixed size, then per-patch normalize.
-    patches = interpolate_patches(patches, target_size=target_patch_size, method=interpolation_method)
-    normalized_patches, means, stds = normalize_patches(patches, method=normalization_method)
-
+    patches = zero_pad_patches(patches, target_size=pad_to_size)
     metadata = {
-        'means': means,
-        'stds': stds,
+        'means': None,
+        'stds': None,
         'original_patch_size': original_patch_size,
-        'target_patch_size': target_patch_size,
+        'patch_len_samples': original_patch_size,   # true N for the tokenizer
+        'dft_size': pad_to_size,
         'sampling_rate_hz': sampling_rate_hz,
         'patch_size_sec': patch_size_sec,
-        'num_channels': data.shape[1]
+        'num_channels': data.shape[1],
     }
-
-    return normalized_patches, metadata
+    return patches, metadata

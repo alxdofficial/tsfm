@@ -63,10 +63,8 @@ def benchmark_config(config_name, d_model, num_heads, num_layers, dim_ff, cnn_ch
 
     semantic_head = SemanticAlignmentHead(
         d_model=d_model, d_model_fused=d_model, output_dim=d_model,
-        num_temporal_layers=2,
-        num_heads=num_heads, dim_feedforward=d_model * 4, dropout=0.1,
+        num_heads=num_heads, dropout=0.1,
         num_fusion_queries=4, use_fusion_self_attention=True,
-        num_pool_queries=4, use_pool_self_attention=True
     ).to(device)
     sa_total, sa_train = count_params(semantic_head, "Semantic Alignment Head")
 
@@ -75,12 +73,11 @@ def benchmark_config(config_name, d_model, num_heads, num_layers, dim_ff, cnn_ch
     ).to(device)
     cf_total, cf_train = count_params(channel_fusion, "Channel Text Fusion")
 
-    # Label bank (includes frozen SBERT)
+    # Label bank (frozen mean-pool + frozen SBERT — no trainable params)
     label_bank = LearnableLabelBank(
         model_name=sbert_model, device=device, d_model=d_model,
-        num_heads=4, num_queries=4, num_prototypes=1, dropout=0.0,
     )
-    lb_total, lb_train = count_params(label_bank, "Label Bank (pooling only)")
+    lb_total, lb_train = count_params(label_bank, "Label Bank (frozen mean-pool)")
 
     # Get SBERT param count
     shared_text_encoder = TokenTextEncoder(model_name=sbert_model)

@@ -89,18 +89,6 @@ def test_gravity_detection_rejects_normalized_recgym_text():
     assert not _gravity_present(triad, descs)
 
 
-def test_yaw_rotation_preserves_gravity_and_norm():
-    s = make_sample(gravity=True)
-    out = only("yaw_rotation")(make_sample(gravity=True))
-    # per-timestep acc-triad norm is preserved by a rotation
-    n_in = s.data[:, :3].norm(dim=1)
-    n_out = out.data[:, :3].norm(dim=1)
-    assert torch.allclose(n_in, n_out, atol=1e-3)
-    # "which way is down" (mean gravity magnitude) preserved
-    assert abs(s.data[:, :3].mean(0).norm() - out.data[:, :3].mean(0).norm()) < 1e-2
-    assert torch.isfinite(out.data).all()
-
-
 def test_rotation_3d_preserves_norm_and_rotates_jointly():
     """Full SO(3): acc + gyro triads rotate by ONE shared R per location, norm-preserving."""
     from datasets.imu_pretraining_dataset.augmentations import _random_so3
@@ -138,10 +126,10 @@ def test_rotation_3d_skips_gravity_removed():
     assert torch.allclose(s.data, out.data, atol=1e-6)
 
 
-def test_default_v2_uses_full_rotation_not_yaw():
-    """default_v2 enables full SO(3) rotation and disables yaw (SO(3) subsumes it)."""
+def test_default_v2_uses_full_rotation():
+    """default_v2 enables full SO(3) rotation (rotation_3d)."""
     cfg = AugmentationConfig.default_v2()
-    assert cfg.rotation_3d.enabled and not cfg.yaw_rotation.enabled
+    assert cfg.rotation_3d.enabled
 
 
 def test_rate_changes_sampling_rate_no_nan():

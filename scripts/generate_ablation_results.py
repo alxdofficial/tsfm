@@ -15,9 +15,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 EVAL_DIR = PROJECT_ROOT / "test_output" / "ablation_evaluation"
 OUTPUT_PATH = PROJECT_ROOT / "docs" / "ablation_results.md"
 
-# Dataset categorization
-MAIN_DATASETS = ["motionsense", "realworld", "shoaib", "opportunity"]
-SEVERE_OOD_DATASETS = ["mobiact", "vtt_coniot", "harth"]
+# Dataset categorization. Active v2 is one flat held-out set; Opportunity is
+# appendix-only and VTT-ConIoT is retired from the primary benchmark.
+MAIN_DATASETS = ["motionsense", "realworld", "mobiact", "shoaib", "harth", "inclusivehar"]
+APPENDIX_DATASETS = ["opportunity"]
 
 # Display names
 DATASET_NAMES = {
@@ -25,6 +26,7 @@ DATASET_NAMES = {
     "realworld": "RealWorld",
     "shoaib": "Shoaib",
     "opportunity": "Opportunity",
+    "inclusivehar": "InclusiveHAR",
     "mobiact": "MobiAct",
     "vtt_coniot": "VTT-ConIoT",
     "harth": "HARTH",
@@ -242,8 +244,8 @@ def main():
         all_datasets.update(abl_results.keys())
 
     main_ds = [ds for ds in MAIN_DATASETS if ds in all_datasets]
-    ood_ds = [ds for ds in SEVERE_OOD_DATASETS if ds in all_datasets]
-    all_ds = main_ds + ood_ds
+    appendix_ds = [ds for ds in APPENDIX_DATASETS if ds in all_datasets]
+    all_ds = main_ds + appendix_ds
 
     lines = []
     lines.append("# Ablation Study Results")
@@ -251,7 +253,7 @@ def main():
     lines.append("## Overview")
     lines.append("")
     lines.append("Six ablation studies, each disabling one component while keeping everything else at baseline.")
-    lines.append("All runs use small_deep (d=384, 8 layers), 100 epochs, memory bank (512), no GradCache.")
+    lines.append("All runs use small_deep (d=384, 8 layers), 100 epochs, no memory bank, no GradCache.")
     lines.append("")
     lines.append("| Ablation | What's Disabled |")
     lines.append("|----------|----------------|")
@@ -282,12 +284,12 @@ def main():
     summary_lines, _ = generate_summary_table(results, main_ds, "Main")
     lines.extend(summary_lines)
 
-    # Severe OOD average
-    lines.append("### Severe OOD Datasets Average")
+    # Appendix average
+    lines.append("### Appendix Datasets Average")
     lines.append(f"")
-    lines.append(f"Datasets: {', '.join(DATASET_NAMES.get(ds, ds) for ds in ood_ds)}")
+    lines.append(f"Datasets: {', '.join(DATASET_NAMES.get(ds, ds) for ds in appendix_ds)}")
     lines.append("")
-    summary_lines, _ = generate_summary_table(results, ood_ds, "OOD")
+    summary_lines, _ = generate_summary_table(results, appendix_ds, "Appendix")
     lines.extend(summary_lines)
 
     lines.append("---")
@@ -304,9 +306,9 @@ def main():
     delta_lines = generate_delta_table(results, main_ds, "Main")
     lines.extend(delta_lines)
 
-    lines.append("### Severe OOD Datasets")
+    lines.append("### Appendix Datasets")
     lines.append("")
-    delta_lines = generate_delta_table(results, ood_ds, "OOD")
+    delta_lines = generate_delta_table(results, appendix_ds, "Appendix")
     lines.extend(delta_lines)
 
     lines.append("---")
@@ -328,9 +330,9 @@ def main():
         lines.extend(per_ds_lines)
         lines.append("")
 
-    lines.append("### Severe OOD Datasets")
+    lines.append("### Appendix Datasets")
     lines.append("")
-    for ds in ood_ds:
+    for ds in appendix_ds:
         ds_name = DATASET_NAMES.get(ds, ds)
         lines.append(f"#### {ds_name}")
         lines.append("")
@@ -392,7 +394,7 @@ def _get_description(abl):
         "ablation_no_channel_fusion": "Gated cross-attention between sensor tokens and channel text",
         "ablation_no_label_bank": "Learnable attention pooling for text embeddings (uses frozen mean-pool)",
         "ablation_no_soft_targets": "Soft targets + batch-mean similarity normalization in InfoNCE",
-        "ablation_no_signal_aug": "Jitter + scale augmentation on sensor data",
+        "ablation_no_signal_aug": "All signal/physics augmentations on sensor data",
         "ablation_no_text_aug": "Label synonyms/templates + Hz/window suffix on channel descriptions",
     }
     return descs.get(abl, "")

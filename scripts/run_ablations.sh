@@ -11,14 +11,14 @@
 #   no_channel_fusion    Disable channel-text fusion (gated cross-attention)
 #   no_label_bank        Use frozen mean-pooled SBERT instead of learnable label bank
 #   no_soft_targets      Disable soft targets + batch-mean similarity normalization
-#   no_signal_aug        Disable jitter + scale augmentation
+#   no_signal_aug        Disable all signal/physics augmentation
 #   no_text_aug          Disable label synonyms/templates + Hz/window suffix
 #
 # Environment overrides (apply to all runs):
 #   TSFM_BATCH_SIZE=32   Per-GPU micro-batch size
 #   TSFM_ACCUM_STEPS=16  Gradient accumulation steps
 #   TSFM_LR=8e-5         Learning rate
-#   TSFM_GRAD_CACHE=1    Use GradCache (default: on)
+#   TSFM_GRAD_CACHE=1    Use GradCache (default: off)
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

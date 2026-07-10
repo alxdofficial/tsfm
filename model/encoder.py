@@ -14,13 +14,13 @@ from typing import Optional, List, Dict, Tuple
 
 try:
     from .preprocessing import preprocess_imu_data
-    from .feature_extractor import FixedPatchCNN, SpectralTemporalExtractor, PhysicalFilterbankTokenizer
+    from .feature_extractor import PhysicalFilterbankTokenizer
     from .positional_encoding import IMUPositionalEncoding
     from .transformer import IMUTransformer
 except ImportError:
     # For running as script
     from preprocessing import preprocess_imu_data
-    from feature_extractor import FixedPatchCNN, SpectralTemporalExtractor, PhysicalFilterbankTokenizer
+    from feature_extractor import PhysicalFilterbankTokenizer
     from positional_encoding import IMUPositionalEncoding
     from transformer import IMUTransformer
 
@@ -142,40 +142,29 @@ class IMUActivityRecognitionEncoder(nn.Module):
         self.is_filterbank = (feature_extractor_type == 'physical_filterbank')
         self.dft_size = dft_size
 
-        # Feature extractor
-        if self.is_filterbank:
-            self.feature_extractor = PhysicalFilterbankTokenizer(
-                d_model=d_model,
-                n_bands=n_bands,
-                f_min=f_min,
-                f_max=f_max,
-                Q=tokenizer_Q,
-                dft_size=dft_size,
-                nyquist_margin=nyquist_margin,
-                learnable=tokenizer_learnable,
-                use_amplitude=use_amplitude,
-                use_dc=use_dc,
-                use_resolution_mask=use_resolution_mask,
-                norm=tokenizer_norm,
+        # Feature extractor — V2 is filterbank-only. The legacy CNN / spectral_temporal
+        # extractors were removed; only the PhysicalFilterbankTokenizer remains.
+        if feature_extractor_type != 'physical_filterbank':
+            raise ValueError(
+                f"feature_extractor_type={feature_extractor_type!r} is no longer supported; "
+                f"V2 uses 'physical_filterbank' only (the CNN / spectral_temporal extractors "
+                f"were removed). Update the config to 'physical_filterbank'."
             )
-        elif feature_extractor_type == 'spectral_temporal':
-            self.feature_extractor = SpectralTemporalExtractor(
-                d_model=d_model,
-                cnn_channels=cnn_channels,
-                kernel_sizes=cnn_kernel_sizes,
-                dropout=dropout,
-                patch_chunk_size=patch_chunk_size,
-                spectral_ratio=spectral_ratio,
-                target_patch_size=target_patch_size,
-            )
-        else:
-            self.feature_extractor = FixedPatchCNN(
-                d_model=d_model,
-                cnn_channels=cnn_channels,
-                kernel_sizes=cnn_kernel_sizes,
-                dropout=dropout,
-                patch_chunk_size=patch_chunk_size
-            )
+        self.is_filterbank = True
+        self.feature_extractor = PhysicalFilterbankTokenizer(
+            d_model=d_model,
+            n_bands=n_bands,
+            f_min=f_min,
+            f_max=f_max,
+            Q=tokenizer_Q,
+            dft_size=dft_size,
+            nyquist_margin=nyquist_margin,
+            learnable=tokenizer_learnable,
+            use_amplitude=use_amplitude,
+            use_dc=use_dc,
+            use_resolution_mask=use_resolution_mask,
+            norm=tokenizer_norm,
+        )
 
         # Positional encoding (channel_projection=True always for better generalization)
         self.positional_encoding = IMUPositionalEncoding(
@@ -234,10 +223,7 @@ class IMUActivityRecognitionEncoder(nn.Module):
             sampling_rate_hz=sampling_rate_hz,
             patch_size_sec=patch_size_sec,
             stride_sec=stride_sec,
-            target_patch_size=self.target_patch_size,
-            normalization_method=self.normalization_method,
-            interpolation_method=self.interpolation_method,
-            pad_to_size=self.dft_size if self.is_filterbank else None,
+            pad_to_size=self.dft_size,
         )
 
     def forward(

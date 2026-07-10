@@ -55,19 +55,13 @@ TINY_CONFIG: Dict[str, Any] = {
     # --- Semantic alignment head ---
     "semantic_dim": 384,                   # Matches contrastive_text_dim
     "d_model_fused": 192,                  # Matches d_model
-    "num_semantic_temporal_layers": 2,
     "num_fusion_queries": 4,
     "use_fusion_self_attention": True,
-    "num_pool_queries": 4,
-    "use_pool_self_attention": True,
 
     # --- Channel-text fusion ---
     "channel_text_num_heads": 4,
 
     # --- Label bank ---
-    "label_bank_num_heads": 4,
-    "label_bank_num_queries": 4,
-    "label_bank_num_prototypes": 1,
 
     # --- Per-patch prediction ---
     "per_patch_prediction": True,
@@ -106,19 +100,16 @@ SMALL_CONFIG: Dict[str, Any] = {
     # --- Semantic alignment head ---
     "semantic_dim": 384,                   # Final embedding dim (matches SBERT)
     "d_model_fused": 384,                  # Cross-channel fusion output dim
-    "num_semantic_temporal_layers": 2,     # Temporal attention layers in head
     "num_fusion_queries": 4,               # Query tokens for channel fusion
     "use_fusion_self_attention": True,
-    "num_pool_queries": 4,                 # Query tokens for temporal pooling
-    "use_pool_self_attention": True,
 
     # --- Channel-text fusion ---
     "channel_text_num_heads": 4,           # Cross-attention heads
 
     # --- Label bank ---
-    "label_bank_num_heads": 4,             # Attention heads for label pooling
-    "label_bank_num_queries": 4,           # Learnable query tokens per label
-    "label_bank_num_prototypes": 1,        # Prototype embeddings per label
+
+    # --- Per-patch prediction (the only supported mode; session-level head removed) ---
+    "per_patch_prediction": True,
 }
 
 
@@ -157,19 +148,13 @@ SMALL_DEEP_CONFIG: Dict[str, Any] = {
     # --- Semantic alignment head (scaled up from Small) ---
     "semantic_dim": 384,                   # Matches MiniLM output dim
     "d_model_fused": 384,                  # Keep same as d_model
-    "num_semantic_temporal_layers": 4,     # 2x Small
     "num_fusion_queries": 6,               # Scaled from 4
     "use_fusion_self_attention": True,
-    "num_pool_queries": 6,                 # Scaled from 4
-    "use_pool_self_attention": True,
 
     # --- Channel-text fusion ---
     "channel_text_num_heads": 4,
 
     # --- Label bank ---
-    "label_bank_num_heads": 4,
-    "label_bank_num_queries": 6,           # Scaled from 4
-    "label_bank_num_prototypes": 1,
 
     # --- Per-patch prediction ---
     "per_patch_prediction": True,          # Each patch predicts independently; majority vote at inference
@@ -250,19 +235,13 @@ MEDIUM_CONFIG: Dict[str, Any] = {
     # --- Semantic alignment head (same structure as Small-Deep, wider fused dim) ---
     "semantic_dim": 768,                   # Matches contrastive_text_dim (MPNet output)
     "d_model_fused": 512,                  # Matches d_model
-    "num_semantic_temporal_layers": 4,     # Same as Small-Deep
     "num_fusion_queries": 6,               # Same as Small-Deep
     "use_fusion_self_attention": True,
-    "num_pool_queries": 6,                 # Same as Small-Deep
-    "use_pool_self_attention": True,
 
     # --- Channel-text fusion ---
     "channel_text_num_heads": 4,           # Same as Small-Deep
 
     # --- Label bank ---
-    "label_bank_num_heads": 4,             # Same as Small-Deep
-    "label_bank_num_queries": 6,           # Same as Small-Deep
-    "label_bank_num_prototypes": 1,
 
     # --- Per-patch prediction ---
     "per_patch_prediction": True,
@@ -305,45 +284,57 @@ LARGE_CONFIG: Dict[str, Any] = {
     # --- Semantic alignment head ---
     "semantic_dim": 768,                   # Matches contrastive_text_dim (MPNet output)
     "d_model_fused": 512,                  # Matches d_model
-    "num_semantic_temporal_layers": 6,
     "num_fusion_queries": 8,
     "use_fusion_self_attention": True,
-    "num_pool_queries": 8,
-    "use_pool_self_attention": True,
 
     # --- Channel-text fusion ---
     "channel_text_num_heads": 8,
 
     # --- Label bank ---
-    "label_bank_num_heads": 8,
-    "label_bank_num_queries": 8,
-    "label_bank_num_prototypes": 1,
 
     # --- Per-patch prediction ---
     "per_patch_prediction": True,
 }
 
 
-def get_config(size: str = "small") -> Dict[str, Any]:
+# V2 filterbank tokenizer + streamable-encoder keys, applied to EVERY size preset so
+# the model is filterbank-only (the CNN / spectral_temporal extractors were removed).
+# These override each preset's legacy feature_extractor_type. Tokenizer HP defaults +
+# justification live in model/feature_extractor.py (FB_* constants).
+_FILTERBANK_KEYS: Dict[str, Any] = {
+    "feature_extractor_type": "physical_filterbank",
+    "n_bands": 32, "f_min": 0.3, "f_max": 15.0, "tokenizer_Q": 4.0,
+    "dft_size": 256, "nyquist_margin": 0.9,
+    "tokenizer_learnable": False, "tokenizer_norm": "frozen",
+    "use_amplitude": True, "use_dc": True, "use_resolution_mask": True,
+    # Streamable encoder (Phase E)
+    "use_rope": True, "rope_min_period": 1.0, "rope_max_period": 1000.0,
+    "stream_causal_prob": 0.5, "stream_window_sec": 8.0, "stream_lookahead_patches": 0,
+    "distill_weight": 1.0, "attention_sink": True,
+}
+
+
+def get_config(size: str = "small_deep") -> Dict[str, Any]:
     """
-    Get a model configuration by size.
+    Get a model configuration by size. All sizes use the V2 physical-filterbank
+    tokenizer (the legacy CNN / spectral_temporal extractors were removed).
 
     Args:
-        size: One of "tiny", "small", "small_deep", "medium", "large"
+        size: One of "tiny", "small", "small_deep", "medium", "large".
+              "small_deep_fb" is accepted as a deprecated alias for "small_deep".
 
     Returns:
-        Configuration dictionary containing all architecture hyperparameters
-        for encoder, semantic head, channel-text fusion, and label bank.
+        Configuration dictionary containing all architecture hyperparameters.
 
     Example:
-        >>> config = get_config("small")
+        >>> config = get_config("small_deep")
         >>> encoder = IMUActivityRecognitionEncoder(**config)
     """
     configs = {
         "tiny": TINY_CONFIG,
         "small": SMALL_CONFIG,
         "small_deep": SMALL_DEEP_CONFIG,
-        "small_deep_fb": SMALL_DEEP_FB_CONFIG,
+        "small_deep_fb": SMALL_DEEP_CONFIG,   # deprecated alias
         "medium": MEDIUM_CONFIG,
         "large": LARGE_CONFIG,
     }
@@ -351,4 +342,7 @@ def get_config(size: str = "small") -> Dict[str, Any]:
     if size not in configs:
         raise ValueError(f"Unknown config size: {size}. Choose from {list(configs.keys())}")
 
-    return configs[size].copy()
+    # Merge in the filterbank keys so every preset is filterbank-only.
+    cfg = configs[size].copy()
+    cfg.update(_FILTERBANK_KEYS)
+    return cfg

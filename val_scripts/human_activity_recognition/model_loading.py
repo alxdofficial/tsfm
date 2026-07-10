@@ -61,12 +61,8 @@ def _load_hyperparams(hyperparams_path: Path) -> dict:
             'semantic_head': {
                 'd_model_fused': cfg.get('d_model_fused', cfg['d_model']),
                 'semantic_dim': cfg.get('semantic_dim', cfg['d_model']),
-                'num_temporal_layers': cfg.get('num_semantic_temporal_layers', 2),
                 'num_fusion_queries': cfg.get('num_fusion_queries', 4),
                 'use_fusion_self_attention': cfg.get('use_fusion_self_attention', True),
-                'num_pool_queries': cfg.get('num_pool_queries', 4),
-                'use_pool_self_attention': cfg.get('use_pool_self_attention', True),
-                'per_patch_prediction': cfg.get('per_patch_prediction', False),
             },
             'channel_text_fusion': {
                 'num_heads': cfg.get('channel_text_num_heads', 4),
@@ -104,11 +100,8 @@ def _load_hyperparams(hyperparams_path: Path) -> dict:
         'semantic_head': {
             'd_model_fused': sem.get('d_model_fused', d_model),
             'semantic_dim': sem.get('semantic_dim', d_model),
-            'num_temporal_layers': head.get('num_temporal_layers', 2),
             'num_fusion_queries': head.get('num_fusion_queries', 4),
             'use_fusion_self_attention': head.get('use_fusion_self_attention', True),
-            'num_pool_queries': head.get('num_pool_queries', 4),
-            'use_pool_self_attention': head.get('use_pool_self_attention', True),
         },
         'channel_text_fusion': {
             'num_heads': tok.get('num_heads', 4),
@@ -200,15 +193,10 @@ def load_model(
         d_model=d_model,
         d_model_fused=head_cfg['d_model_fused'],
         output_dim=head_cfg['semantic_dim'],
-        num_temporal_layers=head_cfg['num_temporal_layers'],
         num_heads=enc_cfg['num_heads'],
-        dim_feedforward=head_cfg['d_model_fused'] * 4,
         dropout=enc_cfg['dropout'],
         num_fusion_queries=head_cfg['num_fusion_queries'],
         use_fusion_self_attention=head_cfg['use_fusion_self_attention'],
-        num_pool_queries=head_cfg['num_pool_queries'],
-        use_pool_self_attention=head_cfg['use_pool_self_attention'],
-        per_patch_prediction=head_cfg.get('per_patch_prediction', False),
     )
 
     # Create shared text encoder (contrastive model, may differ from encoder's positional SBERT)
@@ -280,9 +268,7 @@ def load_model(
               f"layers={enc_cfg['num_temporal_layers']}, "
               f"heads={enc_cfg['num_heads']}")
         print(f"  Semantic head: d_fused={head_cfg['d_model_fused']}, "
-              f"layers={head_cfg['num_temporal_layers']}, "
-              f"fusion_q={head_cfg['num_fusion_queries']}, "
-              f"pool_q={head_cfg['num_pool_queries']}")
+              f"fusion_q={head_cfg['num_fusion_queries']}")
         if not use_fusion:
             print(f"  Ablation: channel_text_fusion DISABLED")
 
@@ -311,38 +297,17 @@ def load_label_bank(
     hp = _load_hyperparams(hyperparams_path)
     lb_cfg = hp['label_bank']
 
-    # Check ablation flags and mean pooling setting
-    raw_hp = json.load(open(hyperparams_path))
-    ablation_cfg = raw_hp.get('ablation', {})
-    use_learnable_lb = ablation_cfg.get('learnable_label_bank', True)
-    # use_mean_pooling is set when label bank is disabled (ablation)
-    raw_lb_cfg = raw_hp.get('label_bank', {})
-    use_mean_pooling = raw_lb_cfg.get('use_mean_pooling', not use_learnable_lb)
-
+    # V2 label bank is frozen mean-pool: no trainable parameters. Any legacy
+    # label_bank_state_dict (learned pooling.* weights) is intentionally ignored —
+    # the mean-pool path has no home for it and needs no weights to load.
     label_bank = LearnableLabelBank(
         model_name=lb_cfg['sentence_bert_model'],
         device=device,
         d_model=lb_cfg['d_model'],
-        num_heads=lb_cfg['num_heads'],
-        num_queries=lb_cfg['num_queries'],
-        num_prototypes=lb_cfg['num_prototypes'],
-        dropout=0.0,
         text_encoder=text_encoder,
-        use_mean_pooling=use_mean_pooling,
     )
-
-    lb_state = checkpoint.get('label_bank_state_dict', {})
-    if lb_state and use_learnable_lb:
-        label_bank.load_state_dict(lb_state)
-        if verbose:
-            print(f"  Loaded LearnableLabelBank state (d={lb_cfg['d_model']}, "
-                  f"heads={lb_cfg['num_heads']}, queries={lb_cfg['num_queries']})")
-    else:
-        if verbose:
-            if not use_learnable_lb:
-                print(f"  Ablation: learnable_label_bank DISABLED — using frozen SBERT embeddings")
-            else:
-                print("  Warning: No label_bank_state_dict in checkpoint, using untrained weights")
+    if verbose and checkpoint.get('label_bank_state_dict'):
+        print("  Note: ignoring legacy label_bank_state_dict (V2 uses frozen mean-pool)")
 
     label_bank.train(False)
     return label_bank

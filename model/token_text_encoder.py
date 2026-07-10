@@ -121,205 +121,6 @@ class TokenTextEncoder(nn.Module):
         self._cache.clear()
 
 
-class LabelAttentionPooling(nn.Module):
-    """
-    Learnable attention pooling for label tokens.
-
-    Instead of mean pooling, learn to attend to discriminative tokens.
-    This lets the model focus on what matters for activity recognition.
-    """
-
-    def __init__(
-        self,
-        d_model: int = 384,
-        num_heads: int = 4,
-        num_queries: int = 4,
-        dropout: float = 0.1
-    ):
-        super().__init__()
-
-        self.d_model = d_model
-        self.num_queries = num_queries
-
-        # Learnable query tokens
-        self.queries = nn.Parameter(torch.randn(num_queries, d_model) / math.sqrt(d_model))
-
-        # Cross-attention: queries attend to text tokens
-        self.cross_attn = nn.MultiheadAttention(
-            embed_dim=d_model,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
-        )
-
-        self.norm = nn.LayerNorm(d_model)
-
-        # Combine query outputs
-        self.out_proj = nn.Sequential(
-            nn.Linear(d_model * num_queries, d_model),
-            nn.GELU(),
-            nn.Linear(d_model, d_model)
-        )
-
-        # Small init for stable training while preserving gradient flow
-        # NOTE: zeros init kills gradients since d_input = d_output @ W.T = 0
-        nn.init.normal_(self.out_proj[2].weight, std=0.01)
-        nn.init.zeros_(self.out_proj[2].bias)
-
-    def forward(
-        self,
-        token_embeddings: torch.Tensor,
-        attention_mask: torch.Tensor,
-        normalize: bool = True
-    ) -> torch.Tensor:
-        """
-        Pool tokens to single embedding via learned attention.
-
-        Args:
-            token_embeddings: (batch, seq_len, d_model)
-            attention_mask: (batch, seq_len) bool
-            normalize: L2 normalize output
-
-        Returns:
-            embedding: (batch, d_model)
-        """
-        B = token_embeddings.shape[0]
-
-        # Expand queries for batch
-        queries = self.queries.unsqueeze(0).expand(B, -1, -1)
-
-        # Cross-attention
-        key_padding_mask = ~attention_mask.bool()  # True = ignore
-        attn_out, _ = self.cross_attn(
-            query=queries,
-            key=token_embeddings,
-            value=token_embeddings,
-            key_padding_mask=key_padding_mask,
-            need_weights=False
-        )
-
-        attn_out = self.norm(attn_out)
-
-        # Combine queries: (B, num_queries, d_model) -> (B, d_model)
-        pooled = attn_out.reshape(B, -1)
-        out = self.out_proj(pooled)
-
-        # Add residual from mean of queries
-        out = out + attn_out.mean(dim=1)
-
-        if normalize:
-            out = F.normalize(out, p=2, dim=-1)
-
-        return out
-
-
-class MultiPrototypeLabelPooling(nn.Module):
-    """
-    K independent prototype embeddings per label using shared cross-attention.
-
-    Each prototype has its own learnable query set and output projection,
-    but shares the cross-attention weights for parameter efficiency.
-    This lets the model represent intra-class variation (e.g., fast/slow walking,
-    different sensor placements, different people).
-
-    Returns K embeddings per label, each capturing a different aspect.
-    """
-
-    def __init__(
-        self,
-        d_model: int = 384,
-        num_heads: int = 4,
-        num_queries: int = 4,
-        num_prototypes: int = 3,
-        dropout: float = 0.1
-    ):
-        super().__init__()
-
-        self.d_model = d_model
-        self.num_queries = num_queries
-        self.num_prototypes = num_prototypes
-
-        # K independent query sets: (K, num_queries, d_model)
-        self.queries = nn.Parameter(
-            torch.randn(num_prototypes, num_queries, d_model) / math.sqrt(d_model)
-        )
-
-        # Shared cross-attention (weight sharing across prototypes — parameter efficient)
-        self.cross_attn = nn.MultiheadAttention(
-            embed_dim=d_model,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
-        )
-
-        self.norm = nn.LayerNorm(d_model)
-
-        # K independent output projections (each prototype gets its own)
-        self.out_projs = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(d_model * num_queries, d_model),
-                nn.GELU(),
-                nn.Linear(d_model, d_model)
-            ) for _ in range(num_prototypes)
-        ])
-
-        # Small init for stable training
-        for proj in self.out_projs:
-            nn.init.normal_(proj[2].weight, std=0.01)
-            nn.init.zeros_(proj[2].bias)
-
-    def forward(
-        self,
-        token_embeddings: torch.Tensor,
-        attention_mask: torch.Tensor,
-        normalize: bool = True
-    ) -> torch.Tensor:
-        """
-        Pool tokens to K prototype embeddings via learned attention.
-
-        Args:
-            token_embeddings: (batch, seq_len, d_model)
-            attention_mask: (batch, seq_len) bool
-            normalize: L2 normalize output
-
-        Returns:
-            embeddings: (batch, K, d_model)
-        """
-        B = token_embeddings.shape[0]
-        K = self.num_prototypes
-        key_padding_mask = ~attention_mask.bool()  # True = ignore
-
-        prototype_embeddings = []
-        for k in range(K):
-            # Expand queries for batch: (num_queries, d_model) -> (B, num_queries, d_model)
-            queries_k = self.queries[k].unsqueeze(0).expand(B, -1, -1)
-
-            # Shared cross-attention
-            attn_out, _ = self.cross_attn(
-                query=queries_k,
-                key=token_embeddings,
-                value=token_embeddings,
-                key_padding_mask=key_padding_mask,
-                need_weights=False
-            )
-            attn_out = self.norm(attn_out)
-
-            # Combine queries: (B, num_queries, d_model) -> (B, d_model)
-            pooled = attn_out.reshape(B, -1)
-            out = self.out_projs[k](pooled)
-
-            # Add residual from mean of queries
-            out = out + attn_out.mean(dim=1)
-
-            if normalize:
-                out = F.normalize(out, p=2, dim=-1)
-
-            prototype_embeddings.append(out)
-
-        # Stack: (B, K, d_model)
-        return torch.stack(prototype_embeddings, dim=1)
-
-
 class ChannelTextFusion(nn.Module):
     """
     Efficient per-channel text fusion with broadcast to patches.
@@ -444,9 +245,14 @@ class ChannelTextFusion(nn.Module):
 
 class LearnableLabelBank(nn.Module):
     """
-    Drop-in replacement for LabelBank with learnable attention pooling.
+    Frozen mean-pool label encoder (no trainable parameters).
 
-    Same API as LabelBank but with trainable parameters for label refinement.
+    V2 uses frozen mean-pool exclusively: the label embedding is the mean of the
+    frozen SBERT token embeddings. The former learnable-attention / multi-prototype
+    pooling was removed — the repo ablation showed frozen mean-pool beats it by
+    ~5.8pp on unseen-vocab zero-shot (LiT: adapting the strong frozen text tower on
+    a small dataset overspecializes it to the train labels). The class name is kept
+    for API compatibility with existing callers.
     """
 
     def __init__(
@@ -454,80 +260,23 @@ class LearnableLabelBank(nn.Module):
         model_name: str = 'all-MiniLM-L6-v2',
         device: Optional[torch.device] = None,
         d_model: int = 384,
-        num_heads: int = 4,
-        num_queries: int = 4,
-        num_prototypes: int = 1,
-        dropout: float = 0.1,
-        use_mean_pooling: bool = False,  # Ablation: use mean pooling instead of learned attention
+        dropout: float = 0.1,  # accepted-but-unused (no trainable pooling)
         text_encoder: Optional['TokenTextEncoder'] = None  # Share with model to save ~100MB GPU
     ):
         super().__init__()
         self.device = device if device else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.d_model = d_model
-        self.use_mean_pooling = use_mean_pooling
-        self.num_prototypes = num_prototypes
-
         self.text_encoder = text_encoder if text_encoder is not None else TokenTextEncoder(model_name=model_name)
 
-        if use_mean_pooling:
-            # No learnable pooling - use mean pooling like default SentenceBERT
-            self.pooling = None
-            print("LearnableLabelBank: Using MEAN POOLING (no learnable parameters)")
-        elif num_prototypes > 1:
-            self.pooling = MultiPrototypeLabelPooling(
-                d_model=d_model,
-                num_heads=num_heads,
-                num_queries=num_queries,
-                num_prototypes=num_prototypes,
-                dropout=dropout
-            )
-            self.pooling = self.pooling.to(self.device)
-            print(f"LearnableLabelBank: Using {num_prototypes} prototypes per label")
-        else:
-            self.pooling = LabelAttentionPooling(
-                d_model=d_model,
-                num_heads=num_heads,
-                num_queries=num_queries,
-                dropout=dropout
-            )
-            # Move pooling to device
-            self.pooling = self.pooling.to(self.device)
-
     def encode(self, label_texts: List[str], normalize: bool = True) -> torch.Tensor:
-        """
-        Encode labels - same API as LabelBank.encode().
-
-        Args:
-            label_texts: List of label strings
-            normalize: L2 normalize output
-
-        Returns:
-            embeddings: (batch, d_model) when num_prototypes=1
-                        (batch, K, d_model) when num_prototypes > 1
-        """
-        tokens, mask = self.text_encoder.encode(label_texts, self.device)
-
-        if self.use_mean_pooling:
-            return self._mean_pool(tokens, mask, normalize)
-        else:
-            return self.pooling(tokens, mask, normalize)
-
-    def encode_frozen(self, label_texts: List[str], normalize: bool = True) -> torch.Tensor:
-        """
-        Encode labels using frozen mean-pooling only (no learnable parameters).
-
-        Used for computing soft targets that can't be gamed by the learnable label bank.
-        The frozen SBERT token embeddings are mean-pooled without any learnable attention.
-
-        Args:
-            label_texts: List of label strings
-            normalize: L2 normalize output
-
-        Returns:
-            embeddings: (batch, text_dim) — frozen SBERT dimension, not d_model
-        """
+        """Encode labels via frozen mean-pool. Returns (batch, d_model)."""
         tokens, mask = self.text_encoder.encode(label_texts, self.device)
         return self._mean_pool(tokens, mask, normalize)
+
+    def encode_frozen(self, label_texts: List[str], normalize: bool = True) -> torch.Tensor:
+        """Alias for encode() — kept for callers that compute soft targets from the
+        frozen mean-pool (now identical to the main path)."""
+        return self.encode(label_texts, normalize)
 
     @staticmethod
     def _mean_pool(tokens: torch.Tensor, mask: torch.Tensor, normalize: bool) -> torch.Tensor:
@@ -549,8 +298,6 @@ class LearnableLabelBank(nn.Module):
     def to(self, device):
         """Move to device."""
         self.device = device
-        if self.pooling is not None:
-            self.pooling = self.pooling.to(device)
         return self
 
 
@@ -568,11 +315,10 @@ def test_modules():
     print(f"   Input: {len(texts)} texts")
     print(f"   Output: tokens {tokens.shape}, mask {mask.shape}")
 
-    # 2. LabelAttentionPooling
-    print("\n2. LabelAttentionPooling")
-    pooling = LabelAttentionPooling().to(device)
-    emb = pooling(tokens, mask)
-    print(f"   Input: {tokens.shape}")
+    # 2. LearnableLabelBank (frozen mean-pool)
+    print("\n2. LearnableLabelBank (frozen mean-pool)")
+    label_bank = LearnableLabelBank(text_encoder=encoder, device=device)
+    emb = label_bank.encode(["walking", "sitting"])
     print(f"   Output: {emb.shape}")
     print(f"   Normalized: {torch.allclose(emb.norm(dim=-1), torch.ones(2, device=device))}")
 
@@ -595,20 +341,14 @@ def test_modules():
     print(f"   Sensor: {sensor.shape}")
     print(f"   Fused: {fused.shape}")
 
-    # 4. LearnableLabelEncoder
-    print("\n4. LearnableLabelEncoder")
-    label_enc = LearnableLabelEncoder().to(device)
-
+    # 4. LearnableLabelBank (frozen mean-pool)
+    print("\n4. LearnableLabelBank (frozen mean-pool)")
+    label_enc = LearnableLabelBank(text_encoder=encoder, device=device)
     labels = ["walking", "running", "sitting"]
-    emb = label_enc.encode(labels, device=device)
+    emb = label_enc.encode(labels)
     print(f"   Labels: {labels}")
     print(f"   Embeddings: {emb.shape}")
-
-    # Check gradient flow
-    loss = emb.sum()
-    loss.backward()
-    has_grad = any(p.grad is not None for p in label_enc.pooling.parameters())
-    print(f"   Pooling has gradients: {has_grad}")
+    print(f"   Trainable params: {sum(p.numel() for p in label_enc.parameters() if p.requires_grad)}")
 
     print("\n" + "="*50)
     print("ALL TESTS PASSED!")

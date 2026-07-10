@@ -90,9 +90,7 @@ class TestComputeGroupAccuracy:
 
         # Use real label bank for encoding
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        label_bank = LearnableLabelBank(
-            num_heads=4, num_queries=4, num_prototypes=1, device=device
-        )
+        label_bank = LearnableLabelBank(device=device)
         label_bank.train(False)
 
         # Encode labels to get their text embeddings
@@ -115,9 +113,7 @@ class TestComputeGroupAccuracy:
         from model.token_text_encoder import LearnableLabelBank
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        label_bank = LearnableLabelBank(
-            num_heads=4, num_queries=4, num_prototypes=1, device=device
-        )
+        label_bank = LearnableLabelBank(device=device)
         label_bank.train(False)
 
         test_labels = ['walking', 'sitting']

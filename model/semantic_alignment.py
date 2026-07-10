@@ -176,105 +176,6 @@ class CrossChannelFusion(nn.Module):
         return out
 
 
-class TemporalAttention(nn.Module):
-    """
-    Temporal attention over patches using standard transformer encoder.
-    """
-
-    def __init__(
-        self,
-        d_model: int,
-        num_heads: int = 8,
-        num_layers: int = 2,
-        dim_feedforward: int = 2048,
-        dropout: float = 0.1
-    ):
-        """
-        Args:
-            d_model: Feature dimension
-            num_heads: Number of attention heads
-            num_layers: Number of transformer layers
-            dim_feedforward: Dimension of feedforward network
-            dropout: Dropout rate
-        """
-        super().__init__()
-
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model,
-            nhead=num_heads,
-            dim_feedforward=dim_feedforward,
-            dropout=dropout,
-            activation='gelu',
-            batch_first=True,
-            norm_first=True  # Pre-norm for better training stability
-        )
-
-        self.transformer = nn.TransformerEncoder(
-            encoder_layer,
-            num_layers=num_layers
-        )
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        patch_mask: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
-        """
-        Args:
-            x: Input features (batch, patches, d_model)
-            patch_mask: Optional mask for padding patches (batch, patches)
-                       True = valid, False = padding
-
-        Returns:
-            Attended features (batch, patches, d_model)
-        """
-        # Convert mask format if provided (True = ignore for transformer)
-        src_key_padding_mask = ~patch_mask if patch_mask is not None else None
-
-        return self.transformer(x, src_key_padding_mask=src_key_padding_mask)
-
-
-class MultiQueryPooling(nn.Module):
-    """
-    Pools a sequence to a single vector using multi-query attention.
-
-    Thin wrapper around MultiQueryAttention for API compatibility.
-    """
-
-    def __init__(
-        self,
-        d_model: int,
-        num_queries: int = 4,
-        num_heads: int = 8,
-        dropout: float = 0.1,
-        use_self_attention: bool = True
-    ):
-        super().__init__()
-        self.num_queries = num_queries
-
-        self.attention = MultiQueryAttention(
-            d_model=d_model,
-            num_queries=num_queries,
-            num_heads=num_heads,
-            dropout=dropout,
-            use_self_attention=use_self_attention
-        )
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        mask: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
-        """
-        Args:
-            x: Input (batch, seq_len, d_model)
-            mask: Optional mask (batch, seq_len), True=valid
-
-        Returns:
-            Pooled (batch, d_model)
-        """
-        out, _ = self.attention(x, mask)
-        return out
 
 
 class ProjectionHead(nn.Module):
@@ -353,36 +254,31 @@ class SemanticAlignmentHead(nn.Module):
         d_model: int,
         d_model_fused: int = 256,
         output_dim: int = 256,
-        num_temporal_layers: int = 2,
         num_heads: int = 8,
-        dim_feedforward: int = 1024,
         dropout: float = 0.1,
         num_fusion_queries: int = 4,
         use_fusion_self_attention: bool = True,
-        num_pool_queries: int = 4,
-        use_pool_self_attention: bool = True,
-        per_patch_prediction: bool = False
     ):
         """
         Args:
             d_model: Input dimension per channel from encoder
             d_model_fused: Dimension after cross-channel fusion
             output_dim: Final embedding dimension
-            num_temporal_layers: Number of temporal attention layers
             num_heads: Number of attention heads
-            dim_feedforward: Feedforward dimension
             dropout: Dropout rate
             num_fusion_queries: Number of query tokens for channel fusion
             use_fusion_self_attention: Whether fusion queries coordinate via self-attention
-            num_pool_queries: Number of query tokens for temporal pooling
-            use_pool_self_attention: Whether pooling queries coordinate via self-attention
-            per_patch_prediction: If True, each patch independently produces an embedding
-                via the projection head (skipping temporal attention and pooling).
-                Output shape becomes (batch, patches, output_dim) instead of (batch, output_dim).
+
+        The head is per-patch only: each patch independently produces a contrastive
+        embedding (majority-voted at inference). Output shape is
+        (batch, patches, output_dim). The former session-level head (temporal
+        attention -> multi-query pooling) was removed in V2.
         """
         super().__init__()
         self.output_dim = output_dim
-        self.per_patch_prediction = per_patch_prediction
+        # Per-patch prediction is the only mode (kept as a constant attribute for the
+        # callers that still branch on it; the session-level head was removed in V2).
+        self.per_patch_prediction = True
 
         # Multi-query channel fusion: fuses all channels into one vector per patch
         self.cross_channel_fusion = CrossChannelFusion(
@@ -393,26 +289,6 @@ class SemanticAlignmentHead(nn.Module):
             num_queries=num_fusion_queries,
             use_self_attention=use_fusion_self_attention
         )
-
-        # Session-level head (temporal attention -> multi-query pooling) is only
-        # used when per_patch_prediction=False. The headline small_deep config is
-        # per-patch, so we do NOT construct these ~9.3M params there. Checkpoints
-        # that still carry them load fine (strict=False ignores the extra keys).
-        if not per_patch_prediction:
-            self.temporal_attention = TemporalAttention(
-                d_model=d_model_fused,
-                num_heads=num_heads,
-                num_layers=num_temporal_layers,
-                dim_feedforward=dim_feedforward,
-                dropout=dropout
-            )
-            self.attention_pooling = MultiQueryPooling(
-                d_model=d_model_fused,
-                num_queries=num_pool_queries,
-                num_heads=num_heads,
-                dropout=dropout,
-                use_self_attention=use_pool_self_attention
-            )
 
         self.projection_head = ProjectionHead(
             input_dim=d_model_fused,
@@ -454,15 +330,8 @@ class SemanticAlignmentHead(nn.Module):
         # Cross-channel fusion: (batch, patches, channels, d_model) -> (batch, patches, d_model_fused)
         fused = self.cross_channel_fusion(encoder_output, channel_mask)
 
-        if self.per_patch_prediction:
-            # Per-patch: each patch independently produces an embedding
-            B, P, d_f = fused.shape
-            projected = self.projection_head(fused.reshape(B * P, d_f), normalize=normalize)
-            return projected.reshape(B, P, -1)  # (batch, patches, output_dim)
-        else:
-            # Session-level: temporal attention → pooling → single embedding
-            temporal = self.temporal_attention(fused, patch_mask)  # (batch, patches, d_model_fused)
-            pooled = self.attention_pooling(temporal, patch_mask)  # (batch, d_model_fused)
-            embedding = self.projection_head(pooled, normalize=normalize)  # (batch, output_dim)
-            return embedding
+        # Per-patch: each patch independently produces an embedding.
+        B, P, d_f = fused.shape
+        projected = self.projection_head(fused.reshape(B * P, d_f), normalize=normalize)
+        return projected.reshape(B, P, -1)  # (batch, patches, output_dim)
 

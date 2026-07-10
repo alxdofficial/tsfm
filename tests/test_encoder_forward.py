@@ -35,7 +35,8 @@ def encoder(device):
         num_temporal_layers=2,
         dim_feedforward=512,
         dropout=0.0,  # No dropout for deterministic tests
-        target_patch_size=64,
+        feature_extractor_type='physical_filterbank',
+        dft_size=64,  # patches in these tests are length 64
     ).to(device)
     enc.train(False)
     return enc
@@ -47,9 +48,7 @@ def head(device):
         d_model=128,
         d_model_fused=256,
         output_dim=384,
-        num_temporal_layers=2,
         num_heads=8,
-        dim_feedforward=1024,
         dropout=0.0,
     ).to(device)
     h.train(False)
@@ -63,7 +62,7 @@ class TestEncoderForwardPass:
         B, P, T, C = 2, 5, 64, 9
         patches = torch.randn(B, P, T, C, device=device)
         with torch.no_grad():
-            output = encoder(patches)
+            output = encoder(patches, sampling_rate_hz=50.0, patch_len_samples=64)
         assert output.shape == (B, P, C, 128)
 
     def test_different_channel_counts(self, encoder, device):
@@ -71,7 +70,7 @@ class TestEncoderForwardPass:
         for C in [3, 6, 9, 12]:
             patches = torch.randn(1, 3, 64, C, device=device)
             with torch.no_grad():
-                output = encoder(patches)
+                output = encoder(patches, sampling_rate_hz=50.0, patch_len_samples=64)
             assert output.shape == (1, 3, C, 128), f"Failed for C={C}"
 
     def test_different_patch_counts(self, encoder, device):
@@ -79,20 +78,23 @@ class TestEncoderForwardPass:
         for P in [1, 5, 10, 20]:
             patches = torch.randn(1, P, 64, 6, device=device)
             with torch.no_grad():
-                output = encoder(patches)
+                output = encoder(patches, sampling_rate_hz=50.0, patch_len_samples=64)
             assert output.shape == (1, P, 6, 128), f"Failed for P={P}"
 
     def test_no_nan_in_output(self, encoder, device):
         patches = torch.randn(2, 5, 64, 9, device=device)
         with torch.no_grad():
-            output = encoder(patches)
+            output = encoder(patches, sampling_rate_hz=50.0, patch_len_samples=64)
         assert not torch.isnan(output).any(), "Encoder output contains NaN"
 
     def test_gradient_flow(self, device):
         """Verify gradients flow from loss to input."""
-        enc = IMUActivityRecognitionEncoder(d_model=128, num_temporal_layers=2).to(device)
+        enc = IMUActivityRecognitionEncoder(
+            d_model=128, num_temporal_layers=2,
+            feature_extractor_type='physical_filterbank', dft_size=64,
+        ).to(device)
         patches = torch.randn(2, 3, 64, 6, device=device, requires_grad=True)
-        output = enc(patches)
+        output = enc(patches, sampling_rate_hz=50.0, patch_len_samples=64)
         loss = output.sum()
         loss.backward()
         assert patches.grad is not None
@@ -105,14 +107,15 @@ class TestSemanticHeadOutput:
     def test_output_shape_384(self, encoder, head, device):
         patches = torch.randn(2, 5, 64, 9, device=device)
         with torch.no_grad():
-            enc_out = encoder(patches)
+            enc_out = encoder(patches, sampling_rate_hz=50.0, patch_len_samples=64)
             embedding = head(enc_out)
-        assert embedding.shape == (2, 384)
+        # per-patch head: (batch, patches, output_dim)
+        assert embedding.shape == (2, 5, 384)
 
     def test_output_is_normalized(self, encoder, head, device):
         patches = torch.randn(2, 5, 64, 9, device=device)
         with torch.no_grad():
-            enc_out = encoder(patches)
+            enc_out = encoder(patches, sampling_rate_hz=50.0, patch_len_samples=64)
             embedding = head(enc_out)
         norms = embedding.norm(dim=-1)
         assert torch.allclose(norms, torch.ones_like(norms), atol=1e-5)
@@ -129,8 +132,9 @@ class TestMaskBehavior:
         mask[:, 5:] = False  # Last 3 patches are padding
 
         with torch.no_grad():
-            output_masked = encoder(patches, patch_attention_mask=mask)
-            output_no_mask = encoder(patches)
+            output_masked = encoder(patches, patch_attention_mask=mask,
+                                    sampling_rate_hz=50.0, patch_len_samples=64)
+            output_no_mask = encoder(patches, sampling_rate_hz=50.0, patch_len_samples=64)
 
         # Valid patches (0-4) should differ between masked and unmasked runs
         # because the transformer attention changes when padding is introduced
@@ -149,37 +153,25 @@ class TestMaskBehavior:
         mae_mask[:, :3] = True  # First 3 patches are MAE-masked
 
         with torch.no_grad():
-            output_masked = encoder(patches, mae_mask=mae_mask)
+            output_masked = encoder(patches, mae_mask=mae_mask,
+                                    sampling_rate_hz=50.0, patch_len_samples=64)
 
         # Main check: no NaN
         assert not torch.isnan(output_masked).any()
 
 
-class TestMultiPrototypeLabelBank:
-    """Test multi-prototype label bank encoding."""
+class TestLabelBank:
+    """Test frozen mean-pool label bank encoding."""
 
-    def test_k1_shape(self, device):
-        bank = LearnableLabelBank(
-            num_heads=4, num_queries=4, num_prototypes=1, device=device
-        )
+    def test_encode_shape(self, device):
+        bank = LearnableLabelBank(device=device)
         bank.train(False)
         with torch.no_grad():
             emb = bank.encode(['walking', 'running', 'sitting'])
         assert emb.shape == (3, 384)
 
-    def test_k3_shape(self, device):
-        bank = LearnableLabelBank(
-            num_heads=4, num_queries=4, num_prototypes=3, device=device
-        )
-        bank.train(False)
-        with torch.no_grad():
-            emb = bank.encode(['walking', 'running', 'sitting'])
-        assert emb.shape == (3, 3, 384)
-
-    def test_k3_normalized(self, device):
-        bank = LearnableLabelBank(
-            num_heads=4, num_queries=4, num_prototypes=3, device=device
-        )
+    def test_encode_normalized(self, device):
+        bank = LearnableLabelBank(device=device)
         bank.train(False)
         with torch.no_grad():
             emb = bank.encode(['walking', 'running'], normalize=True)
@@ -187,13 +179,10 @@ class TestMultiPrototypeLabelBank:
         assert torch.allclose(norms, torch.ones_like(norms), atol=1e-5)
 
     def test_different_labels_produce_different_embeddings(self, device):
-        bank = LearnableLabelBank(
-            num_heads=4, num_queries=4, num_prototypes=1, device=device
-        )
+        bank = LearnableLabelBank(device=device)
         bank.train(False)
         with torch.no_grad():
             emb = bank.encode(['walking', 'sitting'])
-        # Different activities should have different embeddings
         cos_sim = torch.dot(emb[0], emb[1]).item()
         assert cos_sim < 0.99, f"Different labels too similar: cos_sim={cos_sim}"
 

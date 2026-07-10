@@ -180,7 +180,6 @@ class IMUPretrainingDataset(Dataset):
         target_patch_size: Optional[int] = None,  # If set, preprocess patches in DataLoader (faster training)
         dft_size: Optional[int] = None,  # If set, FILTERBANK mode: zero-pad native patches to S (no interp), carry true N
         max_patches_per_sample: int = 48,  # Max patches per sample (only used when target_patch_size is set)
-        use_rotation_augmentation: bool = False,  # DEPRECATED: use aug_config
         use_signal_augmentation: bool = True,  # DEPRECATED: use aug_config (jitter+scale fallback)
         use_text_augmentation: bool = True,  # Label synonyms/templates + Hz/window suffix
         aug_config: Optional["AugmentationConfig"] = None,  # V2 unified augmentation config
@@ -232,7 +231,6 @@ class IMUPretrainingDataset(Dataset):
         self.dft_size = dft_size
         self.filterbank_mode = dft_size is not None
         self.max_patches_per_sample = max_patches_per_sample
-        self.use_rotation_augmentation = use_rotation_augmentation
         self.use_signal_augmentation = use_signal_augmentation
         self.use_text_augmentation = use_text_augmentation
 
@@ -577,8 +575,7 @@ class IMUPretrainingDataset(Dataset):
                     data=data,
                     sampling_rate_hz=sampling_rate,
                     patch_size_sec=actual_patch_size,
-                    target_patch_size=self.target_patch_size,
-                    pad_to_size=self.dft_size,  # filterbank: zero-pad to S; None = legacy interpolation
+                    pad_to_size=self.dft_size,  # filterbank: zero-pad native patches to S
                 )
             except ValueError:
                 # Session too short for this patch size — use full session as one patch
@@ -587,7 +584,6 @@ class IMUPretrainingDataset(Dataset):
                     data=data,
                     sampling_rate_hz=sampling_rate,
                     patch_size_sec=actual_patch_size,
-                    target_patch_size=self.target_patch_size,
                     pad_to_size=self.dft_size,
                 )
 

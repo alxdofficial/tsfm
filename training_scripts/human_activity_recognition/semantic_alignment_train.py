@@ -35,7 +35,6 @@ from model.token_text_encoder import (
 )
 from training_scripts.human_activity_recognition.semantic_loss import SemanticAlignmentLoss
 from val_scripts.human_activity_recognition.plot_utils import TrainingPlotter, EmbeddingVisualizer
-from training_scripts.human_activity_recognition.memory_bank import MemoryBank
 from val_scripts.human_activity_recognition.evaluation_metrics import compute_group_accuracy, compute_group_accuracy_majority_vote
 import random
 from typing import Tuple, Optional, List
@@ -227,11 +226,8 @@ ATTENTION_SINK = _cfg.get("attention_sink", True)
 # Semantic alignment head
 D_MODEL_FUSED = _cfg["d_model_fused"]
 SEMANTIC_DIM = _cfg["semantic_dim"]
-NUM_SEMANTIC_TEMPORAL_LAYERS = _cfg["num_semantic_temporal_layers"]
 NUM_FUSION_QUERIES = _cfg["num_fusion_queries"]
 USE_FUSION_SELF_ATTENTION = _cfg["use_fusion_self_attention"]
-NUM_POOL_QUERIES = _cfg["num_pool_queries"]
-USE_POOL_SELF_ATTENTION = _cfg["use_pool_self_attention"]
 
 # Text encoder (for channel positional encoding — must match d_model)
 SENTENCE_BERT_MODEL = _cfg["sentence_bert_model"]
@@ -244,13 +240,11 @@ TEXT_DIM = _cfg.get("text_dim", D_MODEL)  # Text encoder output dim (may differ 
 CONTRASTIVE_TEXT_MODEL = _cfg.get("contrastive_text_model", SENTENCE_BERT_MODEL)
 CONTRASTIVE_TEXT_DIM = _cfg.get("contrastive_text_dim", TEXT_DIM)
 
-# Label bank
-LABEL_BANK_NUM_HEADS = _cfg["label_bank_num_heads"]
-LABEL_BANK_NUM_QUERIES = _cfg["label_bank_num_queries"]
-LABEL_BANK_NUM_PROTOTYPES = _cfg["label_bank_num_prototypes"]
+# Label bank: frozen mean-pool only (no config knobs).
 
-# Per-patch prediction (each patch predicts independently; majority vote at inference)
-PER_PATCH_PREDICTION = _cfg.get("per_patch_prediction", False)
+# Per-patch prediction is the only supported V2 mode: each patch predicts
+# independently and is majority-voted at inference (the session-level head was removed).
+PER_PATCH_PREDICTION = True
 
 # Training configuration
 OUTPUT_DIR = "training_output/semantic_alignment"  # Note: plots go to semantic_alignment/<timestamp>/plots/
@@ -275,8 +269,6 @@ LEARNING_RATE = float(os.environ.get("TSFM_LR", "8e-5"))  # Scaled down for medi
 TEMPERATURE = 0.07             # CLIP default
 WEIGHT_DECAY = 1e-5
 USE_GRAD_CACHE = os.environ.get("TSFM_GRAD_CACHE", "0") == "1"  # Off for small_deep, on for medium+
-USE_MEMORY_BANK = os.environ.get("TSFM_MEMORY_BANK", "0") == "1"
-MEMORY_BANK_SIZE = int(os.environ.get("TSFM_MEMORY_BANK_SIZE", "512"))
 USE_GRADIENT_CHECKPOINTING = os.environ.get("TSFM_GRAD_CHECKPOINT", "0") == "1"
 
 TARGET_EFFECTIVE_BATCH = BATCH_SIZE * ACCUMULATION_STEPS  # e.g. 512
@@ -347,14 +339,10 @@ DEBUG_METRIC_FREQUENCY = 50  # Compute expensive debug metrics every N batches (
 # Example: ABLATION_CHANNEL_TEXT_FUSION=0 python semantic_alignment_train.py
 # =================================================================
 ABLATION_CHANNEL_TEXT_FUSION = os.environ.get("ABLATION_CHANNEL_TEXT_FUSION", "1") == "1"
-ABLATION_LEARNABLE_LABEL_BANK = os.environ.get("ABLATION_LEARNABLE_LABEL_BANK", "0") == "1"
 ABLATION_SOFT_TARGETS = os.environ.get("ABLATION_SOFT_TARGETS", "1") == "1"
 ABLATION_SIGNAL_AUG = os.environ.get("ABLATION_SIGNAL_AUG", "1") == "1"
 ABLATION_TEXT_AUG = os.environ.get("ABLATION_TEXT_AUG", "1") == "1"
 
-# Derived from ablation flags (backward compat with existing code paths)
-USE_MEAN_POOLING = not ABLATION_LEARNABLE_LABEL_BANK  # Mean pooling when label bank disabled
-FREEZE_LABEL_BANK = False  # Only used with learnable label bank
 if not ABLATION_SOFT_TARGETS:
     USE_SOFT_TARGETS = False
 
@@ -367,13 +355,12 @@ USE_GROUP_BALANCED_SAMPLING = True  # Default: enable group-balanced sampling
 # During training, randomly sample patch sizes from valid ranges per dataset
 # Ranges are constrained by session duration (need ≥2 patches per session)
 USE_PATCH_SIZE_AUGMENTATION = True  # Enable patch size augmentation for better generalization
-USE_ROTATION_AUGMENTATION = False  # DEPRECATED (superseded by AUG_CONFIG.yaw_rotation)
 
 # =================================================================
 # Signal augmentation curriculum — SINGLE SOURCE OF TRUTH.
 # Every augmentation is switched on/off + tuned here; AUG_CONFIG.summary() prints
 # the active set at startup. Preset via TSFM_AUG_PRESET = v2 | legacy | none:
-#   v2     -> P1-P4 (gravity-remove, yaw-only rotation, anti-aliased rate,
+#   v2     -> P1-P4 (gravity-remove, SO(3) rotation, anti-aliased rate,
 #             channel dropout) + jitter + scale        [default]
 #   legacy -> jitter + scale only (pre-V2 behaviour)
 #   none   -> no signal augmentation
@@ -741,7 +728,7 @@ class SemanticAlignmentModel(nn.Module):
 
 
 
-def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_queue=None):
+def compute_debug_metrics(imu_embeddings, text_embeddings):
     """
     Compute debug metrics for diagnosing training issues.
 
@@ -756,8 +743,6 @@ def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_
     # Convert to fp32 for all operations (mixed precision compatibility)
     imu_embeddings = imu_embeddings.float()
     text_embeddings = text_embeddings.float()
-    if imu_queue is not None:
-        imu_queue = imu_queue.float()
 
     batch_size = imu_embeddings.shape[0]
     debug_metrics = {}
@@ -774,91 +759,7 @@ def compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue=None, text_
     else:
         debug_metrics['imu_diversity'] = 0.0
 
-    # 2. Memory Bank Quality (if queue provided)
-    if imu_queue is not None and len(imu_queue) > 0:
-        # Queue diversity
-        queue_sample = imu_queue[:min(100, len(imu_queue))]
-        debug_metrics['queue_diversity'] = torch.pdist(queue_sample).mean().item()
-
     return debug_metrics
-
-
-def warmup_memory_bank(model, label_bank, dataloader, memory_bank, device, num_batches=None):
-    """
-    Warmup memory bank by filling the queue with embeddings before training.
-    
-    This reduces volatility in early training by ensuring the queue has diverse
-    negatives from the start, rather than being filled with zeros or early
-    low-quality embeddings.
-    
-    Args:
-        model: The semantic alignment model
-        label_bank: LabelBank for encoding text labels
-        dataloader: Training dataloader
-        memory_bank: MemoryBank instance to fill
-        device: Device to run on
-        num_batches: Number of batches to use (None = fill entire queue)
-    """
-    if memory_bank is None:
-        return
-    
-    print(f"\nWarming up memory bank (queue_size={memory_bank.queue_size})...")
-    model.eval()  # Eval mode during warmup (no training)
-    label_bank.eval()
-    
-    # Calculate how many batches needed to fill queue
-    if num_batches is None:
-        batch_size = dataloader.batch_size or DEFAULT_MICRO_BATCH_SIZE  # batch_size is None with batch_sampler
-        num_batches = math.ceil(memory_bank.queue_size / batch_size)
-    
-    num_batches = min(num_batches, len(dataloader))
-    
-    with torch.no_grad():
-        for batch_idx, batch in enumerate(dataloader):
-            if batch_idx >= num_batches:
-                break
-
-            patches = batch['patches'].to(device)
-            channel_mask = batch['channel_mask'].to(device)
-            patch_mask = batch['patch_mask'].to(device)
-            label_texts = batch['label_texts']
-            metadata = batch['metadata']
-
-            channel_descriptions = [m['channel_descriptions'] for m in metadata]
-
-            # Encode text embeddings
-            text_embeddings = label_bank.encode(label_texts, normalize=True)
-
-            # Forward pass (no gradients)
-            imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask, metadata=metadata)
-
-            if PER_PATCH_PREDICTION:
-                flat_imu, flat_text, _ = flatten_per_patch_embeddings(
-                    imu_embeddings, patch_mask, label_texts, text_embeddings
-                )
-                if flat_text.dim() == 3:
-                    sims = torch.einsum('bd,bkd->bk', flat_imu, flat_text)
-                    flat_text = flat_text[torch.arange(flat_text.shape[0]), sims.argmax(1)]
-                memory_bank.update(flat_imu, flat_text)
-            else:
-                # For multi-prototype: store the winning prototype (nearest to IMU)
-                text_for_queue = text_embeddings
-                if text_for_queue.dim() == 3:
-                    sims = torch.einsum('bd,bkd->bk', imu_embeddings, text_for_queue)
-                    best_idx = sims.argmax(dim=1)
-                    text_for_queue = text_for_queue[torch.arange(text_for_queue.shape[0]), best_idx]
-                memory_bank.update(imu_embeddings, text_for_queue)
-            
-            # Print progress
-            filled = min((batch_idx + 1) * len(label_texts), memory_bank.queue_size)
-            print(f"  Batch {batch_idx + 1}/{num_batches}: Queue filled {filled}/{memory_bank.queue_size} "
-                  f"({100 * filled / memory_bank.queue_size:.1f}%)")
-    
-    print(f"✓ Memory bank warmup complete ({len(memory_bank)} embeddings)")
-    
-    # Return model to training mode if it wasn't frozen
-    if not FREEZE_ENCODER:
-        model.train()
 
 
 def flatten_per_patch_embeddings(patch_embeddings, patch_mask, label_texts, text_embeddings):
@@ -908,8 +809,6 @@ def _compute_per_layer_grad_norms(model, criterion=None, label_bank=None):
     # Define components to track (skip frozen encoder components)
     components = {
         'cross_channel_fusion': 'semantic_head.cross_channel_fusion',
-        'temporal_attention': 'semantic_head.temporal_attention',
-        'attention_pooling': 'semantic_head.attention_pooling',
         'projection_head': 'semantic_head.projection_head',
         # Feature extractor branches (SpectralTemporalExtractor)
         'fe_temporal': 'encoder.feature_extractor.temporal',
@@ -951,7 +850,7 @@ def _compute_per_layer_grad_norms(model, criterion=None, label_bank=None):
     return grad_norms
 
 
-def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, device, epoch, scaler, plotter, stage, memory_bank,
+def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, device, epoch, scaler, plotter, stage,
                           _model_and_bank_params, _logit_scale_params):
     """Standard training loop: each micro-batch computes loss independently, gradients accumulated."""
     total_loss = 0.0
@@ -963,10 +862,8 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
     total_imu_std = 0.0
     total_text_std = 0.0
     total_imu_diversity = 0.0
-    total_queue_diversity = 0.0
     total_grad_norms = {
-        'cross_channel_fusion': 0.0, 'temporal_attention': 0.0,
-        'attention_pooling': 0.0, 'projection_head': 0.0,
+        'cross_channel_fusion': 0.0, 'projection_head': 0.0,
         'logit_scale': 0.0, 'label_pooling': 0.0,
         'fe_temporal': 0.0, 'fe_spectral': 0.0,
     }
@@ -993,12 +890,6 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         with torch.no_grad():
             frozen_text = label_bank.encode_frozen(label_texts, normalize=True)
 
-        if memory_bank is not None and USE_MEMORY_BANK:
-            with torch.no_grad():
-                imu_queue, text_queue = memory_bank.get_queue_embeddings(device)
-        else:
-            imu_queue, text_queue = None, None
-
         with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
             imu_embeddings = model(patches, channel_descriptions, channel_mask, patch_mask, metadata=metadata)
 
@@ -1010,11 +901,11 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
                     patch_mask.sum(dim=1).long(), dim=0
                 )[:flat_imu.shape[0]]
                 loss, metrics = criterion(flat_imu, flat_text, flat_labels,
-                                         return_metrics=True, imu_queue=imu_queue, text_queue=text_queue,
+                                         return_metrics=True,
                                          frozen_text_embeddings=flat_frozen)
             else:
                 loss, metrics = criterion(imu_embeddings, text_embeddings, label_texts,
-                                         return_metrics=True, imu_queue=imu_queue, text_queue=text_queue,
+                                         return_metrics=True,
                                          frozen_text_embeddings=frozen_text)
 
         # Dual-forward + in-place offline->online distillation (streaming recipe): the forward
@@ -1042,9 +933,9 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         if batch_idx % DEBUG_METRIC_FREQUENCY == 0:
             with torch.no_grad():
                 if PER_PATCH_PREDICTION:
-                    debug_metrics = compute_debug_metrics(flat_imu, flat_text, imu_queue, text_queue)
+                    debug_metrics = compute_debug_metrics(flat_imu, flat_text)
                 else:
-                    debug_metrics = compute_debug_metrics(imu_embeddings, text_embeddings, imu_queue, text_queue)
+                    debug_metrics = compute_debug_metrics(imu_embeddings, text_embeddings)
 
         if scaler is not None:
             scaler.scale(scaled_loss).backward()
@@ -1085,24 +976,6 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
                     for comp_name, comp_grad_norm in batch_grad_norms.items():
                         plotter.add_scalar(f'batch/debug_{stage}_{comp_name}_grad_norm', comp_grad_norm, global_batch_for_grad)
 
-        if memory_bank is not None and USE_MEMORY_BANK:
-            with torch.no_grad():
-                if PER_PATCH_PREDICTION:
-                    flat_imu_q, flat_text_q, _ = flatten_per_patch_embeddings(
-                        imu_embeddings.detach(), patch_mask, label_texts, text_embeddings.detach()
-                    )
-                    if flat_text_q.dim() == 3:
-                        sims = torch.einsum('bd,bkd->bk', flat_imu_q, flat_text_q)
-                        flat_text_q = flat_text_q[torch.arange(flat_text_q.shape[0]), sims.argmax(1)]
-                    memory_bank.update(flat_imu_q, flat_text_q)
-                else:
-                    text_for_queue = text_embeddings.detach()
-                    if text_for_queue.dim() == 3:
-                        sims = torch.einsum('bd,bkd->bk', imu_embeddings.detach(), text_for_queue)
-                        best_idx = sims.argmax(dim=1)
-                        text_for_queue = text_for_queue[torch.arange(text_for_queue.shape[0]), best_idx]
-                    memory_bank.update(imu_embeddings.detach(), text_for_queue)
-
         batch_loss = metrics['loss']
         if math.isnan(batch_loss):
             datasets_in_batch = [m.get('dataset', 'unknown') for m in metadata]
@@ -1127,8 +1000,6 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
             total_imu_std += debug_metrics['imu_std']
             total_text_std += debug_metrics['text_std']
             total_imu_diversity += debug_metrics['imu_diversity']
-            if 'queue_diversity' in debug_metrics:
-                total_queue_diversity += debug_metrics['queue_diversity']
 
         if is_window_full or is_last_batch:
             should_log_grads_here = (accum_step_count - 1) % DEBUG_METRIC_FREQUENCY == 0
@@ -1165,8 +1036,6 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
                 plotter.add_scalar(f'batch/debug_{stage}_imu_std', debug_metrics['imu_std'], global_batch)
                 plotter.add_scalar(f'batch/debug_{stage}_text_std', debug_metrics['text_std'], global_batch)
                 plotter.add_scalar(f'batch/debug_{stage}_imu_diversity', debug_metrics['imu_diversity'], global_batch)
-                if 'queue_diversity' in debug_metrics:
-                    plotter.add_scalar(f'batch/debug_{stage}_queue_diversity', debug_metrics['queue_diversity'], global_batch)
                 for attn_key in ['cross_channel_attn_entropy', 'cross_channel_attn_entropy_ratio',
                                  'cross_channel_attn_max', 'cross_channel_attn_std']:
                     if attn_key in debug_metrics:
@@ -1185,7 +1054,6 @@ def _train_epoch_standard(model, label_bank, dataloader, criterion, optimizer, d
         'imu_std': total_imu_std / debug_count,
         'text_std': total_text_std / debug_count,
         'imu_diversity': total_imu_diversity / debug_count,
-        'queue_diversity': total_queue_diversity / debug_count if USE_MEMORY_BANK else 0.0,
         **{f'{k}_grad_norm': v / max(num_grad_computations, 1) for k, v in total_grad_norms.items()}
     }
 
@@ -1219,8 +1087,7 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
     total_text_std = 0.0
     total_imu_diversity = 0.0
     total_grad_norms = {
-        'cross_channel_fusion': 0.0, 'temporal_attention': 0.0,
-        'attention_pooling': 0.0, 'projection_head': 0.0,
+        'cross_channel_fusion': 0.0, 'projection_head': 0.0,
         'logit_scale': 0.0, 'label_pooling': 0.0,
         'fe_temporal': 0.0, 'fe_spectral': 0.0,
     }
@@ -1496,12 +1363,11 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
         'imu_std': total_imu_std / debug_metric_count,
         'text_std': total_text_std / debug_metric_count,
         'imu_diversity': total_imu_diversity / debug_metric_count,
-        'queue_diversity': 0.0,
         **{f'{k}_grad_norm': v / max(num_grad_computations, 1) for k, v in total_grad_norms.items()}
     }
 
 
-def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epoch, scaler, plotter=None, stage="stage1", memory_bank=None):
+def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epoch, scaler, plotter=None, stage="stage1"):
     """Train for one epoch. Dispatches to GradCache or standard training loop."""
     model.train()
     label_bank.train()
@@ -1524,7 +1390,7 @@ def train_epoch(model, label_bank, dataloader, criterion, optimizer, device, epo
     else:
         return _train_epoch_standard(
             model, label_bank, dataloader, criterion, optimizer, device,
-            epoch, scaler, plotter, stage, memory_bank,
+            epoch, scaler, plotter, stage,
             _model_and_bank_params, _logit_scale_params
         )
 
@@ -1825,13 +1691,10 @@ def main():
     global IS_FILTERBANK, N_BANDS, F_MIN, F_MAX, TOKENIZER_Q, DFT_SIZE, NYQUIST_MARGIN
     global TOKENIZER_LEARNABLE, TOKENIZER_NORM, USE_AMPLITUDE, USE_DC, USE_RESOLUTION_MASK
     global USE_ROPE, ROPE_MIN_PERIOD, ROPE_MAX_PERIOD
-    global D_MODEL_FUSED, SEMANTIC_DIM, NUM_SEMANTIC_TEMPORAL_LAYERS
+    global D_MODEL_FUSED, SEMANTIC_DIM
     global NUM_FUSION_QUERIES, USE_FUSION_SELF_ATTENTION
-    global NUM_POOL_QUERIES, USE_POOL_SELF_ATTENTION
     global SENTENCE_BERT_MODEL, CHANNEL_TEXT_NUM_HEADS, TEXT_DIM
     global CONTRASTIVE_TEXT_MODEL, CONTRASTIVE_TEXT_DIM
-    global LABEL_BANK_NUM_HEADS, LABEL_BANK_NUM_QUERIES, LABEL_BANK_NUM_PROTOTYPES
-    global PER_PATCH_PREDICTION
 
     local_rank, rank, world_size, use_ddp = setup_ddp()
     device = torch.device(f'cuda:{local_rank}' if torch.cuda.is_available() else 'cpu')
@@ -1892,52 +1755,15 @@ def main():
                 IS_FILTERBANK = FEATURE_EXTRACTOR_TYPE == "physical_filterbank"
                 D_MODEL_FUSED = saved_cfg['d_model_fused']
                 SEMANTIC_DIM = saved_cfg['semantic_dim']
-                NUM_SEMANTIC_TEMPORAL_LAYERS = saved_cfg['num_semantic_temporal_layers']
                 NUM_FUSION_QUERIES = saved_cfg['num_fusion_queries']
                 USE_FUSION_SELF_ATTENTION = saved_cfg['use_fusion_self_attention']
-                NUM_POOL_QUERIES = saved_cfg['num_pool_queries']
-                USE_POOL_SELF_ATTENTION = saved_cfg['use_pool_self_attention']
                 SENTENCE_BERT_MODEL = saved_cfg['sentence_bert_model']
                 CHANNEL_TEXT_NUM_HEADS = saved_cfg['channel_text_num_heads']
                 TEXT_DIM = saved_cfg.get('text_dim', D_MODEL)
                 CONTRASTIVE_TEXT_MODEL = saved_cfg.get('contrastive_text_model', SENTENCE_BERT_MODEL)
                 CONTRASTIVE_TEXT_DIM = saved_cfg.get('contrastive_text_dim', TEXT_DIM)
-                LABEL_BANK_NUM_HEADS = saved_cfg['label_bank_num_heads']
-                LABEL_BANK_NUM_QUERIES = saved_cfg['label_bank_num_queries']
-                LABEL_BANK_NUM_PROTOTYPES = saved_cfg['label_bank_num_prototypes']
-                PER_PATCH_PREDICTION = saved_cfg.get('per_patch_prediction', False)
                 print(f"  ✓ Loaded architecture config from checkpoint (d={D_MODEL}, "
                       f"layers={NUM_TEMPORAL_LAYERS}, sbert={SENTENCE_BERT_MODEL})")
-            elif 'encoder' in resume_hp:
-                # Legacy format (pre-config refactor): read from structured sections
-                enc = resume_hp['encoder']
-                D_MODEL = enc.get('d_model', D_MODEL)
-                NUM_HEADS = enc.get('num_heads', NUM_HEADS)
-                NUM_TEMPORAL_LAYERS = enc.get('num_temporal_layers', NUM_TEMPORAL_LAYERS)
-                DIM_FEEDFORWARD = enc.get('dim_feedforward', DIM_FEEDFORWARD)
-                DROPOUT = enc.get('dropout', DROPOUT)
-                USE_CROSS_CHANNEL = enc.get('use_cross_channel', USE_CROSS_CHANNEL)
-                CNN_CHANNELS = enc.get('cnn_channels', CNN_CHANNELS)
-                CNN_KERNEL_SIZES = enc.get('cnn_kernel_sizes', CNN_KERNEL_SIZES)
-                TARGET_PATCH_SIZE = enc.get('target_patch_size', TARGET_PATCH_SIZE)
-                sem = resume_hp.get('semantic', {})
-                D_MODEL_FUSED = sem.get('d_model_fused', D_MODEL_FUSED)
-                SEMANTIC_DIM = sem.get('semantic_dim', SEMANTIC_DIM)
-                SENTENCE_BERT_MODEL = sem.get('sentence_bert_model', SENTENCE_BERT_MODEL)
-                CONTRASTIVE_TEXT_MODEL = sem.get('contrastive_text_model', SENTENCE_BERT_MODEL)
-                CONTRASTIVE_TEXT_DIM = sem.get('contrastive_text_dim', SEMANTIC_DIM)
-                head = resume_hp.get('semantic_head', {})
-                NUM_SEMANTIC_TEMPORAL_LAYERS = head.get('num_temporal_layers', NUM_SEMANTIC_TEMPORAL_LAYERS)
-                NUM_FUSION_QUERIES = head.get('num_fusion_queries', NUM_FUSION_QUERIES)
-                USE_FUSION_SELF_ATTENTION = head.get('use_fusion_self_attention', USE_FUSION_SELF_ATTENTION)
-                NUM_POOL_QUERIES = head.get('num_pool_queries', NUM_POOL_QUERIES)
-                USE_POOL_SELF_ATTENTION = head.get('use_pool_self_attention', USE_POOL_SELF_ATTENTION)
-                tok = resume_hp.get('token_level_text', {})
-                CHANNEL_TEXT_NUM_HEADS = tok.get('num_heads', CHANNEL_TEXT_NUM_HEADS)
-                LABEL_BANK_NUM_HEADS = tok.get('num_heads', LABEL_BANK_NUM_HEADS)
-                LABEL_BANK_NUM_QUERIES = tok.get('num_queries', LABEL_BANK_NUM_QUERIES)
-                LABEL_BANK_NUM_PROTOTYPES = tok.get('num_prototypes', LABEL_BANK_NUM_PROTOTYPES)
-                print(f"  ✓ Loaded architecture from legacy hyperparameters (d={D_MODEL})")
         else:
             print("  Warning: No hyperparameters.json found, using current script settings")
 
@@ -1970,7 +1796,6 @@ def main():
     # Print ablation configuration
     ablation_flags = {
         'Channel-Text Fusion': ABLATION_CHANNEL_TEXT_FUSION,
-        'Learnable Label Bank': ABLATION_LEARNABLE_LABEL_BANK,
         'Soft Targets': ABLATION_SOFT_TARGETS,
         'Signal Augmentation': ABLATION_SIGNAL_AUG,
         'Text Augmentation': ABLATION_TEXT_AUG,
@@ -2006,13 +1831,8 @@ def main():
         "sentence_bert_model": SENTENCE_BERT_MODEL,
         "contrastive_text_model": CONTRASTIVE_TEXT_MODEL, "contrastive_text_dim": CONTRASTIVE_TEXT_DIM,
         "semantic_dim": SEMANTIC_DIM, "d_model_fused": D_MODEL_FUSED,
-        "num_semantic_temporal_layers": NUM_SEMANTIC_TEMPORAL_LAYERS,
         "num_fusion_queries": NUM_FUSION_QUERIES, "use_fusion_self_attention": USE_FUSION_SELF_ATTENTION,
-        "num_pool_queries": NUM_POOL_QUERIES, "use_pool_self_attention": USE_POOL_SELF_ATTENTION,
         "channel_text_num_heads": CHANNEL_TEXT_NUM_HEADS,
-        "label_bank_num_heads": LABEL_BANK_NUM_HEADS,
-        "label_bank_num_queries": LABEL_BANK_NUM_QUERIES,
-        "label_bank_num_prototypes": LABEL_BANK_NUM_PROTOTYPES,
         "per_patch_prediction": PER_PATCH_PREDICTION,
     }
     hyperparams = {
@@ -2032,26 +1852,18 @@ def main():
         },
         'semantic_head': {
             'd_model_fused': D_MODEL_FUSED, 'semantic_dim': SEMANTIC_DIM,
-            'num_temporal_layers': NUM_SEMANTIC_TEMPORAL_LAYERS,
             'num_fusion_queries': NUM_FUSION_QUERIES, 'use_fusion_self_attention': USE_FUSION_SELF_ATTENTION,
-            'num_pool_queries': NUM_POOL_QUERIES, 'use_pool_self_attention': USE_POOL_SELF_ATTENTION,
         },
         'channel_text_fusion': {
             'num_heads': CHANNEL_TEXT_NUM_HEADS,
         },
         'label_bank': {
             'sentence_bert_model': CONTRASTIVE_TEXT_MODEL,
-            'num_heads': LABEL_BANK_NUM_HEADS,
-            'num_queries': LABEL_BANK_NUM_QUERIES,
-            'num_prototypes': LABEL_BANK_NUM_PROTOTYPES,
-            'use_mean_pooling': USE_MEAN_POOLING,
-            'freeze_label_bank': FREEZE_LABEL_BANK,
         },
         'loss': {
             'temperature': TEMPERATURE, 'loss_type': LOSS_TYPE,
             'use_soft_targets': USE_SOFT_TARGETS, 'soft_target_temperature': SOFT_TARGET_TEMPERATURE,
             'soft_target_weight': SOFT_TARGET_WEIGHT,
-            'use_memory_bank': USE_MEMORY_BANK, 'memory_bank_size': MEMORY_BANK_SIZE,
         },
         'training': {
             'epochs': EPOCHS, 'target_effective_batch': TARGET_EFFECTIVE_BATCH,
@@ -2062,7 +1874,6 @@ def main():
         'ablation': {
             'name': os.environ.get("ABLATION_NAME", "baseline"),
             'channel_text_fusion': ABLATION_CHANNEL_TEXT_FUSION,
-            'learnable_label_bank': ABLATION_LEARNABLE_LABEL_BANK,
             'soft_targets': ABLATION_SOFT_TARGETS,
             'signal_augmentation': ABLATION_SIGNAL_AUG,
             'text_augmentation': ABLATION_TEXT_AUG,
@@ -2121,11 +1932,8 @@ def main():
     print("Initializing semantic alignment head...")
     semantic_head = SemanticAlignmentHead(
         d_model=D_MODEL, d_model_fused=D_MODEL_FUSED, output_dim=SEMANTIC_DIM,
-        num_temporal_layers=NUM_SEMANTIC_TEMPORAL_LAYERS,
-        num_heads=NUM_HEADS, dim_feedforward=D_MODEL_FUSED * 4, dropout=DROPOUT,
+        num_heads=NUM_HEADS, dropout=DROPOUT,
         num_fusion_queries=NUM_FUSION_QUERIES, use_fusion_self_attention=USE_FUSION_SELF_ATTENTION,
-        num_pool_queries=NUM_POOL_QUERIES, use_pool_self_attention=USE_POOL_SELF_ATTENTION,
-        per_patch_prediction=PER_PATCH_PREDICTION
     ).to(device)
 
     # Create shared text encoder (one instance for model + label_bank, saves GPU memory)
@@ -2175,20 +1983,14 @@ def main():
         print("✓ Loaded model state from checkpoint")
 
     # Initialize learnable label bank (token-level attention pooling or mean pooling for ablation)
-    pooling_type = "MEAN POOLING (ablation)" if USE_MEAN_POOLING else "learnable attention pooling"
-    print(f"Initializing label bank ({pooling_type})...")
+    print("Initializing label bank (frozen mean-pool)...")
     label_bank = LearnableLabelBank(
         model_name=CONTRASTIVE_TEXT_MODEL,
         device=device,
         d_model=SEMANTIC_DIM,
-        num_heads=LABEL_BANK_NUM_HEADS,
-        num_queries=LABEL_BANK_NUM_QUERIES,
-        num_prototypes=LABEL_BANK_NUM_PROTOTYPES,
-        dropout=0.0,  # Zero dropout: contrastive text targets must be deterministic
-        use_mean_pooling=USE_MEAN_POOLING,
         text_encoder=shared_text_encoder  # Share text encoder with model
     )
-    print(f"✓ Label bank initialized (embedding_dim={label_bank.embedding_dim}, pooling={pooling_type})")
+    print(f"✓ Label bank initialized (frozen mean-pool, embedding_dim={label_bank.embedding_dim})")
 
     criterion = SemanticAlignmentLoss(
         temperature=TEMPERATURE, use_soft_targets=USE_SOFT_TARGETS,
@@ -2197,12 +1999,6 @@ def main():
     ).to(device)
 
     # Initialize memory bank if enabled
-    memory_bank = None
-    if USE_MEMORY_BANK:
-        print(f"Initializing memory bank (queue_size={MEMORY_BANK_SIZE}, embedding_dim={SEMANTIC_DIM}, device={device})...")
-        memory_bank = MemoryBank(queue_size=MEMORY_BANK_SIZE, embedding_dim=SEMANTIC_DIM, device=device)
-        print(f"✓ Memory bank initialized on {device} - provides {MEMORY_BANK_SIZE} additional negatives (no CPU round-trips)")
-
     plotter = TrainingPlotter(plot_dir)
 
     # Load existing metrics if resuming
@@ -2220,8 +2016,6 @@ def main():
         print(f"GradCache disabled: micro-batch negatives only per loss computation")
     if USE_SOFT_TARGETS:
         print(f"Using pairwise soft targets (temperature={SOFT_TARGET_TEMPERATURE}, weight={SOFT_TARGET_WEIGHT})")
-    if USE_MEMORY_BANK:
-        print(f"Using memory bank with {MEMORY_BANK_SIZE} queue size")
     print("="*70)
 
     # Create datasets
@@ -2368,18 +2162,8 @@ def main():
     # IMPORTANT: Include criterion.parameters() for learnable temperature (logit_scale)
     # and label_bank.parameters() for learnable attention pooling (if not using mean pooling)
 
-    # Add label_bank parameters if using learnable attention pooling
-    label_bank_params = list(label_bank.parameters())
-    if USE_MEAN_POOLING:
-        # Mean pooling has no learnable parameters
-        print(f"✓ Using mean pooling - no label bank parameters to train")
-    elif FREEZE_LABEL_BANK:
-        # Freeze label bank for ablation (test contribution of learnable text encoding)
-        for p in label_bank.parameters():
-            p.requires_grad = False
-        print(f"✓ Label bank FROZEN for ablation ({sum(p.numel() for p in label_bank_params)} params frozen)")
-    elif len(label_bank_params) > 0:
-        print(f"✓ Label bank parameters added to optimizer ({sum(p.numel() for p in label_bank_params)} params)")
+    # Label bank is frozen mean-pool — no trainable parameters.
+    print("✓ Using frozen mean-pool label bank - no label bank parameters to train")
 
     # Collect all named parameters for decay/no-decay grouping
     # Standard practice: exempt biases, norms, and learnable scalars/embeddings from weight decay
@@ -2401,16 +2185,6 @@ def main():
     for name, param in criterion.named_parameters():
         if param.requires_grad:
             no_decay_params.append(param)
-
-    # Label bank parameters — no decay for queries/norms, decay for projections
-    if not USE_MEAN_POOLING and not FREEZE_LABEL_BANK and len(label_bank_params) > 0:
-        for name, param in label_bank.named_parameters():
-            if not param.requires_grad:
-                continue
-            if any(kw in name for kw in no_decay_keywords):
-                no_decay_params.append(param)
-            else:
-                decay_params.append(param)
 
     print(f"✓ Parameter groups: {len(decay_params)} decay, {len(no_decay_params)} no-decay "
           f"({sum(p.numel() for p in decay_params)} + {sum(p.numel() for p in no_decay_params)} params)")
@@ -2449,12 +2223,6 @@ def main():
         if 'criterion_state_dict' in resume_checkpoint:
             criterion.load_state_dict(resume_checkpoint['criterion_state_dict'])
             print(f"✓ Loaded criterion state (logit_scale={criterion.loss_fn.logit_scale.exp().item():.2f})")
-
-        # Load memory bank state if available
-        if memory_bank is not None and 'memory_bank_state_dict' in resume_checkpoint:
-            if resume_checkpoint['memory_bank_state_dict'] is not None:
-                memory_bank.load_state_dict(resume_checkpoint['memory_bank_state_dict'])
-                print(f"✓ Loaded memory bank state (size={len(memory_bank)}, ptr={memory_bank.ptr})")
 
         # Load label_bank state if available (learnable attention pooling weights)
         if 'label_bank_state_dict' in resume_checkpoint:
@@ -2526,11 +2294,6 @@ def main():
     if resume_checkpoint is None:
         calibrate_filterbank_norm(model, train_loader, device)
 
-    # Warmup memory bank if enabled (reduces early training volatility)
-    # Skip if resuming since memory bank is restored from checkpoint
-    if memory_bank is not None and USE_MEMORY_BANK and resume_checkpoint is None:
-        warmup_memory_bank(model, label_bank, train_loader, memory_bank, device)
-
     # Training loop
     for epoch in range(start_epoch, EPOCHS + 1):
         # Set epoch for distributed sampler (ensures different shuffling each epoch)
@@ -2540,7 +2303,7 @@ def main():
             train_loader.batch_sampler.set_epoch(epoch)
 
         train_metrics = train_epoch(model, label_bank, train_loader, criterion, optimizer,
-                                      device, epoch, scaler, plotter, "train", memory_bank)
+                                      device, epoch, scaler, plotter, "train")
         val_metrics = validate(model, label_bank, val_loader, criterion, device, epoch, "val", plot_dir)
 
         # Step scheduler every epoch (warmup is built into the schedule)
@@ -2578,9 +2341,8 @@ def main():
             plotter.add_scalar('epoch/debug_imu_std', train_metrics['imu_std'], epoch)
             plotter.add_scalar('epoch/debug_text_std', train_metrics['text_std'], epoch)
             plotter.add_scalar('epoch/debug_imu_diversity', train_metrics['imu_diversity'], epoch)
-            plotter.add_scalar('epoch/debug_queue_diversity', train_metrics['queue_diversity'], epoch)
             # Log per-component gradient norms (including label_pooling for LearnableLabelBank)
-            for comp_name in ['cross_channel_fusion', 'temporal_attention', 'attention_pooling', 'projection_head', 'label_pooling', 'fe_temporal', 'fe_spectral']:
+            for comp_name in ['cross_channel_fusion', 'projection_head', 'label_pooling', 'fe_temporal', 'fe_spectral']:
                 plotter.add_scalar(f'epoch/debug_{comp_name}_grad_norm', train_metrics[f'{comp_name}_grad_norm'], epoch)
 
             plotter.add_scalar('epoch/val_loss', val_metrics['loss'], epoch)
@@ -2617,7 +2379,6 @@ def main():
                 'criterion_state_dict': criterion.state_dict(),  # Save learnable temperature
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
-                'memory_bank_state_dict': memory_bank.state_dict() if memory_bank else None,
                 'scaler_state_dict': scaler.state_dict() if scaler is not None else None,
                 'train_metrics': train_metrics,
                 'val_metrics': val_metrics,

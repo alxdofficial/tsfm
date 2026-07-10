@@ -7,7 +7,6 @@ Supports UCI HAR, MHEALTH, PAMAP2, and WISDM datasets with variable channel samp
 
 from .multi_dataset_loader import IMUPretrainingDataset
 from .augmentations import (
-    IMUAugmentation,
     IMUAugmenter,
     IMUSample,
     AugmentationConfig,
@@ -15,7 +14,6 @@ from .augmentations import (
 
 __all__ = [
     'IMUPretrainingDataset',
-    'IMUAugmentation',
     'IMUAugmenter',
     'IMUSample',
     'AugmentationConfig',
