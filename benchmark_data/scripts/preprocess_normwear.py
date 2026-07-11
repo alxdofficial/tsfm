@@ -130,7 +130,9 @@ def process_dataset(ds: str):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--datasets", nargs="+", default=ALL_DATASETS)
+    # NormWear is EVAL-ONLY (l1 tier, no training) — it only needs the zero-shot TEST datasets.
+    # Default to those (train sets like unimib_shar have no exported CSVs and would error).
+    ap.add_argument("--datasets", nargs="+", default=CONFIG["zero_shot_datasets"])
     args = ap.parse_args()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     print(f"NormWear preprocess: {TARGET_HZ}Hz, {WINDOW_65}-sample (6s) windows, REAL channels only")

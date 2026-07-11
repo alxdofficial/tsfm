@@ -97,8 +97,11 @@ def window_data(
     windows = data[:usable].reshape(n_windows, window_size, data.shape[1])
     label_windows = labels[:usable].reshape(n_windows, window_size)
 
+    # Majority over VALID codes only: raw activity indices can be -1 (unknown/dropped, e.g.
+    # pamap2 transient) and np.bincount rejects negatives; -1 only if a window is all-unknown.
     window_labels = np.array(
-        [np.bincount(lw).argmax() for lw in label_windows], dtype=int
+        [np.bincount(lw[lw >= 0]).argmax() if (lw >= 0).any() else -1 for lw in label_windows],
+        dtype=int
     )
 
     return windows, window_labels

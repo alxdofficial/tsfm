@@ -57,10 +57,13 @@ IOS_USERACC_PLUS_GRAVITY = {"motionsense", "inclusivehar"}
 # present, ALREADY in g ~1.0). harnet needs gravity, so read total_acc_* (see acc_cols
 # selection below) and treat as already-g. (hapt's export carries NO total_acc columns;
 # its acc_* is already g-with-gravity at median ~1.02, so it is ACC_G_ASIS below.)
-USE_TOTAL_ACC_COL = {"uci_har"}
+# uci_har's export now REMAPS acc_* -> total_acc_* (gravity present, in g) via core_channels (#85),
+# so there is no separate total_acc_* column anymore — read acc_* directly and treat as already-g
+# (see ACC_G_ASIS). USE_TOTAL_ACC_COL is now empty (kept for clarity / future datasets).
+USE_TOTAL_ACC_COL = set()
 # Already g WITH gravity: Axivity raw (harth/capture24), hapt acc_* (median ~1.02 g),
 # and uci_har total_acc.
-ACC_G_ASIS = {"harth", "capture24", "hapt"} | USE_TOTAL_ACC_COL
+ACC_G_ASIS = {"harth", "capture24", "hapt", "uci_har"}   # uci_har acc_* is now total_acc (g)
 # milli-g with gravity -> g.
 ACC_MILLI_G = {"opportunity"}
 # everything else: m/s^2 with gravity -> divide by g.

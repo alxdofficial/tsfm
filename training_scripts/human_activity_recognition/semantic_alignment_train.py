@@ -129,7 +129,9 @@ DATA_ROOT = os.environ.get("TSFM_DATA_ROOT", os.path.join(os.path.dirname(os.pat
 # Training datasets (11 diverse HAR datasets)
 # Active zero-shot test datasets are excluded:
 # motionsense, realworld, mobiact, shoaib, harth, inclusivehar.
-DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'recgym', 'capture24']
+# recgym dropped 2026-07-11 (min-max [0,1] normalized -> non-physical, breaks the DC/gravity feature
+# + physics augs; matches dataset_config train_datasets). 10-dataset V2 corpus.
+DATASETS = ['uci_har', 'hhar', 'mhealth', 'pamap2', 'wisdm', 'unimib_shar', 'dsads', 'hapt', 'kuhar', 'capture24']
 random.seed(int(os.environ.get("TSFM_SEED", "42")))  # follows TSFM_SEED for multi-seed runs
 PATCH_SIZE_PER_DATASET = {
     # Fixed-length sessions (2.56s) - use 1.0s patches for 2 patches/session
@@ -168,7 +170,7 @@ _MEAN_SESSION_SEC = {  # measured, docs/v2/data_quantity_report.md §3
 }
 TRAIN_HOURS_PER_DATASET = {  # None = use ALL sessions
     "uci_har": None, "pamap2": None, "dsads": None, "unimib_shar": None,
-    "hapt": None, "mhealth": None, "recgym": None, "kuhar": None,
+    "hapt": None, "mhealth": None, "kuhar": None,
     "capture24": None,   # 168 h free-living — used in full
     "wisdm": 85.0,       # cap ~85 h of 572 h available
     "hhar": 24.0,        # cap ~24 h of 226 h available
