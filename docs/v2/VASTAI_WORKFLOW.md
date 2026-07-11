@@ -102,10 +102,39 @@ and `cloud/halo nuke` as a manual panic button. **Always** end a session by conf
 - **requirements-core.txt is a full `pip freeze` (157 pins)** — fragile if the pod's Python ≠ 3.11.
   The base pytorch image is 3.11, so it matches; if a future image differs, loosen the pins.
 
-## <a name="live-run"></a>First live run — results (filled after the pod test)
+## <a name="live-run"></a>First live run — results (RTX 5090, `crosshar`)
 
-_TO BE COMPLETED after the first real 5090 `crosshar` pod: boot time, deps-install time, whether
-bootstrap ran clean, sentinel + results sync worked, actual cost, and any live bugs found._
+Validated live on real 5090 pods (~$0.34-0.41/hr):
+
+**Control plane + billing safety — fully validated:**
+- create → set `--label halo-<run>-<job>` → track → poll. Confirmed the reconciliation net
+  (`show instances-v1` filtered by label) sees the pod.
+- **Teardown works**: stopping `fleet.py` (SIGTERM) fired its handler → destroyed the pod; a
+  follow-up `vastai destroy` returned `404 not found` (already gone) and `show instances-v1` was
+  empty. Verified twice.
+- Offer selection with the verified+fast fallback picks sane hosts.
+
+**Findings / gotchas (cost me pods to learn):**
+- **Host-specific Docker Hub failures are common.** 2 of 3 hosts got
+  `status_msg: Error response from daemon: Get "https://registry-1.docker.io/v2/": net/http:
+  TLS handshake timeout` and sat in `actual_status=loading` / `cur_state=stopped` forever — the
+  image never pulled. **Always read `status_msg`** (not just `actual_status`) to distinguish
+  "pulling" from "can't reach Docker Hub". Mitigation: destroy + recreate on a fresh host, or use a
+  cached/mirrored image.
+- **Cold boot with a big image is SLOW even when it works**: `pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime`
+  (~7GB compressed / ~20GB extracted) takes 5-10+ min just to pull+extract before onstart runs —
+  independent of host bandwidth (a 3.2 Gbps host was still slow; it's disk extraction). Then
+  bootstrap reinstalls torch + 157 deps on top. **This is why a prebuilt/baked image matters** —
+  it's the single biggest lever on turnaround, not a nice-to-have.
+- fleet fix applied: `find_offer` now filters `verified=true inet_down>500 disk_space>50` with a
+  relaxed fallback, so it stops grabbing the slowest bottom-tier boxes.
+
+**Recommended next step before real sweeps:** bake a Docker image (repo + venv + torch preinstalled)
+pushed to GHCR, so pods boot in ~1 min with no Docker-Hub-pull and no pip-at-boot. Then the
+`crosshar` job (head-fit + eval) is a few minutes of actual compute = cents per job.
+
+_(The full bootstrap→train→sync→sentinel path on a clean host was in progress at write time;
+update with the confirmed DONE + train.log once a pod completes.)_
 
 ## Cost notes
 

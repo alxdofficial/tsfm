@@ -57,9 +57,12 @@ def pod_env(job, run_id, sha):
 
 
 def onstart_cmd(sha):
-    """One-liner run on the pod at boot: fetch bootstrap.sh from the public repo @SHA and run it."""
+    """One-liner run on the pod at boot: fetch bootstrap.sh from the public repo @SHA and run it.
+    Installs curl first if the base image lacks it (python:3.11-slim does) so it works on a tiny
+    image — which we use to AVOID the slow/throttled Docker Hub pull of a giant pytorch image."""
     raw = f"https://raw.githubusercontent.com/{REPO_HTTPS.split('github.com/')[-1]}/{sha}/cloud/bootstrap.sh"
-    return f"bash -lc 'curl -fsSL {raw} -o /tmp/bootstrap.sh && bash /tmp/bootstrap.sh'"
+    return ("bash -lc 'command -v curl >/dev/null || (apt-get update -qq && apt-get install -y -qq curl); "
+            f"curl -fsSL {raw} -o /tmp/bootstrap.sh && bash /tmp/bootstrap.sh'")
 
 
 # ============================ providers ============================
@@ -109,8 +112,16 @@ class VastProvider(Provider):
         return json.loads(out.stdout) if raw and out.stdout.strip() else out.stdout
 
     def find_offer(self, gpu, max_dph, min_gb):
-        q = f"gpu_name={gpu} num_gpus=1 rentable=true dph_total<{max_dph} disk_space>{min_gb}"
+        # Bias toward VERIFIED hosts with fast download (image/bundle pull) and enough disk — the
+        # cheapest bottom-tier hosts can sit in 'loading' for 10+ min pulling the image. Order by a
+        # price/bandwidth blend so we don't just grab the slowest cheap box.
+        q = (f"gpu_name={gpu} num_gpus=1 rentable=true verified=true "
+             f"dph_total<{max_dph} inet_down>500 disk_space>50")
         offers = self._vast("search", "offers", q, "-o", "dph_total")
+        if not offers:  # relax the bandwidth/verified filters if nothing matches
+            offers = self._vast("search", "offers",
+                                 f"gpu_name={gpu} num_gpus=1 rentable=true dph_total<{max_dph} disk_space>50",
+                                 "-o", "dph_total")
         if not offers:
             raise RuntimeError(f"no vast offer for {gpu} < ${max_dph}/hr")
         return offers[0]
@@ -196,7 +207,9 @@ def main():
     ap.add_argument("--jobs", nargs="+", required=True)
     ap.add_argument("--run-id", default=None, help="default: derived from git SHA")
     ap.add_argument("--sha", default=None, help="git SHA pods check out (default: current HEAD)")
-    ap.add_argument("--image", default="pytorch/pytorch:2.9.0-cuda12.8-cudnn9-runtime")
+    # Tiny base (~50MB, pulls in seconds even when Docker Hub throttles); bootstrap pip-installs
+    # torch from the fast PyTorch CDN (cu128 wheels bundle CUDA; vast host provides the driver).
+    ap.add_argument("--image", default="python:3.11-slim")
     ap.add_argument("--gpu", default="RTX_4090")
     ap.add_argument("--max-dph", type=float, default=0.5, help="max $/hr per pod")
     args = ap.parse_args()

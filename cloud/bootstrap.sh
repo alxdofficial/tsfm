@@ -27,10 +27,10 @@ log "arming watchdog: hard poweroff after ${MAX_HOURS}h (billing backstop)"
 nohup bash -c "sleep $((MAX_HOURS*3600)); echo WATCHDOG-MAXHOURS; (sudo poweroff -f || poweroff -f || shutdown -h now)" \
   >/tmp/halo_watchdog.log 2>&1 & disown || true
 
-# 1) system deps
+# 1) system deps — python:3.11-slim is bare, so install what torch/git/aws need.
 export DEBIAN_FRONTEND=noninteractive
-command -v git >/dev/null || { apt-get update -y && apt-get install -y git tmux; }
-command -v tmux >/dev/null || apt-get install -y tmux
+apt-get update -y -qq
+apt-get install -y -qq --no-install-recommends git tmux curl ca-certificates libgomp1
 command -v aws  >/dev/null || pip install -q awscli
 pip install -q boto3 >/dev/null 2>&1 || true
 
