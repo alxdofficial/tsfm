@@ -221,6 +221,8 @@ def main():
     # Source-validation temperature calibration (applied as softmax(logits/T) before ConSE).
     T = _fit_temperature(_clf_logits(head, X[vi], device), Y[vi], device)
     _save_temperature(out, T)
+    from val_scripts.human_activity_recognition.baselines.base import save_head_labels
+    save_head_labels(out, globals_labels)   # order-aware staleness guard (base.assert_head_labels_current)
     print(f"saved head (val_acc={best_acc:.3f}, {len(set(S[vi]))} held-out subjects, "
           f"T={T:.3f}) -> {out}")
 

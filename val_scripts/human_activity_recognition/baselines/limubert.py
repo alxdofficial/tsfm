@@ -6,7 +6,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .base import CACHED_DIR, BENCH_LIMU, ConSEAdapter, global_labels, register, load_head_temperature
+from .base import (CACHED_DIR, BENCH_LIMU, ConSEAdapter, global_labels, register,
+                   load_head_temperature, assert_head_labels_current)
 
 
 @register
@@ -20,6 +21,7 @@ class LiMUBERTAdapter(ConSEAdapter):
         clf = L.GRUClassifier(input_dim=L.EMB_DIM, num_classes=len(global_labels())).to(device)
         # First-party cached classifier (pure state_dict) — weights_only load.
         head = CACHED_DIR / "limubert_zs_gru.pt"
+        assert_head_labels_current(head)   # fail loud if head's label vocab/order != current global map
         clf.load_state_dict(torch.load(str(head), map_location=device, weights_only=True))
         clf.train(False)
         return {"bert": bert, "clf": clf, "T": load_head_temperature(head)}

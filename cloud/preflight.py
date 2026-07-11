@@ -57,6 +57,22 @@ def main():
     if ptr in keys:
         bundle = s3.get_object(Bucket=R2.bucket(), Key=ptr)["Body"].read().decode().strip()
         need(f"data/{bundle}", f"data bundle {bundle}")
+        # FRESHNESS (not just presence): the bundle ships the PROCESSED grids + 86-way label map +
+        # canonical GT; pods never reprocess. A stale bundle silently trains/evals baselines on
+        # pre-fix data (e.g. before a units/vocab correction) — an invalid comparison that a
+        # presence-only check misses. Compare R2's pointer to the last LOCAL make_data_bundle build.
+        local_ptr = ROOT / "benchmark_data" / "bundles" / "bundle-latest.txt"
+        if local_ptr.exists():
+            local_bundle = local_ptr.read_text().strip()
+            if local_bundle == bundle:
+                print(f"{OK} bundle is FRESH (R2 pointer == last local build {bundle})")
+            else:
+                print(f"{BAD} bundle STALE: R2 points at {bundle} but your last local build is "
+                      f"{local_bundle}. Re-run `make_data_bundle.py --upload` so pods get current "
+                      f"grids/labels."); blockers += 1
+        else:
+            print(f"{WARN} cannot verify bundle freshness (no local benchmark_data/bundles/"
+                  f"bundle-latest.txt to compare; run make_data_bundle.py to stamp one)")
     else:
         print(f"{BAD} data/bundle-latest.txt MISSING (run make_data_bundle.py --upload)"); blockers += 1
 

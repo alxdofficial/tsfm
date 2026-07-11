@@ -31,6 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from val_scripts.human_activity_recognition.grouped_zero_shot import load_global_labels
+from val_scripts.human_activity_recognition.baselines.base import save_head_labels
 
 
 def _subject_disjoint_split(subjects, seed, val_frac=0.1):
@@ -125,6 +126,7 @@ def refit_limubert(device, global_labels):
     torch.save(clf.state_dict(), str(out))
     T = _fit_temperature(_clf_logits(clf, train_emb[vi], device), train_lab[vi], device)
     _save_temperature(out, T)
+    save_head_labels(out, global_labels)   # order-aware staleness guard (base.assert_head_labels_current)
     print(f"[limubert] saved -> {out} | source-validation temperature T={T:.3f}")
 
 
@@ -148,6 +150,7 @@ def refit_crosshar(device, global_labels):
     torch.save(clf.state_dict(), str(out))
     T = _fit_temperature(_clf_logits(clf, train_emb[vi], device), train_lab[vi], device)
     _save_temperature(out, T)
+    save_head_labels(out, global_labels)   # order-aware staleness guard (base.assert_head_labels_current)
     print(f"[crosshar] saved -> {out} | source-validation temperature T={T:.3f}")
 
 

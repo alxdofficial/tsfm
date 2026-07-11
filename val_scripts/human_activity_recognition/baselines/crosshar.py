@@ -5,7 +5,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .base import CACHED_DIR, BENCH_LIMU, ConSEAdapter, global_labels, register, load_head_temperature
+from .base import (CACHED_DIR, BENCH_LIMU, ConSEAdapter, global_labels, register,
+                   load_head_temperature, assert_head_labels_current)
 
 
 @register
@@ -17,6 +18,7 @@ class CrossHARAdapter(ConSEAdapter):
         enc = C.load_crosshar_model(str(C.CROSSHAR_CHECKPOINT), device)
         clf = C.TransformerClassifier(input_dim=C.EMB_DIM, num_classes=len(global_labels())).to(device)
         head = CACHED_DIR / "crosshar_zs_transformer.pt"
+        assert_head_labels_current(head)   # fail loud if head's label vocab/order != current global map
         # First-party cached classifier (pure state_dict) — weights_only load.
         clf.load_state_dict(torch.load(str(head), map_location=device, weights_only=True))
         clf.train(False)

@@ -168,5 +168,43 @@ def load_head_temperature(head_path) -> float:
     return 1.0
 
 
+def _labels_sidecar(head_path) -> Path:
+    return Path(str(head_path).rsplit(".", 1)[0] + ".labels.json")
+
+
+def save_head_labels(head_path, labels: List[str]):
+    """Persist the EXACT ordered global label vocabulary a ConSE head was fit against, as a
+    `.labels.json` sidecar next to the head. The head's output column i means labels[i]; this
+    records that binding so eval can verify it (see assert_head_labels_current)."""
+    _labels_sidecar(head_path).write_text(
+        json.dumps({"labels": list(labels), "n": len(labels)}) + "\n")
+
+
+def assert_head_labels_current(head_path):
+    """Fail loud if a cached ConSE head was fit against a DIFFERENT global label vocabulary
+    (or ordering) than the current one. The count-only guard in run_baselines_v2 cannot catch a
+    pure REORDER (e.g. #90 swapped playing_sports->table_tennis, shifting 22 sorted indices while
+    keeping n=86), which silently mislabels the ConSE bridge for the shifted columns. Requiring a
+    matching `.labels.json` sidecar makes that impossible: a stale/reordered head raises here
+    instead of producing an invalid comparison. Heads written before this guard have no sidecar and
+    are treated as stale (they must be re-fit) — the honest default, since we cannot prove alignment."""
+    current = load_global_labels()
+    p = _labels_sidecar(head_path)
+    if not p.exists():
+        raise RuntimeError(
+            f"{Path(head_path).name}: no .labels.json sidecar — this cached head predates the "
+            f"order-aware guard and its label alignment cannot be verified. Re-fit it "
+            f"(refit_conse_heads.py / evaluate_ssl_wearables.py) against the current "
+            f"{len(current)}-way global vocab before scoring.")
+    fitted = json.loads(p.read_text())["labels"]
+    if fitted != current:
+        n_diff = sum(1 for a, b in zip(fitted, current) if a != b) + abs(len(fitted) - len(current))
+        raise RuntimeError(
+            f"{Path(head_path).name}: cached head was fit on a DIFFERENT global label vocabulary "
+            f"({len(fitted)} labels) than the current one ({len(current)} labels); {n_diff} "
+            f"position(s) differ. The ConSE bridge would attach wrong text to those output columns. "
+            f"Re-fit the head against the current global_label_mapping.json before scoring.")
+
+
 def global_labels() -> List[str]:
     return load_global_labels()

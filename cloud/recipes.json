@@ -1,8 +1,8 @@
 {
-  "_doc": "Per-job cloud-burst recipes. One record per pod. The pod bootstrap reads its record, installs deps, fetches weights, pulls the data bundle, and runs train_cmd inside tmux. See docs/v2/CLOUD_BURST_HARNESS.md. COMMITS ARE PLACEHOLDERS ('PIN@...') — pin to real SHAs before a run so pods are reproducible.",
+  "_doc": "Per-job cloud-burst recipes. One record per pod. The pod bootstrap reads its record, installs deps, fetches weights, pulls the data bundle, and runs train_cmd inside tmux. See docs/v2/CLOUD_BURST_HARNESS.md. The HALO repo_commit is pinned at launch by fleet.py --sha (defaults to current HEAD); per-baseline upstream repo_commit values below are real pinned SHAs.",
   "_kinds": {
     "halo_train": "full from-scratch training of the HALO model (the heavy job)",
-    "conse_head": "frozen pretrained backbone + (re)fit the 94-way ConSE head, then eval",
+    "conse_head": "frozen pretrained backbone + (re)fit the 86-way ConSE head, then eval",
     "fewshot": "train the model from scratch per-dataset (subject-disjoint few-shot)",
     "cosine_eval": "released weights, text-cosine zero-shot; no training beyond provided head"
   },
@@ -60,7 +60,7 @@
       "fetch": ["r2:ckpt/baselines/ssl_wearables/hub_v1.0.0.tar.gz -> torch.hub cache OxWearables_ssl-wearables_v1.0.0 (mirrored pinned harnet5; no GitHub dependency)"],
       "train_cmd": "TSFM_ALLOW_SSL_HEADFIT=1 python val_scripts/human_activity_recognition/evaluate_ssl_wearables.py && python val_scripts/human_activity_recognition/run_baselines_v2.py --baselines ssl_wearables",
       "results": ["test_output/baseline_evaluation/ssl_wearables_zs_head.pt", "test_output/eval_v2/baseline_v2_ssl_wearables.json"],
-      "note": "Trains on 8/11 datasets (kuhar/recgym/unimib_shar excluded: non-physical/gravity-removed accel)."
+      "note": "Trains on 8/10 train datasets (kuhar + unimib_shar excluded: gravity-removed accel / lost subject map). recgym was dropped from the training corpus entirely (11->10)."
     },
     "deepconvlstm": {
       "kind": "fewshot",

@@ -1,6 +1,6 @@
 """ssl-wearables adapter (ConSE tier): frozen OxWearables harnet Resnet trunk
 (30 Hz, 3-ch accelerometer, g-units WITH gravity) + cached EvaClassifier head ->
-per-window softmax over the 87 global baseline labels.
+per-window softmax over the global baseline labels (currently 86).
 
 Reads benchmark_data/processed/ssl_wearables/<ds>/data_30_180.npy (produced by
 benchmark_data/scripts/preprocess_ssl_wearables.py); NOT the 20 Hz m/s^2 limubert copy.
@@ -13,7 +13,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .base import CACHED_DIR, ConSEAdapter, global_labels, register, load_head_temperature
+from .base import (CACHED_DIR, ConSEAdapter, global_labels, register,
+                   load_head_temperature, assert_head_labels_current)
 
 
 @register
@@ -25,6 +26,7 @@ class SSLWearablesAdapter(ConSEAdapter):
         model = S.load_ssl_model(S.HARNET_NAME, num_classes=len(global_labels()), device=device)
         # First-party cached head (pure state_dict) — weights_only load.
         head = CACHED_DIR / "ssl_wearables_zs_head.pt"
+        assert_head_labels_current(head)   # fail loud if head's label vocab/order != current global map
         head_sd = torch.load(str(head), map_location=device, weights_only=True)
         model.classifier.load_state_dict(head_sd)
         model.train(False)
