@@ -113,16 +113,21 @@ class VastProvider(Provider):
             raise RuntimeError(f"vastai {args} failed: {out.stderr.strip()}")
         return json.loads(out.stdout) if raw and out.stdout.strip() else out.stdout
 
-    def find_offer(self, gpu, max_dph, min_gb, exclude=()):
+    def find_offer(self, gpu, max_dph, min_gb, exclude=(), ram_gb=32):
         # Bias toward VERIFIED, fast-download hosts (the standard pytorch image is usually cached on
         # these, so boot is near-instant). `exclude` skips offers a previous stuck attempt used, so a
         # retry lands on a DIFFERENT host.
+        # Resource FLOORS (previously accepted min_gb but never used it -> a host could be picked with
+        # too little VRAM/RAM, #74): min_gb = GPU VRAM (GB -> vast gpu_ram is MB); ram_gb = host RAM
+        # (GB) — CrossHAR/LiMU-BERT materialize large sequence-embedding arrays and need ~32 GiB
+        # (readiness §5). These floors are kept even in the relaxed fallback (never relax resources).
+        floors = f"gpu_ram>={int(min_gb) * 1000} cpu_ram>={int(ram_gb)}"
         q = (f"gpu_name={gpu} num_gpus=1 rentable=true verified=true "
-             f"dph_total<{max_dph} inet_down>500 disk_space>50")
+             f"dph_total<{max_dph} inet_down>500 disk_space>50 {floors}")
         offers = self._vast("search", "offers", q, "-o", "dph_total")
-        if not offers:  # relax the bandwidth/verified filters if nothing matches
+        if not offers:  # relax the bandwidth/verified filters if nothing matches — but NOT the resource floors
             offers = self._vast("search", "offers",
-                                 f"gpu_name={gpu} num_gpus=1 rentable=true dph_total<{max_dph} disk_space>50",
+                                 f"gpu_name={gpu} num_gpus=1 rentable=true dph_total<{max_dph} disk_space>50 {floors}",
                                  "-o", "dph_total")
         offers = [o for o in offers if str(o["id"]) not in exclude]
         if not offers:

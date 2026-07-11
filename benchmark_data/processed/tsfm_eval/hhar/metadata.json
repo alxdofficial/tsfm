@@ -2,7 +2,7 @@
   "sampling_rate_hz": 50,
   "window_size": 300,
   "window_duration_sec": 6.0,
-  "n_windows": 6396,
+  "n_windows": 6395,
   "has_gyro": true,
   "activity_to_idx": {
     "cycling": 0,

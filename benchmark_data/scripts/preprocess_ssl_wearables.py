@@ -182,22 +182,16 @@ def process_dataset(ds: str):
             continue
 
         d30 = _downsample_bin_mean(stack, orig_hz, TARGET_HZ)
-        n30 = len(d30) // WINDOW_30
-        if n30 > 0:
-            w = d30[:n30 * WINDOW_30].reshape(n30, WINDOW_30, stack.shape[1])
-        else:
-            w = np.empty((0, WINDOW_30, stack.shape[1]))
-        # Reconcile the 30 Hz window count to the 20 Hz count.
-        if n30 >= n_sub:
-            w = w[:n_sub]
-        else:
-            pad = n_sub - n30
-            if n30 == 0:
-                tail = d30 if len(d30) >= WINDOW_30 else np.pad(
-                    d30, ((WINDOW_30 - len(d30), 0), (0, 0)), mode="edge")
-                w = np.repeat(tail[-WINDOW_30:][None], n_sub, axis=0)
-            else:
-                w = np.concatenate([w, np.repeat(w[-1:], pad, axis=0)], axis=0)
+        # Window to EXACTLY n_sub 6s windows aligned to the 20 Hz grid. The 20 Hz and 30 Hz windows
+        # come from the SAME per-subject stream, so the count matches modulo resample rounding: take
+        # n_sub*WINDOW_30 samples; if d30 is a few samples short (rounding at the stream tail),
+        # edge-pad ONLY the missing tail to complete the last window. Never duplicate or truncate
+        # WHOLE windows — the old repeat/truncate injected fake windows / dropped real ones (#83).
+        need = n_sub * WINDOW_30
+        if len(d30) < need:
+            d30 = np.pad(d30, ((0, need - len(d30)), (0, 0)), mode="edge")
+        w = d30[:need].reshape(n_sub, WINDOW_30, stack.shape[1]) if n_sub > 0 \
+            else np.empty((0, WINDOW_30, stack.shape[1]))
 
         # channels -> 3-ch g-with-gravity
         acc_w = w[:, :, :3]

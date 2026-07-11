@@ -9,11 +9,7 @@
     "gyro_y",
     "gyro_z"
   ],
-  "extra_channels": [
-    "total_acc_x",
-    "total_acc_y",
-    "total_acc_z"
-  ],
+  "extra_channels": [],
   "activities": [
     "laying",
     "sitting",

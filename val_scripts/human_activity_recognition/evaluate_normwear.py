@@ -32,9 +32,11 @@ NORMWEAR_REPO = NORMWEAR_PARENT / "NormWear"
 BACKBONE_CKPT = NORMWEAR_REPO / "checkpoints" / "normwear_pretrain_ckpt.pth"
 MSITF_CKPT = NORMWEAR_REPO / "checkpoints" / "normwear_msitf_zeroshot_last_checkpoint-5.pth"
 LIMU_DIR = PROJECT_ROOT / "benchmark_data" / "processed" / "limubert"
+NORMWEAR_DIR = PROJECT_ROOT / "benchmark_data" / "processed" / "normwear"   # 65Hz, real-channels
 
 EMB_DIM = 2048
-SAMPLING_RATE = 20        # limubert grid; no numeric effect (NormWear only resamples >256 Hz)
+SAMPLING_RATE = 65        # NormWear's native rate (its Ricker CWT scales are 65 Hz-tuned); the
+                          # data is resampled to 65 Hz by preprocess_normwear.py. Passed honestly.
 QUERY = "What is the current activity?"           # native 'activity' question_template[0]
 ANSWER_TEMPLATE = "This subject is presently {}."  # native 'activity' answer_template[0]
 
@@ -85,16 +87,16 @@ def window_embeddings(ds: str, model, device, query_emb=None, batch=128) -> np.n
     """
     if query_emb is None:
         query_emb = compute_query(model)
-    X = np.load(str(LIMU_DIR / ds / "data_20_120.npy")).astype(np.float32)   # (N,120,6)
-    X = np.transpose(X, (0, 2, 1))                                            # (N,6,120)
-    # De-fabricate channels: acc-only datasets are zero-padded to 6 channels upstream. NormWear is
-    # channel-INDEPENDENT and pools across channels, so a constant-zero "gyro" enters that pool as a
-    # real observation and distorts the embedding. Keep only REAL channels — a padded channel is
-    # exactly 0 everywhere (max|x|==0), so any channel with a nonzero sample is real. NormWear
-    # accepts variable nvar. (The 65 Hz native-rate path — vs this 20 Hz grid — is a separate gate.)
-    real = np.abs(X).max(axis=(0, 2)) > 1e-8                                  # (6,) bool
-    X = X[:, real, :]                                                         # (N, nvar_real, 120)
-    # NormWear's native per-channel normalization (modules/signal_preprocess.basic_preproc:58-65):
+    npath = NORMWEAR_DIR / ds / "data_65_390.npy"
+    if not npath.exists():
+        raise FileNotFoundError(
+            f"{ds}: NormWear 65 Hz data missing at {npath}. "
+            f"Run: python benchmark_data/scripts/preprocess_normwear.py --datasets {ds}")
+    X = np.load(str(npath)).astype(np.float32)   # (N, 390, C) REAL channels only @ 65 Hz
+    X = np.transpose(X, (0, 2, 1))               # (N, C, 390); C is 3 (acc) or 6 (acc+gyro)
+    # Channels are already REAL only (preprocess_normwear drops phantom/zero-padded channels), so no
+    # de-fabrication is needed here. NormWear's native per-channel normalization
+    # (modules/signal_preprocess.basic_preproc:58-65):
     # detrend (remove linear trend incl. the static gravity DC) then divide by mean|x| (amplitude
     # normalize into NormWear's ~unit regime). We skip its bandpass (lc/hc tuned for >=65 Hz
     # physiological signal, inappropriate at 20 Hz IMU).
