@@ -8,8 +8,8 @@
   },
   "defaults": {
     "data_bundle": "data/bundle-latest.txt",
-    "repo": "git@github.com:USER/HALO.git",
-    "repo_commit": "PIN@halo-main",
+    "repo": "https://github.com/alxdofficial/tsfm.git",
+    "repo_commit": "overridden at runtime by fleet.py --sha (default: current HEAD)",
     "results_prefix": "runs/{run_id}/{job}",
     "sentinel": "~/DONE",
     "watchdog_max_hours": 8,

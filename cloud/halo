@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# HALO cloud-burst convenience CLI. Auto-sources cloud/.env, dispatches to the python scripts.
+#
+#   cloud/halo preflight [--job JOB]     # verify all pod inputs are on R2 before spending
+#   cloud/halo push                      # mirror backbones + requirements to R2
+#   cloud/halo up JOB [JOB...] [--vast]   # burst jobs (mock by default; --vast = live spend)
+#   cloud/halo status [RUN_ID]           # list R2 runs/ (results synced back by pods)
+#   cloud/halo results RUN_ID JOB DIR    # download a job's results from R2 to DIR
+#   cloud/halo nuke                      # destroy ALL live vast instances tagged halo-* (panic button)
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(dirname "$HERE")"
+[ -f "$HERE/.env" ] && { set -a; . "$HERE/.env"; set +a; } || { echo "missing cloud/.env"; exit 1; }
+cmd="${1:-help}"; shift || true
+
+case "$cmd" in
+  preflight) python "$HERE/preflight.py" "$@" ;;
+  push)      python "$HERE/push_artifacts.py" "$@" ;;
+  up)
+    prov=mock; jobs=()
+    for a in "$@"; do [ "$a" = "--vast" ] && prov=vast || jobs+=("$a"); done
+    python "$HERE/fleet.py" --provider "$prov" --jobs "${jobs[@]}" ;;
+  status)
+    RUN="${1:-}"
+    python - "$RUN" <<'PY'
+import os, sys; sys.path.insert(0, os.path.join(os.path.dirname("cloud/"), "cloud"))
+sys.path.insert(0, "cloud"); import r2_util as R2
+s3=R2.client(); run=sys.argv[1]
+sub="runs/"+run if run else "runs"
+objs=R2.list_prefix(s3, sub)
+print(f"runs under s3://{R2.bucket()}/{R2.key(sub)}:")
+for k,sz in objs: print(f"  {sz/1e3:8.1f} KB  {k}")
+if not objs: print("  (none yet)")
+PY
+    ;;
+  results)
+    RUN="$1"; JOB="$2"; DIR="${3:-runs/$RUN/$JOB}"; mkdir -p "$DIR"
+    aws s3 --endpoint-url "$R2_ENDPOINT" cp --recursive \
+      "s3://$R2_BUCKET/${R2_PREFIX:-halo}/runs/$RUN/$JOB/" "$DIR/"
+    echo "downloaded -> $DIR" ;;
+  nuke)
+    echo "destroying all live vast instances tagged halo-*"
+    vastai show instances --raw | python -c "import sys,json;[print(i['id']) for i in json.load(sys.stdin) if 'halo-' in str(i.get('label',''))]" | xargs -r -n1 vastai destroy instance ;;
+  *) sed -n '2,12p' "$0" ;;
+esac
