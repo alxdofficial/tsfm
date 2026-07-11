@@ -39,9 +39,15 @@ log "clone $REPO_URL @ ${REPO_SHA:0:12}"
 rm -rf "$WORK"; git clone --quiet "$REPO_URL" "$WORK"
 cd "$WORK"; git checkout --quiet "$REPO_SHA"
 
-# 3) python env — torch stack from the cu128 index, then the frozen core reqs, then per-job deps.
-log "install torch stack (cu128) + core requirements"
-pip install -q --index-url https://download.pytorch.org/whl/cu128 torch==2.9.0 torchvision==0.24.0 torchaudio==2.9.0
+# 3) python env — REUSE the base pytorch image's torch if it actually runs on this GPU (a real GPU
+#    op, not just is_available — catches missing sm_120/Blackwell kernels). Only pull torch from the
+#    cu128 CDN if the base image lacks a working one (e.g. a bare python image).
+if python -c "import torch; torch.zeros(8, device='cuda').sum().item()" 2>/dev/null; then
+  log "base image torch works on this GPU ($(python -c 'import torch;print(torch.__version__)')) — skip reinstall"
+else
+  log "installing torch stack from cu128 CDN (base image torch missing/incompatible)"
+  pip install -q --index-url https://download.pytorch.org/whl/cu128 torch==2.9.0 torchvision==0.24.0 torchaudio==2.9.0
+fi
 r2 cp "s3://$R2_BUCKET/$R2_PREFIX/meta/requirements-core.txt" /tmp/req-core.txt
 pip install -q -r /tmp/req-core.txt
 # CLIP (git) only matters for unimts; harmless elsewhere but keep it job-gated via the recipe.
