@@ -22,6 +22,17 @@ DEST="s3://$R2_BUCKET/$R2_PREFIX/runs/$HALO_RUN_ID/$HALO_JOB"
 log(){ echo "[bootstrap $(date -u +%H:%M:%S)] $*"; }
 r2(){ aws s3 --endpoint-url "$R2_ENDPOINT" "$@"; }
 
+# Fail-fast sentinel: under `set -euo pipefail` any pre-job failure (apt, clone, pip-resolve,
+# bundle pull) aborts the script. Without this trap that leaves NO sentinel, so a pod bills for
+# the whole MAX_HOURS deadline while a controller waits on a DONE/FAILED that never appears.
+# Surface a FAILED (+ log) to R2 in seconds. The job's own success/failure path (step 5) writes
+# its sentinel explicitly and is unaffected (the job runs in tmux; its exit does not trip this).
+_abort(){ code=$?; log "ABORT (exit=$code) — writing FAILED sentinel to R2"; \
+  touch "$HOME/FAILED" 2>/dev/null || true; \
+  r2 cp "$HOME/FAILED" "$DEST/FAILED" 2>/dev/null || true; \
+  [ -f "$HOME/train.log" ] && r2 cp "$HOME/train.log" "$DEST/train.log" 2>/dev/null || true; }
+trap _abort ERR
+
 # 0) SAFETY FIRST — self-destruct watchdog before doing anything that can hang.
 log "arming watchdog: hard poweroff after ${MAX_HOURS}h (billing backstop)"
 nohup bash -c "sleep $((MAX_HOURS*3600)); echo WATCHDOG-MAXHOURS; (sudo poweroff -f || poweroff -f || shutdown -h now)" \
@@ -68,8 +79,15 @@ if [ "$NEED_TORCH" = "1" ]; then
   python -m pip install -q --retries 5 --timeout 120 --index-url https://download.pytorch.org/whl/cu128 torch==2.9.0 torchvision==0.24.0 torchaudio==2.9.0
 fi
 r2 cp "s3://$R2_BUCKET/$R2_PREFIX/meta/requirements-core.txt" /tmp/req-core.txt
-log "installing core requirements into $(command -v python)"
-python -m pip install -q --retries 5 --timeout 120 -r /tmp/req-core.txt
+# Layer on the image's sci stack instead of fighting it. A modern torch image ships numpy 2.x
+# (torch>=2.10 needs it); an old exact `numpy==1.25`/`scipy==`/… pin has no wheel for the image
+# python (source build fails) AND is ABI-incompatible with the image torch. Drop those exact pins,
+# install the rest with only-if-needed (keeps whatever the image already provides), then ensure the
+# sci stack exists with loose, numpy-2-compatible bounds. numba is intentionally dropped (unused).
+grep -viE '^(numpy|numba|scipy|pandas|scikit-learn)([=<>!~ ]|$)' /tmp/req-core.txt > /tmp/req-core.filtered.txt
+log "installing core requirements into $(command -v python) (layering on image sci stack)"
+python -m pip install -q --retries 5 --timeout 120 --upgrade-strategy only-if-needed -r /tmp/req-core.filtered.txt
+python -m pip install -q --upgrade-strategy only-if-needed "numpy>=1.24" "scipy>=1.10" "pandas>=2.0" "scikit-learn>=1.3"
 # CLIP (git) only matters for unimts; harmless elsewhere but keep it job-gated via the recipe.
 log "apply recipe deps + backbone for job=$HALO_JOB"
 python cloud/apply_recipe.py --job "$HALO_JOB" --install

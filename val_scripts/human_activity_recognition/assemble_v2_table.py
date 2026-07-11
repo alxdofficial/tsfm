@@ -28,27 +28,30 @@ def baseline_vocab_size():
 DATASETS = load_datasets()
 
 # (label, json file, key path to the zs metrics dict, tier)
-# Baseline set (post V2 cleanup): CrossHAR + LiMU-BERT kept; MOMENT/LanHAR/LLaSA
-# dropped (slow / weak / undeployable). UniMTS + ssl-wearables to be added as
-# adapters (released weights) — their rows appear here once their JSONs exist.
+# Baseline set (post V2 cleanup): CrossHAR + LiMU-BERT + ssl-wearables (conse), UniMTS
+# (cosine), NormWear (l1). MOMENT/LanHAR/LLaSA dropped (slow / weak / undeployable).
+# Rows appear only when a baseline's result JSON exists AND is complete (see main()).
 MODELS = [
     ("HALO (Small-Deep)", "tsfm_v2_native_native.json", "zs_xd", "text-aligned"),
     ("HALO (parity)", "tsfm_v2_neutral_20.json", "zs_xd", "text-aligned"),
     ("CrossHAR †", "baseline_v2_crosshar.json", None, "conse"),
     ("LiMU-BERT †", "baseline_v2_limubert.json", None, "conse"),
-    ("UniMTS", "baseline_v2_unimts.json", None, "cosine"),          # planned
-    ("ssl-wearables †", "baseline_v2_ssl_wearables.json", None, "conse"),  # planned
+    ("ssl-wearables †", "baseline_v2_ssl_wearables.json", None, "conse"),
+    ("UniMTS", "baseline_v2_unimts.json", None, "cosine"),
+    ("NormWear", "baseline_v2_normwear.json", None, "l1"),
 ]
 
-# Trainable/active parameter count per model — disclosed so the ~400x capacity gap is visible
-# (the single largest HALO advantage). "released" = frozen released-weights foundation model.
+# Total scored-model parameters (encoder + head trained on our corpus), per BASELINES_OVERVIEW.md
+# (verified by loading each model). Disclosed so the capacity gap is visible; it ranges ~6x (vs
+# ssl) to ~360x (vs LiMU-BERT), NOT a uniform "~400x".
 PARAMS = {
     "HALO (Small-Deep)": "~25.8M",
     "HALO (parity)": "~25.8M",
-    "CrossHAR †": "~62.6K",
-    "LiMU-BERT †": "~62.6K",
-    "UniMTS": "released",
-    "ssl-wearables †": "released",
+    "CrossHAR †": "~0.53M",
+    "LiMU-BERT †": "~0.073M",
+    "ssl-wearables †": "~4.54M",
+    "UniMTS": "~68.6M (incl. CLIP text)",
+    "NormWear": "~194M + ~1.1B text",
 }
 
 
@@ -69,6 +72,15 @@ def main():
         if not p.exists():
             continue
         data = json.load(open(p))
+        # Reject partial/smoke outputs: run_baselines_v2 stamps _status="complete" only when every
+        # requested dataset succeeded. A missing _status is a legacy file -> require all DATASETS present.
+        status = data.get("_status")
+        if status is not None and status != "complete":
+            print(f"  [skip] {label}: result _status={status!r} (partial) -> excluded from table")
+            continue
+        if status is None and any(ds not in data for ds in DATASETS):
+            print(f"  [skip] {label}: {fn} missing datasets {[d for d in DATASETS if d not in data]} -> excluded")
+            continue
         f1s = {}
         for ds in DATASETS:
             m = get_zs(data, ds, subkey)

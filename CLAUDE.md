@@ -36,7 +36,8 @@ legacy Stage-1 was removed in V2). Headline checkpoint:
 
 ## Datasets (V2)
 
-- **Train (11):** uci_har, hhar, pamap2, wisdm, dsads, kuhar, unimib_shar, hapt, mhealth, recgym, capture24.
+- **Train (10):** uci_har, hhar, pamap2, wisdm, dsads, kuhar, unimib_shar, hapt, mhealth, capture24.
+  (recgym dropped 2026-07-11 — min-max [0,1] normalized, non-physical, corrupts the DC/gravity feature and cannot be unit-canonicalized.)
 - **Test (6, held out):** motionsense, realworld, mobiact, shoaib, harth, inclusivehar.
 - **Appendix/retained conversion:** opportunity. Dropped from the primary benchmark: vtt_coniot + the "severe-OOD" tier; realdisp/daphnet_fog/usc_had/actionsense converters.
 

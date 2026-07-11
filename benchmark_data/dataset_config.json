@@ -10,7 +10,6 @@
     "unimib_shar",
     "hapt",
     "mhealth",
-    "recgym",
     "capture24"
   ],
   "zero_shot_datasets": [

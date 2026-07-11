@@ -1,146 +1,217 @@
-# Baseline Training Readiness — steps to a fair full comparison
+# Baseline Training Readiness
 
-**Status:** NOT ready to run the full baseline table. 2 of 6 baselines exist; the
-2 that exist have blocking data/staleness issues; the other 4 are unbuilt.
+**Status:** **NO-GO for final billable runs**, updated 2026-07-11 after a clean-pod,
+data-contract, architecture, optimization, and publication sweep. The audited
+training-code baseline is `78807b41d70f8213e0ff870734c35ac752c4a91c`.
 
-_Authored 2026-07-10 after the Opus full-sweep (`docs/v2/full_sweep_findings_opus.md`).
-Every claim below was re-verified directly against the code/data, not taken from
-the agent report — the sweep mis-framed several of these (noted inline)._
+All six active adapters now exist. "Implemented" is not the same as "ready":
+three cannot start from a clean cloud checkout, and every row still has at least
+one scientific or reporting gate. Per-model evidence, paper citations, and exact
+deviations are canonical in
+[`../baselines/BASELINE_IMPLEMENTATION_NOTES.md`](../baselines/BASELINE_IMPLEMENTATION_NOTES.md).
+Shared fairness rules are canonical in
+[`../baselines/EVALUATION_PROTOCOL_V2.md`](../baselines/EVALUATION_PROTOCOL_V2.md).
 
-Final intended baseline set (settled earlier):
-- **Built:** CrossHAR, LiMU-BERT (ConSE tier).
-- **Planned:** UniMTS (cosine tier), ssl-wearables (ConSE tier), NormWear (bespoke
-  L1/MSiTF adapter), DeepConvLSTM (from-scratch supervised floor, FS-1%/10% only).
+## Current Gate Matrix
 
-Data-flow reminder (both fixes below regenerate down this chain):
-```
-data/<ds>/sessions   (converter, deterministic)
-   -> export_raw.py           -> benchmark_data/raw/<ds>/subject_*.csv
-        -> preprocess_tsfm_eval.py   -> processed/tsfm_eval/<ds>/   (HALO reads this, native rate)
-        -> preprocess_limubert.py    -> processed/limubert/<ds>/    (ConSE baselines read this, 20 Hz)
-```
-
----
-
-## STEP 1 — Cross-cutting data fixes (block *every* model; do first)
-
-These corrupt the eval for all models, so they must land before any baseline (or
-HALO) is scored. **Raw data for both is present locally**, so both are fixable now.
-
-### 1a. HARTH subject S006 recorded at 100 Hz, stored as 50 Hz (2× time-warp)
-- **Verified reality (differs from sweep):** the converter is **already correct** —
-  `datascripts/harth/convert.py` has `_infer_sample_rate` (line 122) and
-  `_resample_to_target_rate` (line 133); I confirmed it infers **100.00 Hz for
-  S006** and the resample guard triggers (`abs(native-50)=50 > 0.5`). The sweep's
-  claim that it "hard-codes 50 Hz with no per-file detection" is FALSE.
-- **The bug is stale on-disk data**, not code: the committed `data/harth/sessions`
-  was converted before that logic existed. Proof: converted/raw sample-count ratio
-  is identical for S006 (2.409) and the true-50 Hz subjects S008 (2.361) / S009
-  (2.451). If S006 had been downsampled its ratio would be ~half. Its on-disk
-  `timestamp_sec` reads 0.02 s (fabricated 50 Hz) while holding the full 100 Hz
-  sample count → every 6 s window really spans 3 s of motion, and the 50→20 Hz
-  eval resample under-samples it 2×.
-- **Fix:** re-run `python datascripts/harth/convert.py` (deterministic, seed=42+subject).
-  S006 will resample 100→50 Hz (row count ~halves); all other subjects unchanged.
-- **Then regenerate downstream:** `export_raw.py --datasets harth` →
-  `preprocess_tsfm_eval.py --datasets harth` (HALO copy) +
-  `preprocess_limubert.py --datasets harth` (baseline copy). Both current
-  `tsfm_eval/harth` (Jul 3) and `limubert/harth` inherit the corruption.
-- **Affects:** HALO harth row + all baseline harth rows (harth is a headline test set).
-
-### 1b. mobiact baseline (limubert) processed copy has a stale label vocabulary
-- **Verified reality (differs from sweep):** the corruption is real but **NOT silent**.
-  `processed/limubert/mobiact/{label_20_120.npy,mapping.json}` are Feb-14 and use the
-  OLD vocab (`fall_backward_knees→2`), while `data/mobiact/labels.json`, the
-  `eval_v2` label config, AND HALO's own `tsfm_eval/mobiact` copy (Jul 3) all use
-  the CORRECTED vocab (`fall_forward_knees→4`, `fall_backward_sitting→2`, ...).
-- **`base.load_gt` already guards this** (base.py:88-100): it compares
-  `mapping.json.activity_to_idx` to the current `eval_v2 idx_to_label` and
-  **raises `ValueError`** on mismatch. So the ConSE baselines currently **cannot be
-  scored on mobiact at all** — they hard-fail, they do not silently produce wrong
-  numbers. HALO's mobiact eval is already correct.
-- **Fix (no reconvert needed — converter + eval already agree):**
-  `export_raw.py --datasets mobiact` → `preprocess_limubert.py --datasets mobiact`
-  to refresh the stale baseline copy so `mapping.json` matches the current vocab and
-  the guard passes.
-- **Sanity after:** the guard in `base.load_gt` passing for mobiact is itself the
-  regression test. (The other 5 test sets already MATCH — verified.)
-
-**Step-1 exit check:** `base.load_gt` succeeds for all 6 test sets; harth S006
-converted rows ≈ half the prior count; `tsfm_eval/harth` metadata still 50 Hz but
-now genuinely resampled.
-
----
-
-## STEP 2 — Decide HALO's final training config (do before spending GPU on baselines)
-
-**User decision required — not started.** The sweep found ~14 pp of HALO gains from
-config changes verified against `hyperparameters.json`
-(`use_memory_bank=true`, `use_mean_pooling=false`, `loss_type=infonce`,
-`feature_extractor_type=spectral_temporal`). If HALO is going to be retrained with
-any of these changed, baselines should be compared against the *final* HALO, so
-settle this first. Candidate changes (verify each before adopting):
-- `USE_MEMORY_BANK=0` (repo ablation claims +~8 pp; needs independent confirm of the
-  ablation CSV + the soft-target-zeroing mechanism in semantic_loss.py).
-- `use_mean_pooling=True` (repo ablation claims +5.8 pp; confirm on the 7/7 table).
-- `loss_type=siglip` (already plumbed; SigLIP small-batch result).
-- Tokenizer cutover to the filterbank (removes rate-inconsistent spectral path).
-- Eval-only: de-underscore labels + prompt ensembling; center/whiten label
-  prototypes + inverted-softmax.
-
-These are **out of scope for "get ready to train baselines"** but gate the order of
-operations. Tracked separately; do not retrain baselines until HALO config is frozen.
-
----
-
-## STEP 3 — Build the 4 missing adapters + refresh the 2 stale ones
-
-### 3a. Missing adapters (no file exists in `baselines/`)
-| Baseline | Tier | Weights present? | Key build requirements (from sweep, to re-verify at build) |
+| Model | Clean-pod execution | Scientific status | Final-run gate |
 |---|---|---|---|
-| **DeepConvLSTM** | from-scratch FS-only | N/A (trained from scratch) | Ordóñez & Roggen 2016 recipe; min-max [0,1] norm (NOT z-score); 20 Hz/120-ts/6-ch limubert arrays; FS-1%/10% via `eval_v2.subject_disjoint_split(seed=3431)`; report full-shot. **`references/baselines/deepconvlstm/paper.pdf` is missing** — fetch it (open-access MDPI). Do this one FIRST (no weights, no network, simplest). |
-| **ssl-wearables** | ConSE | ✅ **harnet cached** at `~/.cache/torch/hub/OxWearables_ssl-wearables_main` | 30 Hz, **g-units, gravity-present**, 3-ch (accel-only), (N,3,300) from RAW (not the 20 Hz m/s² limubert copy); freeze trunk, train head only; reconcile 10 s/300-ts window vs the 6 s ConSE grid (open question — see M-8). |
-| **UniMTS** | cosine | ❌ HuggingFace `xiyuanz/UniMTS` not downloaded | accel-only 3-ch (released ckpt); per-dataset unit map; `--joint_list` SMPL-joint mapping per placement; first-10 s/200-ts wrap-pad window; identical de-underscored label strings as HALO. |
-| **NormWear** | bespoke (NOT plain cosine) | ❌ backbone + MSiTF ckpt not downloaded | Needs `preprocess_normwear.py` (65 Hz resample + full preproc); MSiTF alignment ckpt + query-conditioned fusion; Clinical-TinyLlama label encoder; L1 scoring (driver hardwires cosine → needs a distance branch); reuse NormWear's shipped `activity` template (do NOT invent a prompt — M-9). |
+| CrossHAR | Passes | No-go | Retrain backbone on the frozen 10-source corpus; subject-disjoint/balanced/calibrated 86-way head; provenance |
+| LiMU-BERT | Fails: missing `models` package | No-go | Package pinned source; correct units and transition labels; current-corpus paper-strength or explicitly compute-matched training |
+| SSL-Wearables | Conditional network fetch | Conditional | Pin upstream revision/weight; use exact `harnet5 frozen-head ConSE` name or report a separately named strong fine-tune; calibrate head |
+| UniMTS | Fails: missing `contrastive` package and checkpoint | No-go | Fix Hugging Face ID; package source/weight; verify placement, units, resampling, and 6-to-10-second adaptation |
+| NormWear | Fails: missing `NormWear` package and checkpoints | No-go | Package strict weights; implement 65 Hz native preprocessing, real-channel input, and frozen natural label text |
+| DeepConvLSTM | Passes | Conditional | Common validation metric; at least five seeds or subject folds; strict all-dataset completion and provenance |
 
-### 3b. Stale built adapters — re-pretrain on the 11-dataset corpus
-- **CrossHAR + LiMU-BERT** were pretrained Feb on the **10-dataset** corpus (no
-  capture24). For the "same corpus" parity claim both must be re-pretrained on the
-  current 11-dataset `train_datasets` (capture24 included, with its cap). Also
-  delete the stale `test_output/baseline_evaluation/{crosshar,limubert}_zs_*.pt`
-  caches so heads re-fit on refreshed embeddings.
-- **Doc hygiene (HIGH regressions from sweep, cheap):** delete stale
-  `test_output/baseline_evaluation/crosshar_evaluation.json`; fix
-  `BASELINES_SETUP.md` + `README.md` to point at `run_baselines_v2.py` (not the
-  gated legacy `evaluate_crosshar.py`); finish the NormWear/UniMTS doc edits
-  (`baseline_flexibility.md` prose, `CROSSCHECK.md:161`).
+No row in this table is currently approved as a final paper run. CrossHAR and
+DeepConvLSTM are useful for cloud smoke tests only.
 
-### 3c. Ordering
-1. **DeepConvLSTM first** — no weights, no network, exercises the from-scratch FS path.
-2. **ssl-wearables** — weights already cached locally.
-3. **UniMTS** — needs a HuggingFace download.
-4. **NormWear** — most work (bespoke adapter + new preprocessing + LLM label encoder).
-5. Re-pretrain CrossHAR + LiMU-BERT (GPU) once HALO config (Step 2) is frozen.
+## 1. Shared Scientific Gates
 
-**Global exit check:** `run_baselines_v2.py --baselines <all 6>` runs end-to-end on
-all 6 test sets without the `load_gt` guard firing, and `assemble_v2_table.py`
-produces a full table with no unannotated partial averages.
+### 1.1 Freeze The Final HALO And Data Contract
 
----
+The existing HALO result files reference the historical
+`small_deep_v2_4b3fdd6` checkpoint. Its saved configuration is
+spectral-temporal/200 epochs, while current V2 forces the physical filterbank and
+uses 100 epochs. It also predates the addition of Capture24. Newly trained
+baselines cannot be compared with those JSONs as if they represented current V2.
 
-## Progress log
-- [x] 1a HARTH S006 reconvert + downstream regen — **DONE 2026-07-10.** Reconverted
-  (S006 2548→1290 sessions, genuinely 50 Hz, ratio 1.14 vs ~2.4 for true-50Hz
-  subjects); added `shutil.rmtree(sessions/)` to the converter (cleared 1366 orphans;
-  on-disk==labels.json==37,941); regenerated `raw/harth`, `tsfm_eval/harth`
-  (50 Hz, 49,713 windows), `limubert/harth`. 29 eval tests pass.
-- [x] 1b mobiact limubert copy refresh — **DONE 2026-07-10.** Re-ran export_raw +
-  preprocess_limubert; refreshed `limubert/mobiact/mapping.json` now has the
-  corrected fall vocab (`fall_forward_knees→4`). **All 6 test sets now pass the
-  `base.load_gt` guard** (mobiact was previously crashing).
-- [ ] 2  HALO config decision (user)
-- [ ] 3a-DeepConvLSTM adapter + paper.pdf  ← in progress
-- [ ] 3a-ssl-wearables adapter
-- [ ] 3a-UniMTS adapter
-- [ ] 3a-NormWear adapter + preprocess_normwear.py
-- [ ] 3b CrossHAR + LiMU-BERT re-pretrain + doc hygiene
+Before training any final model, freeze and hash:
+
+- the exact 10-source manifest and source caps (recgym dropped 2026-07-11 → global
+  ConSE source vocab is now 86 labels, not 94; cached 94-way heads must be refit);
+- all six target window indices, subject IDs, and one canonical window label;
+- per-dataset units, gravity convention, real channels, and native rate;
+- the current HALO architecture, loss, source sampler, epochs/steps, and seeds;
+- the data bundle, label configs, and evaluation code commit.
+
+The current 20 Hz and native-rate label tensors agree in window and subject order
+but disagree on three RealWorld and one MobiAct majority labels. All scorers must
+consume a single rate-independent ground-truth artifact before final runs.
+
+### 1.2 Correct Model-Native Data
+
+- LiMU-BERT preprocessing currently leaves UCI-HAR, HAPT, and UniMiB near g-scale
+  and then divides them by 9.8 as if they were m/s^2. RecGym has no physical scale.
+- NormWear currently receives 20 Hz x 120 samples even though its published
+  pipeline is 65 Hz x 6 seconds with detrending and Gaussian smoothing. Upstream
+  code does not automatically resample a supplied 20 Hz tensor.
+- NormWear must receive only real channels; zero-padded gyroscope channels are an
+  implementation artifact for fixed six-axis baselines, not observed sensors.
+- UniMTS needs a frozen per-dataset placement, unit, gravity, resampling, and
+  padding contract. Its one-core-stream parity row and any multi-placement native
+  row must remain separate.
+- SSL-Wearables must continue using dedicated 30 Hz, g-unit, gravity-present
+  acceleration arrays rather than LiMU-BERT's 20 Hz m/s^2 copy.
+
+### 1.3 Freeze Fair Training Policies
+
+Do not equate models by epoch count alone. Current 100-epoch head schedules
+correspond to roughly 23,000 CrossHAR, 138,000 LiMU-BERT, and 15,000
+SSL-Wearables optimizer updates because LiMU-BERT creates six classifier samples
+per parent window. Record examples and optimizer steps.
+
+The final policy must pre-register:
+
+- whether CrossHAR uses its official 1,600/800 schedule, the repository's custom
+  200/100 schedule, or both as separately named paper-faithful/compute-matched rows;
+- whether LiMU-BERT uses the paper's 3,200 pretraining and 700 classifier epochs
+  or an explicitly named compute-matched deviation;
+- a shared corpus-matched source class/dataset sampler or loss, plus separately
+  named faithful unweighted runs where required;
+- held-out source-subject validation and source-only temperature scaling for all
+  ConSE heads;
+- validation macro-F1 as the common supervised checkpoint-selection metric;
+- at least five registered seeds or rotated subject folds for DeepConvLSTM and
+  HALO few-shot rows.
+
+### 1.4 Report Comparisons In The Correct Category
+
+- **Corpus-matched:** HALO, CrossHAR, and LiMU-BERT after all three are trained on
+  the same frozen sources.
+- **Externally pretrained:** SSL-Wearables, UniMTS, and NormWear, with their
+  external data and checkpoint variants visible in the table.
+- **Supervised floor:** DeepConvLSTM in FS/full-shot only.
+
+The categories must not be collapsed into a single claim of equal training data.
+Current fixed windows expose about 218.1 hours to CrossHAR/LiMU-BERT and 116.5
+center-cropped hours to the SSL head, while HALO's native-session configuration is
+roughly 399 hours. SSL-Wearables additionally brings about 700,000 person-days of
+external UK-Biobank pretraining. See the cited model notes for sources.
+
+## 2. Clean-Pod And Artifact Gates
+
+`auxiliary_repos/` is entirely Git-ignored. The data bundle contains processed
+arrays and cached ConSE heads, not the LiMU-BERT, UniMTS, or NormWear source
+packages. `cloud/apply_recipe.py` downloads only CrossHAR and LiMU-BERT backbone
+files and does not clone or pin upstream repositories.
+
+Clean-checkout simulation of the current recipe inputs produced:
+
+```text
+crosshar       setup/refit path: PASS
+deepconvlstm   build/backward path: PASS
+limubert       ModuleNotFoundError: models
+unimts         ModuleNotFoundError: contrastive
+normwear       ModuleNotFoundError: NormWear
+```
+
+The UniMTS recipe also uses the wrong released model account:
+`xiyuanzh/UniMTS` instead of `xiyuanz/UniMTS`.
+
+Before a job can be marked ready, preflight must verify:
+
+- exact Git SHA is reachable, not merely repository `HEAD`;
+- pinned upstream source commit is installed/importable;
+- every required checkpoint exists and matches SHA-256;
+- the exact recipe runs in a clean checkout with the current data bundle;
+- all requested result files are newly created, parse, contain every requested
+  dataset, and record provenance;
+- a deliberately injected model/dataset failure produces a nonzero process exit,
+  `FAILED`, and no accepted stale result.
+
+The existing `cloud/preflight.py` currently prints `READY` for all six jobs even
+though the three imports above fail. Its success is not approval to spend.
+
+## 3. Runner Failure Semantics
+
+**Partially fixed 2026-07-11.** `run_baselines_v2.py` and `run_fewshot_v2.py` now
+stream per-dataset output to a `.partial.json` sidecar, drop any stale final file
+before running, and only atomically promote the sidecar to the final
+`baseline_v2_*.json`/`fewshot_v2_*.json` once **every requested dataset** succeeds;
+any failure records `_status:"failed"` + `_failed_datasets` and exits the process
+nonzero. The five dirty 2/6-dataset `baseline_v2_*.json` were purged. **Still open:**
+UniMTS and NormWear evaluator modules have no command-line `main`, so the first
+command in each cloud recipe is a no-op; the following caught setup error can still
+lead to a zero exit and `DONE` with no result — this must be closed in the recipe
+layer + preflight (§2), not just the runners.
+
+The final harness must satisfy all of the following:
+
+- any requested model or dataset failure makes the process nonzero;
+- output is written to a new run-specific path, never a tracked/stale filename;
+- a success sentinel is emitted only after schema, support, and hash validation;
+- fleet exits nonzero if any job reports `FAILED`, `TIMEOUT`, `NO_GOOD_HOST`, or
+  an incomplete result;
+- result upload never treats a pre-existing repository JSON as current output.
+
+## 4. Vast.ai Safety Gates
+
+The current fleet defaults are unsafe for reruns and parallel processes:
+
+- The default run ID is only `r<git-sha-prefix>`. Reusing the same SHA can expose
+  a new pod to an old R2 `DONE`/`FAILED` sentinel.
+- Separate fleet processes at the same default run ID share a teardown namespace;
+  one process can reconcile and destroy another process's pod.
+- `cloud/halo up` only recognizes `--vast`; other fleet flags are interpreted as
+  job names. It also calls `python` and `vastai` from `PATH`, so this checkout
+  requires activating `.venv` first.
+- `cloud/halo nuke` uses an obsolete CLI path and lacks noninteractive `-y`.
+- The on-pod `poweroff` watchdog is not an API-level Vast contract destruction and
+  must not be the only billing backstop.
+
+For any smoke run before these are fixed, use one unique timestamped run ID per
+fleet process, verify the R2 prefix is empty, launch jobs sequentially, monitor
+the instance list independently, and manually confirm destruction. Final runs
+remain blocked until these safeguards are enforced by code.
+
+## 5. Resource Gates
+
+- CrossHAR and LiMU-BERT materialize large sequence embeddings and need at least
+  32 GiB host RAM. The current offer query does not enforce host RAM even though
+  it accepts a `min_gb` argument.
+- A 24 GiB RTX 4090 is sufficient for the measured local forward/training smoke
+  tests. NormWear batch 128 peaked below that capacity after model loading.
+- GPU memory alone is not a complete offer requirement; record host RAM, disk,
+  GPU model/VRAM, CUDA, PyTorch, and wall time for every run.
+
+## 6. Acceptance Checklist
+
+A final fleet launch is approved only when every item is checked:
+
+- [ ] Current HALO configuration and 10-source data manifest frozen (recgym dropped)
+- [ ] One canonical GT artifact used by HALO and every baseline
+- [ ] LiMU-BERT source units and transition-label handling corrected
+- [ ] NormWear 65 Hz native preprocessing and real-channel handling validated
+- [ ] LiMU-BERT, UniMTS, and NormWear source/weights packaged and pinned
+- [ ] CrossHAR and LiMU-BERT backbones retrained under named schedules
+- [ ] ConSE source-subject validation, balance policy, and calibration frozen
+- [ ] DeepConvLSTM/HALO few-shot folds or seeds frozen
+- [ ] Parameter, corpus, context, and effective-hours disclosures emitted
+- [~] Runner failures propagate nonzero and stale/partial outputs are rejected
+      (runners done 2026-07-11; recipe no-op `main` + preflight validation still open)
+- [ ] Unique run IDs and sentinel isolation enforced
+- [ ] Preflight executes each exact clean-pod recipe and validates output schema
+- [ ] Full repository and focused evaluation tests pass
+
+## Verified So Far
+
+- `pytest -q`: 170 passed, 25 return-value warnings in dataset conversion tests.
+- `tests/test_eval_v2.py`: 29 passed.
+- CrossHAR, LiMU-BERT, SSL-Wearables, UniMTS, and NormWear local forwards produced
+  finite outputs when their local ignored dependencies were present.
+- DeepConvLSTM completed a finite forward, loss, backward, and gradient smoke.
+- No existing R2 sentinel was present under `runs/r78807b41` during the audit.
+
+These checks establish numerical viability, not publication readiness. The gates
+above remain authoritative.

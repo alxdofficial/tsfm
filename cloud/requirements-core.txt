@@ -26,7 +26,7 @@ cachetools==6.2.1
 certifi==2025.10.5
 cffi==2.0.0
 charset-normalizer==3.4.4
-chronos-forecasting==2.0.0
+# chronos-forecasting==2.0.0  # REMOVED 2026-07-11: dropped baseline (Chronos), imported nowhere in pod-run code; its pins made requirements unresolvable on a modern-torch pod
 click==8.3.1
 comm==0.2.3
 contourpy==1.3.3
@@ -73,17 +73,21 @@ librt==0.6.3
 llvmlite==0.45.1
 matplotlib-inline==0.2.1
 matplotlib==3.10.7
-momentfm==0.1.4
+# momentfm==0.1.4  # REMOVED 2026-07-11: dropped baseline (MOMENT), imported nowhere in pod-run code; hard-pinned huggingface-hub==0.24.0 / transformers==4.33.3 -> ResolutionImpossible against hf_hub 0.36.2
 mpmath==1.3.0
 mypy==1.19.0
 mypy_extensions==1.1.0
 narwhals==2.12.0
 nest-asyncio==1.6.0
 networkx==3.5
-numba==0.62.1
-numpy==1.25.2
+# numba: not imported by HALO code (transitive freeze); leave to a requirer.
+# Sci stack is LOOSE on purpose: cloud pods layer on a modern torch image whose
+# numpy is 2.x (torch>=2.10). Exact 1.25 pins have no wheel for the image python
+# and are ABI-incompatible with the image torch. bootstrap installs --upgrade-strategy
+# only-if-needed, so pip keeps the image's already-good stack.
+numpy>=1.24.0
 packaging==25.0
-pandas==2.3.3
+pandas>=2.0.0
 parso==0.8.5
 pathspec==0.12.1
 patool==4.0.4
@@ -123,8 +127,8 @@ requests==2.32.5
 rsa==4.9.1
 s3transfer==0.14.0
 safetensors==0.6.2
-scikit-learn==1.7.2
-scipy==1.16.3
+scikit-learn>=1.3.0
+scipy>=1.10.0
 seaborn==0.13.2
 sentence-transformers==5.1.2
 sentencepiece==0.2.1

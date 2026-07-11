@@ -30,7 +30,12 @@ BACKBONES = {
 }
 
 # torch stack + git-installed packages are handled specially in bootstrap.sh, not the lock file.
-REQ_EXCLUDE_PREFIXES = ("torch", "torchvision", "torchaudio", "clip", "nvidia-", "triton")
+# momentfm/chronos are DROPPED baselines still installed in the dev venv; they hard-pin old
+# huggingface-hub/transformers and make the pod requirements UNRESOLVABLE. Exclude them from the
+# freeze so re-running --requirements never reintroduces the conflict (they are imported nowhere
+# in pod-run code).
+REQ_EXCLUDE_PREFIXES = ("torch", "torchvision", "torchaudio", "clip", "nvidia-", "triton",
+                        "momentfm", "chronos")
 
 
 def push_backbones(s3):

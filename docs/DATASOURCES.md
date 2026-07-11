@@ -8,14 +8,25 @@ computed from `benchmark_data/dataset_config.json` and the on-disk
 For **training-quantity depth** (hours trained, patches/epoch, session-cap policy) see
 [`docs/v2/data_quantity_report.md`](v2/data_quantity_report.md). For the **standardized
 per-session format** see [`DATA_FORMAT.md`](DATA_FORMAT.md).
+Publication citations and model-specific data contracts are maintained in
+[`baselines/BASELINE_IMPLEMENTATION_NOTES.md`](baselines/BASELINE_IMPLEMENTATION_NOTES.md);
+the cross-model fairness rules are in
+[`baselines/EVALUATION_PROTOCOL_V2.md`](baselines/EVALUATION_PROTOCOL_V2.md).
 
 ## 1. At a glance
 
-- **11 training datasets** + **6 held-out test datasets** (17 total).
-- Train = the corpus HALO/baselines are fit on. Test = zero-shot / few-shot evaluation only.
-- All sensor windows in the eval pipeline are resampled to a common grid
-  (`benchmark_data/processed/limubert/<ds>`: 20 Hz, 6-ch acc+gyro; and
-  `processed/ssl_wearables/<ds>`: 30 Hz, 3-ch acc, gravity-present datasets only).
+- **10 training datasets** + **6 held-out test datasets** (16 total).
+  (recgym was dropped from the training corpus 2026-07-11 — see §4.)
+- "Training" denotes HALO's source pool, not identical exposure for every model.
+  CrossHAR and LiMU-BERT are intended corpus-matched rows; the SSL-Wearables head
+  can use only 8/10 sources; UniMTS and NormWear use released external weights;
+  DeepConvLSTM is trained only on target few-shot/full-shot splits.
+- Test datasets are held out from HALO and all in-repository source training.
+  External checkpoints require a separate pretraining-overlap audit and disclosure.
+- Evaluation holds window identities and canonical ground truth fixed, then applies
+  frozen model-native views: native-rate or 20 Hz parity for HALO, 20 Hz x 6 channels
+  for fixed-rate baselines, 30 Hz gravity-present acceleration for SSL-Wearables,
+  and an intended 65 Hz NormWear path. These are aligned views, not identical tensors.
 
 ![One representative session's accelerometer per dataset](figures/datasets_montage.png)
 
@@ -24,7 +35,10 @@ regimes are the heterogeneity HALO must absorb — and expose data-quality issue
 `kuhar` is near-zero amplitude (gravity removed) and `recgym` sits flat around 0.5 (min-max
 normalized). See §4 Caveats. (Regenerate: montage script; or `plot_sessions.py` for per-dataset QA.)*
 
-## 2. Training datasets (11)
+## 2. Training datasets (10)
+
+*(recgym was a training source until 2026-07-11; dropped as non-physical — see §4. Its
+row is retained below in strikethrough for provenance but is not part of the corpus.)*
 
 | Dataset | Native Hz | #Sessions (disk) | Sensors | #Activities | Session len s (min/med/max) | Placement |
 |---|--:|--:|---|--:|---|---|
@@ -37,7 +51,7 @@ normalized). See §4 Caveats. (Regenerate: montage script; or `plot_sessions.py`
 | unimib_shar | 50  | 11,771  | acc only            | 17 | 3.02 / 3.02 / 3.02 (fixed frame) | pocket |
 | hapt        | 50  | 2,546   | acc+gyro            | 12 | 1.5 / 5.3 / 19.4 | waist |
 | mhealth     | 50  | 2,029   | acc+ecg+gyro+mag    | 12 | 2.0 / 8.2 / 19.8 | chest/ankle/arm |
-| recgym      | 20  | 7,150   | acc+gyro            | 11 | 2.0 / 12.9 / 45.0 | wrist |
+| ~~recgym~~ (DROPPED) | 20  | 7,150   | acc+gyro            | 11 | 2.0 / 12.9 / 45.0 | wrist (min-max normalized — removed) |
 | capture24   | 100 | 48,518  | acc only (free-living) | 10 | 2.0 / 11.2 / 30.0 | wrist |
 
 ## 3. Test datasets (6, held out)
@@ -53,9 +67,10 @@ normalized). See §4 Caveats. (Regenerate: montage script; or `plot_sessions.py`
 
 ## 4. Per-dataset data-quality caveats (VERIFIED — load-bearing)
 
-These affect physical-unit models (HALO's DC/gravity feature, ssl-wearables/harnet):
+These affect models whose input contracts depend on physical units or gravity,
+including HALO's DC feature, LiMU-BERT, SSL-Wearables, UniMTS, and NormWear:
 
-- **recgym — MIN-MAX NORMALIZED to [0,1]**: acc & gyro globally scaled to [0,1] per axis
+- **recgym — DROPPED FROM TRAINING (2026-07-11), MIN-MAX NORMALIZED to [0,1]**: acc & gyro globally scaled to [0,1] per axis
   (all axes ~0.5, |acc|~0.866 const). Non-physical: no gravity magnitude/direction, physical
   amplitude destroyed. Corrupts HALO's signed DC/gravity feature. Excluded from ssl-wearables.
 - **kuhar — GRAVITY-REMOVED (linear accel)**: static postures |acc|~0.05 (m/s²), no gravity
@@ -69,8 +84,9 @@ These affect physical-unit models (HALO's DC/gravity feature, ssl-wearables/harn
 - **hhar/wisdm** disk session counts diverge from `dataset_config.json` (~2× overlap frames);
   hours overcount unique wall-clock ~2× for the fixed-frame UCI-family sets.
 
-**ssl-wearables (harnet) trains on 8/11** train sets — excludes kuhar, recgym, unimib_shar
-(non-physical / gravity-removed / source lost), logged loudly in `preprocess_ssl_wearables.py`.
+**ssl-wearables (harnet) trains on 8/10** train sets — excludes kuhar, unimib_shar
+(gravity-removed / source lost), logged loudly in `preprocess_ssl_wearables.py`. (recgym,
+previously the third exclusion, is now dropped from the corpus entirely.)
 
 ## 5. Example session plots + regeneration
 

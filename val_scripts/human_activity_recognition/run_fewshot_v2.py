@@ -184,25 +184,47 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     print(f"Protocol v2 FS | device={device} | fewshot registry={fs_names} | run={args.baselines}")
 
+    failures = []
     for name in args.baselines:
         adapter = base.REGISTRY.get(name)
         if adapter is None or adapter.tier != "fewshot":
             print(f"!! '{name}' is not a registered fewshot baseline (have {fs_names})")
+            failures.append(name)
             continue
         adapter.setup(device)
-        results = {"_baseline": name, "_tier": "fewshot", "_seed": FS_SEED}
+        results = {"_baseline": name, "_tier": "fewshot", "_seed": FS_SEED,
+                   "_requested_datasets": list(args.datasets), "_status": "incomplete"}
         out_path = OUTPUT_DIR / f"fewshot_v2_{name}.json"
+        partial_path = out_path.with_suffix(".partial.json")   # never write final incrementally
+        if out_path.exists():
+            out_path.unlink()   # drop stale final so a crash can't leave it masquerading as fresh
+        failed: dict = {}
         print(f"\n{'#'*60}\n# {name.upper()} (FS, from-scratch)\n{'#'*60}")
         for ds in args.datasets:
             try:
                 results[ds] = run_dataset(adapter, ds, device)
             except Exception as e:
                 import traceback
+                failed[ds] = repr(e)
                 print(f"!! {name}/{ds} FAILED: {e}")
                 traceback.print_exc()
-            with open(out_path, "w") as f:
+            with open(partial_path, "w") as f:
                 json.dump(results, f, indent=2, default=float)
-        print(f"Saved: {out_path}")
+        results["_failed_datasets"] = failed
+        results["_status"] = "failed" if failed else "complete"
+        with open(partial_path, "w") as f:
+            json.dump(results, f, indent=2, default=float)
+        if failed:
+            print(f"!! {name}: {len(failed)}/{len(args.datasets)} dataset(s) failed "
+                  f"({sorted(failed)}); partial kept at {partial_path.name}, final NOT produced")
+            failures.append(name)
+        else:
+            partial_path.replace(out_path)   # atomic promote only when complete
+            print(f"Saved: {out_path}")
+
+    if failures:
+        print(f"\n!! {len(failures)} fewshot baseline(s) FAILED: {sorted(failures)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

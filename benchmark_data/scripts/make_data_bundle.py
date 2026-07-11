@@ -40,8 +40,16 @@ BUNDLE_PATHS = [
     "benchmark_data/processed/ssl_wearables",      # data_30_180 (gravity-present 30Hz windows)
     "benchmark_data/dataset_config.json",          # train/zero-shot lists + per-dataset activities
     "benchmark_data/eval_v2/labels",               # pre-registered per-dataset vocabularies
-    "test_output/baseline_evaluation",             # cached 94-way ConSE heads (optional; lets eval-only pods skip refit)
+    "test_output/baseline_evaluation",             # cached ConSE heads (optional; lets eval-only pods skip refit)
 ]
+
+# Canonical native-rate GT: baselines/base.py::load_gt now scores against
+# processed/tsfm_eval/<ds>/label_native.npy (the same label HALO uses). Ship ONLY those
+# label files for the eval/test datasets — NOT the multi-GB data_native.npy that baselines
+# never read. Without this every baseline FileNotFoundErrors on load_gt on a clean pod.
+_cfg = json.loads((PROJECT_ROOT / "benchmark_data" / "dataset_config.json").read_text())
+for _ds in _cfg.get("zero_shot_datasets", []):
+    BUNDLE_PATHS.append(f"benchmark_data/processed/tsfm_eval/{_ds}/label_native.npy")
 
 # Files matching these suffixes are excluded even under an included dir.
 EXCLUDE_SUFFIXES = (".tmp", ".lock")

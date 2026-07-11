@@ -216,6 +216,16 @@ def reshape_and_merge(embeddings: np.ndarray, labels_raw: np.ndarray,
             keep.append(i)
             label_out.append(int(unique[0]))
 
+    # Observability: this filter is inert unless the label tensor carries TRUE
+    # per-timestep labels (see preprocess_limubert.window_data). Report how many
+    # transition-spanning sub-windows it actually dropped so a silent no-op (0 drops
+    # on continuous data => stale broadcast labels) is visible rather than hidden.
+    n_sub = labels.shape[0]
+    n_drop = n_sub - len(keep)
+    if n_drop:
+        print(f"    [limubert] transition filter dropped {n_drop}/{n_sub} "
+              f"sub-windows spanning an activity boundary")
+
     keep = np.array(keep)
     parent_window_ids = keep // K  # which original window each sub-window belongs to
     data = data[keep]

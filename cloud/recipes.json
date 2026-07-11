@@ -30,6 +30,7 @@
       "gpu_min_gb": 12,
       "max_hours": 3,
       "upstream_repo": "https://github.com/kingdomrush2/CrossHAR",
+      "repo_commit": "77b63d3ba4",
       "vendored": "auxiliary_repos/CrossHAR",
       "backbone_from_r2": "ckpt/baselines/crosshar/pretrain_base_combined_train_20_120/model_masked_6_1.pt",
       "pip": [],
@@ -42,6 +43,7 @@
       "gpu_min_gb": 12,
       "max_hours": 3,
       "upstream_repo": "https://github.com/dapowan/LIMU-BERT-Public",
+      "repo_commit": "decffee7ec",
       "vendored": "auxiliary_repos/LIMU-BERT-Public",
       "backbone_from_r2": "ckpt/baselines/limubert/pretrain_base_combined_train_20_120/pretrained_combined.pt",
       "pip": [],
@@ -55,7 +57,7 @@
       "max_hours": 3,
       "upstream_repo": "torch.hub: OxWearables/ssl-wearables (harnet5)",
       "pip": [],
-      "fetch": ["torch.hub OxWearables/ssl-wearables (auto on first load)"],
+      "fetch": ["r2:ckpt/baselines/ssl_wearables/hub_v1.0.0.tar.gz -> torch.hub cache OxWearables_ssl-wearables_v1.0.0 (mirrored pinned harnet5; no GitHub dependency)"],
       "train_cmd": "TSFM_ALLOW_SSL_HEADFIT=1 python val_scripts/human_activity_recognition/evaluate_ssl_wearables.py && python val_scripts/human_activity_recognition/run_baselines_v2.py --baselines ssl_wearables",
       "results": ["test_output/baseline_evaluation/ssl_wearables_zs_head.pt", "test_output/eval_v2/baseline_v2_ssl_wearables.json"],
       "note": "Trains on 8/11 datasets (kuhar/recgym/unimib_shar excluded: non-physical/gravity-removed accel)."
@@ -74,24 +76,24 @@
       "gpu_min_gb": 12,
       "max_hours": 3,
       "upstream_repo": "https://github.com/xiyuanzh/UniMTS",
-      "repo_commit": "PIN@unimts",
+      "repo_commit": "656fcdab7e",
       "pip": ["ftfy", "regex", "git+https://github.com/openai/CLIP.git", "torchvision"],
-      "fetch": ["hf:xiyuanzh/UniMTS UniMTS.pth", "clip ViT-B/32 (auto)"],
+      "fetch": ["hf:xiyuanz/UniMTS checkpoint/UniMTS.pth", "clip ViT-B/32 (auto)"],
       "train_cmd": "python val_scripts/human_activity_recognition/evaluate_unimts.py && python val_scripts/human_activity_recognition/run_baselines_v2.py --baselines unimts",
       "results": ["test_output/eval_v2/baseline_v2_unimts.json"],
-      "status": "ADAPTER NOT YET INTEGRATED (task #66)"
+      "status": "adapter integrated (cosine tier, @register'd, runs zero-shot locally). PENDING for pods: auto-provision UniMTS source + UniMTS.pth (HF xiyuanz/UniMTS) + a real repo_commit pin (task #78)."
     },
     "normwear": {
       "kind": "cosine_eval",
       "gpu_min_gb": 16,
       "max_hours": 4,
       "upstream_repo": "https://github.com/Mobile-Sensing-and-UbiComp-Laboratory/NormWear",
-      "repo_commit": "PIN@normwear",
+      "repo_commit": "07517fcb13",
       "pip": ["torchaudio", "transformers"],
-      "fetch": ["hf NormWear backbone + MSiTF", "hf TinyLlama/TinyLlama-1.1B-Chat (~2.2GB)"],
+      "fetch": ["github-release Mobile-Sensing-and-UbiComp-Laboratory/NormWear v1.0.0-alpha: normwear_pretrain_ckpt.pth (backbone) + normwear_msitf_zeroshot_last_checkpoint-5.pth (MSiTF)", "hf muzammil-eds/tinyllama-2.5T-Clinical-v2 (~2.2GB; the clinical variant msitf_fusion.py actually loads, NOT vanilla TinyLlama-1.1B-Chat)"],
       "train_cmd": "python val_scripts/human_activity_recognition/evaluate_normwear.py && python val_scripts/human_activity_recognition/run_baselines_v2.py --baselines normwear",
       "results": ["test_output/eval_v2/baseline_v2_normwear.json"],
-      "status": "ADAPTER NOT YET INTEGRATED (task #67)"
+      "status": "adapter integrated (l1 tier, @register'd, runs zero-shot locally). PENDING for pods: auto-provision NormWear source + backbone/MSiTF/TinyLlama weights + a real repo_commit pin (task #78)."
     }
   }
 }

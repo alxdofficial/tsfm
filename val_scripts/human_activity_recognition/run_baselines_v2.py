@@ -44,42 +44,68 @@ def run_one(name: str, datasets, device, sbert, out_path: Path) -> dict:
     print(f"\n{'#'*60}\n# {name.upper()} (v2, tier={adapter.tier})\n{'#'*60}")
     state = adapter.setup(device)
     GLOBAL = B.global_labels()
-    results = {"_baseline": name, "_tier": adapter.tier}
+    results = {"_baseline": name, "_tier": adapter.tier,
+               "_requested_datasets": list(datasets), "_status": "incomplete"}
+    failed: dict = {}
+    # Never write the FINAL path incrementally: a mid-run crash must not leave a
+    # partial file that reads as a complete result. Stream to a .partial sidecar and
+    # only atomically promote it to out_path once EVERY requested dataset succeeded.
+    partial_path = out_path.with_suffix(".partial.json")
 
     for ds in datasets:
-        L_D, gt_names, subjects, keep_idx = B.load_gt(ds)
-        if adapter.tier == "conse":
-            probs = adapter.window_probs(ds, state, device)[keep_idx]
-            if probs.shape[1] != len(GLOBAL):
-                raise ValueError(
-                    f"{name}/{ds}: classifier emits {probs.shape[1]} classes, "
-                    f"but global_label_mapping.json has {len(GLOBAL)} labels. "
-                    "Rebuild the cached classifier and global label mapping together."
-                )
-            preds, info = eval_v2.conse_predict(probs, GLOBAL, L_D, encode=sbert)
-            extra = {"reachability_lb": info["reachability_lb"],
-                     "n_predicted_classes": info["n_predicted_classes"]}
-        elif adapter.tier == "l1":
-            # Bespoke tier (NormWear): window + label embeddings in an asymmetric learned space,
-            # scored by NEGATIVE Manhattan distance (native metric is L1 argmin). Not a dot product.
-            emb = adapter.window_embeddings(ds, state, device)[keep_idx]
-            text = adapter.encode_labels(L_D, state, device)
-            scores = -np.abs(emb[:, None, :] - text[None, :, :]).sum(-1)   # (N,C), higher=better
-            preds = eval_v2.predict_from_similarity(scores, L_D)
-            extra = None
-        else:  # cosine
-            emb = adapter.window_embeddings(ds, state, device)[keep_idx]
-            text = adapter.encode_labels(L_D, state, device)
-            preds = eval_v2.predict_from_similarity(emb @ text.T, L_D)
-            extra = None
-        results[ds] = B.score(gt_names, preds, subjects, extra)
-        r = results[ds]
-        ci = (f"[{r['f1_macro_ci_lo']:.1f},{r['f1_macro_ci_hi']:.1f}]"
-              if not r.get("ci_degenerate") else "[degenerate]")
-        print(f"  {ds:12} ZS-XD F1={r['f1_macro']:5.1f} {ci}  bAcc={r['balanced_accuracy']:5.1f}  "
-              f"Acc={r['accuracy']:5.1f}" + (f"  reach_lb={extra['reachability_lb']:.2f}" if extra else ""))
-        with open(out_path, "w") as f:   # incremental save
+        try:
+            L_D, gt_names, subjects, keep_idx = B.load_gt(ds)
+            if adapter.tier == "conse":
+                probs = adapter.window_probs(ds, state, device)[keep_idx]
+                if probs.shape[1] != len(GLOBAL):
+                    raise ValueError(
+                        f"{name}/{ds}: classifier emits {probs.shape[1]} classes, "
+                        f"but global_label_mapping.json has {len(GLOBAL)} labels. "
+                        "Rebuild the cached classifier and global label mapping together."
+                    )
+                preds, info = eval_v2.conse_predict(probs, GLOBAL, L_D, encode=sbert)
+                extra = {"reachability_lb": info["reachability_lb"],
+                         "n_predicted_classes": info["n_predicted_classes"]}
+            elif adapter.tier == "l1":
+                # Bespoke tier (NormWear): window + label embeddings in an asymmetric learned space,
+                # scored by NEGATIVE Manhattan distance (native metric is L1 argmin). Not a dot product.
+                emb = adapter.window_embeddings(ds, state, device)[keep_idx]
+                text = adapter.encode_labels(L_D, state, device)
+                scores = -np.abs(emb[:, None, :] - text[None, :, :]).sum(-1)   # (N,C), higher=better
+                preds = eval_v2.predict_from_similarity(scores, L_D)
+                extra = None
+            else:  # cosine
+                emb = adapter.window_embeddings(ds, state, device)[keep_idx]
+                text = adapter.encode_labels(L_D, state, device)
+                preds = eval_v2.predict_from_similarity(emb @ text.T, L_D)
+                extra = None
+            results[ds] = B.score(gt_names, preds, subjects, extra)
+            r = results[ds]
+            ci = (f"[{r['f1_macro_ci_lo']:.1f},{r['f1_macro_ci_hi']:.1f}]"
+                  if not r.get("ci_degenerate") else "[degenerate]")
+            print(f"  {ds:12} ZS-XD F1={r['f1_macro']:5.1f} {ci}  bAcc={r['balanced_accuracy']:5.1f}  "
+                  f"Acc={r['accuracy']:5.1f}" + (f"  reach_lb={extra['reachability_lb']:.2f}" if extra else ""))
+        except Exception as e:
+            import traceback
+            failed[ds] = repr(e)
+            print(f"  !! {name}/{ds} FAILED: {e}")
+            traceback.print_exc()
+        with open(partial_path, "w") as f:   # incremental save to the SIDECAR only
             json.dump(results, f, indent=2, default=float)
+
+    results["_failed_datasets"] = failed
+    if failed:
+        results["_status"] = "failed"
+        with open(partial_path, "w") as f:
+            json.dump(results, f, indent=2, default=float)
+        raise RuntimeError(
+            f"{name}: {len(failed)}/{len(datasets)} dataset(s) failed "
+            f"({sorted(failed)}); partial kept at {partial_path.name}, "
+            f"final {out_path.name} NOT produced")
+    results["_status"] = "complete"
+    with open(partial_path, "w") as f:
+        json.dump(results, f, indent=2, default=float)
+    partial_path.replace(out_path)   # atomic promote: final exists only when complete
     return results
 
 
@@ -94,9 +120,11 @@ def main():
     sbert = eval_v2.get_sbert_encoder()
     print(f"Protocol v2 | device={device} | registry={sorted(B.REGISTRY)} | run={args.baselines}")
 
+    failures, ran = [], []
     for name in args.baselines:
         if name not in B.REGISTRY:
             print(f"!! unknown baseline '{name}' (known: {sorted(B.REGISTRY)})")
+            failures.append(name)
             continue
         if B.REGISTRY[name].tier not in ("conse", "cosine", "l1"):
             # Non-ZS tiers (e.g. 'fewshot' DeepConvLSTM) are handled by their own
@@ -104,15 +132,24 @@ def main():
             print(f".. skipping '{name}' (tier={B.REGISTRY[name].tier}); run its own driver")
             continue
         out_path = OUTPUT_DIR / f"baseline_v2_{name}.json"
+        # Drop any stale final output BEFORE running so a crash can't leave an old
+        # complete-looking file in place; the final is (re)created only on success.
+        if out_path.exists():
+            out_path.unlink()
+        ran.append(name)
         try:
             run_one(name, args.datasets, device, sbert, out_path)
         except Exception as e:
-            import traceback
             print(f"!! {name} FAILED: {e}")
-            traceback.print_exc()
+            failures.append(name)
         finally:
             if device.type == "cuda":
                 torch.cuda.empty_cache()
+
+    if failures:
+        print(f"\n!! {len(failures)} baseline(s) FAILED: {sorted(failures)}")
+        sys.exit(1)
+    print(f"\n✓ all {len(ran)} baseline(s) complete, every requested dataset present.")
 
 
 if __name__ == "__main__":

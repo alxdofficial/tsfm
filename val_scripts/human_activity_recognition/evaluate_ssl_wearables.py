@@ -62,8 +62,21 @@ CLASSIFIER_SEED = 3431
 EMBED_BATCH = 512
 
 
+# Pin the torch.hub source so the harnet5 weight cannot silently change under us. The trunk
+# mtl_5_best.mdl is byte-identical at upstream main and tag v1.0.0 (sha256 74ffaefb..., verified
+# 2026-07-11), so pinning is a zero-numeric-change reproducibility fix. Deriving the cache dir
+# from the same ref keeps the local-cache-hit path consistent with the pinned download.
+SSL_HUB_REPO = "OxWearables/ssl-wearables"
+SSL_HUB_TAG = "v1.0.0"
+
+
+def _hub_ref() -> str:
+    return f"{SSL_HUB_REPO}:{SSL_HUB_TAG}"
+
+
 def _hub_dir() -> Path:
-    return Path(torch.hub.get_dir()) / "OxWearables_ssl-wearables_main"
+    # torch.hub caches under "<owner>_<repo>_<ref>" with "/" and ":" collapsed to "_".
+    return Path(torch.hub.get_dir()) / _hub_ref().replace("/", "_").replace(":", "_")
 
 
 def load_ssl_model(name: str, num_classes: int, device):

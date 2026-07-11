@@ -158,10 +158,16 @@ def window_data(
     Returns:
         windows: (N, window_size, C) windowed data
         window_labels: (N,) activity index per window (majority vote)
+        label_windows: (N, window_size) TRUE per-timestep activity index. Returned
+            so preprocessing can store real per-timestep labels (not a broadcast
+            majority) — otherwise LiMU-BERT's transition-sub-window filter
+            (reshape_and_merge) can never fire because every timestep is identical.
     """
     n_samples = data.shape[0]
     if n_samples < window_size:
-        return np.empty((0, window_size, data.shape[1])), np.empty((0,), dtype=int)
+        return (np.empty((0, window_size, data.shape[1])),
+                np.empty((0,), dtype=int),
+                np.empty((0, window_size), dtype=int))
 
     # Truncate to be evenly divisible, then reshape (matches original)
     n_windows = n_samples // window_size
@@ -175,7 +181,7 @@ def window_data(
         [np.bincount(lw).argmax() for lw in label_windows], dtype=int
     )
 
-    return windows, window_labels
+    return windows, window_labels, label_windows
 
 
 def process_dataset(dataset: str):
@@ -269,14 +275,19 @@ def process_dataset(dataset: str):
             sensor_data[:, :3] *= (GRAVITY_MS2 / 1000.0)
 
         # Window the data (non-overlapping, matches original LIMU-BERT)
-        windows, window_act_labels = window_data(sensor_data, activity_labels)
+        windows, window_act_labels, perstep_act_labels = window_data(sensor_data, activity_labels)
 
         if len(windows) > 0:
-            # Build per-timestep label array: (N, 120, 2) = [activity_index, subject_index]
-            # LIMU-BERT expects labels repeated across all timesteps
+            # Build per-timestep label array: (N, 120, 2) = [activity_index, subject_index].
+            # Store the TRUE per-timestep activity label (not the window-majority broadcast):
+            # LiMU-BERT's classifier keeps only sub-windows whose 20 timesteps share one label
+            # (reshape_and_merge). Broadcasting a single majority made every sub-window homogeneous
+            # by construction, so that transition filter could never exclude anything. Real
+            # per-timestep labels let it fire on windows that straddle an activity boundary; for
+            # single-activity windows the two are identical, so majority-vote GT is unchanged.
             n_win = len(windows)
             labels = np.zeros((n_win, WINDOW_SIZE, 2), dtype=int)
-            labels[:, :, 0] = window_act_labels[:, np.newaxis]
+            labels[:, :, 0] = perstep_act_labels
             labels[:, :, 1] = subject_idx
 
             all_windows.append(windows)
