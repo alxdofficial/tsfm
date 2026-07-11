@@ -127,11 +127,15 @@ def extract_trunk_features(model, x_ntc: np.ndarray, device, batch=EMBED_BATCH) 
 
 
 def get_window_labels(labels_raw: np.ndarray, label_index: int = 0) -> np.ndarray:
-    """Per-window majority activity label (min-subtracted); matches the crosshar/limubert
-    head-fit label pipeline. (Test-time GT is handled offset-free by base.load_gt, not here.)"""
+    """Per-window majority activity label; matches the crosshar/limubert head-fit pipeline.
+    Labels are already 0-based indices into sorted(activities) with -1 for unknown/transient
+    timesteps (pamap2); majority over VALID codes only, -1 for an all-unknown window. NO
+    min-subtract — a single -1 would shift every window +1 out of range. (Test-time GT is
+    handled offset-free by base.load_gt, not here.)"""
     act = labels_raw[:, :, label_index]
-    act = act - int(np.min(act))
-    return np.array([np.bincount(r.astype(int)).argmax() for r in act], dtype=np.int64)
+    return np.array(
+        [np.bincount(r[r >= 0].astype(int)).argmax() if (r >= 0).any() else -1 for r in act],
+        dtype=np.int64)
 
 
 def build_head(num_classes: int, device):
@@ -181,6 +185,8 @@ def main():
             f"{lab_raw.shape[0]} — grids desynced. Re-run: python "
             f"benchmark_data/scripts/preprocess_ssl_wearables.py --datasets {ds}  (do NOT fit).")
         local = get_window_labels(lab_raw)
+        valid = local >= 0     # drop all-unknown (transient) windows, e.g. pamap2 (never fit on -1)
+        x, local, lab_raw = x[valid], local[valid], lab_raw[valid]
         gl = map_local_to_global_labels(local, ds, DATASET_CONFIG, globals_labels)
         feats.append(extract_trunk_features(model, x, device))
         labs.append(gl)

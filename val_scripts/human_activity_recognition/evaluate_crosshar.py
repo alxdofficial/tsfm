@@ -378,13 +378,14 @@ def load_raw_data(dataset_name: str) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def get_window_labels(labels_raw: np.ndarray, label_index: int = 0) -> np.ndarray:
+    # Labels are already 0-based indices into sorted(activities), with -1 for unknown/transient
+    # timesteps (pamap2). Majority over VALID codes only; -1 for an all-unknown window. Do NOT
+    # min-subtract: a single -1 shifts EVERY window +1, pushing real labels out of range
+    # (IndexError in map_local_to_global_labels) and mislabeling ~100% of the dataset.
     act_labels = labels_raw[:, :, label_index]
-    t = int(np.min(act_labels))
-    act_labels = act_labels - t
-    window_labels = np.array([
-        np.bincount(row.astype(int)).argmax() for row in act_labels
-    ], dtype=np.int64)
-    return window_labels
+    return np.array(
+        [np.bincount(r[r >= 0].astype(int)).argmax() if (r >= 0).any() else -1 for r in act_labels],
+        dtype=np.int64)
 
 
 def get_dataset_labels(dataset_name: str) -> List[str]:
@@ -601,6 +602,8 @@ def load_crosshar_training_embeddings(model, global_labels, device, return_subje
         raw_data, raw_labels = load_raw_data(ds)
         emb = extract_crosshar_embeddings(model, raw_data, device)  # (N, 120, 72)
         labels = get_window_labels(raw_labels)
+        valid = labels >= 0    # drop all-unknown (transient) windows, e.g. pamap2 (never fit on -1)
+        emb, labels, raw_labels = emb[valid], labels[valid], raw_labels[valid]
         global_lab = map_local_to_global_labels(labels, ds, DATASET_CONFIG, global_labels)
         all_emb_list.append(emb)
         all_lab_list.append(global_lab)

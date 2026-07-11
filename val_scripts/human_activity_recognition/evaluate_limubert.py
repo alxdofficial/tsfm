@@ -198,13 +198,11 @@ def reshape_and_merge(embeddings: np.ndarray, labels_raw: np.ndarray,
     D = embeddings.shape[2]
     K = SEQ_LEN // MERGE_LEN  # 120/20 = 6
 
-    act_labels = labels_raw[:, :, label_index]  # (N, 120)
-    if label_offset is None:
-        t = int(np.min(act_labels))
-    else:
-        t = label_offset
-    act_labels = act_labels - t
-
+    act_labels = labels_raw[:, :, label_index]  # (N,120): 0-based idx into sorted(activities), -1=unknown
+    # NO min-subtract: labels are already absolute 0-based indices, so they are consistent across
+    # splits without an offset. Subtracting min would shift every label +1 whenever a -1
+    # (transient/unknown, pamap2) is present, pushing real labels out of range. label_offset is
+    # accepted for backward compat but no longer used.
     data = embeddings.reshape(N * K, MERGE_LEN, D)
     labels = act_labels.reshape(N * K, MERGE_LEN)
 
@@ -212,7 +210,7 @@ def reshape_and_merge(embeddings: np.ndarray, labels_raw: np.ndarray,
     label_out = []
     for i in range(labels.shape[0]):
         unique = np.unique(labels[i])
-        if unique.size == 1:
+        if unique.size == 1 and unique[0] >= 0:   # uniform sub-window AND not unknown (-1)
             keep.append(i)
             label_out.append(int(unique[0]))
 
@@ -235,15 +233,14 @@ def reshape_and_merge(embeddings: np.ndarray, labels_raw: np.ndarray,
 
 
 def get_window_labels(labels_raw: np.ndarray, label_index: int = 0) -> np.ndarray:
-    """Extract per-window activity labels via majority vote."""
+    """Per-window majority activity label. Labels are already 0-based indices into
+    sorted(activities) with -1 for unknown/transient timesteps (pamap2); majority over VALID
+    codes only, -1 for an all-unknown window. NO min-subtract — a single -1 would shift every
+    window +1 and push real labels out of range (IndexError in map_local_to_global_labels)."""
     act_labels = labels_raw[:, :, label_index]
-    t = int(np.min(act_labels))
-    act_labels = act_labels - t
-    window_labels = np.array(
-        [np.bincount(row.astype(int)).argmax() for row in act_labels],
-        dtype=np.int64
-    )
-    return window_labels
+    return np.array(
+        [np.bincount(r[r >= 0].astype(int)).argmax() if (r >= 0).any() else -1 for r in act_labels],
+        dtype=np.int64)
 
 
 def majority_vote_subwindows(sub_preds: np.ndarray, parent_ids: np.ndarray,
