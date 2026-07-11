@@ -31,12 +31,25 @@ nohup bash -c "sleep $((MAX_HOURS*3600)); echo WATCHDOG-MAXHOURS; (sudo poweroff
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y -qq
 apt-get install -y -qq --no-install-recommends git tmux curl ca-certificates libgomp1
-# vast/conda pytorch images ship only `python3` (no `python`); our scripts + the torch-check + the
-# recipe train_cmds all call `python`, so make it resolve. This is also what lets the torch-reuse
-# check below actually find the base image's torch (avoids a needless 3GB cu128 reinstall).
-command -v python >/dev/null || ln -sf "$(command -v python3)" /usr/local/bin/python
-command -v aws  >/dev/null || pip install -q awscli
-pip install -q boto3 >/dev/null 2>&1 || true
+# Pick the python that ALREADY has a GPU-working torch. vast "pytorch" images keep it in a venv
+# (e.g. /venv/main/bin/python) that the system python3 can't see — reusing it skips a ~12-min cu128
+# reinstall (the nvidia CUDA wheels pull from a slow/timing-out pypi.nvidia.com). Point `python` at
+# it so the torch-check, `python -m pip` installs, and the recipe train_cmds all use the same env.
+NEED_TORCH=0; PYBIN=""
+for cand in /venv/main/bin/python /venv/bin/python /opt/conda/bin/python "$(command -v python3)"; do
+  [ -x "$cand" ] || continue
+  if "$cand" -c "import torch; torch.zeros(4, device='cuda').sum().item()" 2>/dev/null; then PYBIN="$cand"; break; fi
+done
+if [ -n "$PYBIN" ]; then
+  log "reusing preinstalled torch: $PYBIN ($("$PYBIN" -c 'import torch;print(torch.__version__)'))"
+else
+  PYBIN="$(command -v python3)"; NEED_TORCH=1
+  log "no GPU-working torch on the image -> will install cu128 into $PYBIN"
+fi
+ln -sf "$PYBIN" /usr/local/bin/python; hash -r
+export PATH="$(dirname "$PYBIN"):$PATH"    # so this env's aws/pip/python win over the bare system ones
+python -m pip install -q awscli boto3 zstandard >/dev/null 2>&1 || python -m pip install -q awscli boto3 || true
+hash -r
 
 # 2) fetch the PUBLIC repo at the pinned SHA — shallow (--depth 1, no history) + sparse (skip the
 #    heavy references/ PDFs + docs/figures the pod never needs). Turns a ~6-min clone into seconds.
@@ -49,17 +62,14 @@ printf '/*\n!/references/\n!/docs/figures/\n' > .git/info/sparse-checkout
 git fetch -q --depth 1 --filter=blob:none origin "$REPO_SHA"
 git checkout -q FETCH_HEAD
 
-# 3) python env — REUSE the base pytorch image's torch if it actually runs on this GPU (a real GPU
-#    op, not just is_available — catches missing sm_120/Blackwell kernels). Only pull torch from the
-#    cu128 CDN if the base image lacks a working one (e.g. a bare python image).
-if python -c "import torch; torch.zeros(8, device='cuda').sum().item()" 2>/dev/null; then
-  log "base image torch works on this GPU ($(python -c 'import torch;print(torch.__version__)')) — skip reinstall"
-else
-  log "installing torch stack from cu128 CDN (base image torch missing/incompatible)"
-  pip install -q --retries 5 --timeout 120 --index-url https://download.pytorch.org/whl/cu128 torch==2.9.0 torchvision==0.24.0 torchaudio==2.9.0
+# 3) torch (only if the base image lacked a GPU-working one) + core requirements, into `python`'s env.
+if [ "$NEED_TORCH" = "1" ]; then
+  log "installing torch stack from cu128 CDN"
+  python -m pip install -q --retries 5 --timeout 120 --index-url https://download.pytorch.org/whl/cu128 torch==2.9.0 torchvision==0.24.0 torchaudio==2.9.0
 fi
 r2 cp "s3://$R2_BUCKET/$R2_PREFIX/meta/requirements-core.txt" /tmp/req-core.txt
-pip install -q --retries 5 --timeout 120 -r /tmp/req-core.txt
+log "installing core requirements into $(command -v python)"
+python -m pip install -q --retries 5 --timeout 120 -r /tmp/req-core.txt
 # CLIP (git) only matters for unimts; harmless elsewhere but keep it job-gated via the recipe.
 log "apply recipe deps + backbone for job=$HALO_JOB"
 python cloud/apply_recipe.py --job "$HALO_JOB" --install
