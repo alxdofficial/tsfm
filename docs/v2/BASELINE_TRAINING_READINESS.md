@@ -89,6 +89,17 @@ The final policy must pre-register:
 
 - **Corpus-matched:** HALO, CrossHAR, and LiMU-BERT after all three are trained on
   the same frozen sources.
+
+  **Backbone-provenance disclosure (mandatory, 2026-07-11 audit):** the CrossHAR and
+  LiMU-BERT backbones are **self-reproduced, not official** — the CrossHAR authors
+  release no checkpoint at all, and LiMU-BERT ships only per-dataset encoders, so no
+  official "combined" weight exists. Our weights were pretrained locally with modified
+  code (CrossHAR at 200/100 epochs vs the upstream 1600/800). The paper/repo must state
+  this explicitly and pin provenance per weight — sha256 (CrossHAR `4acf6a14…`,
+  LiMU-BERT `1a8aed94…`), exact pretrain corpus, epochs, seed (3431), and source commit
+  (CrossHAR `77b63d3`, LiMU-BERT `decffee7`) — and must never call them "the official
+  CrossHAR/LiMU-BERT checkpoint." The LiMU-BERT weight is additionally stale (pre-Capture24)
+  and must be rebuilt corpus-matched before it is a fair row (see §1.1 + the rebuild task).
 - **Externally pretrained:** SSL-Wearables, UniMTS, and NormWear, with their
   external data and checkpoint variants visible in the table.
 - **Supervised floor:** DeepConvLSTM in FS/full-shot only.

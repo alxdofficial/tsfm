@@ -9,13 +9,16 @@ import json
 import numpy as np
 from pathlib import Path
 
-PROC = Path("/home/alex/code/tsfm/benchmark_data/processed/limubert")
-DS_DIR = Path("/home/alex/code/tsfm/auxiliary_repos/LIMU-BERT-Public/dataset")
+# Corpus-matched + portable (was a hardcoded /home/alex path + a frozen 10-dataset list that
+# still had recgym and lacked capture24 -> produced the stale, non-corpus-matched backbone).
+# Derive the corpus from dataset_config.json (current train set) and PROJECT_ROOT-relative paths,
+# mirroring the crosshar patch.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROC = PROJECT_ROOT / "benchmark_data" / "processed" / "limubert"
+DS_DIR = Path(__file__).resolve().parent / "dataset"
 
-TRAIN_DATASETS = [
-    "uci_har", "hhar", "pamap2", "wisdm", "dsads",
-    "kuhar", "unimib_shar", "hapt", "mhealth", "recgym",
-]
+with open(PROJECT_ROOT / "benchmark_data" / "dataset_config.json") as f:
+    TRAIN_DATASETS = json.load(f)["train_datasets"]
 
 VERSION = "20_120"
 

@@ -87,6 +87,13 @@ def window_embeddings(ds: str, model, device, query_emb=None, batch=128) -> np.n
         query_emb = compute_query(model)
     X = np.load(str(LIMU_DIR / ds / "data_20_120.npy")).astype(np.float32)   # (N,120,6)
     X = np.transpose(X, (0, 2, 1))                                            # (N,6,120)
+    # De-fabricate channels: acc-only datasets are zero-padded to 6 channels upstream. NormWear is
+    # channel-INDEPENDENT and pools across channels, so a constant-zero "gyro" enters that pool as a
+    # real observation and distorts the embedding. Keep only REAL channels — a padded channel is
+    # exactly 0 everywhere (max|x|==0), so any channel with a nonzero sample is real. NormWear
+    # accepts variable nvar. (The 65 Hz native-rate path — vs this 20 Hz grid — is a separate gate.)
+    real = np.abs(X).max(axis=(0, 2)) > 1e-8                                  # (6,) bool
+    X = X[:, real, :]                                                         # (N, nvar_real, 120)
     # NormWear's native per-channel normalization (modules/signal_preprocess.basic_preproc:58-65):
     # detrend (remove linear trend incl. the static gravity DC) then divide by mean|x| (amplitude
     # normalize into NormWear's ~unit regime). We skip its bandpass (lc/hc tuned for >=65 Hz

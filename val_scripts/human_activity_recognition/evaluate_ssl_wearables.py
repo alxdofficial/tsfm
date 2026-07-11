@@ -159,7 +159,7 @@ def main():
     # this writing: kuhar (gravity-removed linear accel), recgym (min-max normalized [0,1],
     # non-physical), unimib_shar (source subject-map acc_labels.npy lost -> cannot re-export
     # ssl windows aligned to the limubert grid). See preprocess_ssl_wearables.INCOMPATIBLE_ACCEL.
-    feats, labs, used, skipped = [], [], [], []
+    feats, labs, subjs, used, skipped = [], [], [], [], []
     for ds in TRAIN_DATASETS:
         ssl_path = SSL_DIR / ds / "data_30_180.npy"
         if not ssl_path.exists():
@@ -175,12 +175,14 @@ def main():
         gl = map_local_to_global_labels(local, ds, DATASET_CONFIG, globals_labels)
         feats.append(extract_trunk_features(model, x, device))
         labs.append(gl)
-    X = np.concatenate(feats, 0); Y = np.concatenate(labs, 0)
+        subjs.append(np.array([f"{ds}:{s}" for s in lab_raw[:, 0, 1].astype(np.int64)]))
+    X = np.concatenate(feats, 0); Y = np.concatenate(labs, 0); S = np.concatenate(subjs, 0)
 
-    # 2) 90/10 split, train the EvaClassifier head (frozen trunk)
-    rng = np.random.RandomState(CLASSIFIER_SEED)
-    idx = np.arange(len(X)); rng.shuffle(idx)
-    val_n = int(len(X) * 0.1); vi, ti = idx[:val_n], idx[val_n:]
+    # 2) SUBJECT-DISJOINT split (no source subject in both train and val — registered fairness
+    # gate; was a random window split that leaked subjects), train the EvaClassifier head.
+    from val_scripts.human_activity_recognition.refit_conse_heads import (
+        _subject_disjoint_split, _clf_logits, _fit_temperature, _save_temperature)
+    ti, vi = _subject_disjoint_split(S, CLASSIFIER_SEED)
     head = build_head(len(globals_labels), device)
     opt = torch.optim.Adam(head.parameters(), lr=CLASSIFIER_LR)
     crit = nn.CrossEntropyLoss()
@@ -199,8 +201,13 @@ def main():
             best_acc, best_sd = va, {k: v.detach().cpu().clone() for k, v in head.state_dict().items()}
     if best_sd is not None:
         head.load_state_dict(best_sd)
-    torch.save(head.state_dict(), str(OUTPUT_DIR / "ssl_wearables_zs_head.pt"))
-    print(f"saved head (val_acc={best_acc:.3f}) -> {OUTPUT_DIR/'ssl_wearables_zs_head.pt'}")
+    out = OUTPUT_DIR / "ssl_wearables_zs_head.pt"
+    torch.save(head.state_dict(), str(out))
+    # Source-validation temperature calibration (applied as softmax(logits/T) before ConSE).
+    T = _fit_temperature(_clf_logits(head, X[vi], device), Y[vi], device)
+    _save_temperature(out, T)
+    print(f"saved head (val_acc={best_acc:.3f}, {len(set(S[vi]))} held-out subjects, "
+          f"T={T:.3f}) -> {out}")
 
 
 if __name__ == "__main__":

@@ -48,8 +48,12 @@ GRAVITY_MS2 = 9.80665
 # These need to be multiplied by GRAVITY_MS2 before saving, since the
 # LIMU-BERT training pipeline expects m/s² and normalizes by dividing by 9.8.
 # motionsense + inclusivehar: iOS userAcceleration in g. capture24: Axivity raw acc in g.
-# harth: Axivity AX3 outputs in g. All are multiplied by GRAVITY_MS2 -> m/s².
-ACC_IN_G_UNITS = {"motionsense", "inclusivehar", "capture24", "harth"}
+# harth: Axivity AX3 outputs in g. hapt + unimib_shar: verified 2026-07-11 at median|acc|≈1 g
+# (were NOT converted -> LiMU-BERT's blanket /9.8 underscaled them to ~0.1 g; #34). All are
+# multiplied by GRAVITY_MS2 -> m/s². (Requires re-running this preprocess to materialize.)
+# uci_har: core_channels now map to total_acc_* (gravity-present, in g) — was body_acc_* (#85);
+# total_acc is in g, so it also needs the ×g conversion here.
+ACC_IN_G_UNITS = {"motionsense", "inclusivehar", "capture24", "harth", "hapt", "unimib_shar", "uci_har"}
 # opportunity records acceleration in milli-g -> m/s² is x * GRAVITY_MS2 / 1000.
 ACC_IN_MILLI_G = {"opportunity"}
 

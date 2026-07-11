@@ -63,9 +63,9 @@
         "body_gyro_z"
       ],
       "core_channels": {
-        "acc_x": "body_acc_x",
-        "acc_y": "body_acc_y",
-        "acc_z": "body_acc_z",
+        "acc_x": "total_acc_x",
+        "acc_y": "total_acc_y",
+        "acc_z": "total_acc_z",
         "gyro_x": "body_gyro_x",
         "gyro_y": "body_gyro_y",
         "gyro_z": "body_gyro_z"

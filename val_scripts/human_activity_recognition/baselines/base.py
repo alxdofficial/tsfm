@@ -151,5 +151,15 @@ def score(gt_names, pred_names, subjects, extra: dict = None) -> dict:
     return m
 
 
+def load_head_temperature(head_path) -> float:
+    """ConSE head calibration temperature — softmax(logits / T) before the ConSE bridge.
+    Fitted on held-out SOURCE subjects by refit_conse_heads and saved as a `.temperature.json`
+    sidecar next to the head. Returns 1.0 (no-op) if the sidecar is absent (uncalibrated head)."""
+    p = Path(str(head_path).rsplit(".", 1)[0] + ".temperature.json")
+    if p.exists():
+        return float(json.loads(p.read_text())["temperature"])
+    return 1.0
+
+
 def global_labels() -> List[str]:
     return load_global_labels()

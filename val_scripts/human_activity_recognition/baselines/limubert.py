@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .base import CACHED_DIR, BENCH_LIMU, ConSEAdapter, global_labels, register
+from .base import CACHED_DIR, BENCH_LIMU, ConSEAdapter, global_labels, register, load_head_temperature
 
 
 @register
@@ -19,14 +19,14 @@ class LiMUBERTAdapter(ConSEAdapter):
         bert.eval()
         clf = L.GRUClassifier(input_dim=L.EMB_DIM, num_classes=len(global_labels())).to(device)
         # First-party cached classifier (pure state_dict) — weights_only load.
-        clf.load_state_dict(torch.load(str(CACHED_DIR / "limubert_zs_gru.pt"),
-                                       map_location=device, weights_only=True))
+        head = CACHED_DIR / "limubert_zs_gru.pt"
+        clf.load_state_dict(torch.load(str(head), map_location=device, weights_only=True))
         clf.train(False)
-        return {"bert": bert, "clf": clf}
+        return {"bert": bert, "clf": clf, "T": load_head_temperature(head)}
 
     def window_probs(self, ds, state, device):
         import val_scripts.human_activity_recognition.evaluate_limubert as L
-        bert, clf = state["bert"], state["clf"]
+        bert, clf, T = state["bert"], state["clf"], state["T"]
         raw = np.load(str(BENCH_LIMU / ds / "data_20_120.npy")).astype(np.float32)
         labels_raw = np.load(str(BENCH_LIMU / ds / "label_20_120.npy"))
         normed = L.normalize_for_limubert(raw)
@@ -43,7 +43,7 @@ class LiMUBERTAdapter(ConSEAdapter):
         with torch.no_grad():
             for s in range(0, len(sub), 512):
                 b = torch.from_numpy(sub[s:s + 512]).float().to(device)
-                sub_probs.append(F.softmax(clf(b), dim=1).cpu().numpy())
+                sub_probs.append(F.softmax(clf(b) / T, dim=1).cpu().numpy())   # calibrated
         sub_probs = np.concatenate(sub_probs, axis=0)
 
         # Mean-pool sub-window softmaxes back to per-window distributions.

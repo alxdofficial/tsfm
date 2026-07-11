@@ -581,7 +581,7 @@ def predict_transformer_global(model, data, device, logit_mask=None,
 # Grouped Zero-Shot: Training Embedding Extraction
 # =============================================================================
 
-def load_crosshar_training_embeddings(model, global_labels, device):
+def load_crosshar_training_embeddings(model, global_labels, device, return_subjects=False):
     """Extract CrossHAR embeddings for all 10 training datasets.
 
     Returns full sequence embeddings for the Transformer_ft zero-shot classifier.
@@ -589,9 +589,13 @@ def load_crosshar_training_embeddings(model, global_labels, device):
     Returns:
         all_embeddings: (N_total, 120, 72) concatenated sequence embeddings
         all_labels: (N_total,) global label indices
+        all_subjects (only if return_subjects): (N_total,) globally-unique "ds:subject"
+            strings for a subject-disjoint source-validation split (subject id is
+            label_20_120[:, 0, 1]; prefixed by dataset so ids don't collide across sets).
     """
     all_emb_list = []
     all_lab_list = []
+    all_subj_list = []
 
     for ds in tqdm(TRAIN_DATASETS, desc="CrossHAR | Loading training embeddings", leave=True):
         raw_data, raw_labels = load_raw_data(ds)
@@ -600,9 +604,16 @@ def load_crosshar_training_embeddings(model, global_labels, device):
         global_lab = map_local_to_global_labels(labels, ds, DATASET_CONFIG, global_labels)
         all_emb_list.append(emb)
         all_lab_list.append(global_lab)
+        if return_subjects:
+            subj = raw_labels[:, 0, 1].astype(np.int64)   # per-window source subject id
+            all_subj_list.append(np.array([f"{ds}:{s}" for s in subj]))
         tqdm.write(f"    {ds}: {emb.shape[0]} samples")
 
-    return np.concatenate(all_emb_list, axis=0), np.concatenate(all_lab_list, axis=0)
+    emb = np.concatenate(all_emb_list, axis=0)
+    lab = np.concatenate(all_lab_list, axis=0)
+    if return_subjects:
+        return emb, lab, np.concatenate(all_subj_list, axis=0)
+    return emb, lab
 
 
 # =============================================================================
