@@ -3,6 +3,10 @@
 Concise catalog of every model HALO is compared against: how it works, why it's worth comparing,
 its heterogeneity handling, open-set (zero-shot label) compatibility, size, and adapter tier.
 
+**Readiness:** all six adapters exist, but none is approved for a final paper run.
+See [`../v2/BASELINE_TRAINING_READINESS.md`](../v2/BASELINE_TRAINING_READINESS.md)
+for the current go/no-go matrix.
+
 - **Tier** = how the v2 harness scores it (`val_scripts/human_activity_recognition/run_baselines_v2.py`):
   - `conse` — closed-vocabulary classifier over the 94 global labels, bridged to each dataset's
     own vocabulary via ConSE (Norouzi 2014). Needs the bridge to do open-set.
@@ -15,9 +19,8 @@ its heterogeneity handling, open-set (zero-shot label) compatibility, size, and 
   our corpus), verified by loading each model — not encoder-only. The encoder/head split is given
   where it matters. This avoids overstating the HALO capacity gap: it ranges from ~6× (vs
   ssl-wearables) to ~360× (vs LiMU-BERT), not a uniform "~400×".
-- Detailed per-baseline implementation notes live in `BASELINE_IMPLEMENTATION_NOTES.md`
-  (⚠ that file predates ssl-wearables/UniMTS/NormWear and still references the dropped
-  MOMENT/LanHAR and the old 10-dataset/87-label vocab — treat this overview as current).
+- Detailed, cited implementation contracts and caveats live in
+  [`BASELINE_IMPLEMENTATION_NOTES.md`](BASELINE_IMPLEMENTATION_NOTES.md).
 
 ## Baselines
 
@@ -26,9 +29,9 @@ its heterogeneity handling, open-set (zero-shot label) compatibility, size, and 
 | **CrossHAR** | conse | ~0.53 M (63K enc + 469K head) | 20 Hz, 6-ch acc+gyro | via ConSE | Masked-Transformer cross-dataset IMU SSL + fine-tuned classifier. |
 | **LiMU-BERT** | conse | ~0.073 M (63K enc + 10K GRU head) | 20 Hz, 6-ch acc+gyro | via ConSE | Tiny BERT IMU encoder + GRU head; canonical lightweight SSL. |
 | **ssl-wearables (harnet5)** | conse | ~4.54 M (4.23M trunk + 311K head) | 30 Hz, 3-ch acc, **gravity** | via ConSE | UK-Biobank ResNet accelerometer SSL; deployable wrist model. |
-| **DeepConvLSTM** | fewshot | ~0.46 M | per-dataset | ✗ (supervised) | Classic 4-conv + 2-LSTM supervised HAR reference. |
-| **UniMTS** | cosine | ~68.6 M (incl. CLIP text) | 20 Hz, 3-ch acc, SMPL joint | ✓ | ST-GCN skeleton encoder aligned to CLIP text; SoTA motion-TS zero-shot. |
-| **NormWear** | l1 | ~194 M + ~1.1 B text | 6-ch, per-ch z-norm | ✓ (L1) | Physiological-signal foundation model (PPG/ECG/EEG/GSR/IMU) + TinyLlama text. |
+| **DeepConvLSTM** | fewshot | ~0.46 M | 20 Hz, 120 x 6 | no (supervised) | Classic 4-conv + 2-LSTM supervised HAR reference. |
+| **UniMTS** | cosine | ~68.6 M (incl. CLIP text) | 20 Hz, 3-ch acc, SMPL joint | yes | ST-GCN skeleton encoder aligned to CLIP text; motion-TS zero-shot competitor. |
+| **NormWear** | l1 | ~194 M + ~1.1 B text | intended: 65 Hz, 6 s, real channels | yes (L1) | Physiological-signal foundation model (PPG/ECG/EEG/GSR/IMU) + TinyLlama text. |
 | **HALO (ours)** | cosine | ~26 M (small_deep) | rate-invariant, any-ch | ✓ | Language-aligned physical-filterbank per-patch encoder. |
 
 ## Why each is worth comparing
@@ -47,9 +50,10 @@ its heterogeneity handling, open-set (zero-shot label) compatibility, size, and 
   key head-to-head for the open-set HAR claim. **Heterogeneity:** single IMU is placed at one SMPL
   joint (others zero-filled); accel-only.
 - **NormWear** — a *cross-modal* foundation model (physiological signals) with text alignment.
-  Tests whether a broad wearable model transfers to HAR. **Gotcha:** its ricker-CWT scales are
-  tuned for ≥65 Hz physiological signal, so 20 Hz IMU HAR is out-of-band and its zero-shot is
-  near-chance — a faithful result, not a wiring bug. Scored by L1 distance, not cosine.
+  Tests whether a broad wearable model transfers to HAR. **Gotcha:** its Ricker-CWT scales and
+  published preprocessing are tied to 65 Hz. Feeding the current 20 Hz tensors directly is an
+  invalid adapter path, not a faithful limitation. Final input must be explicitly resampled and
+  preprocessed at 65 Hz. Scored by L1 distance, not cosine.
 
 ## Heterogeneity & open-set summary
 
@@ -58,9 +62,9 @@ its heterogeneity handling, open-set (zero-shot label) compatibility, size, and 
 | CrossHAR | fixed 20 Hz (resampled) | fixed 6-ch | none (per-window norm) | ConSE bridge |
 | LiMU-BERT | fixed 20 Hz | fixed 6-ch | none (÷9.8 norm) | ConSE bridge |
 | ssl-wearables | fixed 30 Hz | acc-only 3-ch | **required** (g w/ gravity) | ConSE bridge |
-| DeepConvLSTM | per-dataset | per-dataset | none | n/a (supervised) |
-| UniMTS | resample→20 Hz, pad 200 | acc-only, joint-placed | m/s² w/ gravity | CLIP text cosine |
-| NormWear | native (fixed CWT scales) | channel-independent (nvar) | none (z-norm removes DC) | TinyLlama text, L1 |
+| DeepConvLSTM | fixed 20 Hz | fixed 6-ch | none | n/a (supervised) |
+| UniMTS | resample to 20 Hz, pad 200 | acc-only, joint-placed | dataset-specific m/s^2 contract | CLIP text cosine |
+| NormWear | fixed 65 Hz | channel-independent, real channels only | detrend + smooth + amplitude norm | TinyLlama text, L1 |
 | **HALO** | **rate-invariant** (physical-Hz filterbank) | **variable** (channel-independent + text) | signed DC/gravity feature | SBERT text cosine |
 
 ## Where configured

@@ -7,6 +7,10 @@ input policy (each model gets the input format its architecture requires — see
 flexible on every axis *by construction*, so it is also the only one that needs no per-model
 resampling/coercion.
 
+Published contracts, citations, and active-adapter deviations are detailed in
+[`BASELINE_IMPLEMENTATION_NOTES.md`](BASELINE_IMPLEMENTATION_NOTES.md). This
+matrix describes the active comparison row, not every variant in a model family.
+
 **Flexibility levels**
 
 | Level | Meaning |
@@ -21,12 +25,12 @@ resampling/coercion.
 
 | Model | Sampling rate | Channel count | Window / session length | Sensor modality | Placement-aware | Streaming | Open-vocab labels |
 |---|---|---|---|---|---|---|---|
-| **LiMU-BERT** | fixed 20 Hz | fixed 6 (pad+mask) | fixed 6 s (120 ts) | fixed acc+gyro | none | offline | no (ConSE bridge) |
-| **CrossHAR** | fixed 20 Hz | fixed 6 (pad+mask) | fixed 6 s (120 ts) | fixed acc+gyro | none | offline | no (ConSE bridge) |
-| **ssl-wearables** | fixed 30 Hz | fixed 3 — **accel only** | fixed 10 s (300 ts) | **accel only** (no gyro/mag) | none | offline | no (ConSE bridge) |
-| **DeepConvLSTM** | fixed (train-time) | fixed | fixed window | fixed | none | offline\* | no (closed softmax) |
+| **LiMU-BERT** | fixed 20 Hz | fixed 6 (zero-pad missing gyro) | fixed 6 s (120 ts) | fixed acc+gyro | none | offline | no (ConSE bridge) |
+| **CrossHAR** | fixed 20 Hz | fixed 6 (zero-pad missing gyro) | fixed 6 s (120 ts) | fixed acc+gyro | none | offline | no (ConSE bridge) |
+| **ssl-wearables harnet5** | fixed 30 Hz | fixed 3 - **accel only** | fixed 5 s (150 ts) | **accel only** (no gyro/mag) | none | offline | no (ConSE bridge) |
+| **DeepConvLSTM** | fixed 20 Hz | fixed 6 | fixed 6 s (120 ts) | fixed acc+gyro | none | offline\* | no (closed softmax) |
 | **UniMTS** | **resample** (must be told rate) | native (skeleton graph + mask) | **fixed 10 s** (@20 Hz: first-10 s truncate + wrap-pad) | **accel only (3-ch)**◇ | **native** (SMPL joint) | offline | yes (text-aligned) |
-| **NormWear** | **fixed 65 Hz** (resample, lossy) | native (per-ch + cross-ch attn) | fixed (65 Hz-tuned CWT) | native (multivariate) | none | offline | yes (text-aligned)§ |
+| **NormWear** | **fixed 65 Hz** (resample, lossy) | native real channels (per-ch + cross-ch attn) | fixed 6 s | native (multivariate) | none | offline | yes (text-aligned)§ |
 | **HALO (ours)** | **native (invariant)** | **native (ch-indep + mask)** | **native (variable patch)** | **native** | **native (language)** | **offline + online** | **yes (text-aligned)** |
 
 \* DeepConvLSTM's LSTM is causal (technically streamable) but we run it offline as the few-shot floor.
@@ -41,19 +45,20 @@ resampling/coercion.
   6-channel acc+gyro layout, zero-padding missing sensors. The model is rate- and channel-blind by
   design. Window is a fixed 120 timesteps (CrossHAR uses the full sequence; LiMU-BERT reshapes it
   into 20-step sub-windows).
-- **ssl-wearables (harnet)** — fixed 30 Hz / 10 s / **3-channel accelerometer-only** 1D-ResNet. It
-  **cannot ingest gyroscope or magnetometer at all**; resample to 30 Hz upstream. Most handicapped
-  on gyro-bearing test sets (disclose).
-- **DeepConvLSTM** — from-scratch supervised floor; fixed rate/channels/window per experiment, no
-  heterogeneity mechanism.
+- **ssl-wearables (harnet5)** — the active row is fixed 30 Hz / 5 s /
+  **3-channel accelerometer-only** 1D-ResNet, center-cropped from each six-second benchmark
+  window. The paper's main downstream protocol uses ten-second windows; this shorter frozen-head
+  row must be named explicitly. It cannot ingest gyroscope or magnetometer.
+- **DeepConvLSTM** — from-scratch supervised floor; pre-registered at 20 Hz / 6 s / 6 channels,
+  with no heterogeneity mechanism.
 - **UniMTS** — handles rate by **resampling internally** (pass `--original_sampling_rate`;
   interpolates to a fixed rate → aliases HF content, **not invariant**) and placement by mapping
   each sensor to the nearest joint of a canonical **22-joint SMPL skeleton graph** + masking empty
-  joints (genuinely placement-aware). Expects 6-axis (acc+gyro) per placed sensor.
-- **NormWear** — **CWT scalogram** tokenization is length/rate-adaptive, and per-channel scalograms
-  + cross-channel attention accept variable multivariate inputs — the closest baseline to HALO's
-  tokenizer, but it is a per-signal CWT (not a physical-Hz filterbank) and does not claim
-  rate-invariance by construction.
+  joints (genuinely placement-aware). The released checkpoint used here is accelerometer-only.
+- **NormWear** — per-channel CWT scalograms plus cross-channel attention accept a variable number
+  of real channels, but the released CWT uses fixed sample-domain scales and the paper standardizes
+  inputs to 65 Hz / 6 s. The active adapter must explicitly resample and run the published
+  detrend/smoothing/amplitude-normalization path; a naive 20 Hz call is not rate adaptation.
 - **HALO (ours)** — flexible on *every* axis by construction: rate-invariant physical-Hz filterbank
   (**no resampling**) + Nyquist observability masks; channel-independent tokenizer + masks (any
   count / modality); language channel-conditioning (placement + sensor semantics); variable-duration

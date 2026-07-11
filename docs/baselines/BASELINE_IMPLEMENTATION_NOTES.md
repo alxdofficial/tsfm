@@ -1,451 +1,417 @@
 # Baseline Implementation Notes
 
-> ⚠️ **PARTIALLY STALE.** Predates ssl-wearables / UniMTS / NormWear / DeepConvLSTM and still
-> references the **dropped** MOMENT / LanHAR / LLaSA baselines and the old **10-dataset / 87-label**
-> vocab (now 11 / 94). For the current baseline set, tiers, param counts, and gotchas see
-> [`BASELINES_OVERVIEW.md`](BASELINES_OVERVIEW.md). Retained for CrossHAR/LiMU-BERT porting detail.
-
-> **Legacy V1-oriented notes:** This file documents historical per-baseline
-> adaptations, including dropped baselines. For the active V2 setup and scoring
-> path, use `BASELINES_SETUP.md`, `EVALUATION_PROTOCOL_V2.md`, and the adapter
-> package under `val_scripts/human_activity_recognition/baselines/`.
-
-Per-baseline design decisions, implementation details, paper-matching considerations,
-and how we ensure fairness across the comparison.
-
----
-
-## Fairness Principles
-
-Our benchmark compares 5 models on the same 4 test datasets using a unified evaluation
-framework. To ensure fair comparison:
-
-1. **Same data**: All models evaluate on the same windows. Baselines that require fixed sampling
-   rates (LiMU-BERT, CrossHAR, MOMENT, LanHAR) receive data resampled to 20Hz as `(N, 120, 6)`.
-   TSFM receives data at each dataset's **native sampling rate** (see Sampling Rate Policy below)
-2. **Same splits**: Identical random seeds produce identical train/val/test partitions
-3. **Same metrics**: All models report accuracy, F1 macro, and F1 weighted
-4. **Per-baseline fine-tuning**: Each model fine-tunes with its own paper's native classification
-   mechanism (not a one-size-fits-all), so transfer quality is measured through each model's
-   intended evaluation path
-5. **No data leakage**: Test datasets (MotionSense, RealWorld, MobiAct, VTT-ConIoT) were
-   never seen during any model's pre-training
-6. **End-to-end fine-tuning**: For supervised metrics (1%, 10%), the encoder is fine-tuned
-   jointly with the classifier using differential learning rates (encoder: 1e-5, head: 1e-3)
-
-### Intentional Protocol Adaptations
-
-Each baseline paper uses its own evaluation protocol (different datasets, different splits,
-different class sets). We intentionally adapt all baselines to our **common benchmark** rather
-than replicating each paper's exact experiment. This is necessary for cross-baseline comparison.
-Key differences from original papers:
-
-- **LanHAR paper**: Single-source-to-single-target transfer with 4 classes. We use all training
-  data as source and evaluate on our 4 test datasets with their full label sets.
-- **CrossHAR paper**: Train on source datasets, test on a specific target dataset. We use the
-  pretrained encoder and evaluate within each test dataset via random splits.
-- **LiMU-BERT paper**: Separate pretrained models per dataset. We use a single combined
-  pretrained model across all datasets.
-- **MOMENT paper**: Evaluated on UCR/UEA classification benchmarks. We apply their frozen
-  embeddings to our HAR benchmark with SVM/linear classifiers.
-
-These are deliberate design choices for a fair unified comparison, not oversights.
-
-### Sampling Rate Policy
-
-**Principle**: Models should train and evaluate at each dataset's native sampling rate whenever
-their architecture supports it. Resampling is only applied when a model requires a fixed rate.
-
-| Model | Supports Native Rates? | Rate Used | Why |
-|-------|:----------------------:|:---------:|-----|
-| **TSFM** | Yes | Native per dataset | Seconds-based patch tokenization + interpolation. Sampling rate and channel descriptions are passed to the model and actively used in every forward pass. |
-| **LiMU-BERT** | No | 20 Hz | Learned positional embedding fixed at 120 positions; paper designed for 20 Hz. |
-| **CrossHAR** | No | 20 Hz | Inherits LiMU-BERT data format; same positional embedding constraint. |
-| **MOMENT** | No (rate-agnostic) | 20 Hz | No concept of sampling rate — processes raw number sequences. Cannot benefit from native rates. |
-| **LanHAR** | No | 20 Hz | Paper designed for 50 Hz, but trains from scratch in our pipeline. Uses shared 20 Hz benchmark data. |
-
----
-
-## 1. LiMU-BERT
-
-**Paper**: Xu et al., SenSys 2021
-**Script**: `val_scripts/human_activity_recognition/evaluate_limubert.py`
-**One-liner**: BERT-style masked reconstruction on 20-step IMU sub-windows; predicts masked timesteps from context to learn motion representations.
-
-### What It Is
-Self-supervised BERT-style masked reconstruction pretraining for IMU data.
-Produces 72-dim embeddings per timestep. NOT text-aligned — zero-shot uses a
-GRU classifier trained on training data.
-
-**Sampling rate**: Fixed 20 Hz. All datasets resampled via temporal bin-and-mean averaging.
-The paper explicitly chose 20 Hz to reduce model complexity. Learned positional embeddings
-(`nn.Embedding(120, 72)`) are fixed at 120 positions, so the model cannot accept other rates.
-
-### Pretrained Model
-- Checkpoint: `auxiliary_repos/LIMU-BERT-Public/saved/pretrain_base_recgym_20_120/pretrained_combined.pt`
-- Pretrained on: All 10 training datasets combined
-- Embeddings: Pre-extracted to `.npy` files for all 14 datasets (including test datasets)
-- Embedding shape: `(N, 120, 72)` — per-timestep, 72-dim
-
-### Key Implementation Details
-
-**Split-then-reshape (data leakage prevention)**:
-The original LiMU-BERT `partition_and_reshape()` splits full `(N, 120, D)` windows into
-train/val/test FIRST, then reshapes each partition into `(M, 20, D)` sub-windows. This prevents
-sub-windows from the same original window appearing in different splits. Our implementation
-mirrors this with `split_full_windows()` followed by `reshape_and_merge()` on each partition.
-
-**Global label offset**:
-`reshape_and_merge()` subtracts the minimum label index to zero-base labels. When called on
-individual splits after splitting, a partition might not contain all classes, so the per-partition
-minimum would differ. We compute the global minimum BEFORE splitting and pass it as `label_offset`
-to ensure consistent label indices across train/val/test.
-
-**Sub-window filtering**:
-After reshaping `(N, 120, 72)` into `(N*6, 20, 72)` sub-windows, only sub-windows where ALL
-20 timesteps have the same activity label are kept. This discards transition windows.
-
-**GRU classifier (paper's architecture)**:
-- 2-layer GRU: input_dim=72 -> hidden=20 -> hidden=10
-- Final Linear(10, num_classes)
-- 100 epochs (using `train_100ep.json` config from original repo), batch_size=512
-- Original paper also provides 700-epoch config
-
-**End-to-end fine-tuning** *(our addition — paper freezes encoder)*:
-For supervised metrics, the BERT encoder is fine-tuned jointly with a GRU classifier.
-Raw data is normalized (acc/9.8), passed through the encoder, reshaped into sub-windows,
-and classified. The original paper only trains the GRU on static pre-extracted embeddings
-(frozen encoder), but we fine-tune end-to-end for consistency with other baselines.
-
-**Window-level majority voting** *(our addition — paper scores sub-windows directly)*:
-The original paper evaluates accuracy/F1 at the sub-window level — each 20-step sub-window
-is scored independently, giving ~6x more evaluation samples per dataset. We aggregate
-sub-window predictions to window-level via majority vote before scoring, so that LiMU-BERT
-is evaluated on the same N windows as all other models. This changes the evaluation unit
-but does not change the model's predictions.
-
-### What We Do NOT Replicate
-- Original paper evaluates 4 separate per-dataset pretrained models. We use one combined model.
-- Original paper uses specific dataset-to-dataset transfer experiments. We evaluate within-dataset.
-- Original paper scores at sub-window level. We score at window level (majority vote).
-
-### Intentional Protocol Differences
-- **Batch size**: We use batch_size=512 vs original's 128 for the GRU classifier.
-  Applied uniformly across all baselines as a speed optimization for RTX 4090.
-- **Balanced subsampling**: Our `balanced_subsample()` draws `max(1, budget//n_classes)`
-  per class without capping at the smallest class size. The original's
-  `prepare_simple_dataset_balance` caps at `min(min_class_count, budget_per_class)`.
-  Our approach is unified across all baselines and avoids discarding data when class
-  sizes are imbalanced.
-- **Window labels**: We use majority-vote per window; the original filters out windows
-  where not all timesteps share the same label. Our approach is unified across all
-  baselines — all baselines evaluate on the same set of windows.
-
----
-
-## 2. MOMENT
-
-**Paper**: Goswami et al., ICML 2024
-**Script**: `val_scripts/human_activity_recognition/evaluate_moment.py`
-**One-liner**: General time-series Transformer pretrained on diverse data via masked reconstruction; processes each IMU channel as an independent univariate series.
-
-### What It Is
-General-purpose time series foundation model pretrained on diverse time series data (no HAR).
-Produces 6144-dim embeddings (6 channels x 1024-dim per channel, concatenated).
-NOT text-aligned — zero-shot uses an SVM-RBF classifier trained on training data.
-
-**Sampling rate**: Rate-agnostic — has no concept of physical time or sampling frequency. The
-paper states: *"We did not explicitly model temporal resolution."* All input is treated as raw
-number sequences padded to 512 timesteps. Uses 20 Hz benchmark data for consistency.
-
-### Pretrained Model
-- Downloaded from HuggingFace: `AutonLab/MOMENT-1-large`
-- No training by us — used as-is in embedding mode
-- We never trained or fine-tuned MOMENT
-
-### Key Implementation Details
-
-**Left-padding (paper-faithful)**:
-MOMENT expects 512-timestep inputs. Our 120-timestep windows are LEFT-zero-padded:
-```
-padded[:, :, -120:] = data  # data on right side (positions 392-511)
-input_mask[:, -120:] = 1.0  # mask marks real data
-```
-This matches MOMENT's official `ClassificationDataset` implementation. Earlier versions of our
-code incorrectly used RIGHT-padding — fixed to match paper.
-
-**Per-channel embedding concatenation (paper-faithful)**:
-Following MOMENT's multivariate evaluation protocol (`unsupervised_representation_learning_multivariate.py`),
-each IMU channel is processed as an independent univariate series `(N, 1, 512)`, producing
-per-channel 1024-dim embeddings. These are concatenated into `(N, 6*1024) = (N, 6144)`.
-This preserves channel-specific information that would be lost by averaging.
-
-**SVM-RBF classifier (paper's protocol)**:
-The MOMENT paper's `fit_svm` function uses:
-- SVM with RBF kernel, `gamma="scale"`
-- GridSearchCV over C = [1e-4, 1e-3, 1e-2, 0.1, 1, 10, 100, 1000, 1e4]
-- 5-fold cross-validation
-- `max_iter=10000000` (convergence guarantee)
-- If training set > 10,000 samples, stratified subsample to 10,000
-
-**End-to-end fine-tuning** *(our addition — paper uses SVM only for classification)*:
-For supervised metrics, MOMENT's encoder is fine-tuned jointly with a linear classification
-head (`Linear(6144, num_classes)`). The MOMENT paper's classification evaluation only uses
-SVM-RBF on frozen embeddings — it does not fine-tune the encoder for classification tasks.
-However, MOMENT's codebase includes a built-in `ClassificationHead` (linear layer) and
-supports end-to-end fine-tuning in tutorials. We use this for consistency with other baselines'
-end-to-end protocol. SVM is not differentiable and cannot participate in backpropagation.
-The encoder's original weights are restored after each fine-tuning run to isolate evaluations.
-
-### What We Do NOT Replicate
-- Original paper evaluates on UCR/UEA classification archive. We apply to HAR.
-- Original paper uses only SVM on frozen embeddings for classification. We add end-to-end
-  fine-tuning with a linear head for supervised metrics.
-- Original pipeline applies `StandardScaler` before MOMENT's internal RevIN normalization.
-  We skip this since RevIN already handles per-sample normalization.
-
-### Intentional Protocol Differences
-- **Batch sizes**: We use larger batch sizes (512 vs 128) for downstream classifiers
-  as a speed optimization for RTX 4090. This is applied uniformly across all baselines.
-- **No StandardScaler**: The original pipeline applies `StandardScaler` before MOMENT's
-  internal RevIN normalization. We skip this since RevIN already handles per-sample
-  normalization, and within each dataset sensor scales are consistent.
-
----
-
-## 3. CrossHAR
-
-**Paper**: Hong et al., IMWUT 2024
-**Script**: `val_scripts/human_activity_recognition/evaluate_crosshar.py`
-**One-liner**: Hierarchical self-supervised pretraining combining masked reconstruction and contrastive learning on IMU sequences for cross-dataset transfer.
-
-### What It Is
-Hierarchical self-supervised pretraining: masked reconstruction + contrastive learning.
-Produces 72-dim per-timestep embeddings. NOT text-aligned — zero-shot uses a Transformer_ft
-classifier trained on training data.
-
-**Sampling rate**: Fixed 20 Hz. Inherits LiMU-BERT data format (`data_20_120.npy`). Same
-learned positional embedding constraint (`nn.Embedding(120, 72)`). Code only accepts
-`dataset_version='20_120'`.
-
-### Pretrained Model
-- Checkpoint: `auxiliary_repos/CrossHAR/saved/pretrain_base_combined_train_20_120/model_masked_6_1.pt`
-- Pretrained on: All 10 training datasets combined (masked pretraining)
-- Architecture: 1-layer Transformer with 4 heads, hidden=72, ff=144
-
-### Key Implementation Details
-
-**InstanceNorm preprocessing**:
-CrossHAR's `IMUDataset` applies `InstanceNorm1d` to each sample before feeding to the encoder.
-Our extraction pipeline replicates this:
-```python
-inst_norm = nn.InstanceNorm1d(6)
-normed = inst_norm(data.transpose(1,2)).transpose(1,2)  # per-sample normalization
-```
-
-**Full sequence embeddings (not pooled)**:
-Unlike LiMU-BERT's sub-window approach, CrossHAR's `Transformer_ft` classifier operates on the
-full `(120, 72)` sequence. The classifier embeds to 100-dim, adds positional encoding, runs a
-1-layer Transformer, then mean-pools and classifies.
-
-**Transformer_ft classifier (paper's architecture)**:
-- Linear(72, 100) + PositionalEncoding + TransformerEncoder(1 layer, 4 heads, ff=2048)
-- Mean pool over sequence -> Linear(100, num_classes)
-- 100 epochs, Adam, lr=1e-3, batch_size=512
-- Model selection by best validation loss
-
-**End-to-end fine-tuning** *(our addition — paper freezes encoder)*:
-For supervised metrics, the encoder is fine-tuned jointly with a Transformer_ft classifier.
-Raw data is InstanceNorm-preprocessed in a differentiable way, passed through the encoder,
-then through the Transformer_ft head. **The original CrossHAR paper freezes the encoder and
-trains only the Transformer_ft classifier on static pre-extracted embeddings.** We fine-tune
-end-to-end for consistency with other baselines. This gives CrossHAR a slight advantage over
-its paper's protocol, since the encoder can adapt to the target dataset.
-
-### What We Do NOT Replicate
-- Original paper trains on source datasets, evaluates on a held-out target dataset.
-  We evaluate within each test dataset using random splits.
-- Original paper uses specific source-target pairs. We use one combined pretrained model.
-- Original paper freezes the encoder during downstream evaluation. We fine-tune end-to-end.
-
-### Intentional Protocol Differences
-- **Batch size**: We use batch_size=512 vs original's 128 for the Transformer_ft classifier.
-  Applied uniformly across all baselines as a speed optimization.
-- **Window labels**: We use majority-vote per window; the original's `merge_dataset(mode='all')`
-  discards windows where not all timesteps share the same label. Our approach is unified
-  across all baselines — all baselines evaluate on the same set of windows.
-
----
-
-## 4. LanHAR
-
-**Paper**: Yan et al., 2024
-**Script**: `val_scripts/human_activity_recognition/evaluate_lanhar.py`
-**One-liner**: 2-stage CLIP-style alignment: (1) fine-tune SciBERT on activity text, (2) train a sensor Transformer from scratch to align with the text embedding space.
-
-### What It Is
-CLIP-style sensor-text alignment with 2-stage training. Uses SciBERT for text encoding.
-Text-aligned model with zero-shot capability. **Trains from scratch during evaluation.**
-
-**Sampling rate**: Paper uses 50 Hz; our benchmark uses 20 Hz. Since LanHAR trains its sensor
-encoder from scratch (no pretrained weights), it learns temporal patterns at whatever rate it
-receives. Gravity alignment and Butterworth filter preprocessing correctly adapts via the `fs`
-parameter. Uses shared 20 Hz benchmark data.
-
-### Why It Trains From Scratch
-LanHAR's sensor encoder is not a general pretrained model — it's specifically trained to align
-with SciBERT text embeddings via contrastive learning. There is no "pretrained LanHAR checkpoint"
-analogous to LiMU-BERT or CrossHAR. The training IS the method. SciBERT provides the starting
-text encoder weights (from HuggingFace), and everything else is learned.
-
-### Key Implementation Details
-
-**Stage 1: SciBERT fine-tuning (10 epochs)**
-- Fine-tunes `allenai/scibert_scivocab_uncased` on the 87 training activity labels
-- Losses: Multi-positive CLIP + Cross-entropy + 2x Triplet (matching original paper)
-- Batch size: 10 (matches paper — only 87 labels, small dataset)
-- lr: 1e-5
-- Result: Text encoder adapted to activity-aware embedding space
-
-**Stage 2: Sensor-text CLIP training (50 epochs)**
-- Trains TimeSeriesTransformer sensor encoder from random initialization
-- CLIP contrastive loss between sensor embeddings and text embeddings
-- Optimizes: sensor_encoder + txt_proj + sen_proj + logit_scale
-- BERT is FROZEN (only projections and sensor encoder train)
-- Batch size: 256 (matches paper)
-- lr: 4e-5
-- Uses source (training) data ONLY — test data is never seen during training
-
-**Stale label embeddings fix**:
-During Stage 2, `txt_proj` is trainable, so text-space label embeddings change each epoch.
-Validation retrieval accuracy recomputes label embeddings every epoch via
-`compute_label_embeddings()` to avoid using stale anchors.
-
-**Gravity alignment (paper-faithful)**:
-Original LanHAR applies gravity alignment preprocessing:
-1. Estimate gravity vector via 0.3Hz lowpass Butterworth filter on accelerometer
-2. Compute Rodrigues rotation matrix to rotate gravity onto +Z axis
-3. Apply rotation to both accelerometer and gyroscope
-4. Adapted to our 20Hz sampling rate (original uses 50Hz)
-
-**Per-sample LLM descriptions (optional)**:
-Original LanHAR uses GPT-4 to generate per-sample text descriptions from signal processing
-features. We replicate this with a local LLM via `generate_lanhar_descriptions.py`:
-- Extracts EDA features, gyro features, gait synchronization from each window
-- Generates structured 7-category analysis prompt
-- Queries Ollama (e.g., Qwen2.5:14B) for pattern summaries
-- Used with 70% probability during Stage 2 training (30% falls back to class descriptions)
-- **Optional**: LanHAR runs without descriptions (lower quality but functional)
-
-**Label dropout disabled**:
-Original LanHAR's `LabelAttentionPooling` has dropout=0.1 in cross-attention. We set this to 0.0
-because dropout on the label bank makes contrastive text targets stochastic during training,
-adding noise to the alignment objective.
-
-### What We Do NOT Replicate
-- Original paper uses single-source-to-single-target transfer with ~4 classes.
-  We use all 10 training datasets as source with 87 classes.
-- Original paper generates descriptions with GPT-4. We use local LLM (optional).
-- Original paper evaluates weighted F1. We report both macro and weighted F1.
-
-### Intentional Protocol Differences
-- **Template casing**: Original uses `.upper()` for class names in `wrap_template`
-  (e.g., `"Activity=WALK"`). We use lowercase with spaces (e.g., `"Activity=walking"`).
-  The original has only 4 short class names; with 87 longer labels, uppercasing
-  produces unnatural text that SciBERT handles worse.
-- **Label prototype recomputation**: Original recomputes label prototypes every batch
-  in Stage 1 (4 classes, fast). We recompute once per epoch (87 classes, 6x slower
-  per recomputation). With only 10 Stage 1 epochs, the impact is modest.
-- **Validation label embeddings in Stage 2**: Original uses margin-based top-k weighted
-  averaging across all text descriptions per class. We use the first text prototype per
-  class through `txt_proj`. This simplification affects model selection quality but not
-  the final embeddings used for evaluation.
-- **Validation split**: Original validates on target domain only (20/80 split). We
-  validate on a held-out portion of source data (90/10 split) since we have multiple
-  test datasets and evaluate on each independently.
-- **No target data in Stage 2** *(intentional — paper combines source + target)*: Original
-  combines source + target domains in Stage 2, giving the sensor encoder access to the test
-  data distribution during training. We use only source (training) data, ensuring the sensor
-  encoder never sees test data. This matches the constraint on all other baselines and prevents
-  LanHAR from having an unfair distributional advantage, but slightly disadvantages LanHAR
-  relative to its paper's reported numbers.
-- **Supervised fine-tuning** *(our addition — paper is zero-shot only)*: The original LanHAR
-  paper has no supervised fine-tuning protocol. We add 1%/10% supervised evaluation by
-  fine-tuning the entire model end-to-end (BERT + sensor encoder + projections) via cosine
-  similarity with frozen text prototypes. All baselines fine-tune end-to-end for consistency.
-
----
-
-## 5. TSFM (Our Model)
-
-**Script**: `val_scripts/human_activity_recognition/evaluate_tsfm.py`
-**One-liner**: Dual-branch Transformer trained with CLIP-style contrastive alignment between variable-length IMU patches and learnable text label embeddings.
-
-### What It Is
-Our text-aligned IMU foundation model. Dual-branch Transformer encoder with semantic alignment
-head, trained via contrastive learning with soft targets and memory bank.
-
-**Per-dataset metadata** (unique to TSFM — no baseline uses any of these):
-- **Sampling rate**: Native per dataset (e.g., 50 Hz for UCI HAR, 100 Hz for PAMAP2, 20 Hz for
-  WISDM). Read from dataset manifest and passed to `create_patches()`, which converts seconds-based
-  patch size to timesteps dynamically. Each patch is interpolated to a fixed 64-step representation,
-  decoupling the model from any specific rate.
-- **Patch size**: Specified in seconds per dataset. During training, supports **patch size
-  augmentation** — randomly samples from a `(min_sec, max_sec, step_sec)` range, forcing the
-  model to learn resolution-robust representations. Fixed at 1.0s during evaluation.
-- **Channel descriptions**: Text strings from dataset manifest (e.g., "Accelerometer X-axis",
-  "Chest acceleration X-axis from wearable sensor"). Encoded by frozen SentenceBERT and fused
-  into sensor features via `ChannelSemanticEncoding`, giving the model semantic awareness of
-  what each channel measures.
-
-### Pretrained Model
-- Checkpoint: `training_output/semantic_alignment/{run_id}/best.pt`
-- Trained on: 10 HAR datasets (87 activity labels)
-
-### Key Implementation Details
-
-**Fixed 1.0s patch size**:
-TSFM supports variable patch sizes, but we use a fixed 1.0s for all test datasets — no
-per-dataset sweep or test-time tuning. This is a metadata-only decision: at native 50Hz, 1.0s
-patches (50 timesteps) are interpolated to 64 fixed steps, giving fine temporal resolution.
-Sensitivity analysis shows results are robust (max 9% range across patch sizes on the easiest
-dataset, <2% on the hardest).
-
-**384-dim embeddings**:
-After the semantic alignment head (channel fusion + temporal pooling), embeddings are 384-dim
-and L2-normalized.
-
-**Text embeddings from label bank**:
-Zero-shot evaluation uses the trained `LearnableLabelBank` to produce text embeddings for each
-activity label. These are L2-normalized for cosine similarity retrieval.
-
-**End-to-end fine-tuning**:
-For supervised metrics, the encoder + semantic alignment head are fine-tuned end-to-end.
-Classification is via cosine similarity with frozen text embeddings from the label bank
-(no separate classifier head). The label bank stays frozen during fine-tuning as the text
-anchor space.
-
----
-
-## Common Infrastructure
-
-### balanced_subsample()
-Used by all baselines for 1%/10% supervised metrics. Draws `max(1, round(count * rate))`
-samples per class to ensure every class has at least 1 representative. This can slightly
-exceed the strict label-rate budget for rare classes — an intentional design choice to prevent
-degenerate classifiers with missing classes.
-
-### Seed Consistency
-All baselines use `CLASSIFIER_SEED = 3431` for data splits and classifier initialization.
-This ensures identical train/val/test partitions across all models for the same dataset.
-
-### Batch Sizes (Optimized for RTX 4090, 24GB)
-| Component | Batch Size | Original | Rationale |
-|-----------|-----------|----------|-----------|
-| Embedding extraction (MOMENT) | 128 | N/A | Large model, near GPU limit |
-| Embedding extraction (CrossHAR) | 512 | N/A | Small model |
-| Zero-shot GRU training (LiMU-BERT) | 512 | 128 | Speed optimization, applied uniformly |
-| Zero-shot Transformer_ft (CrossHAR) | 512 | 128 | Speed optimization, applied uniformly |
-| SVM (MOMENT) | N/A | N/A | CPU, sklearn |
-| Stage 2 (LanHAR) | 256 | 256 | Matches original paper |
-| End-to-end fine-tuning (all) | 32 | N/A | Small for gradient stability with encoder |
+**Status:** canonical notes for the six active V2 baselines, updated 2026-07-11.
+Historical MOMENT, LanHAR, and LLaSA notes were removed because those models are
+not part of the resubmission comparison. Evaluation rules shared by every model
+live in [`EVALUATION_PROTOCOL_V2.md`](EVALUATION_PROTOCOL_V2.md); operational
+go/no-go status lives in
+[`../v2/BASELINE_TRAINING_READINESS.md`](../v2/BASELINE_TRAINING_READINESS.md).
+
+This document distinguishes three kinds of statements:
+
+- **Published contract:** behavior described by the cited paper or official code.
+- **HALO adaptation:** a deliberate change needed to place the model in the common
+  benchmark. It is not presented as a reproduction of the paper's headline task.
+- **Known issue:** a condition that must be fixed or disclosed before a result is
+  suitable for the paper.
+
+## Comparison Roles
+
+The active models do not all receive the same kind of training. They must not be
+described collectively as "baselines trained on the HALO corpus."
+
+| Model | Comparison role | Work performed by our harness |
+|---|---|---|
+| CrossHAR | Corpus-matched self-supervised baseline | Pretrain a backbone on the source corpus, freeze it, then fit a 94-way source-label head |
+| LiMU-BERT | Corpus-matched self-supervised baseline | Pretrain a backbone on the source corpus, freeze it, then fit a 94-way source-label GRU |
+| SSL-Wearables | Externally pretrained foundation model | Load released UK-Biobank weights and fit a source-label head; optionally report a separately named full-fine-tune variant |
+| UniMTS | Externally pretrained text-aligned model | Load released weights and evaluate directly; no HAR training in our harness |
+| NormWear | Externally pretrained text-aligned model | Load released backbone, MSiTF, and text model and evaluate directly; no HAR training in our harness |
+| DeepConvLSTM | Supervised floor | Train from scratch on each target dataset for FS-1%, FS-10%, and full-shot only |
+
+The corpus-matched and externally pretrained groups answer different questions.
+CrossHAR and LiMU-BERT help isolate architecture under a shared source corpus.
+SSL-Wearables, UniMTS, and NormWear test whether a released model with much more,
+or qualitatively different, pretraining transfers to this benchmark. DeepConvLSTM
+is not a zero-shot baseline.
+
+## Scale And Input Summary
+
+Parameter counts below were measured from the instantiated models in this
+repository. "Sensor-side" excludes a text tower when all query and label
+embeddings can be precomputed. "Adapted" is the subset optimized by the current
+harness.
+
+| Model | Input used here | Temporal support | Total parameters | Sensor-side / adapted parameters |
+|---|---|---:|---:|---:|
+| CrossHAR | 20 Hz, 120 x 6 | 6 s | 531,988 | 469,342 adapted head; 62,646 frozen encoder |
+| LiMU-BERT | 20 Hz, 120 x 6 | 6 s, classified as six 1 s sequences | 72,800 | 10,154 adapted GRU; 62,646 frozen encoder |
+| SSL-Wearables harnet5 | 30 Hz, 150 x 3 acceleration | central 5 s | 4,538,782 | 310,878 adapted head; 4,227,904 frozen trunk |
+| UniMTS | 20 Hz, 200 x 22-joint acceleration tensor | 6 s repeated to 10 s | 68,607,997 | 5,179,900 sensor encoder; text tower can be offline |
+| NormWear | intended: 65 Hz, 390 x real channels | 6 s | 1,293,856,459 | 193,808,074 sensor + MSiTF; 1.10B TinyLlama can be offline |
+| DeepConvLSTM | 20 Hz, 120 x 6 | 6 s | about 457,280 + 129 x classes | all parameters trained per target |
+
+For context, the current HALO Small-Deep model is about 25.8M active sensor-side
+parameters and uses an offline frozen MiniLM text encoder. Results tables must
+report all three quantities where applicable: adapted/trainable, sensor-side
+deployed, and total including text towers. Reporting CrossHAR as only 62.6K, for
+example, omits its larger classifier.
+
+## 1. CrossHAR
+
+**Sources:** Hong et al., IMWUT 2024 [1]; official implementation [2].
+**Adapter:** `val_scripts/human_activity_recognition/baselines/crosshar.py`.
+**Tier:** closed vocabulary, bridged to target labels with ConSE.
+
+### Published Contract
+
+CrossHAR learns IMU representations with hierarchical self-supervision: masked
+reconstruction is followed by a joint reconstruction and temporal-contrastive
+stage. The official workflow uses 20 Hz, six-second, six-channel IMU windows,
+then trains a Transformer classifier on source labels and evaluates transfer to
+an unseen dataset [1,2]. The saved `model_masked_*` state is the representation
+encoder after the contrastive stage has also back-propagated through it; the
+separate contrastive projection is not required for embedding extraction.
+
+### HALO Adaptation
+
+- The local architecture matches the released encoder and loads the checkpoint
+  strictly. Per-window `InstanceNorm1d` mirrors the official `IMUDataset` path.
+- The frozen `(120,72)` sequence representation is passed to the released-style
+  `Transformer_ft` architecture.
+- The head predicts the common 94-label source vocabulary. Its softmax is bridged
+  to each target vocabulary with top-10 ConSE rather than pretending CrossHAR is
+  natively open-vocabulary.
+- The current head schedule is 100 epochs, Adam at `1e-3`, batch 512, unweighted
+  cross-entropy, and best source-validation loss.
+
+### Caveats And Required Disclosure
+
+- **Stale backbone:** the available checkpoint predates Capture24 and therefore
+  represents the former ten-dataset corpus. The cloud recipe refits only the head.
+  It is not valid for a claim that CrossHAR and HALO saw the same 11 sources.
+- **Schedule ambiguity:** official `config/pretrain.json` specifies 1,600 epochs,
+  with 800 joint contrastive epochs. The repository's custom combined-data config
+  specifies 200/100. A paper-faithful run and a compute-matched run are both
+  defensible, but they must be separately named and their optimizer-step counts
+  reported; the shorter schedule cannot be called the published schedule.
+- **Head imbalance:** source classes range from 16 to 13,961 windows. The current
+  unweighted random-window fit differs from HALO's group-balanced source sampling
+  and uses same-subject windows for model selection.
+- **Calibration:** ConSE weights depend on classifier confidence. A temperature
+  must be fitted on held-out source subjects only, never on a target dataset [7].
+- **Memory:** materializing all `(N,120,72)` source embeddings needs about 4.2 GiB
+  before train/validation copies. Use at least 32 GiB host RAM.
+
+**Current gate:** architecture smoke test passes; final scientific result is
+blocked on current-corpus pretraining, source-subject validation, calibration,
+and provenance capture.
+
+## 2. LiMU-BERT
+
+**Sources:** Xu et al., SenSys 2021 [3]; official implementation [4].
+**Adapter:** `val_scripts/human_activity_recognition/baselines/limubert.py`.
+**Tier:** closed vocabulary, bridged to target labels with ConSE.
+
+### Published Contract
+
+LiMU-BERT applies BERT-style masked reconstruction to normalized six-axis IMU
+sequences. The paper fixes the input at 20 Hz and 120 timesteps and uses a
+lightweight GRU over 20-timestep sequences for downstream tasks [3]. Its reported
+training protocol pretrains for 3,200 epochs and trains downstream classifiers
+for 700 epochs [3,4].
+
+### HALO Adaptation
+
+- Each six-second encoder output is divided into six 20-step representations.
+- A 94-way GRU is trained on source labels. At evaluation, six sub-window
+  softmaxes are averaged into one window distribution before ConSE.
+- The current cached backbone and head were trained for 100 epochs each. This is
+  a deliberately shortened configuration, not the paper's training budget.
+- Acceleration is divided by 9.8 in the model input path, matching the official
+  normalization only when the processed array is first expressed in m/s^2.
+
+### Caveats And Required Disclosure
+
+- **Remote source missing:** the clean pod receives a checkpoint but not the
+  ignored `LIMU-BERT-Public` Python package, so model setup currently fails.
+- **Stale and undertrained checkpoint:** its training log states ten datasets,
+  111,589 windows, and 100 pretraining epochs. It predates Capture24 and is much
+  shorter than the 3,200/700 paper schedule.
+- **Unit errors:** UCI-HAR, HAPT, and UniMiB acceleration is still stored near
+  g-scale while the preprocessor treats it as m/s^2; dividing it again by 9.8
+  makes these inputs about 9.8 times too small. RecGym is min-max-normalized and
+  has no recoverable physical scale. Unit provenance must be fixed per dataset.
+- **Transition labels:** the processed label tensor repeats each six-second
+  majority label at every timestep. Consequently, the official homogeneous
+  one-second-subwindow filter is vacuous and cannot remove transition segments.
+- **Unequal optimization:** six sub-windows per parent make 100 LiMU-BERT head
+  epochs roughly six times as many head updates as 100 CrossHAR epochs. Report
+  optimizer steps, not just epochs.
+- **Calibration and validation:** the current head uses unweighted CE and a
+  random-window validation split. Use held-out source subjects and source-only
+  temperature scaling [7].
+
+**Current gate:** blocked operationally and scientifically until the package,
+units, labels, current-corpus checkpoint, and training schedule are resolved.
+
+## 3. SSL-Wearables
+
+**Sources:** Yuan et al., npj Digital Medicine 2024 [5]; official code [6].
+**Adapter:** `val_scripts/human_activity_recognition/baselines/ssl_wearables.py`.
+**Tier:** externally pretrained closed vocabulary, bridged with ConSE.
+
+### Published Contract
+
+The released harnet family is pretrained with multi-task self-supervision on
+roughly 700,000 person-days from about 100,000 UK-Biobank participants. The paper
+uses wrist-worn, gravity-present tri-axial acceleration, linearly resampled to
+30 Hz in ten-second windows. Its downstream evaluation compares frozen-trunk
+training and full fine-tuning; full fine-tuning performs better [5].
+
+### HALO Adaptation
+
+- The current row uses `harnet5`, whose native input is 150 samples at 30 Hz.
+  Each common six-second window is center-cropped to five seconds.
+- Inputs come from dedicated 30 Hz, g-unit, gravity-present arrays. They do not
+  reuse the 20 Hz m/s^2 LiMU-BERT tensors.
+- The trunk is frozen and a 94-way released-style `EvaClassifier` head is fitted
+  for 100 epochs with Adam at `1e-3`, batch 512, unweighted CE, and best
+  source-validation accuracy.
+- Only eight of eleven source datasets are usable. KUHAR and RecGym lack the
+  required physical gravity-present acceleration, and the aligned UniMiB export
+  cannot currently be reconstructed.
+
+### Caveats And Required Disclosure
+
+- The correct row name is **SSL-Wearables harnet5 frozen-head ConSE**, not simply
+  "SSL-Wearables." It uses a shorter context and a weaker downstream protocol
+  than the paper's headline ten-second, full-fine-tune result [5].
+- A strong full-source-fine-tuned variant may be reported separately, using only
+  source data and the paper's subject-wise validation and axis/rotation handling.
+  It must not replace or be conflated with the frozen probe.
+- The 700,000-person-day external corpus is orders of magnitude larger than
+  HALO's source corpus. This is an advantage of the baseline and must be visible
+  in the table rather than folded into a generic "pretrained" label.
+- Twenty-nine of the 94 output classes have no positive SSL-head examples. They
+  remain output logits but are not learned as positive classes.
+- `torch.hub` currently follows an unpinned `main` branch. Pin the upstream commit
+  and released weight checksum before a final run.
+- The head still needs class/dataset balancing, source-subject validation, and
+  source-only calibration for a fair ConSE comparison [7].
+
+**Current gate:** operationally conditional on a pinned network fetch; publishable
+only with the precise frozen-probe name and the above corpus/context disclosures.
+
+## 4. UniMTS
+
+**Sources:** Zhang et al., NeurIPS 2024 [8]; official code and weights [9].
+**Adapter:** `val_scripts/human_activity_recognition/baselines/unimts.py`.
+**Tier:** native text-aligned cosine zero-shot.
+
+### Published Contract
+
+UniMTS aligns synthetic motion time series with enriched text using an ST-GCN
+over a 22-joint skeleton and a CLIP text tower. Synthetic HumanML3D motion gives
+all-joint coverage; random joint masking and rotation augmentation target device
+placement and orientation robustness. Real datasets are converted to m/s^2,
+resampled to 20 Hz, and padded or truncated to ten seconds [8,9].
+
+### HALO Adaptation
+
+- The released checkpoint used here is accelerometer-only. Gyroscope and STFT
+  branches are disabled based on the checkpoint structure.
+- The common benchmark provides one core sensor placement. Its acceleration is
+  written into one dataset-specific SMPL joint; the other 21 joints are zero.
+- A six-second, 120-sample window is wrap-padded to 200 samples. Signal and text
+  embeddings are L2-normalized and compared by cosine similarity.
+- No target examples and no source-label head are used.
+
+### Caveats And Required Disclosure
+
+- **Remote assets missing:** neither the ignored source tree nor checkpoint is in
+  the cloud bundle. The recipe also names `xiyuanzh/UniMTS`, while the released
+  Hugging Face account is `xiyuanz/UniMTS` [9].
+- **Context adaptation:** repeating four seconds of a six-second window is not the
+  paper's native ten-second observation. This row measures a six-second benchmark
+  adaptation and must say so.
+- **Placement adaptation:** official loaders can place MotionSense at two joints
+  and Shoaib at five locations. The primary HALO comparison intentionally uses
+  the same one core stream available to the other models. A multi-placement
+  UniMTS result is a separate native-capability row, not a replacement.
+- **Resampling:** the current shared arrays use temporal bin means; official
+  UniMTS code uses SciPy Fourier resampling. The difference is a preprocessing
+  deviation and should be tested or retained as an explicit parity choice.
+- **Units and gravity:** each dataset must follow its official conversion rather
+  than a global scale assumption. InclusiveHAR has no official UniMTS recipe and
+  therefore needs an explicitly registered placement/gravity decision.
+- Target labels are currently tokenized verbatim. Any underscore replacement or
+  prompt change must be frozen before evaluation and applied to every rerun.
+
+**Current gate:** blocked until source, checkpoint, revision, and per-dataset
+input contracts are packaged and validated on a clean pod.
+
+## 5. NormWear
+
+**Sources:** Luo et al., arXiv 2024/revised 2025 [10]; official code [11].
+**Adapter:** `val_scripts/human_activity_recognition/baselines/normwear.py`.
+**Tier:** native text-aligned L1 retrieval, not cosine.
+
+### Published Contract
+
+NormWear builds channel-independent CWT scalograms and fuses channel tokens with
+a query-conditioned MSiTF module. The paper standardizes preprocessing to 65 Hz
+and six seconds, detrends each channel, and applies Gaussian smoothing with
+standard deviation 1.3. Its zero-shot activity path aligns the sensor output
+with TinyLlama text embeddings and retrieves labels by Manhattan distance [10,11].
+
+### HALO Adaptation
+
+- The model uses all real benchmark IMU channels and the native activity query,
+  `What is the current activity?`.
+- The adapter repairs an upstream GPU inconsistency by keeping CWT input as a
+  NumPy array while moving generated tensors and model execution to CUDA.
+- It enables the upstream pure-Torch Ricker CWT because SciPy removed the older
+  `signal.cwt` API.
+- Scores are negative L1 distance so the shared driver can use argmax without
+  changing NormWear's native ranking.
+
+### Caveats And Required Disclosure
+
+- **Current preprocessing is invalid:** the adapter feeds 20 Hz x 120 tensors.
+  Upstream `get_embedding` only auto-resamples when the supplied rate is greater
+  than 256 Hz, so 20 Hz silently reaches fixed sample-scale CWT filters. The
+  physical frequency and expected 390-to-387-sample geometry are wrong.
+- The final path must explicitly resample 20 to 65 Hz, apply the published
+  detrend and Gaussian smoothing, amplitude-normalize as in official code, and
+  then pass `sampling_rate=65` [10,11].
+- Accelerometer-only datasets currently arrive with three zero-padded gyroscope
+  channels. NormWear is channel-flexible and should receive only real channels;
+  fake channels can change MSiTF aggregation.
+- Snake-case labels materially change TinyLlama representations. Use frozen,
+  naturalized target strings and the released activity answer template.
+- The upstream MSiTF loader catches checkpoint errors and continues. The harness
+  must verify a strict state-dict load and record both checkpoint hashes.
+- The released model contains about 1.294B parameters, but the TinyLlama query and
+  label embeddings can be precomputed; report both total and 193.8M sensor-side
+  parameters.
+- The external pretraining corpus spans heterogeneous physiological and IMU data.
+  It is not corpus-matched to HALO. Recheck the exact released checkpoint's data
+  manifest for held-out-test overlap before publication.
+
+**Current gate:** blocked on native preprocessing, real-channel handling, strict
+weights, natural label text, and clean-pod packaging.
+
+## 6. DeepConvLSTM
+
+**Sources:** Ordonez and Roggen, Sensors 2016 [12]; released notebook [13].
+**Adapter:** `val_scripts/human_activity_recognition/baselines/deepconvlstm.py`.
+**Tier:** supervised few-shot/full-shot only.
+
+### Published Contract
+
+DeepConvLSTM combines four temporal convolution layers with two LSTM layers so
+the CNN extracts local sensor patterns and the recurrent stack models their
+temporal evolution. The paper reports 64 convolution filters with kernel length
+5, two 128-unit LSTMs, dropout 0.5, RMSProp, and short overlapping windows on the
+Opportunity and Skoda tasks [12,13].
+
+### HALO Adaptation
+
+- The local PyTorch reimplementation uses four `Conv2d(64,(5,1))` layers, two
+  128-unit LSTM layers, dropout 0.5, and a dataset-specific softmax head.
+- It consumes the shared 20 Hz, 120 x 6 benchmark window. Acceleration-only data
+  has zero-padded gyroscope columns so the architecture remains fixed.
+- Per-channel min-max normalization is fitted on the selected training windows
+  only. This replaces the paper's Opportunity-specific hard-coded ranges.
+- Training uses unweighted cross-entropy, RMSProp at `1e-3` with `alpha=0.9`,
+  batch 64, at most 100 epochs, and patience 15 on validation macro-F1.
+- FS-1% and FS-10% source windows are class-balanced. Full-shot retains the
+  natural training distribution.
+
+### Caveats And Required Disclosure
+
+- This is a reimplementation, not a bit-for-bit port. PyTorch LSTM behavior,
+  initialization, the six-second non-overlapping window, channel count, and batch
+  size differ from the paper's Theano/Lasagne experiments [12,13].
+- It must only be compared with HALO's supervised FS/full-shot rows. Placing it in
+  the ZS-XD table would assign zero-shot capability it does not possess.
+- A single split and seed are inadequate for low-data claims. Run at least five
+  registered seeds or subject-group folds and report mean, standard deviation,
+  and every fold. Shoaib's current single test subject cannot support a
+  non-degenerate subject bootstrap interval.
+- HALO few-shot currently selects by validation accuracy while DeepConvLSTM
+  selects by macro-F1. The final shared protocol must use the same selection
+  metric, preferably the primary macro-F1.
+- Record the best epoch, subject IDs, normalization extrema, class counts, and
+  failure status for every dataset/rate. Partial JSON must never count as a run.
+
+**Current gate:** numerical and clean-pod smoke tests pass; final reporting is
+blocked on multi-seed/fold evaluation, common selection criteria, and strict
+failure/provenance handling.
+
+## Shared Implementation Requirements
+
+### Source Validation And Calibration
+
+Source-label heads must use subject-disjoint validation where subject IDs are
+available. No target labels, target validation windows, or target-derived
+temperature may influence zero-shot model selection. ConSE models require one
+source-validation temperature per head because their semantic mixture directly
+uses softmax magnitudes. Temperature scaling is a one-parameter post-hoc
+calibration method fitted after training [7].
+
+### Class And Dataset Balance
+
+The current 94-label source corpus is highly imbalanced across both activities
+and datasets. A faithful unweighted-paper run may be retained, but the fair
+corpus-matched comparison should also use one pre-registered source sampler or
+loss policy across HALO, CrossHAR, LiMU-BERT, and the SSL source head. Report both
+when the fairness policy departs from a baseline paper.
+
+### Data Quantity
+
+"Same datasets" does not imply the same amount of usable signal. Current fixed
+six-second arrays expose about 218.1 hours to CrossHAR/LiMU-BERT. The SSL head
+uses about 116.5 hours after five-second center crops. HALO's current native
+session budget is configured for roughly 399 hours. Every result must report
+effective windows, seconds, source datasets, exclusions, and sampling policy.
+
+### Model-Native Preprocessing
+
+Fairness means preserving each model's documented input contract, not forcing
+byte-identical tensors through incompatible models. The benchmark must hold the
+underlying target windows and available sensor information fixed, then apply a
+frozen model-specific transform. Rate, units, gravity convention, channel
+selection, temporal crop/padding, and normalization belong in result provenance.
+
+### Reproducibility Record
+
+Every final result artifact must contain:
+
+- repository Git SHA and dirty/clean state;
+- data-bundle SHA-256 and canonical label-config hash;
+- upstream repository commit and model/checkpoint SHA-256;
+- model role, input contract, included/excluded source datasets, and effective
+  training hours;
+- adapted, sensor-side, and total parameter counts;
+- loss, sampler, optimizer, learning rate, batch size, optimizer steps, maximum
+  and selected epoch, early-stopping metric, and calibration temperature;
+- split/fold subject IDs and all random seeds;
+- per-dataset completion status, wall time, and software/GPU versions.
+
+## References
+
+1. Hong et al. ["CrossHAR: Generalizing Cross-dataset Human Activity Recognition via Hierarchical Self-Supervised Pretraining."](https://doi.org/10.1145/3659597) IMWUT 8(2), 2024. DOI: 10.1145/3659597.
+2. Hong et al. [Official CrossHAR implementation.](https://github.com/kingdomrush2/CrossHAR)
+3. Xu et al. ["LIMU-BERT: Unleashing the Potential of Unlabeled Data for IMU Sensing Applications."](https://tanrui.github.io/pub/LIMU_BERT.pdf) SenSys, 2021. DOI: 10.1145/3485730.3485937.
+4. Xu et al. [Official LIMU-BERT implementation.](https://github.com/dapowan/LIMU-BERT-Public)
+5. Yuan et al. ["Self-supervised learning for human activity recognition using 700,000 person-days of wearable data."](https://www.nature.com/articles/s41746-024-01062-3) npj Digital Medicine 7:91, 2024. DOI: 10.1038/s41746-024-01062-3.
+6. OxWearables. [Official SSL-Wearables implementation.](https://github.com/OxWearables/ssl-wearables)
+7. Guo et al. ["On Calibration of Modern Neural Networks."](https://proceedings.mlr.press/v70/guo17a.html) ICML, 2017.
+8. Zhang et al. ["UniMTS: Unified Pre-training for Motion Time Series."](https://arxiv.org/abs/2410.19818) NeurIPS, 2024.
+9. Zhang et al. [Official UniMTS implementation](https://github.com/xiyuanzh/UniMTS) and [released weights](https://huggingface.co/xiyuanz/UniMTS).
+10. Luo et al. ["Toward Foundation Model for Multivariate Wearable Sensing of Physiological Signals."](https://arxiv.org/abs/2412.09758) arXiv:2412.09758, revised 2025. DOI: 10.1145/3803808.
+11. Luo et al. [Official NormWear implementation.](https://github.com/Mobile-Sensing-and-UbiComp-Laboratory/NormWear)
+12. Ordonez and Roggen. ["Deep Convolutional and LSTM Recurrent Neural Networks for Multimodal Wearable Activity Recognition."](https://www.mdpi.com/1424-8220/16/1/115) Sensors 16(1):115, 2016. DOI: 10.3390/s16010115.
+13. Sussex WearLab. [Released DeepConvLSTM notebook.](https://github.com/sussexwearlab/DeepConvLSTM)

@@ -21,7 +21,7 @@
     "exercising_stepper",
     "jumping",
     "lying_back",
-    "lying_side",
+    "lying_right_side",
     "moving_elevator",
     "playing_basketball",
     "rowing",
@@ -45,7 +45,7 @@
     7,
     8
   ],
-  "placement": "wrist",
+  "placement": "torso",
   "num_sessions_original": 9120,
   "train_subjects": [
     1,

@@ -198,13 +198,15 @@ class Fleet:
         log(f"{job}: instance {iid} (${dph:.3f}/hr) — waiting to boot (<= {self.boot_deadline}s)…")
         t0 = time.time()
         while time.time() - t0 <= self.boot_deadline:
+            time.sleep(20)                       # let the instance register before the first poll
             st = self.p.status(iid)
-            if st is None:
-                log(f"{job}: instance vanished during boot -> retry"); self._created.discard(iid); return None, None
+            # None = not yet listed / still provisioning (a new instance takes ~20-40s to appear);
+            # treat it as 'still booting', NOT vanished. Only 'running' is success; a truly-dead
+            # instance just times out below and gets destroyed (a 404 destroy is harmless).
             if st in ("running", "online"):
                 log(f"{job}: booted in {int(time.time()-t0)}s"); return iid, dph
-            time.sleep(20)
-        log(f"{job}: STUCK in boot >{self.boot_deadline}s (slow/throttled host) -> destroy + retry on a new host")
+        log(f"{job}: not 'running' after {self.boot_deadline}s (last status={st!r}) — "
+            f"slow/throttled/uncached host, destroy + retry on a new host")
         self.p.destroy(iid); self._created.discard(iid)
         return None, None
 

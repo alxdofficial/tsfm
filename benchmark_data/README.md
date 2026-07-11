@@ -1,8 +1,15 @@
-# Benchmark Data for TSFM vs Baselines
+# Benchmark Data for HALO vs Baselines
 
-Unified benchmark data for HALO/TSFM and the active V2 baseline adapters
-(CrossHAR and LiMU-BERT; UniMTS/ssl-wearables planned) on 18 HAR datasets
-(11 training + 6 active zero-shot test; opportunity appendix-only).
+Unified benchmark data for HALO and the six active V2 baselines: CrossHAR,
+LiMU-BERT, SSL-Wearables, UniMTS, NormWear, and DeepConvLSTM. The configuration
+contains 18 HAR datasets: 11 training sources, 6 active zero-shot targets, and
+Opportunity as an appendix-only conversion.
+
+The aligned arrays are not a claim that every model receives identical tensors or
+training data. Cited model contracts and deviations are documented in
+[`../docs/baselines/BASELINE_IMPLEMENTATION_NOTES.md`](../docs/baselines/BASELINE_IMPLEMENTATION_NOTES.md),
+and shared fairness rules are in
+[`../docs/baselines/EVALUATION_PROTOCOL_V2.md`](../docs/baselines/EVALUATION_PROTOCOL_V2.md).
 
 ## Quick Start
 
@@ -16,7 +23,10 @@ python benchmark_data/scripts/export_raw.py
 # 3. Generate 20Hz .npy files for fixed-rate baselines (LiMU-BERT, CrossHAR)
 python benchmark_data/scripts/preprocess_limubert.py
 
-# 4. Generate native-rate .npy files for TSFM evaluation
+# 4. Generate 30 Hz, gravity-present arrays for SSL-Wearables
+python benchmark_data/scripts/preprocess_ssl_wearables.py
+
+# 5. Generate native-rate .npy files for HALO evaluation
 python benchmark_data/scripts/preprocess_tsfm_eval.py
 ```
 
@@ -40,19 +50,19 @@ benchmark_data/
 │   │   │   ├── label_native.npy
 │   │   │   └── metadata.json
 │   │   └── ... (6 active zero-shot datasets)
-│   ├── limubert/               # 20Hz .npy format (used by ALL baselines)
+│   ├── limubert/               # Aligned 20Hz x 6-channel window/label format
 │   │   ├── uci_har/
 │   │   │   ├── data_20_120.npy
 │   │   │   ├── label_20_120.npy
 │   │   │   └── mapping.json
 │   │   ├── global_label_mapping.json  # baseline classifier vocabulary for cached ConSE heads
 │   │   └── ... (18 datasets)
-│   ├── lanhar/                 # LanHAR text descriptions
-│   └── crosshar/               # CrossHAR processed data
+│   └── ssl_wearables/          # Aligned 30Hz gravity-present acceleration arrays
 └── scripts/
     ├── export_raw.py           # Step 1: session data → per-subject CSVs
     ├── preprocess_limubert.py  # Step 2: CSVs → 20Hz .npy files
-    ├── preprocess_tsfm_eval.py # Step 3: session data → native-rate .npy files
+    ├── preprocess_ssl_wearables.py # CSVs → 30Hz gravity-present arrays
+    ├── preprocess_tsfm_eval.py # Session data → native-rate .npy files
     └── preprocess_tsfm.py      # Creates symlinks for TSFM training
 ```
 
@@ -71,7 +81,7 @@ benchmark_data/
 | UniMiB-SHAR | 11,771 | 17 | 50 | 3 (acc only) | Pocket |
 | HAPT | 2,546 | 12 | 50 | 6 (acc+gyro) | Waist |
 | MHEALTH | 2,029 | 12 | 50 | 23 (multi+ECG) | Multi-body |
-| RecGym | 7,150 | 11 | 20 | 6 (acc+gyro) | Chest |
+| RecGym | 7,150 | 11 | 20 | 6 (acc+gyro) | Wrist |
 | Capture24 | 20,000* | 9 | 100 | 3 (acc only) | Wrist |
 
 *Subsampled from original count via stratified sampling.
@@ -119,7 +129,13 @@ timestamp_sec,acc_x,acc_y,acc_z,gyro_x,gyro_y,gyro_z,activity
 - Channel names are standardized: `acc_x/y/z` and `gyro_x/y/z` are always the core channels
 - Original dataset-specific names are mapped to these standard names (see `dataset_config.json`)
 
-## LIMU-BERT Format (Used by All Baselines)
+## Aligned 20 Hz Format
+
+CrossHAR, LiMU-BERT, and DeepConvLSTM consume this format directly. UniMTS
+currently reads its acceleration channels before its own skeleton placement and
+padding. NormWear must not consume it directly in a final run: its cited contract
+requires a dedicated 65 Hz preprocessing path. SSL-Wearables uses the separate
+30 Hz arrays described above.
 
 Each dataset produces:
 - `data_20_120.npy`: Shape `(N, 120, 6)` — float32
@@ -151,9 +167,16 @@ Each test dataset produces:
 
 ## Train/Test Splits
 
-**Training datasets** (11): Used for HALO training.
-The 11 training datasets contribute 94 unique activity labels (HALO's train vocabulary). `global_label_mapping.json` (87 labels) is the separate closed-vocab BASELINE vocabulary used by the ConSE bridge (the baselines are not retrained on capture24).
+**Training datasets** (11): HALO's source corpus and the intended corpus-matched
+source pool for newly pretrained CrossHAR and LiMU-BERT backbones. The 11 datasets
+contribute 94 unique activity labels. The checked-in
+`processed/limubert/global_label_mapping.json` also contains those 94 labels and
+defines the current ConSE head vocabulary. Historical cached ten-dataset
+backbones that predate Capture24 are not corpus-matched and must be labeled stale.
 
-**Zero-shot test datasets** (6 active): Never seen during training. V2 zero-shot uses each
-dataset's own frozen label strings, exact-match macro-F1, and subject-stratified bootstrap CIs.
-Few-shot evaluation uses subject-disjoint splits, not random window splits.
+**Zero-shot test datasets** (6 active): Held out from HALO and in-repository
+source training. V2 zero-shot uses each dataset's own frozen label strings,
+exact-match macro-F1, and subject-stratified bootstrap CIs. Released external
+checkpoints require an explicit pretraining-overlap audit; "held out" must not be
+assumed from the local split alone. Few-shot evaluation uses subject-disjoint
+splits, not random window splits.

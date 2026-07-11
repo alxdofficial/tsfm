@@ -13,6 +13,12 @@
 > regenerated from `test_output/eval_v2/*.json`. Do not cite the aggregate
 > tables below as current results.
 
+> **Fairness warning:** the parity row controls nominal input rate and channel
+> text only. It does not control model capacity, temporal context, pretraining
+> corpus, effective source hours, or optimizer updates. Current policy and cited
+> model caveats are in [`EVALUATION_PROTOCOL_V2.md`](EVALUATION_PROTOCOL_V2.md)
+> and [`BASELINE_IMPLEMENTATION_NOTES.md`](BASELINE_IMPLEMENTATION_NOTES.md).
+
 **Checkpoint:** `small_deep_v2_4b3fdd6/best.pt` (headline model, epoch 186) —
 re-scored under protocol v2 (`EVALUATION_PROTOCOL_V2.md`) on 2026-07-02.
 Source JSONs: `test_output/eval_v2/tsfm_v2_native_native.json` (native) and
@@ -73,7 +79,8 @@ label embeddings, top-T=10 → argmax over `L_D`). See `EVALUATION_PROTOCOL_V2.m
 | ssl-wearables † | conse | *planned (released weights)* | | | | | | |
 
 *Baseline set changed in the V2 cleanup: **MOMENT, LanHAR, LLaSA dropped** (slow /
-weak / undeployable); **UniMTS + ssl-wearables to be added** as adapters. For the
+weak / undeployable); **UniMTS + SSL-Wearables adapters now exist but their final
+runs are blocked by the readiness gates**. For the
 record, the dropped baselines' last v2 averages were LanHAR 19.3, LiMU-BERT-tier
 MOMENT (partial), LLaSA ~near-random.*
 
@@ -86,9 +93,10 @@ MOMENT (partial), LLaSA ~near-random.*
   on average and on the locomotion-rich sets, losses on the placement-shifted /
   fall-heavy sets. This is exactly what macro-F1 + a leakage-free protocol are
   supposed to surface.
-- **Even HALO's parity row (29.6)** — stripped of native rate and channel text,
-  i.e. the same inputs the baselines get — still beats every baseline's average,
-  which is the architecture-only claim.
+- **HALO's historical parity row (29.6)** removes native-rate and rich-channel-text
+  advantages, but it is input parity, not capacity or corpus parity. Any residual
+  gap reflects architecture together with parameter scale, temporal context,
+  pretraining data, and optimization; it is not an architecture-only estimate.
 - CrossHAR/LiMU-BERT/MOMENT reachability was ≥0.83 on every dataset (the ConSE
   bridge could reach almost all candidate classes; mobiact/harth's `car_step`/
   cycling/transport classes are the structural gaps), so the closed-vocab

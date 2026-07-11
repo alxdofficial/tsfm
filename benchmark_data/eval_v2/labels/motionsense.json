@@ -1,7 +1,7 @@
 {
   "dataset": "motionsense",
   "protocol_version": "v2",
-  "source": "Label strings verbatim from benchmark_data/processed/tsfm_eval/motionsense/metadata.json activity_to_idx (produced by datascripts/motionsense/convert.py from the dataset's documented label names). Frozen for eval v2 \u2014 no rephrasing at evaluation time.",
+  "source": "Label strings verbatim from benchmark_data/processed/tsfm_eval/motionsense/metadata.json activity_to_idx (produced by datascripts/process_motionsense.py from the dataset's documented label names). Frozen for eval v2 \u2014 no rephrasing at evaluation time.",
   "labels": [
     "jogging",
     "sitting",
