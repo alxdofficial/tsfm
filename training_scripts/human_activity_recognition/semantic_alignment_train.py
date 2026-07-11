@@ -1144,7 +1144,10 @@ def _train_epoch_gradcache(model, label_bank, dataloader, criterion, optimizer, 
             mb_metadata = mb_batch['metadata']
             mb_channel_descriptions = [m['channel_descriptions'] for m in mb_metadata]
 
-            with torch.inference_mode():
+            # no_grad (NOT inference_mode): Phase 2 calls .requires_grad_(True) on the concatenated
+            # cache, which raises on inference-mode tensors. no_grad detaches the cache forward yet
+            # still lets these tensors re-enter autograd for the GradCache loss/backward (#91a).
+            with torch.no_grad():
                 with autocast('cuda', dtype=torch.bfloat16, enabled=device.type == 'cuda'):
                     mb_imu_emb = model(mb_patches, mb_channel_descriptions, mb_channel_mask, mb_patch_mask, metadata=mb_metadata)
                 mb_text_emb = label_bank.encode(mb_label_texts, normalize=True)

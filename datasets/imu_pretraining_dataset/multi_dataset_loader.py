@@ -30,6 +30,14 @@ import random
 
 from datasets.imu_pretraining_dataset.label_augmentation import augment_label
 
+# Shared accelerometer unit canonicalization (single source of truth, also used by the eval and
+# ssl-wearables preprocessing paths) lives under benchmark_data/scripts — make it importable.
+import sys as _sys
+_ACCEL_UNITS_DIR = str(Path(__file__).resolve().parents[2] / "benchmark_data" / "scripts")
+if _ACCEL_UNITS_DIR not in _sys.path:
+    _sys.path.insert(0, _ACCEL_UNITS_DIR)
+from accel_units import accel_scale_factor, is_accel_channel
+
 IMU_PATTERNS = ('acc', 'gyro', 'mag')  # 'ori' dropped: PAMAP2 orientation is documented invalid
 DATASET_CHANNEL_EXCLUDES = {
     # MHealth mag channels are motion-coupled artifacts, not valid Earth-field magnetometer data.
@@ -488,6 +496,17 @@ class IMUPretrainingDataset(Dataset):
             if np.isnan(data).any():
                 data = np.nan_to_num(data, nan=0.0)
 
+        # Canonicalize accelerometer UNITS -> g (gravity present), per the corpus unit policy
+        # (EVALUATION_PROTOCOL_V2) and consistently with the eval + ssl-wearables paths
+        # (accel_units). Only accel columns are scaled; gyro/mag are never touched. None of the
+        # training datasets are iOS userAcc (those are eval-only), so a per-dataset scalar is exact.
+        _accel_scale = accel_scale_factor(dataset_name)
+        if _accel_scale != 1.0:
+            _accel_cols = [i for i, ch in enumerate(selected_channels) if is_accel_channel(ch)]
+            if _accel_cols:
+                data = np.array(data, dtype=np.float64)  # own copy; never mutate a cached array
+                data[:, _accel_cols] *= _accel_scale
+
         # Get sampling rate (assume same for all channels in a dataset)
         sampling_rate = dataset_info['sampling_rates'][selected_channels[0]]
 
@@ -512,6 +531,13 @@ class IMUPretrainingDataset(Dataset):
             else:
                 # Fallback for missing channel info
                 ch_desc = f"Channel: {ch}"
+
+            # Accel is canonicalized to g on every path (accel_units); scrub any stale 'm/s^2'
+            # unit token from the description so the TEXT branch matches the signal and no longer
+            # leaks the original unit convention as a dataset fingerprint (#87). Gravity-presence
+            # wording (a preserved, disclosed axis) is intentionally kept.
+            if is_accel_channel(ch):
+                ch_desc = ch_desc.replace("m/s^2", "g").replace("m/s²", "g")
 
             base_channel_descriptions.append(ch_desc)
 

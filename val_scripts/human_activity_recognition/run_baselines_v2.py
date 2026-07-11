@@ -53,6 +53,13 @@ def run_one(name: str, datasets, device, sbert, out_path: Path) -> dict:
     partial_path = out_path.with_suffix(".partial.json")
 
     for ds in datasets:
+        na = adapter.is_incompatible(ds)
+        if na:   # disclosed N/A (e.g. gravity-dependent model on a gravity-removed set) — not a failure
+            results[ds] = {"_na": na}
+            print(f"  {ds:12} N/A ({na})")
+            with open(partial_path, "w") as f:
+                json.dump(results, f, indent=2, default=float)
+            continue
         try:
             L_D, gt_names, subjects, keep_idx = B.load_gt(ds)
             if adapter.tier == "conse":

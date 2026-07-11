@@ -49,6 +49,13 @@ class BaselineAdapter:
         """Load model + cached artifacts once; return an opaque state dict."""
         raise NotImplementedError
 
+    def is_incompatible(self, ds: str):
+        """Return a short reason string if this model CANNOT be validly scored on dataset `ds`
+        (e.g. a gravity-dependent model on a gravity-removed test set), else None. The driver
+        records such a dataset as an explicit, disclosed N/A cell — NOT silently scored, and NOT
+        counted as a failure — rather than reporting a scientifically invalid number (#91b)."""
+        return None
+
 
 class ConSEAdapter(BaselineAdapter):
     """Closed-vocabulary classifier scored via the ConSE bridge."""

@@ -3,7 +3,8 @@
 
 Unlike the LIMU-BERT preprocessing (preprocess_limubert.py), this script:
   - Does NOT downsample — keeps native sampling rate (e.g. 50Hz)
-  - Does NOT convert accelerometer units — keeps native units matching TSFM training data
+  - Canonicalizes accelerometer units to g (gravity present), matching the HALO training
+    corpus (both go through benchmark_data/scripts/accel_units.py — no drift between paths)
   - Windows at native rate: window_size = int(native_hz * 6.0)
 
 Output per dataset in benchmark_data/processed/tsfm_eval/{dataset}/:
@@ -29,6 +30,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from accel_units import IOS_USERACC_PLUS_GRAVITY, to_g
 
 # Paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -152,6 +155,15 @@ def process_dataset(dataset: str):
 
         sensor_data = extract_core_channels(df, has_gyro=has_gyro)
 
+        # Canonicalize accelerometer UNITS -> g (gravity present), per the corpus unit policy
+        # (EVALUATION_PROTOCOL_V2) and consistently with the ssl-wearables + HALO-train paths
+        # (accel_units.to_g). Accel only (cols 0:3); gyro (cols 3:6) is never touched. iOS
+        # userAcceleration (gravity removed) is rebuilt by adding the gravity vector back.
+        grav3 = None
+        if dataset in IOS_USERACC_PLUS_GRAVITY:
+            grav3 = df[["gravity_x", "gravity_y", "gravity_z"]].values.astype(np.float64)
+        sensor_data[:, 0:3] = to_g(dataset, sensor_data[:, 0:3], grav3)
+
         activity_labels = np.array(
             [activity_to_idx.get(a, -1) for a in df["activity"]], dtype=int
         )
@@ -174,7 +186,7 @@ def process_dataset(dataset: str):
             )
 
         # NO downsampling — keep native rate
-        # NO unit conversion — keep native units matching TSFM training data
+        # Accelerometer units already canonicalized to g above (accel_units.to_g); gyro untouched.
 
         # Window the data (non-overlapping, 6-second windows at native rate)
         windows, window_act_labels = window_data(sensor_data, activity_labels, window_size)

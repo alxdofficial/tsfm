@@ -32,6 +32,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from accel_units import IOS_USERACC_PLUS_GRAVITY, to_g
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 BENCHMARK_DIR = PROJECT_ROOT / "benchmark_data"
 RAW_DIR = BENCHMARK_DIR / "raw"
@@ -42,31 +44,19 @@ TARGET_HZ = 30
 WINDOW_30 = 180          # 6 s @ 30 Hz  (matches the limubert 6 s / 120-sample @ 20 Hz grid)
 LIMU_HZ = 20
 LIMU_WINDOW = 120
-GRAVITY_MS2 = 9.80665    # ssl data_parsing uses /9.81; kept consistent with limubert here
 CLIP_G = 3.0             # ssl data_parsing (oppo.py/pamap.py) clips to +/-3 g; benign for HAR
 
 with open(BENCHMARK_DIR / "dataset_config.json") as f:
     CONFIG = json.load(f)
 ALL_DATASETS = CONFIG["train_datasets"] + CONFIG["zero_shot_datasets"]
 
-# --- per-dataset unit / gravity handling to reach "g WITH gravity" (verified vs native) ---
-# iOS CoreMotion: userAcceleration is g with GRAVITY REMOVED; add the separate unit-gravity
-# vector back -> total specific force in g.
-IOS_USERACC_PLUS_GRAVITY = {"motionsense", "inclusivehar"}
-# uci_har's export stores BOTH body_acc (acc_*, gravity removed) AND total_acc (gravity
-# present, ALREADY in g ~1.0). harnet needs gravity, so read total_acc_* (see acc_cols
-# selection below) and treat as already-g. (hapt's export carries NO total_acc columns;
-# its acc_* is already g-with-gravity at median ~1.02, so it is ACC_G_ASIS below.)
-# uci_har's export now REMAPS acc_* -> total_acc_* (gravity present, in g) via core_channels (#85),
-# so there is no separate total_acc_* column anymore — read acc_* directly and treat as already-g
-# (see ACC_G_ASIS). USE_TOTAL_ACC_COL is now empty (kept for clarity / future datasets).
+# Per-dataset unit / gravity classification (IOS_USERACC_PLUS_GRAVITY / ACC_G_ASIS / ACC_MILLI_G /
+# to_g) is the SHARED single source of truth in accel_units.py, reused by the HALO train + eval
+# paths so the g-canonicalization cannot drift between them. ssl adds only its own clip (CLIP_G).
+# uci_har's export REMAPS acc_* -> total_acc_* (gravity present, in g) via core_channels (#85), so
+# there is no separate total_acc_* column anymore — read acc_* directly (treated as already-g in
+# accel_units.ACC_G_ASIS). USE_TOTAL_ACC_COL is now empty (kept for clarity / future datasets).
 USE_TOTAL_ACC_COL = set()
-# Already g WITH gravity: Axivity raw (harth/capture24), hapt acc_* (median ~1.02 g),
-# and uci_har total_acc.
-ACC_G_ASIS = {"harth", "capture24", "hapt", "uci_har"}   # uci_har acc_* is now total_acc (g)
-# milli-g with gravity -> g.
-ACC_MILLI_G = {"opportunity"}
-# everything else: m/s^2 with gravity -> divide by g.
 
 # Datasets whose accelerometer CANNOT be expressed as physical g-with-gravity (harnet's input
 # contract) and has no channel/orientation to reconstruct it. harnet was pretrained on
@@ -110,21 +100,6 @@ def _downsample_bin_mean(data: np.ndarray, original_hz: float, target_hz: int) -
     if not result:
         return np.empty((0, data.shape[1]))
     return np.array(result)
-
-
-def _to_g_with_gravity(ds: str, cols3: np.ndarray, grav3) -> np.ndarray:
-    if ds in IOS_USERACC_PLUS_GRAVITY:
-        assert grav3 is not None, f"{ds}: needs gravity_x/y/z columns"
-        out = cols3 + grav3
-    elif ds in ACC_G_ASIS:
-        out = cols3
-    elif ds in ACC_MILLI_G:
-        out = cols3 / 1000.0
-    else:
-        out = cols3 / GRAVITY_MS2
-    if CLIP_G is not None:
-        out = np.clip(out, -CLIP_G, CLIP_G)
-    return out
 
 
 def process_dataset(ds: str):
@@ -199,7 +174,7 @@ def process_dataset(ds: str):
         # channels -> 3-ch g-with-gravity
         acc_w = w[:, :, :3]
         grav_w = w[:, :, 3:6] if need_grav else None
-        g_w = _to_g_with_gravity(ds, acc_w, grav_w)
+        g_w = to_g(ds, acc_w, grav_w, clip=CLIP_G)
         all_win.append(g_w.astype(np.float32))
 
     data = np.concatenate(all_win, axis=0) if all_win else np.empty((0, WINDOW_30, 3), np.float32)

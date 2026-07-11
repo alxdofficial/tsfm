@@ -106,9 +106,13 @@ def main():
 
     print("\n⚠ = averaged over fewer than the full held-out set (an N/A cell) — NOT directly "
           "comparable to a full-support average; read per-dataset cells instead.")
-    print("params = trainable/active parameters (HALO Small-Deep ~25.8M active; ConSE baselines "
-          "~62.6K encoder + a small head; 'released' = frozen released-weights foundation model). "
-          "The ~400x capacity gap is HALO's largest disclosed advantage.")
+    print("N/A cells: a gravity-dependent baseline (UniMTS) is not scored on gravity-removed test "
+          "sets (motionsense, inclusivehar in the 20 Hz grid) — disclosed, not scored as if gravity "
+          "were present (#91b).")
+    print("params = trainable/active parameters (HALO Small-Deep ~25.8M active). The capacity gap "
+          "vs the ConSE baselines ranges ~6x (vs ssl-wearables ~4.54M) to ~360x (vs LiMU-BERT "
+          "~0.073M) — NOT a uniform ~400x; read the per-model params column. UniMTS and NormWear "
+          "are frozen released-weights foundation models.")
     print(f"\n† = ConSE bridge (closed-vocab classifier -> softmax over {baseline_vocab_size()} baseline "
           "labels -> convex combo of SBERT label embeddings -> argmax over L_D). "
           "macro-F1, exact match, subject-disjoint not needed (zero-shot).")

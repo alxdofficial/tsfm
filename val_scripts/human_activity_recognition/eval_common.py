@@ -157,6 +157,12 @@ def get_dataset_metadata(dataset_name: str) -> dict:
         # truncated by the 64-token text encoder.
         full_desc = ch_desc
 
+        # Accel is canonicalized to g on every path; scrub any stale 'm/s^2' unit token so the
+        # text branch matches the (now g) signal and does not leak the original unit convention,
+        # consistently with the training loader (#87).
+        if ch.startswith("acc"):
+            full_desc = full_desc.replace("m/s^2", "g").replace("m/s²", "g")
+
         # Append sampling rate and patch window size to match training format
         # (matches multi_dataset_loader.py:383)
         full_desc = f"{full_desc} (sampled at {sampling_rate:.0f}Hz, {PATCH_SIZE_SEC:.1f}s window)"

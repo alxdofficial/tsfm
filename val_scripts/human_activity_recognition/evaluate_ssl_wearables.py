@@ -171,6 +171,15 @@ def main():
     for ds in tqdm(used, desc="ssl-wearables | train features"):
         x = load_ssl_windows(ds)                                    # (N,150,3)
         lab_raw = np.load(str(LIMU_DIR / ds / "label_20_120.npy"))   # (N,120,2)
+        # Fail-loud: ssl features (30 Hz grid) and limubert labels (20 Hz grid) are paired
+        # positionally, row-for-row. preprocess_ssl_wearables reconciles per-subject counts to the
+        # limubert grid, but if preprocess_limubert is later re-run alone (count changes) and ssl is
+        # NOT regenerated, the grids desync and every label past the first divergent subject is
+        # silently mispaired (#89). Refuse to fit rather than train on mispaired labels.
+        assert x.shape[0] == lab_raw.shape[0], (
+            f"{ds}: ssl grid has {x.shape[0]} windows but limubert label grid has "
+            f"{lab_raw.shape[0]} — grids desynced. Re-run: python "
+            f"benchmark_data/scripts/preprocess_ssl_wearables.py --datasets {ds}  (do NOT fit).")
         local = get_window_labels(lab_raw)
         gl = map_local_to_global_labels(local, ds, DATASET_CONFIG, globals_labels)
         feats.append(extract_trunk_features(model, x, device))

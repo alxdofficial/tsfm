@@ -9,10 +9,17 @@ Augmentations are divided into:
 - Strong: time_warp, magnitude_warp, resample (more aggressive)
 """
 
+import re
 import torch
 import numpy as np
 from scipy import interpolate
 from typing import Tuple, Optional, List
+
+# Sensor-type token detector for triad location inference. Longest alternative first so
+# 'accelerometer'/'accel' win over 'acc' (else 'acc' truncates 'accel' and mis-locates); the
+# trailing \d* absorbs dual-range suffixes like pamap2's acc16/acc6.
+_SENSOR_TOKEN_RE = re.compile(
+    r'(accelerometer|accel|acc|gyroscope|gyro|magnetometer|magnet|mag|orientation|orient|ori)\d*')
 
 
 
@@ -360,15 +367,15 @@ class IMUAugmenter:
         )
         groups = group_channels_by_sensor(channel_names)
         ch_to_idx = {n: i for i, n in enumerate(channel_names)}
-        sensor_types = ("acc", "gyro", "mag", "ori")
-
         def location(g):
-            for st in sensor_types:
-                if g.endswith(st):
-                    return g[: -len(st)].rstrip("_")
-                if g.startswith(st):
-                    return ""
-            return g
+            # Location = group name with its sensor-type token removed, robust to alternate
+            # spellings ('watch_accel') and numeric range suffixes ('chest_acc16'). This keeps a
+            # location's accel + gyro (+ mag) in ONE bucket so _rotation_3d rotates them by a
+            # SHARED R (one rigid-body frame); mis-locating rotates accel apart from its gyro (#88).
+            m = _SENSOR_TOKEN_RE.search(g)
+            if not m:
+                return g
+            return (g[:m.start()] + g[m.end():]).strip("_")
 
         out = {}
         for g, chans in groups.items():

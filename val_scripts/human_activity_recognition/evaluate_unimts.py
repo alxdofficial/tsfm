@@ -28,6 +28,15 @@ UNIMTS_REPO = PROJECT_ROOT / "auxiliary_repos" / "UniMTS"
 UNIMTS_CKPT = UNIMTS_REPO / "checkpoint" / "UniMTS.pth"
 LIMU_DIR = PROJECT_ROOT / "benchmark_data" / "processed" / "limubert"
 
+# Shared accel-unit classification (single source of truth): datasets whose accel has gravity
+# ABSENT in the 20 Hz limubert grid this model reads (iOS userAcceleration + gravity-removed sets).
+# UniMTS needs gravity-present accel, so it must NOT be scored on these — the adapter discloses them
+# as N/A (#91b).
+_ACCEL_UNITS_DIR = str(PROJECT_ROOT / "benchmark_data" / "scripts")
+if _ACCEL_UNITS_DIR not in sys.path:
+    sys.path.insert(0, _ACCEL_UNITS_DIR)
+from accel_units import GRAVITY_ABSENT_IN_LIMU_GRID as GRAVITY_INCOMPATIBLE  # noqa: E402
+
 # --- input config (verified against the released code) ---
 PAD_LEN = 200          # UniMTS pads/truncates every dataset to 200 samples (10 s @ 20 Hz)
 N_JOINTS = 22          # SMPL skeleton graph nodes
@@ -81,7 +90,8 @@ def window_embeddings(ds: str, model, device, batch=256) -> np.ndarray:
     wrap-pad 120->200 -> (N,3,200,22,1) -> ST-GCN -> (N,512).
     """
     X = np.load(str(LIMU_DIR / ds / "data_20_120.npy")).astype(np.float32)  # (N,120,6)
-    acc = X[:, :, 0:3]                                                       # accel only, 20Hz m/s^2 +gravity
+    acc = X[:, :, 0:3]                              # accel only, 20 Hz m/s^2 (gravity-present sets;
+    #                                                gravity-absent sets are guarded as N/A upstream, #91b)
     N, T, _ = acc.shape
     joint = _joint_for(ds)
     embs = []

@@ -157,7 +157,11 @@ def do_sync_results(job: str, spec: dict, dest_prefix: str):
     s3 = R2.client()
     for pat in spec.get("results", []):
         pat = pat.replace("~", str(Path.home()))
-        matches = glob.glob(str(ROOT / pat)) if not pat.startswith("/") else glob.glob(pat)
+        # recursive=True so '**' in a recipe's results glob (e.g. the halo job's
+        # training_output/semantic_alignment/**/best.pt) actually recurses; without it Python
+        # treats '**' as a single '*' and the nested checkpoint never matches / never uploads (#91c).
+        matches = (glob.glob(str(ROOT / pat), recursive=True) if not pat.startswith("/")
+                   else glob.glob(pat, recursive=True))
         if not matches:
             print(f"[recipe] (no match for results glob: {pat})")
         for m in matches:

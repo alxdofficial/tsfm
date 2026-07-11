@@ -153,13 +153,20 @@ would require fabricating unobserved content is never normalized away.
 
 **Current implementation gaps (must close before the data freeze).**
 
-- *Units are not yet canonicalized.* Physical units currently appear verbatim in
-  HALO's channel text (e.g. PAMAP2 `"…values in m/s^2 including gravity"`,
-  capture24 `"…in g"`, from each `data/<ds>/manifest.json`) **and** the signal
-  scale is inconsistent — LiMU-BERT divides near-g UCI/HAPT/UniMiB by 9.8
-  (`BASELINE_TRAINING_READINESS.md` §1.2). Fix: declare the corpus convention (g),
-  convert m/s²→g at admission, drop the unit token from channel text, and have each
-  baseline adapter apply its documented *from-g* transform.
+- *Units are canonicalized to g — RESOLVED 2026-07-11 (#87).* A single shared table
+  `benchmark_data/scripts/accel_units.py` (`to_g` / `accel_scale_factor`) converts the
+  accelerometer to g on **every** HALO path — the training loader
+  (`multi_dataset_loader.py`), the zero-shot eval preprocess (`preprocess_tsfm_eval.py`),
+  and the ssl-wearables preprocess (`preprocess_ssl_wearables.py`, refactored onto the same
+  table) — so the corpus can no longer leak the unit convention through the signed DC /
+  amplitude feature. Verified median |acc| ≈ 1 g for all six eval sets and every
+  gravity-present train set (gravity-removed kuhar correctly stays ≈ 0; it contributes no DC /
+  posture cue and is never fabricated back). The stale `m/s^2` token is also scrubbed from
+  HALO's channel text on both the train loader and eval paths, keeping the text branch
+  consistent with the (now g) signal. Baselines keep their own single convention (LiMU-BERT
+  m/s², ssl g). **Consequence:** HALO must be trained *from scratch* (not resumed) so the
+  frozen DC / band-norm stats recalibrate on the g corpus — no canonical checkpoint exists yet,
+  so this is a clean start, not a migration.
 - *Channels are zero-padded across the board.* The shared baseline tensor
   `benchmark_data/processed/limubert/<ds>/data_20_120.npy` is `(N,120,6)` with
   datasets that lack a real gyro (realworld, harth) **zero-padded to 6**. This is

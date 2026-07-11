@@ -19,6 +19,15 @@ class UniMTSAdapter(CosineAdapter):
         model = U.load_unimts_model(device)
         return {"model": model}
 
+    def is_incompatible(self, ds):
+        # UniMTS expects m/s^2 WITH gravity, but the 20 Hz limubert grid stores gravity-REMOVED
+        # accel for the iOS userAcceleration sets (and any gravity-removed set); scoring UniMTS on
+        # those is physically invalid, so disclose them as N/A rather than report a bogus number (#91b).
+        import val_scripts.human_activity_recognition.evaluate_unimts as U
+        if ds in U.GRAVITY_INCOMPATIBLE:
+            return "gravity-removed accel in limubert grid; UniMTS needs gravity-present"
+        return None
+
     def window_embeddings(self, ds, state, device) -> np.ndarray:
         import val_scripts.human_activity_recognition.evaluate_unimts as U
         return U.window_embeddings(ds, state["model"], device)

@@ -82,16 +82,26 @@ def main():
     else:
         print(f"{WARN} VAST_API_KEY not set (fine for --provider mock; required for live vast pods)")
 
-    # 6) repo reachable at SHA
+    # 6) repo + the pinned SHA reachable on the remote (HARD blocker). A pod whose
+    # `git fetch --depth 1 origin $REPO_SHA` (bootstrap.sh) can't resolve the SHA is guaranteed to
+    # fail, so an unpushed/unreachable SHA must block READY, not merely WARN (#91d — was a WARN that
+    # let doomed pods spend money). We prove the SHA is a ref tip on the remote via `git ls-remote`.
     url = rc.get("defaults", {}).get("repo", "").replace("git@github.com:", "https://github.com/")
-    sha = args.sha or subprocess.getoutput("git rev-parse HEAD")
-    if url.startswith("http"):
-        rc_ls = subprocess.run(["git", "ls-remote", url, "HEAD"], capture_output=True, text=True)
-        if rc_ls.returncode == 0:
-            print(f"{OK} repo reachable: {url}")
+    sha = (args.sha or subprocess.getoutput("git rev-parse HEAD")).strip()
+    if not url.startswith("http"):
+        print(f"{BAD} recipes.defaults.repo is not an http(s) URL ({url}); cannot verify SHA remotely")
+        blockers += 1
+    else:
+        rc_ls = subprocess.run(["git", "ls-remote", url], capture_output=True, text=True)
+        if rc_ls.returncode != 0:
+            print(f"{BAD} repo not reachable ({url}); fix recipes.defaults.repo")
+            blockers += 1
+        elif any(line.split("\t", 1)[0] == sha for line in rc_ls.stdout.splitlines()):
+            print(f"{OK} repo reachable; SHA {sha[:12]} is a ref tip on the remote: {url}")
         else:
-            print(f"{WARN} repo not reachable as configured ({url}); fix recipes.defaults.repo")
-    print(f"{WARN} pod will checkout SHA {sha[:12]} — ensure it is pushed to the public remote")
+            print(f"{BAD} SHA {sha[:12]} is NOT a ref tip on {url} — push your branch first "
+                  f"(the pod's `git fetch --depth 1 origin {sha[:12]}` will fail)")
+            blockers += 1
 
     print()
     if blockers:

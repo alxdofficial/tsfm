@@ -265,7 +265,10 @@ def main():
     args = ap.parse_args()
 
     sha = args.sha or subprocess.getoutput("git rev-parse HEAD").strip()
-    run_id = args.run_id or f"r{sha[:8]}"
+    # Unique per process: two fleet procs at the same SHA must NOT share a run_id, or they collide
+    # on the R2 runs/<run_id>/ prefix + DONE/FAILED sentinels and each teardown can destroy the
+    # other's pods (#91e). os.getpid() keeps it deterministic-per-run (no Date.now dependency).
+    run_id = args.run_id or f"r{sha[:8]}-{os.getpid()}"
     provider = MockProvider() if args.provider == "mock" else VastProvider()
     log(f"provider={args.provider} run_id={run_id} sha={sha[:12]} jobs={args.jobs} "
         f"gpu={args.gpu} max=${args.max_dph}/hr")
