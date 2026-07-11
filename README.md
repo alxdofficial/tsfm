@@ -1,6 +1,6 @@
 # TSFM: Language-Aligned IMU Foundation Model for Human Activity Recognition
 
-A foundation model that aligns IMU sensor embeddings with natural language descriptions, enabling zero-shot activity recognition on unseen datasets. Trained end-to-end on 10 diverse HAR datasets and evaluated against 5 baselines on 7 held-out test datasets.
+A foundation model that aligns IMU sensor embeddings with natural language descriptions, enabling zero-shot activity recognition on unseen datasets. Trained end-to-end on 11 diverse HAR datasets and evaluated under protocol v2 on 6 held-out test datasets.
 
 ---
 
@@ -25,7 +25,7 @@ Raw IMU Data (variable length, 6-48 channels)
          |
     384-dim L2-normalized embedding
          |
-    Cosine Similarity with LearnableLabelBank text embeddings
+    Cosine Similarity with SentenceBERT text prototypes
          |
     Zero-shot activity prediction
 ```
@@ -33,7 +33,7 @@ Raw IMU Data (variable length, 6-48 channels)
 ### Key Design Choices
 
 - **Channel-independent encoding**: Each sensor channel is processed independently through shared temporal attention, then fused via cross-channel attention. This handles 6-48 channels without retraining.
-- **Learnable label bank**: Text embeddings are initialized from SentenceBERT (all-MiniLM-L6-v2) then refined via learnable attention pooling during training.
+- **Text label prototypes**: Text embeddings come from SentenceBERT (all-MiniLM-L6-v2); frozen mean pooling is the current default, with the learnable label bank kept as an ablation/variant.
 - **Soft targets**: Contrastive loss uses pairwise text similarity to weight targets, preventing synonym labels (e.g., "walking" and "strolling") from being treated as negatives.
 - **Group-balanced sampling**: Training samples are weighted by inverse semantic group frequency with capped oversampling (max 20x) to handle class imbalance across datasets.
 
@@ -84,9 +84,9 @@ python training_scripts/human_activity_recognition/semantic_alignment_train.py
 | Learning rate | 1e-4 | With 3-epoch warmup + cosine decay |
 | Epochs | 100 | ~2 min/epoch on RTX 4090 |
 | Encoder | 384-dim, 8 heads, 4 layers | ~9.5M parameters |
-| Training datasets | 10 | See table below |
+| Training datasets | 11 | See table below |
 | Temperature | 0.07 | CLIP default |
-| Memory bank | 256 queue size | MoCo-style additional negatives |
+| Memory bank | Off by default | Optional MoCo-style additional negatives |
 
 **Data root**: By default, looks for `data/` in the project root. Override with:
 ```bash
@@ -99,7 +99,7 @@ export TSFM_DATA_ROOT=/path/to/your/data
 
 ## Datasets
 
-### Training (10 datasets, 87 global activity labels)
+### Training (11 datasets, 94 HALO train labels)
 
 | Dataset | Channels | Rate | Activities | Description |
 |---------|:---:|:---:|:---:|-------------|
@@ -113,10 +113,11 @@ export TSFM_DATA_ROOT=/path/to/your/data
 | HAPT | 6 | 50 Hz | 12 | Postural transitions |
 | KU-HAR | 6 | 100 Hz | 17 | 89 subjects |
 | RecGym | 6 | 20 Hz | 11 | Gym exercises |
+| Capture24 | 3 | 100 Hz | 9 | Free-living wrist accelerometer |
 
-### Zero-Shot Test (7 datasets, never seen during training)
+### Zero-Shot Test (6 active datasets, never seen during training)
 
-**Main test datasets** (85-100% label coverage — used for primary results):
+**Active v2 test datasets**:
 
 | Dataset | Activities | Hz | Difficulty | Group Coverage |
 |---------|:---:|:---:|-----------|:---:|
@@ -124,61 +125,47 @@ export TSFM_DATA_ROOT=/path/to/your/data
 | RealWorld | 8 | 50 | Medium (multi-placement) | 100% |
 | MobiAct | 13 | 50 | Hard (falls, vehicle entry) | 85% |
 | Shoaib | 7 | 50 | Medium (multi-placement smartphone) | 100% |
-| Opportunity | 4 | 30 | Medium (raw XSens body IMU) | 100% |
-| HARTH | 12 | 50 | Hard (back-only accelerometer, distribution shift) | 100% |
+| HARTH | 10 | 50 | Hard (back+thigh accelerometer, distribution shift) | 100% |
+| InclusiveHAR | 6 | 50 | Medium (waist-pouch phone, ability diversity) | 100% |
 
-**Severe out-of-domain** (reported separately — 50% of activities have no training equivalent):
-
-| Dataset | Activities | Hz | Difficulty | Group Coverage |
-|---------|:---:|:---:|-----------|:---:|
-| VTT-ConIoT | 16 | 50 | Severe (industrial/construction) | 50% |
-
-Baseline models evaluate on standardized `(N, 120, 6)` windows at 20Hz. TSFM evaluates on native-rate data — see [Evaluation Protocol](docs/baselines/EVALUATION_PROTOCOL.md) for sampling rate policy.
+Opportunity is retained as an appendix dataset; VTT-ConIoT is retired from the primary benchmark. Baseline models evaluate on standardized `(N, 120, 6)` windows at 20Hz. HALO evaluates on native-rate data, with a 20Hz neutral-text parity row — see [Evaluation Protocol v2](docs/baselines/EVALUATION_PROTOCOL_V2.md).
 
 ---
 
 ## Baseline Evaluation
 
-We compare TSFM against 5 baselines using a unified 4-metric evaluation framework:
+Protocol v2 uses ZS-XD: zero-shot classification against each target dataset's own frozen label strings, with macro-F1 as the primary metric. Closed-vocabulary baselines are bridged with ConSE.
 
 | Baseline | Type | Zero-Shot Method | Embedding Dim |
 |----------|------|------------------|:---:|
-| **TSFM (ours)** | Text-aligned | Cosine similarity | 384 |
-| **LanHAR** | Text-aligned | Cosine similarity (SciBERT) | 768 |
-| **LiMU-BERT** | Encoder-only | GRU classifier | 72 |
-| **MOMENT** | General time-series | SVM-RBF classifier | 6144 |
-| **CrossHAR** | Encoder-only | Transformer classifier | 72 |
-| **LLaSA** | LLM-based | Generative text parsing | 7B params |
-
-### 4-Metric Evaluation
-
-1. **Zero-Shot Open-Set**: Classify against all 87 training labels
-2. **Zero-Shot Closed-Set**: Classify against test dataset labels only
-3. **1% Supervised**: End-to-end fine-tuning on 1% labeled test data
-4. **10% Supervised**: End-to-end fine-tuning on 10% labeled test data
+| **HALO (ours)** | Text-aligned | Cosine similarity to target label strings | 384 |
+| **LiMU-BERT** | Encoder-only | ConSE from cached GRU classifier softmax | 72 |
+| **CrossHAR** | Encoder-only | ConSE from cached Transformer classifier softmax | 72 |
+| **UniMTS** | Text-aligned | Planned adapter | released |
+| **ssl-wearables** | Encoder-only | Planned ConSE adapter | released |
 
 ### Running Evaluations
 
 ```bash
-# All baselines sequentially
-bash scripts/run_all_evaluations.sh
+# HALO native ZS-XD
+TSFM_CHECKPOINT=training_output/semantic_alignment/small_deep_v2_4b3fdd6/best.pt \
+python val_scripts/human_activity_recognition/evaluate_tsfm_v2.py --zs-only
 
-# Or individually
-python val_scripts/human_activity_recognition/evaluate_tsfm.py
-python val_scripts/human_activity_recognition/evaluate_limubert.py
-python val_scripts/human_activity_recognition/evaluate_moment.py
-python val_scripts/human_activity_recognition/evaluate_crosshar.py
-python val_scripts/human_activity_recognition/evaluate_lanhar.py
-python val_scripts/human_activity_recognition/evaluate_llasa.py   # optional, ~16GB VRAM
+# HALO 20Hz neutral-text parity row
+python val_scripts/human_activity_recognition/evaluate_tsfm_v2.py \
+  --zs-only --channel-text neutral --eval-rate 20
+
+# Baselines
+python val_scripts/human_activity_recognition/run_baselines_v2.py --baselines crosshar limubert
 
 # Generate combined comparison table
-python scripts/generate_results_table.py
+python val_scripts/human_activity_recognition/assemble_v2_table.py
 ```
 
 **TSFM checkpoint**: The evaluation script auto-discovers the latest checkpoint in
 `training_output/semantic_alignment/`. Override with `TSFM_CHECKPOINT` env var.
 
-Results are saved to `test_output/baseline_evaluation/{model}_evaluation.json`.
+Results are saved to `test_output/eval_v2/*.json`.
 
 For baseline setup (cloning repos, checkpoints, data preparation), see
 [docs/baselines/BASELINES_SETUP.md](docs/baselines/BASELINES_SETUP.md).
@@ -190,8 +177,8 @@ For baseline setup (cloning repos, checkpoints, data preparation), see
 | Document | Description |
 |----------|-------------|
 | **[docs/README.md](docs/README.md)** | Documentation index + single-source-of-truth map |
-| **[docs/baselines/RESULTS.md](docs/baselines/RESULTS.md)** | Current evaluation results and fairness analysis |
-| **[docs/baselines/EVALUATION_PROTOCOL.md](docs/baselines/EVALUATION_PROTOCOL.md)** | Evaluation framework, fairness justifications, per-dataset label coverage |
+| **[docs/baselines/RESULTS_V2.md](docs/baselines/RESULTS_V2.md)** | Current evaluation results and fairness analysis |
+| **[docs/baselines/EVALUATION_PROTOCOL_V2.md](docs/baselines/EVALUATION_PROTOCOL_V2.md)** | Evaluation framework, fairness justifications, per-dataset label coverage |
 | **[docs/baselines/BASELINE_IMPLEMENTATION_NOTES.md](docs/baselines/BASELINE_IMPLEMENTATION_NOTES.md)** | Per-baseline implementation details and design decisions |
 | **[docs/baselines/BASELINES_SETUP.md](docs/baselines/BASELINES_SETUP.md)** | How to set up and reproduce baseline evaluations |
 | **[model/README.md](model/README.md)** | Model architecture API |
@@ -219,12 +206,9 @@ tsfm/
 │   └── memory_bank.py             # MoCo-style embedding queue
 │
 ├── val_scripts/human_activity_recognition/
-│   ├── evaluate_tsfm.py           # TSFM evaluation
-│   ├── evaluate_limubert.py       # LiMU-BERT baseline
-│   ├── evaluate_moment.py         # MOMENT baseline
-│   ├── evaluate_crosshar.py       # CrossHAR baseline
-│   ├── evaluate_lanhar.py         # LanHAR baseline
-│   ├── evaluate_llasa.py          # LLaSA baseline
+│   ├── evaluate_tsfm_v2.py        # HALO protocol-v2 evaluation
+│   ├── run_baselines_v2.py        # Generic protocol-v2 baseline driver
+│   ├── baselines/                 # Baseline adapters
 │   ├── grouped_zero_shot.py       # Shared zero-shot utilities
 │   ├── model_loading.py           # TSFM model/label bank loading
 │   ├── evaluation_metrics.py      # Group-aware accuracy, similarity
@@ -232,7 +216,7 @@ tsfm/
 │
 ├── datasets/imu_pretraining_dataset/
 │   ├── multi_dataset_loader.py    # Multi-dataset PyTorch dataloader
-│   ├── label_groups.py            # 87 labels -> 34 semantic groups
+│   ├── label_groups.py            # semantic label groups for sampling/legacy utilities
 │   └── augmentations.py           # Physical augmentations
 │
 ├── datascripts/                    # Dataset download + conversion (18 datasets)

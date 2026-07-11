@@ -10,7 +10,7 @@ For each zero-shot test dataset, emits benchmark_data/eval_v2/labels/{dataset}.j
   - idx_to_label:      the authoritative code->name mapping copied from
                         tsfm_eval metadata.json (label_native.npy codes are
                         activity_to_idx values — no offset arithmetic, ever).
-  - common_classes:    exact-string 1:1 matches against the 87-label training
+  - common_classes:    exact-string 1:1 matches against the HALO training
                         vocabulary (objective, computed).
   - proposed_semantic_pairs: SBERT nearest-neighbour candidates for the
                         common-classes table that are NOT exact matches.
@@ -31,7 +31,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 BENCHMARK_DIR = PROJECT_ROOT / "benchmark_data"
 TSFM_EVAL_DIR = BENCHMARK_DIR / "processed" / "tsfm_eval"
-GLOBAL_LABEL_PATH = BENCHMARK_DIR / "processed" / "limubert" / "global_label_mapping.json"
+DATASET_CONFIG_PATH = BENCHMARK_DIR / "dataset_config.json"
 OUT_DIR = BENCHMARK_DIR / "eval_v2" / "labels"
 
 # Frozen ConSE/bridge hyperparameter (pre-registered)
@@ -44,7 +44,7 @@ SEMANTIC_PAIR_MIN_COS = 0.60  # proposal threshold only; pairs still need human 
 # model's zero-shot number a coverage artifact rather than a capability signal).
 # opportunity demoted to appendix 2026-07 (4 subjects -> degenerate CIs; object/ambient
 # sensors, not phone/watch). Converter + data kept for an optional appendix row.
-EVALUATED_DATASETS = [
+FALLBACK_EVALUATED_DATASETS = [
     "motionsense",
     "realworld",
     "mobiact",
@@ -53,12 +53,30 @@ EVALUATED_DATASETS = [
     "inclusivehar",
 ]
 
+CONVERTER_SOURCES = {
+    "motionsense": "datascripts/process_motionsense.py",
+}
+
+
+def load_dataset_config() -> dict:
+    with open(DATASET_CONFIG_PATH) as f:
+        return json.load(f)
+
+
+def load_halo_train_vocab(dataset_config: dict) -> list[str]:
+    """Return HALO's current train vocabulary from dataset_config.json."""
+    return sorted({
+        activity
+        for ds in dataset_config["train_datasets"]
+        for activity in dataset_config["datasets"][ds]["activities"]
+    })
+
 
 def main():
-    test_datasets = EVALUATED_DATASETS
+    dataset_config = load_dataset_config()
+    test_datasets = dataset_config.get("zero_shot_datasets", FALLBACK_EVALUATED_DATASETS)
 
-    with open(GLOBAL_LABEL_PATH) as f:
-        train_vocab = json.load(f)["labels"]
+    train_vocab = load_halo_train_vocab(dataset_config)
 
     # SBERT for semantic-pair *proposals* (review-gated; not used in scoring here)
     from sentence_transformers import SentenceTransformer
@@ -90,7 +108,7 @@ def main():
         if test_only:
             test_emb = sbert.encode([l.replace("_", " ") for l in test_only],
                                     normalize_embeddings=True)
-            sims = test_emb @ train_emb.T  # (n_test_only, 87)
+            sims = test_emb @ train_emb.T  # (n_test_only, len(train_vocab))
             for i, lbl in enumerate(test_only):
                 j = int(np.argmax(sims[i]))
                 cos = float(sims[i, j])
@@ -101,13 +119,14 @@ def main():
                         "status": "PENDING_REVIEW",
                     }
 
+        converter_source = CONVERTER_SOURCES.get(ds, f"datascripts/{ds}/convert.py")
         config = {
             "dataset": ds,
             "protocol_version": "v2",
             "source": (
                 "Label strings verbatim from benchmark_data/processed/tsfm_eval/"
-                f"{ds}/metadata.json activity_to_idx (produced by datascripts/{ds}/"
-                "convert.py from the dataset's documented label names). "
+                f"{ds}/metadata.json activity_to_idx (produced by {converter_source} "
+                "from the dataset's documented label names). "
                 "Frozen for eval v2 — no rephrasing at evaluation time."
             ),
             "labels": labels,

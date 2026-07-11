@@ -1,0 +1,97 @@
+{
+  "_doc": "Per-job cloud-burst recipes. One record per pod. The pod bootstrap reads its record, installs deps, fetches weights, pulls the data bundle, and runs train_cmd inside tmux. See docs/v2/CLOUD_BURST_HARNESS.md. COMMITS ARE PLACEHOLDERS ('PIN@...') — pin to real SHAs before a run so pods are reproducible.",
+  "_kinds": {
+    "halo_train": "full from-scratch training of the HALO model (the heavy job)",
+    "conse_head": "frozen pretrained backbone + (re)fit the 94-way ConSE head, then eval",
+    "fewshot": "train the model from scratch per-dataset (subject-disjoint few-shot)",
+    "cosine_eval": "released weights, text-cosine zero-shot; no training beyond provided head"
+  },
+  "defaults": {
+    "data_bundle": "data/bundle-latest.txt",
+    "repo": "git@github.com:USER/HALO.git",
+    "repo_commit": "PIN@halo-main",
+    "results_prefix": "runs/{run_id}/{job}",
+    "sentinel": "~/DONE",
+    "watchdog_max_hours": 8,
+    "python": "3.11"
+  },
+  "jobs": {
+    "halo": {
+      "kind": "halo_train",
+      "gpu_min_gb": 24,
+      "max_hours": 12,
+      "pip": [],
+      "fetch": [],
+      "train_cmd": "MODEL_SIZE=${MODEL_SIZE:-small_deep} python training_scripts/human_activity_recognition/semantic_alignment_train.py",
+      "results": ["training_output/semantic_alignment/**/best.pt", "training_output/**/hyperparameters.json", "~/train.log"]
+    },
+    "crosshar": {
+      "kind": "conse_head",
+      "gpu_min_gb": 12,
+      "max_hours": 3,
+      "upstream_repo": "https://github.com/kingdomrush2/CrossHAR",
+      "vendored": "auxiliary_repos/CrossHAR",
+      "backbone_from_r2": "ckpt/baselines/crosshar/pretrain_base_combined_train_20_120/model_masked_6_1.pt",
+      "pip": [],
+      "fetch": ["r2:ckpt/baselines/crosshar -> auxiliary_repos/CrossHAR/saved/"],
+      "train_cmd": "python val_scripts/human_activity_recognition/refit_conse_heads.py --baselines crosshar && python val_scripts/human_activity_recognition/run_baselines_v2.py --baselines crosshar",
+      "results": ["test_output/baseline_evaluation/crosshar_zs_transformer.pt", "test_output/eval_v2/baseline_v2_crosshar.json"]
+    },
+    "limubert": {
+      "kind": "conse_head",
+      "gpu_min_gb": 12,
+      "max_hours": 3,
+      "upstream_repo": "https://github.com/dapowan/LIMU-BERT-Public",
+      "vendored": "auxiliary_repos/LIMU-BERT-Public",
+      "backbone_from_r2": "ckpt/baselines/limubert/pretrain_base_combined_train_20_120/pretrained_combined.pt",
+      "pip": [],
+      "fetch": ["r2:ckpt/baselines/limubert -> auxiliary_repos/LIMU-BERT-Public/saved/"],
+      "train_cmd": "python val_scripts/human_activity_recognition/refit_conse_heads.py --baselines limubert && python val_scripts/human_activity_recognition/run_baselines_v2.py --baselines limubert",
+      "results": ["test_output/baseline_evaluation/limubert_zs_gru.pt", "test_output/eval_v2/baseline_v2_limubert.json"]
+    },
+    "ssl_wearables": {
+      "kind": "conse_head",
+      "gpu_min_gb": 12,
+      "max_hours": 3,
+      "upstream_repo": "torch.hub: OxWearables/ssl-wearables (harnet5)",
+      "pip": [],
+      "fetch": ["torch.hub OxWearables/ssl-wearables (auto on first load)"],
+      "train_cmd": "TSFM_ALLOW_SSL_HEADFIT=1 python val_scripts/human_activity_recognition/evaluate_ssl_wearables.py && python val_scripts/human_activity_recognition/run_baselines_v2.py --baselines ssl_wearables",
+      "results": ["test_output/baseline_evaluation/ssl_wearables_zs_head.pt", "test_output/eval_v2/baseline_v2_ssl_wearables.json"],
+      "note": "Trains on 8/11 datasets (kuhar/recgym/unimib_shar excluded: non-physical/gravity-removed accel)."
+    },
+    "deepconvlstm": {
+      "kind": "fewshot",
+      "gpu_min_gb": 12,
+      "max_hours": 4,
+      "pip": [],
+      "fetch": [],
+      "train_cmd": "python val_scripts/human_activity_recognition/run_fewshot_v2.py --baselines deepconvlstm",
+      "results": ["test_output/eval_v2/fewshot_v2_deepconvlstm.json"]
+    },
+    "unimts": {
+      "kind": "cosine_eval",
+      "gpu_min_gb": 12,
+      "max_hours": 3,
+      "upstream_repo": "https://github.com/xiyuanzh/UniMTS",
+      "repo_commit": "PIN@unimts",
+      "pip": ["ftfy", "regex", "git+https://github.com/openai/CLIP.git", "torchvision"],
+      "fetch": ["hf:xiyuanzh/UniMTS UniMTS.pth", "clip ViT-B/32 (auto)"],
+      "train_cmd": "python val_scripts/human_activity_recognition/evaluate_unimts.py && python val_scripts/human_activity_recognition/run_baselines_v2.py --baselines unimts",
+      "results": ["test_output/eval_v2/baseline_v2_unimts.json"],
+      "status": "ADAPTER NOT YET INTEGRATED (task #66)"
+    },
+    "normwear": {
+      "kind": "cosine_eval",
+      "gpu_min_gb": 16,
+      "max_hours": 4,
+      "upstream_repo": "https://github.com/Mobile-Sensing-and-UbiComp-Laboratory/NormWear",
+      "repo_commit": "PIN@normwear",
+      "pip": ["torchaudio", "transformers"],
+      "fetch": ["hf NormWear backbone + MSiTF", "hf TinyLlama/TinyLlama-1.1B-Chat (~2.2GB)"],
+      "train_cmd": "python val_scripts/human_activity_recognition/evaluate_normwear.py && python val_scripts/human_activity_recognition/run_baselines_v2.py --baselines normwear",
+      "results": ["test_output/eval_v2/baseline_v2_normwear.json"],
+      "status": "ADAPTER NOT YET INTEGRATED (task #67)"
+    }
+  }
+}

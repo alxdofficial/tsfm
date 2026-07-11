@@ -3,17 +3,11 @@ Shared TSFM eval helpers (data loading, embedding/forward, metadata) reused by
 evaluate_tsfm_v2. Extracted from the retired v1 evaluate_tsfm.py; the v1 scoring
 (open/closed-set + synonym groups) is gone — see eval_v2.py / evaluate_tsfm_v2.py.
 
-Original header:
-
-Extracts embeddings from the trained TSFM semantic alignment model
-and evaluates with:
-  1. Zero-shot open-set (cosine sim against all 87 training labels, group matching)
-  2. Zero-shot closed-set (cosine sim against test dataset labels only, exact match)
-  3. 1% supervised (end-to-end fine-tuning, cosine sim with frozen text embeddings)
-  4. 10% supervised (end-to-end fine-tuning, cosine sim with frozen text embeddings)
+Extracts embeddings from the trained TSFM/HALO semantic alignment model for the
+v2 zero-shot and subject-disjoint few-shot evaluators.
 
 Zero-shot uses cosine similarity between IMU embeddings and text label
-embeddings from the trained LearnableLabelBank — no classifier training needed.
+prototypes — no classifier training needed.
 
 Supervised fine-tuning: deep-copies the model, fine-tunes the sensor encoder
 end-to-end with cross-entropy on cosine similarity logits against frozen text
@@ -159,12 +153,9 @@ def get_dataset_metadata(dataset_name: str) -> dict:
         original_name = core_channel_map.get(ch, ch)
         ch_desc = ch_map.get(original_name, ch_map.get(ch, f"Channel: {ch}"))
 
-        # Prepend dataset description for richer semantic context
-        # (matches multi_dataset_loader.py:378)
-        if dataset_desc:
-            full_desc = f"{dataset_desc} {ch_desc}"
-        else:
-            full_desc = ch_desc
+        # Keep channel text compact so axis/placement/unit/rate semantics are not
+        # truncated by the 64-token text encoder.
+        full_desc = ch_desc
 
         # Append sampling rate and patch window size to match training format
         # (matches multi_dataset_loader.py:383)

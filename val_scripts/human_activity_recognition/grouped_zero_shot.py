@@ -2,7 +2,7 @@
 Shared utilities for zero-shot evaluation of non-text-aligned models.
 
 Provides label mapping, closed-set masking, and group-based scoring functions
-used by individual model evaluation scripts (LiMU-BERT, MOMENT, CrossHAR).
+used by legacy individual model evaluation scripts.
 Each model trains its own native classifier for zero-shot evaluation.
 """
 
@@ -34,7 +34,7 @@ GLOBAL_LABEL_PATH = LIMUBERT_DATA_DIR / "global_label_mapping.json"
 # =============================================================================
 
 def load_global_labels() -> List[str]:
-    """Load the 87 global training labels (sorted)."""
+    """Load the baseline classifier training labels (sorted)."""
     with open(GLOBAL_LABEL_PATH) as f:
         return json.load(f)["labels"]
 
@@ -47,13 +47,13 @@ def map_local_to_global_labels(
     dataset_config: dict,
     global_labels: List[str],
 ) -> np.ndarray:
-    """Convert per-dataset local label indices to global label indices (0..86).
+    """Convert per-dataset local label indices to global label indices.
 
     Args:
         local_labels: (N,) local indices 0..num_classes-1
         dataset_name: name of the dataset in dataset_config
         dataset_config: loaded dataset_config.json
-        global_labels: list of 87 global label strings
+        global_labels: list of global label strings
 
     Returns:
         (N,) global indices
@@ -80,14 +80,14 @@ def get_closed_set_mask(
     global_labels: List[str],
     dataset_config: dict,
 ) -> np.ndarray:
-    """Build a boolean mask over the 87 global labels for closed-set scoring.
+    """Build a boolean mask over the global labels for closed-set scoring.
 
     A training label is allowed (True) if its synonym group is represented
     among the test dataset's activities. Labels whose group has NO test
     activities are masked out (False).
 
     Returns:
-        mask: (87,) bool array — True for allowed training labels
+        mask: (len(global_labels),) bool array — True for allowed training labels
     """
     label_to_group = get_label_to_group_mapping()
     test_activities = sorted(dataset_config["datasets"][test_dataset]["activities"])

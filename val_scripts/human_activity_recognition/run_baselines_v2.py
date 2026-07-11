@@ -2,7 +2,7 @@
 Generic baseline evaluation driver for protocol v2 (ZS-XD).
 
 One loop over the adapter REGISTRY — no per-baseline dispatch. ConSE-tier
-adapters produce per-window softmax over the 87 global labels (bridged to each
+adapters produce per-window softmax over the global baseline labels (bridged to each
 dataset's own vocabulary with ConSE); cosine-tier adapters produce embeddings +
 text prototypes scored directly. Add a baseline by dropping a module in
 `baselines/`; it appears here automatically.
@@ -27,7 +27,16 @@ from val_scripts.human_activity_recognition import eval_v2
 from val_scripts.human_activity_recognition import baselines as B
 
 OUTPUT_DIR = PROJECT_ROOT / "test_output" / "eval_v2"
-DATASETS = ["motionsense", "realworld", "mobiact", "shoaib", "harth", "inclusivehar"]
+DATASET_CONFIG_PATH = PROJECT_ROOT / "benchmark_data" / "dataset_config.json"
+FALLBACK_DATASETS = ["motionsense", "realworld", "mobiact", "shoaib", "harth", "inclusivehar"]
+
+
+def load_default_datasets() -> list[str]:
+    if not DATASET_CONFIG_PATH.exists():
+        return FALLBACK_DATASETS
+    with open(DATASET_CONFIG_PATH) as f:
+        cfg = json.load(f)
+    return cfg.get("zero_shot_datasets", FALLBACK_DATASETS)
 
 
 def run_one(name: str, datasets, device, sbert, out_path: Path) -> dict:
@@ -41,9 +50,23 @@ def run_one(name: str, datasets, device, sbert, out_path: Path) -> dict:
         L_D, gt_names, subjects, keep_idx = B.load_gt(ds)
         if adapter.tier == "conse":
             probs = adapter.window_probs(ds, state, device)[keep_idx]
+            if probs.shape[1] != len(GLOBAL):
+                raise ValueError(
+                    f"{name}/{ds}: classifier emits {probs.shape[1]} classes, "
+                    f"but global_label_mapping.json has {len(GLOBAL)} labels. "
+                    "Rebuild the cached classifier and global label mapping together."
+                )
             preds, info = eval_v2.conse_predict(probs, GLOBAL, L_D, encode=sbert)
             extra = {"reachability_lb": info["reachability_lb"],
                      "n_predicted_classes": info["n_predicted_classes"]}
+        elif adapter.tier == "l1":
+            # Bespoke tier (NormWear): window + label embeddings in an asymmetric learned space,
+            # scored by NEGATIVE Manhattan distance (native metric is L1 argmin). Not a dot product.
+            emb = adapter.window_embeddings(ds, state, device)[keep_idx]
+            text = adapter.encode_labels(L_D, state, device)
+            scores = -np.abs(emb[:, None, :] - text[None, :, :]).sum(-1)   # (N,C), higher=better
+            preds = eval_v2.predict_from_similarity(scores, L_D)
+            extra = None
         else:  # cosine
             emb = adapter.window_embeddings(ds, state, device)[keep_idx]
             text = adapter.encode_labels(L_D, state, device)
@@ -63,7 +86,7 @@ def run_one(name: str, datasets, device, sbert, out_path: Path) -> dict:
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--baselines", nargs="*", default=sorted(B.REGISTRY.keys()))
-    ap.add_argument("--datasets", nargs="*", default=DATASETS)
+    ap.add_argument("--datasets", nargs="*", default=load_default_datasets())
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -74,6 +97,11 @@ def main():
     for name in args.baselines:
         if name not in B.REGISTRY:
             print(f"!! unknown baseline '{name}' (known: {sorted(B.REGISTRY)})")
+            continue
+        if B.REGISTRY[name].tier not in ("conse", "cosine", "l1"):
+            # Non-ZS tiers (e.g. 'fewshot' DeepConvLSTM) are handled by their own
+            # driver (run_fewshot_v2.py); skip them here rather than error.
+            print(f".. skipping '{name}' (tier={B.REGISTRY[name].tier}); run its own driver")
             continue
         out_path = OUTPUT_DIR / f"baseline_v2_{name}.json"
         try:

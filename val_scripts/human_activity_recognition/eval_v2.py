@@ -124,8 +124,8 @@ def subject_disjoint_split(
     n_train = max(1, int(round(n * fracs[0])))
     # Floor the val allocation so the remainder falls to TEST — this hands test
     # >=2 subjects whenever the cohort is large enough (e.g. n=15 -> 12/1/2),
-    # giving a non-degenerate bootstrap CI. Genuinely small cohorts (shoaib=10,
-    # opportunity=4) still yield 1 test subject; that is flagged downstream.
+    # giving a non-degenerate bootstrap CI. Small cohorts can still yield 1 test
+    # subject; that is flagged downstream.
     n_val = max(1, int(n * fracs[1]))
     # Ensure test gets at least one subject
     if n_train + n_val >= n:

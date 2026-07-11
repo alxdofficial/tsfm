@@ -27,7 +27,7 @@ legacy Stage-1 was removed in V2). Headline checkpoint:
 | `model/` | Model architecture | `config.py` (MODEL_SIZE presets), `encoder.py` (dual-branch transformer), `feature_extractor.py` (spectral+temporal tokenizer), `positional_encoding.py`, `semantic_alignment.py` (per-patch head), `token_text_encoder.py` (`ChannelTextFusion`, `LearnableLabelBank`), `preprocessing.py` |
 | `training_scripts/human_activity_recognition/` | Training | `semantic_alignment_train.py` (main; defines `SemanticAlignmentModel` + `ChannelBucketBatchSampler`), `semantic_loss.py` (symmetric InfoNCE + soft targets), `memory_bank.py` (MoCo queue) |
 | `val_scripts/human_activity_recognition/` | **Evaluation (protocol v2)** | `eval_v2.py` (scoring core: ground truth, subject-disjoint splits, ConSE, metrics), `evaluate_tsfm_v2.py` (HALO evaluator), `eval_common.py` (shared embed/forward helpers), `model_loading.py`, `run_baselines_v2.py` (generic baseline driver), `baselines/` (adapter package), `assemble_v2_table.py`, `plot_utils.py` (training plots) |
-| `datasets/imu_pretraining_dataset/` | Dataloader + labels | `multi_dataset_loader.py`, `label_groups.py` (87 labels→groups, training sampling), `label_augmentation.py`, `augmentations.py` (jitter/scale) |
+| `datasets/imu_pretraining_dataset/` | Dataloader + labels | `multi_dataset_loader.py`, `label_groups.py` (semantic groups for training sampling), `label_augmentation.py`, `augmentations.py` |
 | `datascripts/` | Dataset download + conversion | one folder per dataset (`convert.py`); `shared/` utilities; `setup_all_ts_datasets.py` |
 | `benchmark_data/` | Eval data + config | `dataset_config.json` (train + zero-shot lists), `scripts/` (preprocessing), `eval_v2/labels/*.json` (pre-registered per-dataset label vocabularies) |
 | `docs/` | Documentation | `baselines/EVALUATION_PROTOCOL_V2.md`, `baselines/RESULTS_V2.md`, `v2/` (redesign + cleanup plans), `ARCHITECTURE.md`, `DATA_FORMAT.md` |
@@ -36,9 +36,9 @@ legacy Stage-1 was removed in V2). Headline checkpoint:
 
 ## Datasets (V2)
 
-- **Train (10):** uci_har, hhar, pamap2, wisdm, dsads, kuhar, unimib_shar, hapt, mhealth, recgym.
-- **Test (6, held out):** motionsense, realworld, mobiact, shoaib, opportunity, harth.
-- (Dropped in V2: vtt_coniot + the "severe-OOD" tier; realdisp/daphnet_fog/usc_had/actionsense converters.)
+- **Train (11):** uci_har, hhar, pamap2, wisdm, dsads, kuhar, unimib_shar, hapt, mhealth, recgym, capture24.
+- **Test (6, held out):** motionsense, realworld, mobiact, shoaib, harth, inclusivehar.
+- **Appendix/retained conversion:** opportunity. Dropped from the primary benchmark: vtt_coniot + the "severe-OOD" tier; realdisp/daphnet_fog/usc_had/actionsense converters.
 
 ## Evaluation protocol v2 (the current protocol)
 
@@ -50,8 +50,13 @@ Single clean rule — see `docs/baselines/EVALUATION_PROTOCOL_V2.md`:
 
 ## Baselines (V2)
 
-- **Kept:** CrossHAR, LiMU-BERT (ConSE tier). **Planned adds:** UniMTS (cosine, released weights), ssl-wearables (ConSE, released weights). **Dropped:** MOMENT, LanHAR, LLaSA.
-- Each baseline is a small adapter in `val_scripts/human_activity_recognition/baselines/` (`ConSEAdapter` or `CosineAdapter` + `@register`). Adding one = drop a module; the generic `run_baselines_v2.py` driver picks it up automatically.
+- **Integrated (6):** CrossHAR, LiMU-BERT, ssl-wearables/harnet5 (ConSE tier); UniMTS (cosine tier);
+  NormWear (l1 tier); DeepConvLSTM (few-shot tier, via `run_fewshot_v2.py`). **Dropped:** MOMENT, LanHAR, LLaSA.
+  See `docs/baselines/BASELINES_OVERVIEW.md` for how each works, param counts, and heterogeneity/open-set gotchas.
+- Each baseline is a small adapter in `val_scripts/human_activity_recognition/baselines/` (`ConSEAdapter`,
+  `CosineAdapter`, or the `l1`/`fewshot` tiers + `@register`). Adding one = drop a module; the generic
+  `run_baselines_v2.py` driver picks it up automatically.
+- Dataset catalog (metadata, plots, caveats): `docs/DATASOURCES.md`. Augmentations: `docs/AUGMENTATIONS.md`.
 
 ## Common tasks
 

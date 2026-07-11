@@ -1,18 +1,31 @@
 # Results under Evaluation Protocol v2
 
+> ⚠️ **NUMBERS STALE — need re-scoring.** This table was scored 2026-07-02, before the test set
+> changed (`opportunity` demoted, `inclusivehar` added) and before the ConSE vocab grew to 94
+> labels / 11 train datasets and the baseline set grew to 6. Treat every number here as
+> provisional; re-run `run_baselines_v2.py` + `evaluate_tsfm_v2.py` and `assemble_v2_table.py`
+> against the current config before reporting. Baseline roster: [`BASELINES_OVERVIEW.md`](BASELINES_OVERVIEW.md).
+
+> **Stale pending regeneration (2026-07-10):** These numbers predate the
+> current active benchmark (`motionsense`, `realworld`, `mobiact`, `shoaib`,
+> `harth`, `inclusivehar`) and the Capture24 training-set addition. They are
+> retained only as historical V2 run output until HALO and baseline rows are
+> regenerated from `test_output/eval_v2/*.json`. Do not cite the aggregate
+> tables below as current results.
+
 **Checkpoint:** `small_deep_v2_4b3fdd6/best.pt` (headline model, epoch 186) —
 re-scored under protocol v2 (`EVALUATION_PROTOCOL_V2.md`) on 2026-07-02.
 Source JSONs: `test_output/eval_v2/tsfm_v2_native_native.json` (native) and
 `tsfm_v2_neutral_20.json` (parity). **Not comparable to v1 numbers** (different
 candidate sets, scoring, metrics).
 
-**Benchmark composition (decided 2026-07-02):** one flat test set of **6
-datasets** — motionsense, realworld, mobiact, shoaib, opportunity, **harth**.
+**Benchmark composition (updated 2026-07-10):** one flat active test set of **6
+datasets** — motionsense, realworld, mobiact, shoaib, **harth**, **inclusivehar**.
 There is no "severe-OOD" tier anymore. VTT-ConIoT was dropped from the
 benchmark: with ~50% of its construction-domain labels having no training
 equivalent, every model's zero-shot score there measured label coverage, not
-recognition capability. (Its last scores under this checkpoint, for the
-record: ZS-XD F1 1.2 native / 2.5 parity.)
+recognition capability. Opportunity is retained as an appendix-only dataset
+because its 4-subject structure gives degenerate CIs.
 
 ## ZS-XD — HALO, zero-shot vs each dataset's own vocabulary (macro-F1 primary)
 
@@ -47,7 +60,7 @@ CIs: subject-stratified bootstrap, B=1000.
 All models scored under the SAME v2 rule: zero-shot, argmax over each dataset's
 own label strings, exact match, macro-F1 over GT∪predicted. Text-aligned models
 (HALO, LanHAR) encode `L_D` directly; **†** closed-vocab classifiers are bridged
-with ConSE (softmax over 87 training labels → convex combination of frozen-SBERT
+with ConSE (softmax over the cached baseline label mapping → convex combination of frozen-SBERT
 label embeddings, top-T=10 → argmax over `L_D`). See `EVALUATION_PROTOCOL_V2.md`.
 
 | Model | tier | motionsense | realworld | mobiact | shoaib | opportunity | harth | **avg** |

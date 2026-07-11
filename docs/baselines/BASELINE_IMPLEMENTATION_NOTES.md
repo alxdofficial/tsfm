@@ -1,5 +1,15 @@
 # Baseline Implementation Notes
 
+> ⚠️ **PARTIALLY STALE.** Predates ssl-wearables / UniMTS / NormWear / DeepConvLSTM and still
+> references the **dropped** MOMENT / LanHAR / LLaSA baselines and the old **10-dataset / 87-label**
+> vocab (now 11 / 94). For the current baseline set, tiers, param counts, and gotchas see
+> [`BASELINES_OVERVIEW.md`](BASELINES_OVERVIEW.md). Retained for CrossHAR/LiMU-BERT porting detail.
+
+> **Legacy V1-oriented notes:** This file documents historical per-baseline
+> adaptations, including dropped baselines. For the active V2 setup and scoring
+> path, use `BASELINES_SETUP.md`, `EVALUATION_PROTOCOL_V2.md`, and the adapter
+> package under `val_scripts/human_activity_recognition/baselines/`.
+
 Per-baseline design decisions, implementation details, paper-matching considerations,
 and how we ensure fairness across the comparison.
 

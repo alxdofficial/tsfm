@@ -1,7 +1,8 @@
 # Benchmark Data for TSFM vs Baselines
 
-Unified benchmark comparing TSFM against LiMU-BERT, MOMENT, CrossHAR, LanHAR, and LLaSA
-on 18 HAR datasets (11 training + 6 active zero-shot test; opportunity appendix-only).
+Unified benchmark data for HALO/TSFM and the active V2 baseline adapters
+(CrossHAR and LiMU-BERT; UniMTS/ssl-wearables planned) on 18 HAR datasets
+(11 training + 6 active zero-shot test; opportunity appendix-only).
 
 ## Quick Start
 
@@ -12,7 +13,7 @@ python datascripts/setup_all_ts_datasets.py
 # 2. Export raw per-subject CSVs from TSFM session data
 python benchmark_data/scripts/export_raw.py
 
-# 3. Generate 20Hz .npy files for baselines (LiMU-BERT, MOMENT, CrossHAR, LanHAR, LLaSA)
+# 3. Generate 20Hz .npy files for fixed-rate baselines (LiMU-BERT, CrossHAR)
 python benchmark_data/scripts/preprocess_limubert.py
 
 # 4. Generate native-rate .npy files for TSFM evaluation
@@ -38,13 +39,13 @@ benchmark_data/
 │   │   │   ├── data_native.npy
 │   │   │   ├── label_native.npy
 │   │   │   └── metadata.json
-│   │   └── ... (7 test datasets)
+│   │   └── ... (6 active zero-shot datasets)
 │   ├── limubert/               # 20Hz .npy format (used by ALL baselines)
 │   │   ├── uci_har/
 │   │   │   ├── data_20_120.npy
 │   │   │   ├── label_20_120.npy
 │   │   │   └── mapping.json
-│   │   ├── global_label_mapping.json  # 87 global labels shared across all training datasets
+│   │   ├── global_label_mapping.json  # baseline classifier vocabulary for cached ConSE heads
 │   │   └── ... (18 datasets)
 │   ├── lanhar/                 # LanHAR text descriptions
 │   └── crosshar/               # CrossHAR processed data
@@ -57,7 +58,7 @@ benchmark_data/
 
 ## Datasets
 
-### Training (10 datasets)
+### Training (11 datasets)
 
 | Dataset | Sessions | Activities | Hz | Channels | Placement |
 |---------|----------|------------|-----|----------|-----------|
@@ -71,10 +72,11 @@ benchmark_data/
 | HAPT | 2,546 | 12 | 50 | 6 (acc+gyro) | Waist |
 | MHEALTH | 2,029 | 12 | 50 | 23 (multi+ECG) | Multi-body |
 | RecGym | 7,150 | 11 | 20 | 6 (acc+gyro) | Chest |
+| Capture24 | 20,000* | 9 | 100 | 3 (acc only) | Wrist |
 
 *Subsampled from original count via stratified sampling.
 
-### Zero-Shot Test (7 main + 3 additional)
+### Zero-Shot Test (6 active + appendix)
 
 **Main test datasets** (evaluated by all models):
 
@@ -83,18 +85,16 @@ benchmark_data/
 | MotionSense | 12,080 | 6 | 50 | Easy |
 | RealWorld | 27,138 | 8 | 50 | Medium |
 | MobiAct | 4,345 | 13 | 50 | Hard |
-| VTT-ConIoT | 2,058 | 16 | 50 | Severe (50% coverage) |
 | Shoaib | 5,537 | 7 | 50 | Medium |
-| Opportunity | 6,453 | 4 | 30 | Medium |
-| HARTH | 47,330 | 12 | 50 | Hard (distribution shift) |
+| HARTH | 51,443 | 10 | 50 | Hard (distribution shift) |
+| InclusiveHAR | 3,370 | 6 | 50 | Ability-diverse waist-pouch phone |
 
-**Additional test datasets** (defined in config, not all evaluated yet):
+**Appendix / retained conversion datasets**:
 
 | Dataset | Activities | Hz | Notes |
 |---------|------------|-----|-------|
-| RealDisp | 33 | 50 | Very high class count |
-| Daphnet FOG | 2 | 64 | Freezing of gait (binary) |
-| USC-HAD | 12 | 100 | Multi-device |
+| Opportunity | 4 | 30 | Appendix-only: 4 subjects, degenerate CIs |
+| VTT-ConIoT | 16 | 50 | Retired from primary benchmark: label coverage artifact |
 
 ## Raw CSV Format
 
@@ -145,15 +145,15 @@ Each test dataset produces:
 
 `dataset_config.json` is the authoritative metadata file for all 18 datasets. It defines:
 - `train_datasets`: List of 11 training dataset names
-- `zero_shot_datasets`: List of 10 test dataset names
+- `zero_shot_datasets`: List of 6 active zero-shot dataset names
 - Per-dataset: `activities`, `core_channels` mapping, `sampling_rate_hz`, `num_sessions`
-- `subsampling`: Rules for large datasets (HHAR, WISDM → 15K sessions)
+- `subsampling`: Rules for large datasets (HHAR/WISDM -> 15K sessions, Capture24 -> 20K)
 
 ## Train/Test Splits
 
-**Training datasets** (10): Used for TSFM pretraining and baseline ZS classifier training.
+**Training datasets** (11): Used for HALO training.
 The 11 training datasets contribute 94 unique activity labels (HALO's train vocabulary). `global_label_mapping.json` (87 labels) is the separate closed-vocab BASELINE vocabulary used by the ConSE bridge (the baselines are not retrained on capture24).
 
-**Zero-shot test datasets** (7+): Never seen during any model's pretraining. For supervised
-evaluations, each evaluation script applies random window-level 80/10/10 splits internally
-(seed 3431, not subject-based).
+**Zero-shot test datasets** (6 active): Never seen during training. V2 zero-shot uses each
+dataset's own frozen label strings, exact-match macro-F1, and subject-stratified bootstrap CIs.
+Few-shot evaluation uses subject-disjoint splits, not random window splits.

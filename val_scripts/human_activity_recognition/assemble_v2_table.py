@@ -4,7 +4,28 @@ import json
 from pathlib import Path
 
 ED = Path(__file__).resolve().parent.parent.parent / "test_output" / "eval_v2"
-DATASETS = ["motionsense", "realworld", "mobiact", "shoaib", "harth", "inclusivehar"]
+ROOT = Path(__file__).resolve().parent.parent.parent
+DATASET_CONFIG_PATH = ROOT / "benchmark_data" / "dataset_config.json"
+GLOBAL_LABEL_PATH = ROOT / "benchmark_data" / "processed" / "limubert" / "global_label_mapping.json"
+FALLBACK_DATASETS = ["motionsense", "realworld", "mobiact", "shoaib", "harth", "inclusivehar"]
+
+
+def load_datasets():
+    if not DATASET_CONFIG_PATH.exists():
+        return FALLBACK_DATASETS
+    with open(DATASET_CONFIG_PATH) as f:
+        cfg = json.load(f)
+    return cfg.get("zero_shot_datasets", FALLBACK_DATASETS)
+
+
+def baseline_vocab_size():
+    if not GLOBAL_LABEL_PATH.exists():
+        return "global baseline"
+    with open(GLOBAL_LABEL_PATH) as f:
+        return str(len(json.load(f)["labels"]))
+
+
+DATASETS = load_datasets()
 
 # (label, json file, key path to the zs metrics dict, tier)
 # Baseline set (post V2 cleanup): CrossHAR + LiMU-BERT kept; MOMENT/LanHAR/LLaSA
@@ -76,7 +97,7 @@ def main():
     print("params = trainable/active parameters (HALO Small-Deep ~25.8M active; ConSE baselines "
           "~62.6K encoder + a small head; 'released' = frozen released-weights foundation model). "
           "The ~400x capacity gap is HALO's largest disclosed advantage.")
-    print("\n† = ConSE bridge (closed-vocab classifier -> softmax over 87 train "
+    print(f"\n† = ConSE bridge (closed-vocab classifier -> softmax over {baseline_vocab_size()} baseline "
           "labels -> convex combo of SBERT label embeddings -> argmax over L_D). "
           "macro-F1, exact match, subject-disjoint not needed (zero-shot).")
 

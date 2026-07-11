@@ -1348,7 +1348,7 @@ class EmbeddingVisualizer:
 
         nn_accuracy = self._compute_nn_accuracy(imu_embeddings, text_embeddings, labels)
 
-        # Joint UMAP on 87+87=174 prototype points
+        # Joint UMAP on paired IMU/text prototype points
         # Small N → well-spaced, no compression → clean cluster separation
         all_centroids = np.vstack([imu_centroids, text_centroids])
         n = len(imu_centroids)
@@ -1363,8 +1363,8 @@ class EmbeddingVisualizer:
             random_state=42,
         )
         proj = reducer.fit_transform(all_centroids)
-        imu_proj = proj[:n]   # (87, 2)
-        text_proj = proj[n:]  # (87, 2)
+        imu_proj = proj[:n]
+        text_proj = proj[n:]
 
         groups_sorted = sorted(group_to_color.keys())
         fig, ax = plt.subplots(figsize=(12, 9))

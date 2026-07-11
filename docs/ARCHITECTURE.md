@@ -1,5 +1,11 @@
 # Semantic Alignment for Human Activity Recognition from IMU Data
 
+> ⚠️ **PARTIALLY STALE (pre-V2, 2026-03).** This document describes the older
+> CNN/spectral tokenizer (`SpectralTemporalExtractor`/`FixedPatchCNN`, **deleted** in the V2
+> purge — only `PhysicalFilterbankTokenizer` remains) and the removed Stage-1 MAE pretraining.
+> For the current architecture see `CLAUDE.md`, `docs/v2/design_tokenizer.md`, and
+> `model/` source. Retained for historical design rationale.
+
 ## Overview
 
 This document describes a contrastive learning framework for aligning IMU (Inertial Measurement Unit) sensor embeddings with natural language descriptions in a shared semantic space. The model learns to map raw accelerometer/gyroscope data to text embeddings that describe the activity being performed, enabling zero-shot classification and cross-dataset generalization.

@@ -1,5 +1,10 @@
 # Feature Extractor Bottleneck Analysis
 
+> ⚠️ **OBSOLETE (pre-V2, 2026-03).** This analyzes the **conv-based feature extractor that no
+> longer exists** — it was replaced by `PhysicalFilterbankTokenizer` and the old CNN tokenizers
+> were deleted in the V2 purge. The "concrete alternatives" here informed that redesign (see
+> `docs/v2/design_tokenizer.md`). Kept only as the historical motivation; do not treat as current.
+
 Analysis of whether the conv-based feature extractor (or other components) limits TSFM's performance, with concrete alternatives.
 
 Date: 2026-02-18

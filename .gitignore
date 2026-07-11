@@ -52,6 +52,15 @@ data/raw/
 benchmark_data/raw/**/*.csv
 benchmark_data/processed/**/*.npy
 
+# Cloud-burst data bundles (large tarballs staged for R2 upload)
+benchmark_data/bundles/
+
+# Secrets — R2 / vast.ai / HF credentials. NEVER commit.
+.env
+*.env
+cloud/.env
+cloud/*.env
+
 # LanHAR pre-generated descriptions (large CSVs)
 benchmark_data/processed/lanhar_descriptions/
 

@@ -3,7 +3,7 @@ Baseline adapter framework for evaluation protocol v2.
 
 Each baseline is a small adapter file in this package. To add a baseline you
 drop a `<name>.py` here that subclasses `ConSEAdapter` (closed-vocabulary
-classifier -> softmax over the 87 global training labels, bridged with ConSE)
+classifier -> softmax over the global baseline training labels, bridged with ConSE)
 or `CosineAdapter` (text-aligned -> per-window embeddings + text prototypes),
 overriding `setup()` plus its one tier method, and decorating it with
 `@register`. The generic driver `run_baselines_v2.py` handles ground truth,
@@ -16,6 +16,7 @@ never used. See docs/baselines/EVALUATION_PROTOCOL_V2.md.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Dict, List
 
@@ -53,7 +54,7 @@ class ConSEAdapter(BaselineAdapter):
     tier = "conse"
 
     def window_probs(self, ds: str, state, device) -> np.ndarray:
-        """Return per-test-window softmax over the 87 global labels: (N, 87),
+        """Return per-test-window softmax over the global baseline labels: (N, L),
         aligned 1:1 with benchmark_data/processed/limubert/{ds}/label_20_120.npy."""
         raise NotImplementedError
 
@@ -84,6 +85,19 @@ def load_gt(ds: str):
     cfg = eval_v2.load_label_config(ds)
     L_D = cfg["labels"]
     idx_to_label = {int(k): v for k, v in cfg["idx_to_label"].items()}
+    mapping_path = BENCH_LIMU / ds / "mapping.json"
+    if mapping_path.exists():
+        with open(mapping_path) as f:
+            mapping = json.load(f)
+        encoded = {label: int(idx) for label, idx in mapping.get("activity_to_idx", {}).items()}
+        decoded = {label: idx for idx, label in idx_to_label.items()}
+        if encoded != decoded:
+            mismatch = sorted(set(encoded.items()) ^ set(decoded.items()))
+            raise ValueError(
+                f"{ds}: LIMU-BERT label mapping does not match eval_v2 labels. "
+                f"Regenerate benchmark_data/processed/limubert/{ds}/ before scoring. "
+                f"First mismatches: {mismatch[:8]}"
+            )
     labels_raw = np.load(str(BENCH_LIMU / ds / "label_20_120.npy"))
     gt_names, subjects, keep_idx = eval_v2.window_ground_truth(labels_raw, idx_to_label)
     return L_D, gt_names, subjects, keep_idx

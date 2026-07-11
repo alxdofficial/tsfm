@@ -1,5 +1,9 @@
 # Semantic Alignment Experiments
 
+> ⚠️ **PARTIALLY STALE (pre-V2).** References the removed Stage-1 MAE pretraining / `pretrain.py`
+> (HALO now trains from scratch during alignment) and pre-V2 configs. For current training see
+> `CLAUDE.md` → "Common tasks" and `training_scripts/human_activity_recognition/`.
+
 This document describes the experimental design, goals, and results for the IMU-to-text semantic alignment model.
 
 > Note

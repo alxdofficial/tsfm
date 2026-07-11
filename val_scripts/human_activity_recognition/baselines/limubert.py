@@ -1,6 +1,6 @@
 """LiMU-BERT adapter (ConSE tier): frozen LiMU-BERT encoder + cached GRU
 classifier. GRU runs on 20-step sub-windows; per-sub-window softmaxes are
-mean-pooled per parent window into a per-window distribution over 87 labels."""
+mean-pooled per parent window into the baseline classifier label distribution."""
 
 import numpy as np
 import torch

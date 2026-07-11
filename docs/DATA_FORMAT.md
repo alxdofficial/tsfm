@@ -1,5 +1,10 @@
 # Data Format Specification
 
+> ℹ️ **Mostly current** for the standardized per-session store, but predates V2: ignore any
+> Stage-1/`pretrain.py` references. For the dataset catalog + metadata + caveats see
+> [`DATASOURCES.md`](DATASOURCES.md); for the eval tensor formats (limubert 20 Hz / ssl_wearables
+> 30 Hz) see `benchmark_data/scripts/`.
+
 **Last Updated:** 2025-01-07
 **Status:** ✅ Standardized across all datasets
 

@@ -1,5 +1,5 @@
 """CrossHAR adapter (ConSE tier): masked-Transformer encoder + cached
-Transformer_ft classifier -> per-window softmax over the 87 global labels."""
+Transformer_ft classifier -> per-window softmax over the baseline classifier labels."""
 
 import numpy as np
 import torch

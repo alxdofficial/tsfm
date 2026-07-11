@@ -13,7 +13,11 @@ from .base import (  # noqa: F401
 )
 
 # Import adapter modules for their @register side effects.
-from . import crosshar   # noqa: F401
-from . import limubert   # noqa: F401
+from . import crosshar        # noqa: F401
+from . import limubert        # noqa: F401
+from . import ssl_wearables   # noqa: F401
+from . import deepconvlstm    # noqa: F401  (fewshot tier — run via run_fewshot_v2.py)
+from . import unimts          # noqa: F401  (cosine tier)
+from . import normwear        # noqa: F401  (l1 tier)
 
 __all__ = ["REGISTRY", "register", "BaselineAdapter", "ConSEAdapter", "CosineAdapter", "load_gt", "score"]

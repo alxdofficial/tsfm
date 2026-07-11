@@ -21,14 +21,16 @@ Implementation: `val_scripts/human_activity_recognition/eval_v2.py` (+ unit test
 ### Pre-registered test set (decided 2026-07-02)
 
 One flat tier of **6 test datasets**: motionsense, realworld, mobiact, shoaib,
-opportunity, **harth**. There is no "severe-OOD" category. HARTH (back-mounted
+**harth**, **inclusivehar**. There is no "severe-OOD" category. HARTH (back-mounted
 accelerometer, genuine sensor/placement shift) is a regular test dataset,
-scored by the same rules as every other. **VTT-ConIoT is dropped from the
+scored by the same rules as every other. InclusiveHAR is the active
+ability-diverse phone test set. **VTT-ConIoT is dropped from the
 benchmark**: ~50% of its construction-domain labels have no training
 equivalent, so zero-shot scores there measured label coverage rather than
-recognition capability. The evaluated set is defined by
-`EVALUATED_DATASETS` in `benchmark_data/scripts/generate_eval_v2_labels.py`
-(equivalently: which label configs exist in `benchmark_data/eval_v2/labels/`).
+recognition capability. Opportunity is retained as appendix-only because its
+4-subject structure gives degenerate CIs. The evaluated set is defined by
+`zero_shot_datasets` in `benchmark_data/dataset_config.json` and consumed by
+`benchmark_data/scripts/generate_eval_v2_labels.py`.
 
 ### Settings
 
@@ -66,18 +68,18 @@ recognition capability. The evaluated set is defined by
   estimand and de-brackets the interval). With < 2 subjects the CI is reported
   as NaN with `ci_degenerate: true` — never a fake zero-width 95% interval.
 
-### Scoring closed-vocabulary baselines (LiMU-BERT, CrossHAR, MOMENT)
+### Scoring closed-vocabulary baselines (LiMU-BERT, CrossHAR)
 
 Adopted from the literature (see `docs/v2/design_evaluation.md`, addendum rev. 2):
 
 1. **Capability-scoped tables.** The main ZS-XD table contains models that can
    classify against an arbitrary label list. Closed-vocab baselines compete
    handicap-free in FS-1%/10%.
-2. **ConSE bridge** (Norouzi et al., 2014) for †-marked ZS rows: the classifier's
+2. **ConSE bridge** (Norouzi et al., 2014) for dagger-marked ZS rows: the classifier's
    full softmax over its training vocabulary forms a convex combination of
    frozen-SBERT label embeddings (top-T=10), scored against `L_D`
    (`eval_v2.conse_predict`). Same frozen encoder (all-MiniLM-L6-v2, mean-pool)
-   for every bridged model. MOMENT's SVM uses `probability=True` (Platt).
+   for every bridged model.
 3. **Common-classes table** (appendix): activities where the baseline's training
    vocabulary and `L_D` match 1:1 — exact-string matches are computed
    automatically; semantic pairs must be promoted from
