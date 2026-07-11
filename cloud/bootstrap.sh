@@ -27,17 +27,27 @@ log "arming watchdog: hard poweroff after ${MAX_HOURS}h (billing backstop)"
 nohup bash -c "sleep $((MAX_HOURS*3600)); echo WATCHDOG-MAXHOURS; (sudo poweroff -f || poweroff -f || shutdown -h now)" \
   >/tmp/halo_watchdog.log 2>&1 & disown || true
 
-# 1) system deps — python:3.11-slim is bare, so install what torch/git/aws need.
+# 1) system deps — install what torch/git/aws need; ensure `python` resolves.
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y -qq
 apt-get install -y -qq --no-install-recommends git tmux curl ca-certificates libgomp1
+# vast/conda pytorch images ship only `python3` (no `python`); our scripts + the torch-check + the
+# recipe train_cmds all call `python`, so make it resolve. This is also what lets the torch-reuse
+# check below actually find the base image's torch (avoids a needless 3GB cu128 reinstall).
+command -v python >/dev/null || ln -sf "$(command -v python3)" /usr/local/bin/python
 command -v aws  >/dev/null || pip install -q awscli
 pip install -q boto3 >/dev/null 2>&1 || true
 
-# 2) clone the PUBLIC repo at the pinned SHA
-log "clone $REPO_URL @ ${REPO_SHA:0:12}"
-rm -rf "$WORK"; git clone --quiet "$REPO_URL" "$WORK"
-cd "$WORK"; git checkout --quiet "$REPO_SHA"
+# 2) fetch the PUBLIC repo at the pinned SHA — shallow (--depth 1, no history) + sparse (skip the
+#    heavy references/ PDFs + docs/figures the pod never needs). Turns a ~6-min clone into seconds.
+log "fetch $REPO_URL @ ${REPO_SHA:0:12} (shallow+sparse)"
+rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK"
+git init -q
+git remote add origin "$REPO_URL"
+git config core.sparseCheckout true
+printf '/*\n!/references/\n!/docs/figures/\n' > .git/info/sparse-checkout
+git fetch -q --depth 1 --filter=blob:none origin "$REPO_SHA"
+git checkout -q FETCH_HEAD
 
 # 3) python env — REUSE the base pytorch image's torch if it actually runs on this GPU (a real GPU
 #    op, not just is_available — catches missing sm_120/Blackwell kernels). Only pull torch from the
@@ -46,10 +56,10 @@ if python -c "import torch; torch.zeros(8, device='cuda').sum().item()" 2>/dev/n
   log "base image torch works on this GPU ($(python -c 'import torch;print(torch.__version__)')) — skip reinstall"
 else
   log "installing torch stack from cu128 CDN (base image torch missing/incompatible)"
-  pip install -q --index-url https://download.pytorch.org/whl/cu128 torch==2.9.0 torchvision==0.24.0 torchaudio==2.9.0
+  pip install -q --retries 5 --timeout 120 --index-url https://download.pytorch.org/whl/cu128 torch==2.9.0 torchvision==0.24.0 torchaudio==2.9.0
 fi
 r2 cp "s3://$R2_BUCKET/$R2_PREFIX/meta/requirements-core.txt" /tmp/req-core.txt
-pip install -q -r /tmp/req-core.txt
+pip install -q --retries 5 --timeout 120 -r /tmp/req-core.txt
 # CLIP (git) only matters for unimts; harmless elsewhere but keep it job-gated via the recipe.
 log "apply recipe deps + backbone for job=$HALO_JOB"
 python cloud/apply_recipe.py --job "$HALO_JOB" --install
