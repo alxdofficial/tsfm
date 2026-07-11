@@ -42,6 +42,12 @@ IMU_PATTERNS = ('acc', 'gyro', 'mag')  # 'ori' dropped: PAMAP2 orientation is do
 DATASET_CHANNEL_EXCLUDES = {
     # MHealth mag channels are motion-coupled artifacts, not valid Earth-field magnetometer data.
     "mhealth": ("_mag_",),
+    # uci_har's parquet carries BOTH gravity-removed body_acc AND gravity-present total_acc. HALO
+    # must train on the gravity-present total_acc (median|acc|~1g; the benchmark path already
+    # selects it via core_channels), so drop the redundant gravity-removed body_acc triad —
+    # otherwise HALO ingests a second, gravity-stripped accel whose signed DC is a misleading ~0
+    # and whose channel count (6 accel) diverges from every other dataset (#85).
+    "uci_har": ("body_acc",),
 }
 
 
